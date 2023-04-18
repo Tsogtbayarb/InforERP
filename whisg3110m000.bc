@@ -1,0 +1,390 @@
+|******************************************************************************
+|* whisg3110m000  0  VRC B61U a7 isg 
+|* Tax Updation
+|* merino1                       
+|* 2019-08-10
+|******************************************************************************
+|* Main table whisg310 Tax Updation, Form Type 1
+|******************************************************************************
+|* ID: ISGEC01197, Gokul Chaurasia, 10-08-2019, VRC B61U a7 isg 
+|* NEw Development to update Tax data.
+|* 
+|* GH591CR000, Ravi Kumar, 25-06-2021
+|* 180321- Union Territory Tax code not update in warehouse receipt in session tax updation- whisg3110m000
+|****************************** declaration section ***************************
+declaration:
+
+#include <bic_dam>
+
+	table	twhisg310 | Tax Updation
+	table	ttcmcs036 | Tax Codes by Country
+	table	twhinh312 | Receipt Lines
+	table	ttdpur401 | Purchase Order Lines
+	table	ttfacp240 | Order Data for Approval
+	table	twhinh940 | Capture Goods Pass Out Document
+	table	twhinh936 | Goods Pass Out Document Lines
+	table	ttctax400 | Registration Numbers By Business Partners
+	table	ttctax941 | Aggregate Taxes
+	table	ttcmcs032 | Single Tax Rates
+	table	twhinh210 | Inbound order lines	
+	|---------------------- Script Variables -------------------------------
+	
+		domain	tcpono		imp.rcln
+		domain	tcncmp		curr.ncmp
+		domain	whinh.rhst	receipt.st
+			long		ret_val
+			long		err.count
+			long		i.loop
+			string		error.message(100)
+			string		err.mesg(100)
+			string		query.string(100)
+	
+	|---------------------- Global Variables -------------------------------
+	
+	extern	domain	whinh.shpm	imp.rcno
+	extern	domain	tcccty		g.ccty
+	extern	domain	tccom.bpid	g.bpid
+
+|****************************** program section ********************************
+before.program:
+	curr.ncmp = get.compnr()
+
+	import("whinh312.rcno",imp.rcno)
+	import("whinh312.rcln",imp.rcln)
+	if isspace(imp.rcno) then
+		exit()
+	endif
+	receipt.st =  whinh.dll0310.receipt.header.get.status(
+							imp.rcno)
+	insert.tax.data.in.whisg310()
+
+|****************************** group section **********************************
+
+
+|****************************** field section **********************************
+
+field.whisg310.nvat:
+before.zoom:
+	tcmcs036.ccty = g.ccty
+
+field.whisg310.ngst:
+before.zoom:
+	tctax400.bpid = g.bpid
+	query.string = ""
+	query.string = "tctax400.catg.l = " & str$(9)	|* GSTIN
+	query.extend.where.in.zoom(query.string)
+
+|****************************** choice section **********************************
+
+choice.update_record:
+before.choice:
+	check.all.input()
+	
+	if receipt.st = whinh.rhst.confirmed then
+		message("Receipt status is Confirmed")
+		choice.again()
+	endif
+
+	if isspace(whisg310.nvat) then
+		message("Please Enter New Tax Code")
+		choice.again()
+	endif
+
+on.choice:
+	update.tax.tables()
+
+|**************************** function section **********************************
+
+functions:
+
+function insert.tax.data.in.whisg310()
+{
+	select	whinh312.*
+	from	whinh312
+	where	whinh312._index1 = {:imp.rcno,
+				:imp.rcln}
+	as set with 1 rows
+	selectdo
+		select	tdpur401.cvat,tdpur401.ccty:g.ccty,
+			tdpur401.rnsb.l,tdpur401.otbp:g.bpid
+		from	tdpur401
+		where	tdpur401._index1 = {:whinh312.orno,
+					:whinh312.pono,
+					:whinh312.seqn}
+		as set with 1 rows
+		selectdo
+		endselect
+	endselect
+
+	select	whisg310.*
+	from	whisg310 for update
+	where	whisg310._index1 = {:imp.rcno,
+				:imp.rcln}
+	as set with 1 rows
+	selectdo
+		dal.change.object("whisg310")
+		dal.set.field("whisg310.evat",tdpur401.cvat)
+		dal.set.field("whisg310.egst",tdpur401.rnsb.l)
+		ret_val = dal.save.object("whisg310",e)
+		if ret_val = 0 then
+			commit.transaction()
+		else
+			if receipt.st = whinh.rhst.confirmed then
+				abort.transaction()
+			else
+				err.count = dal.count.error.messages()
+				for i.loop = 1 to err.count
+					dal.get.error.message(err.mesg)
+					error.message = trim$(error.message) &
+							trim$(err.mesg)
+				endfor
+				message("%s",error.message)
+				abort.transaction()
+			endif
+		endif
+	selectempty
+		dal.new.object("whisg310")
+		dal.set.field("whisg310.rcno",imp.rcno)
+		dal.set.field("whisg310.rcln",imp.rcln)
+		dal.set.field("whisg310.orno",whinh312.orno)
+		dal.set.field("whisg310.pono",whinh312.pono)
+		dal.set.field("whisg310.seqn",whinh312.seqn)
+		dal.set.field("whisg310.evat",tdpur401.cvat)
+		dal.set.field("whisg310.egst",tdpur401.rnsb.l)
+		dal.set.field("whisg310.crea",logname$)
+		dal.set.field("whisg310.cdat",utc.num())
+		ret_val = dal.save.object("whisg310",e)
+		if ret_val = 0 then
+			commit.transaction()
+		else
+			err.count = dal.count.error.messages()
+			for i.loop = 1 to err.count
+				dal.get.error.message(err.mesg)
+				error.message = trim$(error.message) &
+						trim$(err.mesg)
+			endfor
+			message("%s",error.message)
+			abort.transaction()
+		endif
+	endselect
+}
+
+function boolean update.tax.tables()
+{
+			long		error.found
+		domain	tcamnt		tax.amnt
+		domain	tcpono		new.tseq
+		domain	whinh.shpm	old.rcno
+		domain	tcmcs.str100m	rcno.update
+	
+	tax.amnt = 0.00
+	error.found = 0
+	new.tseq = 0
+	rcno.update = ""
+	old.rcno = ""
+
+	select	tdpur401.cvat,tdpur401.rnsb.l
+	from	tdpur401	for update
+	where	tdpur401._index1 = {:whisg310.orno,
+				:whisg310.pono,
+				:whisg310.seqn}
+	as set with 1 rows
+	selectdo
+	|* As per Indrasis, DAL should not be used as when
+	|* Tax Code is updated via DAL, PO status changes to 
+	|* Modified and gets unlinked from Receipt.
+	|* Hence db.insert should be used.
+
+| 		dal.change.object("tdpur401")
+| 		dal.set.field("tdpur401.cvat",whisg310.nvat)
+| 		ret_val = dal.save.object("tdpur401",e)
+| 		if ret_val <> 0 then
+| 			err.count = dal.count.error.messages()
+| 			for i.loop = 1 to err.count
+| 				dal.get.error.message(err.mesg)
+| 				error.message = trim$(error.message) &
+| 						trim$(err.mesg)
+| 			endfor
+| 			message("%s",error.message)
+| 			abort.transaction()
+| 			error.found = 1
+| 		endif
+
+		tdpur401.cvat = whisg310.nvat
+		tdpur401.rnsb.l = whisg310.ngst
+		ret_val = db.update(ttdpur401,db.retry,e)
+		if ret_val <> 0 then
+			message("Error while updating Tax Code in PO Line")
+			abort.transaction()
+			error.found = 1
+		endif
+	endselect
+	
+	select	tfacp240.cvat,tfacp240.rnsb.l
+	from	tfacp240 for update
+	where	tfacp240._index1 = {:curr.ncmp,
+				tfacp.otyp.purchase,
+				:whisg310.orno,
+				:whisg310.pono,
+				:whisg310.seqn}
+	as set with 1 rows
+	selectdo
+		dal.change.object("tfacp240")
+		dal.set.field("tfacp240.cvat",whisg310.nvat)
+		dal.set.field("tfacp240.rnsb.l",whisg310.ngst)
+		ret_val = dal.save.object("tfacp240",e)
+		if ret_val <> 0 then
+			err.count = dal.count.error.messages()
+			for i.loop = 1 to err.count
+				dal.get.error.message(err.mesg)
+				error.message = trim$(error.message) &
+						trim$(err.mesg)
+			endfor
+			message("%s",error.message)
+			abort.transaction()
+			error.found = 1
+		endif
+	endselect
+	
+	select	whinh210.cvat.l,whinh210.rnsb.l
+	from	whinh210 for update
+	where	whinh210._index1 = {whinh.oorg.purchase,
+				:whisg310.orno,
+				:whisg310.pono,
+				:whisg310.seqn}
+	as set with 1 rows
+	selectdo
+		whinh210.cvat.l = whisg310.nvat
+		whinh210.rnsb.l = whisg310.ngst
+		ret_val = db.update(twhinh210,db.retry,e)
+		if ret_val <> 0 then
+			message("Error while updating Tax Code in Inbound Order Lines")
+			abort.transaction()
+			error.found = 1
+		endif
+	endselect
+	
+	select	whinh940.rcno,whinh940.rcln
+	from	whinh940 for update, whinh312
+	where	whinh940._index2 = {whinh.oorg.purchase,
+				    :whisg310.orno}
+	and	whinh940.pono = :whisg310.pono
+	and	whinh940.seqn = :whisg310.seqn
+	and	whinh940.cmba refers to whinh312	unref clear
+	and	whinh312.conf = tcyesno.no
+	order by whinh940.rcno, whinh940.rcln
+	selectdo
+		dal.change.object("whinh940")
+		dal.set.field("whinh940.agtx",whisg310.nvat)
+		ret_val = dal.save.object("whinh940",e)
+		if ret_val <> 0 then
+			err.count = dal.count.error.messages()
+			for i.loop = 1 to err.count
+				dal.get.error.message(err.mesg)
+				error.message = trim$(error.message) &
+						trim$(err.mesg)
+			endfor
+			message("%s",error.message)
+			abort.transaction()
+			error.found = 1
+		endif
+
+		select	whinh936.*
+		from	whinh936 for update
+		where	whinh936._index1 = {:whinh940.rcno,
+					    :whinh940.rcln}
+		selectdo
+			db.delete(twhinh936,db.retry,e)
+		selectempty
+		endselect
+		
+		if old.rcno <> whinh940.rcno then
+			rcno.update = rcno.update & whinh940.rcno & ","
+			old.rcno = whinh940.rcno
+		endif
+	endselect
+	
+	select	tctax941.cvat,tcmcs036.indt.l
+	from	tctax941, tcmcs036
+	where	tctax941._index1 = {:g.ccty,
+				:whisg310.nvat}
+	and	tctax941.type = tctax.type.l.tax
+	and	tctax941.cmbb refers to tcmcs036
+	and	tcmcs036.indt.l in (40,41,42,43, 30)			|RAvi.a.30.11112020	|GH591CR000.a
+	selectdo
+		select	tcmcs032.pvat,tcmcs032.edat
+		from	tcmcs032
+		where	tcmcs032._index1 = {:g.ccty,
+					:tctax941.cvat}
+		order by tcmcs032.edat desc
+		as set with 1 rows
+		selectdo
+		endselect
+		
+		select	whinh940.rcno,whinh940.rcln,
+			whinh940.agtx,whinh940.easv
+		from	whinh940, whinh312
+		where	whinh940._index2 = {whinh.oorg.purchase,
+					    :whisg310.orno}
+		and	whinh940.pono = :whisg310.pono
+		and	whinh940.seqn = :whisg310.seqn
+		and	whinh940.cmba refers to whinh312 unref clear
+		and	whinh312.conf = tcyesno.no
+		selectdo
+			select	max(whinh936.tseq):new.tseq
+			from	whinh936
+			where	whinh936._index1 = {:whinh940.rcno,
+						    :whinh940.rcln}
+			selectdo
+			selectempty
+				new.tseq = 0.00
+			endselect
+			
+			select	whinh936.*
+			from	whinh936 for update
+			where	whinh936._index1 = {:whinh940.rcno,
+						    :whinh940.rcln}
+			and	whinh936.taxc = :tctax941.cvat
+			as set with 1 rows
+			selectdo
+			selectempty
+				new.tseq = new.tseq + 1
+				tax.amnt = (tcmcs032.pvat * whinh940.easv)/100
+				dal.new.object("whinh936")
+				dal.set.field("whinh936.rcno",whinh940.rcno)
+				dal.set.field("whinh936.rcln",whinh940.rcln)
+				dal.set.field("whinh936.tseq",new.tseq)
+				dal.set.field("whinh936.taxc",tctax941.cvat)
+				dal.set.field("whinh936.easv",whinh940.easv)
+				dal.set.field("whinh936.pvat",tcmcs032.pvat)
+				dal.set.field("whinh936.eamt",tax.amnt)
+				dal.set.field("whinh936.aamt",tax.amnt)
+				dal.set.field("whinh936.ttyp",tcmcs036.indt.l)
+				ret_val = dal.save.object("whinh936",e)
+				if ret_val <> 0 then
+					err.count = dal.count.error.messages()
+					for i.loop = 1 to err.count
+						dal.get.error.message(err.mesg)
+						error.message = trim$(error.message) &
+								trim$(err.mesg)
+					endfor
+					message("%s",error.message)
+					abort.transaction()
+					error.found = 1
+				endif
+			endselect
+		endselect
+	endselect
+	
+	if error.found = 0 then
+| 		message("All Tax Tables are updated successfully")
+		message("Tax Updated in Receipts %s",rcno.update)
+		commit.transaction()
+	else
+		return(false)
+	endif
+
+	return(true)
+}
+
+|************************************** END **************************************

@@ -1,0 +1,246 @@
+|******************************************************************************
+|* whisg310  0  VRC B61U a7 isg 
+|* whisg310 - dal2
+|* merino1
+|* 19-08-12 [23:26]
+|******************************************************************************
+|* Script Type: DAL
+|******************************************************************************
+|* ID: ISGEC01197, Gokul Chaurasia, 12-08-2019, VRC B61U a7 isg 
+|* NEw Development to update Tax data.
+|* 
+|* GH591CR000, Ravi Kumar, 25-06-2021
+|* 180321- Union Territory Tax code not update in warehouse receipt in session tax updation- whisg3110m000
+|******************************************************************************
+|--------------------------- Declaration Section ------------------------------
+
+#include <bic_dal2>
+	
+	table	twhisg310 | Tax Updation
+	table	ttctax941 | Aggregate Taxes
+	table	ttctax400 | Registration Numbers By Business Partners
+	table	ttcmcs036 | Tax Codes by Country
+	table	ttcmcs032 | Single Tax Rates
+	table	twhinh312
+	
+	|---------------------- Script Variables -------------------------------
+		
+		domain	whinh.rhst	receipt.st
+		domain	whinh.shpm	old.receipt.no
+
+	|---------------------- Global Variables -------------------------------
+	
+	extern	domain	tcccty		g.ccty
+	extern	domain	tccom.bpid	g.bpid
+
+|-------------------------- Object Hooks --------------------------------------
+
+function extern long before.open.object.set()
+{
+	handle.field.dependencies()
+	return(0)
+}
+
+function extern long before.save.object(long type)
+{
+	on case type
+	case DAL_UPDATE :
+		whisg310.crea = logname$
+		whisg310.cdat = utc.num()
+		break
+	endcase
+
+	return(0)
+}
+
+function extern boolean method.is.allowed(long method)
+{
+	on case method
+	case DAL_UPDATE :
+		receipt.st =  whinh.dll0310.receipt.header.get.status(
+							whisg310.rcno)
+
+		if receipt.st = whinh.rhst.confirmed then
+			return(false)
+		endif
+		break
+	endcase
+	
+	return(true)
+}
+
+|--------------------------- Field Hooks --------------------------------------
+
+|* [whisg310.nvat]
+
+function extern boolean whisg310.nvat.is.valid(long mode)
+{
+
+	if not isspace(whisg310.nvat) and
+	   not check.tax.code.is.valid(whisg310.nvat) then
+		return(false)
+	endif
+	
+	return(true)
+}
+
+|* [whisg310.ngst]
+
+function extern boolean whisg310.ngst.is.valid(long mode)
+{
+		domain	tcdate		cur.date
+	
+	cur.date = utc.num()
+
+	if not isspace(whisg310.ngst) then
+		select	tctax400.bpid,tctax400.efdt
+		from	tctax400
+		where	tctax400._index3 = {:whisg310.ngst}
+		and	tctax400.bpid = :g.bpid
+		and	tctax400.efdt <= :cur.date
+		and	(tctax400.exdt = 0 or
+			tctax400.exdt >= :cur.date)
+		and	tctax400.catg.l = tctax.catg.l.gst
+		order by tctax400.efdt desc
+		as set with 1 rows
+		selectdo
+		selectempty
+			dal.set.error.message("@Please Enter Correct GSTIN no.")
+			return(false)
+		endselect
+	endif
+	
+	return(true)
+}
+
+|------------------------------- Function Section ----------------------------------
+
+function boolean check.tax.code.is.valid(
+		domain	tccvat		i.cvat)
+{
+		domain	tcperc		existing.tax.rate
+		domain	tcperc		new.tax.rate
+			string		error.mess(200)
+
+|* 1.	Scenario 1 : If the Tax Rate is changed, the system will give error message. -  
+|*	"Tax code of different Tax rate than PO (<<Tax Rate>>) cannot be selected"
+
+	|* Existing Tax Rate
+
+	existing.tax.rate = 0.00
+
+	select	tctax941.cvat
+	from	tctax941
+	where	tctax941._index1 = {:g.ccty,
+				:whisg310.evat}
+	and	tctax941.type = tctax.type.l.tax
+	selectdo
+		select	tcmcs032.pvat,tcmcs032.edat
+		from	tcmcs032
+		where	tcmcs032._index1 = {:g.ccty,
+					:tctax941.cvat}
+		order by tcmcs032.edat desc
+		as set with 1 rows
+		selectdo
+			existing.tax.rate = existing.tax.rate +
+					tcmcs032.pvat
+		endselect
+	endselect
+	
+	|* New Tax Rate
+	
+	new.tax.rate = 0.00
+	
+	select	tcmcs036.cvat
+	from	tcmcs036
+	where	tcmcs036._index1 = {:g.ccty,
+				:whisg310.nvat}
+	as set with 1 rows
+	selectdo
+		select	tctax941.cvat
+		from	tctax941, tcmcs036
+		where	tctax941._index1 = {:g.ccty,
+					:whisg310.nvat}
+		and	tctax941.type = tctax.type.l.tax
+		and	tctax941.cmbb refers to tcmcs036
+		and	tcmcs036.indt.l in (40,41,42,43, 30)			|RAvi.a.30.11112020	|GH591CR000.a
+			|* SGST - 40 - tctax.indt.l.sgst
+			|* CGST - 41 - tctax.indt.l.cgst
+			|* IGST - 42 - tctax.indt.l.igst
+		selectdo
+			select	tcmcs032.pvat,tcmcs032.edat
+			from	tcmcs032
+			where	tcmcs032._index1 = {:g.ccty,
+						:tctax941.cvat}
+			order by tcmcs032.edat desc
+			as set with 1 rows
+			selectdo
+				new.tax.rate = new.tax.rate +
+						tcmcs032.pvat
+			endselect
+		selectempty
+			dal.set.error.message("@Please Enter Correct Tax Code")
+			return(false)
+		endselect
+	selectempty
+		dal.set.error.message("@Please Enter Correct Tax Code")
+		return(false)
+	endselect
+	
+	error.mess = ""
+	if existing.tax.rate <> new.tax.rate then
+		error.mess = "Tax code of different Tax rate than " &
+				str$(existing.tax.rate)& "%" & " cannot be selected"
+		dal.set.error.message("@%s",error.mess)
+		return(false)
+	endif
+	
+|* 3.	Scenario 3 : If user is changing the tax code and one receipt is already 
+|*	created on same PO Line sequence with different tax code then Error message 
+|*	"Receipt xxxxxxxxx Line xx already created on PO xxxxxxxxx Line xx Sequence 
+|*	xx, Tax code cannot be changed"
+	
+	if whisg310.evat <> whisg310.nvat then
+		select	whinh312.rcno
+		from	whinh312	
+		where	whinh312._index4 = {
+					whinh.oorg.purchase,
+					:whisg310.orno,
+					:whisg310.pono,
+					:whisg310.seqn}
+| 					:whisg310.rcno}
+		and	whinh312.rcno <> :whisg310.rcno
+| 		and	whinh312.rcln <> :whisg310.rcln			|bharti.o
+		and	whinh312.conf = tcyesno.yes
+		as set with 1 rows
+		selectdo
+			error.mess = ""
+| 			error.mess = "Receipt " & whisg310.rcno & " Line " & str$(whisg310.rcln) &
+			error.mess = "Receipt No. " & whinh312.rcno & " Line " & str$(whisg310.rcln) &
+					" already confirmed for PO No. " & whisg310.orno &
+					" Line " & str$(whisg310.pono) & " Sequence " &
+| 					" Line " & str$(whisg310.pono) & 
+					str$(whisg310.seqn) & ", Tax code cannot be changed"
+| 					", Tax code cannot be changed."
+			dal.set.error.message("@%s",error.mess)
+			return(false)
+		endselect
+	endif
+	
+	return(true)
+}
+
+
+|---------------------------- Field Dependencies ------------------------------
+
+function handle.field.dependencies()
+{
+	dal.field.depends.on("whisg310.nvat",HOOK_IS_VALID,"whisg310.evat",
+							    "whisg310.rcno",
+							    "whisg310.rcln",
+							    "whisg310.orno",
+							    "whisg310.pono",
+							    "whisg310.seqn")
+}
+
+|------------------------------ END -------------------------------------------

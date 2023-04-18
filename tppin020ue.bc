@@ -1,0 +1,286 @@
+|******************************************************************************
+|* tppin020ue  0  VRC B61U a7 live
+|* Installment UE
+|* tools1
+|* 14-07-04 [16:52]
+|******************************************************************************
+|* Script Type: Library
+|*
+|* GH502CR000, RAvi Kumar, 23-02-2021
+|* Installment cannot be deleted if it is linked with Exports DR/CR Note 
+|******************************************************************************
+                                                                                
+#include <bic_dal>
+
+	table	ttpisg032
+	table	ttppin020
+	table	ttpisg030
+	table	ttpmsl000
+	table	ttpisg039
+	table	ttdisg046			|GH502CR000.a
+	
+extern	string 			installment.prog(16),prog.name(16),calling.program(16)
+
+extern 	long	prog.id 
+extern 	domain	tppdm.nins		import.nins
+extern 	domain	tcorno		import.edrn
+extern	domain	tcamnt		bill.insa
+extern	domain	tcamnt		nins.insa, old.insa
+	
+extern	domain	tppdm.nins	tmp.nins
+
+extern	domain	tcyesno		o.remb
+
+function extern long ue.before.before.save.object(long mode)
+{
+	domain	tcccty		o.rtyp
+	domain	tppdm.cspa	o.elem
+	domain	tcpono		param.levl
+	
+	domain	tppdm.aalc	o.tpisg031.insa
+	domain	tppdm.aalc	o.insa
+	domain	tppdm.aalc	o.tppin020.cdf_insa
+	
+	import("tpisg032.nins",import.nins)
+	import("prog.name",prog.name)
+	import("import.edrn", import.edrn)
+	import("prog.name$",calling.program)
+	on case mode
+	case DAL_NEW :
+		if prog.name = "tpisg4551m000" then
+			put.var(pid,"tppin020.cdf_nins",import.nins)
+		endif
+		
+		on case trim$(calling.program)
+			case "tppin4151s200":
+				
+				get.var(pid,"tppin020.cdf_rtyp",o.rtyp)
+				select 	tpisg030.rtyp
+				from	tpisg030
+				where	tpisg030._index1 = {:o.rtyp}
+				as set with 1 rows
+				selectdo
+				selectempty
+					dal.set.error.message("@ Reimbursement Type Must be Filled")
+					return(DALHOOKERROR)
+				endselect
+				break
+		ENDCASE
+		if	trim$(calling.program) <> "tppin4811m000"	then	
+			get.var(pid, "tppin020.cdf_nins", tmp.nins)
+		endif	
+		break
+	case DAL_UPDATE :
+		
+		get.var(pid,"tppin020.cdf_insa",o.tppin020.cdf_insa)
+		
+		if tppin020.insa < o.tppin020.cdf_insa then
+			dal.set.error.message("@ Insallment Amount Can't be Less than Linked Amount")
+			return(DALHOOKERROR)
+		endif
+| 		
+		if	trim$(calling.program) <> "tppin4811m000"	then
+			get.var(pid, "tppin020.cdf_nins", tmp.nins)
+		endif	
+		
+		get.var(pid,"tppin020.cdf_remb",o.remb)
+		if o.remb = tcyesno.yes then
+			select 	tpisg039.rval
+			from	tpisg039 for update
+			where	tpisg039._index1 = {:tppin020.cprj,:tppin020.ofbp,:tppin020.nins}
+			selectdo
+				if tpisg039.rval <> tppin020.inia then
+					tpisg039.rval = tppin020.inia
+				endif
+				db.update(ttpisg039,db.retry,e)
+			endselect
+			
+			if tppin020.inia <> 0 then
+				tppin020.insa = tppin020.inia
+			endif
+			
+| 			if tppin020.inia <> 0 then
+| 				tppin020.invo = tppdm.yeno.yes
+| 			endif
+			
+		endif
+		
+		break
+	endcase
+	
+	tcmcs.dll0095.read.parm("tpmsl000")
+	param.levl = tpmsl000.levl + 1
+		
+	
+	select 	tpest120.sele:o.elem
+	from	tpest120
+	where	tpest120._index1 = {:tppin020.cprj}
+	and	tpest120.sele = :tppin020.cspa
+	and	tpest120.levl > :param.levl
+	as set with 1 rows
+	selectdo
+	selectempty
+		dal.set.error.message("@ Installment Not Allowed for this Element")
+		return(DALHOOKERROR)
+	endselect
+	
+	
+	|***
+	|Billing Plan Check
+	|***
+	if tmp.nins <> 0 then
+		o.tpisg031.insa = tpisgdll0031.get.billing.plan.amount(tppin020.cprj,tppin020.ofbp,tmp.nins)
+		with.old.object.values.do(tpisgdll0031.get.linked.billing.schedule.amount,tppin020.cprj,
+					tppin020.ofbp,tppin020.nins,tmp.nins,o.insa)
+					
+		if (o.insa + tppin020.insa) > o.tpisg031.insa then
+			dal.set.error.message("@ Installment Amount is Greater than Billing Plan Amount, Billing Plan " & str$(tmp.nins) & ", Installment " & str$(tppin020.nins))
+			return(DALHOOKERROR)
+		endif
+	endif	
+		
+	return(0)
+}
+
+function extern long ue.after.before.save.object(long mode)
+{
+	on case mode
+	case DAL_NEW:
+		break
+	case DAL_UPDATE:
+		break
+	endcase
+	return(0)
+}
+
+function extern long ue.before.after.save.object(long mode)
+{
+	on case mode
+	case DAL_NEW:
+		break
+	case DAL_UPDATE:
+		
+| 		if tppin020.idoc <> 0  then
+| 			select 	tpisg039.ityp,
+| 				tpisg039.idoc
+| 			from	tpisg039 for update
+| 			where	tpisg039._index1 = {:tppin020.cprj,:tppin020.ofbp,:tppin020.nins}
+| 			and	tpisg039.idoc = 0
+| 			and	tpisg039.sidt <> 0
+| 			selectdo
+| 				tpisg039.ityp = tppin020.ityp
+| 				tpisg039.idoc = tppin020.idoc
+| 				db.update(ttpisg039,db.retry,e)
+| 			endselect
+| 		endif
+		
+		break
+	endcase
+	return(0)
+}
+
+function extern long ue.after.after.save.object(long mode)
+{
+	on case mode
+	case DAL_NEW:
+		break
+	case DAL_UPDATE:
+		break
+	endcase
+	return(0)
+}
+
+function extern long ue.before.before.destroy.object()
+{
+	domain	tppdm.aalc	o.tppin020.cdf_insa
+	domain	tcyesno		o.tppin020.cdf_remb
+	domain	tppdm.nins	o.tppin020.cdf_nins			|GH502CR000.a
+	
+	get.var(pid,"tppin020.cdf_insa",o.tppin020.cdf_insa)
+	get.var(pid,"tppin020.cdf_remb",o.tppin020.cdf_remb)
+	get.var(pid,"tppin020.cdf_nins",o.tppin020.cdf_nins)		|GH502CR000.a.s
+	
+	select	tdisg046.rqno
+	from	tdisg046
+	where	tdisg046.nins = :tppin020.nins
+	and	tdisg046.ninc = :o.tppin020.cdf_nins
+	as set with 1 rows
+	selectdo
+		dal.set.error.message("@ Installment is Linked With Credit/Debit Memo "& tdisg046.rqno & ". Deleation Not Allowed")
+		return(DALHOOKERROR)
+	endselect							|GH502CR000.a.e		
+	
+	if o.tppin020.cdf_insa <> 0 and o.tppin020.cdf_remb = tcyesno.no then
+		dal.set.error.message("@ Installment is Linked With Billing Advice. Deleation Not Allowed")
+		return(DALHOOKERROR)
+	endif
+	
+	if o.tppin020.cdf_remb = tcyesno.yes and tppin020.invo = tppdm.yeno.yes then
+		dal.set.error.message("@ Rembursement Installment Cann't be Deleted")
+		return(DALHOOKERROR)
+	endif
+	
+	if o.tppin020.cdf_remb = tcyesno.yes and tppin020.invo = tppdm.yeno.no then
+		select 	tpisg039.cprj
+		from	tpisg039 for update
+		where	tpisg039._index1 = {:tppin020.cprj,:tppin020.ofbp,:tppin020.nins}
+		selectdo
+			db.delete(ttpisg039,db.retry,e)
+		endselect
+	endif
+	
+	
+	return(0)
+}
+
+function extern long ue.after.before.destroy.object()
+{
+	return(0)
+}
+
+function extern long ue.before.after.destroy.object()
+{
+	return(0)
+}
+
+function extern long ue.after.after.destroy.object()
+{
+	return(0)
+}
+
+function get.billing.schedule.value()
+{
+	domain	tppdm.aalc	tmp.insa
+	domain	tppdm.aalc	tmp.cdf_insa
+	
+	nins.insa = 0
+	
+	select	a_tpisg031.insa:bill.insa
+	from	tpisg031 a_tpisg031
+	where	a_tpisg031._index1 = {:tppin020.cprj, :tppin020.ofbp, :tmp.nins}
+	selectdo
+	selectempty
+		bill.insa = 0
+	endselect
+	
+	select	b_tppin020.insa:tmp.insa,
+		b_tppin020.cdf_insa:tmp.cdf_insa
+	from	tppin020 b_tppin020
+	where	b_tppin020._index1 = {:tppin020.cprj, :tppin020.ofbp}
+	and	b_tppin020.cdf_nins = :tmp.nins
+	selectdo
+		if tmp.cdf_insa <> 0 then
+			nins.insa = nins.insa + tmp.cdf_insa
+		else
+			nins.insa = nins.insa + tmp.insa
+		endif
+		
+	selectempty
+		nins.insa = 0
+	endselect
+}
+
+function get.old.values()
+{
+	old.insa = tppin020.insa
+}

@@ -1,0 +1,312 @@
+|******************************************************************************
+|* whinh310ue  0  VRC B61U a7 live
+|* Receipt - For Updating the Sanction
+|* tools1
+|* 14-08-02 [12:38]
+|******************************************************************************
+|* Script Type: Library
+|* IDNET: ISGEC018001, Mudit Sharma, 2018-02-23
+|* Modifications
+|*
+|* ID: ISGEC018001, Mudit Sharma, 2018-06-14
+|* Check for DC
+|*
+|* ID: ISGEC018001, Dharmendra Singh, 2018-07-09
+|* T-53448, CR154- Order to stock process
+|*
+|* ID: ISGEC016015,Manav singh,21-01-2019,VRC B61U a7 live
+|* Modification as per cdf field Delivery term input process block on confirmed status 
+|******************************************************************************
+                                                                                
+#include <bic_dal>
+
+	table	twhinh310
+	table	twhinh312
+	table	ttfacp100
+	table	ttdpur401
+	table	ttpisg229
+	table	ttcmcs003
+	table	ttdisg027
+	table	ttdisg030
+	
+	domain	tfgld.user	user
+	long srno
+	domain	tcyesno vendor
+	domain	tcmcs.str30	old.value,new.value
+	domain	tccdec		hold.cdec
+
+
+function extern long ue.before.before.save.object(long mode)
+{
+	long flag									|#ISGEC018001.n
+	flag = 0
+	
+	get.var(pid,"whinh310.cdf_cdec",hold.cdec)				|#Sahil.Sharma.21.02.2019.sn
+	
+	select	tcmcs041.cdec
+	from	tcmcs041
+	where	tcmcs041._index1 = {:hold.cdec}
+	selectdo
+	selectempty
+		dal.set.error.message("@Invalid Delivery Term")
+		return(DALHOOKERROR)
+	endselect
+										|#Sahil.Sharma.21.02.2019.en
+	
+	on case mode
+	case DAL_NEW:
+		if whinh310.stat = whinh.rhst.confirmed	then				|#ISGEC018001.sn	
+| 			select tcmcs003.cdf_vewr
+| 			from	tcmcs003
+| 			where	tcmcs003._index1 = {:whinh310.cwar}
+| 			selectdo
+| 				get.var(pid,"tcmcs003.cdf_vewr",vendor)
+| 			endselect
+| 			
+| 			select	whinh312.orno,whinh312.pono, whinh312.rcno, whinh312.rcln, whinh312.qrcr
+| 			from	whinh312
+| 			where	whinh312._index1 = {:whinh310.rcno}
+| 			selectdo
+| 				flag = 0
+| 				if whinh312.qrcr > 0 then
+| 				if vendor = tcyesno.yes	then
+| 					select	tdisg027.*
+| 					from	tdisg027
+| 					where	tdisg027.rcno = :whinh310.rcno
+| 					and	tdisg027.recl = :whinh312.rcln
+| 					selectdo
+| 						flag = 1
+| 					endselect
+| 		
+| 					if flag <> 1	then
+| 						dal.set.error.message("@Warehouse is Vendor's. Please link Delivery Challan.")
+| 						return(DALHOOKERROR)
+| 					endif
+| 				else
+| 					select	tdisg030.iqty
+| 					from	tdisg030
+| 					where	tdisg030._index1 = {:whinh312.rcno,:whinh312.rcln,:whinh312.orno,:whinh312.pono}
+| 					and	tdisg030.iqty > 0
+| 					selectdo
+| 					selectempty
+| 						dal.set.error.message("@Kindly issue previous Vendor Material.")
+| 						return(DALHOOKERROR)
+| 					endselect
+| 				endif
+| 				endif
+| 			endselect	
+		endif									|#ISGEC018001.en
+		
+											|#ISGEC018001.sn
+| 		if whinh310.stat = whinh.rhst.open	then
+| 			select	whinh312.cwar
+| 			from	whinh312
+| 			where	whinh312._index1 = {:whinh310.rcno}
+| 			selectdo
+| 			endselect
+| 			if whinh310.cwar <> whinh312.cwar	then
+| 				dal.set.error.message("@Receipt cannot be confirmed as Warehouse doesn’t match at Header & Line levels. Please amend PO & update the same.")
+| 				return(DALHOOKERROR)
+| 			endif
+| 		endif
+											|#ISGEC018001.en
+					|#ISGECGST001.sn
+		if not tcisgdll0100.check.IR.is.project.purchase(lval(whinh310.dino)) then
+			dal.set.error.message("@Only IR Related To Project Purchase Could be Linked...")
+			return(DALHOOKERROR)
+		endif
+					|#ISGECGST001.en
+		break
+	case DAL_UPDATE:
+											|#ISGEC018001.sn
+		if whinh310.stat = whinh.rhst.open	then
+			select	whinh312.cwar
+			from	whinh312
+			where	whinh312._index1 = {:whinh310.rcno}
+			selectdo
+				if whinh310.cwar <> whinh312.cwar	then
+					dal.set.error.message("@Receipt cannot be linked, as Warehouse do not match at Header & Line levels. Please amend PO & update the same.")
+					return(DALHOOKERROR)
+				endif
+			endselect
+		endif
+											|#ISGEC018001.en
+					|#ISGECGST001.sn
+		if not tcisgdll0100.check.IR.is.project.purchase(lval(whinh310.dino)) then
+			dal.set.error.message("@Only IR Related To Project Purchase Could be Linked...")
+			return(DALHOOKERROR)
+		endif
+					|#ISGECGST001.en
+					
+		if whinh310.stat = whinh.rhst.confirmed	then				|#ISGEC018001.sn
+| 			select tcmcs003.cdf_vewr
+| 			from	tcmcs003
+| 			where	tcmcs003._index1 = {:whinh310.cwar}
+| 			selectdo
+| 				get.var(pid,"tcmcs003.cdf_vewr",vendor)
+| 			endselect
+| 			
+| 			select	whinh312.orno,whinh312.pono, whinh312.rcno, whinh312.rcln, whinh312.qrcr
+| 			from	whinh312
+| 			where	whinh312._index1 = {:whinh310.rcno}
+| 			selectdo
+| 				flag = 0
+| 				if whinh312.qrcr > 0 then
+| 				if vendor = tcyesno.yes	then
+| 					select	tdisg027.*
+| 					from	tdisg027
+| 					where	tdisg027.rcno = :whinh310.rcno
+| 					and	tdisg027.recl = :whinh312.rcln
+| 					selectdo
+| 						flag = 1
+| 					endselect
+| 					
+| 					if flag <> 1	then
+| 						dal.set.error.message("@Warehouse is Vendor's. Please link Delivery Challan.")
+| 						return(DALHOOKERROR)
+| 					endif
+| 				else
+| 					select	tdisg030.iqty
+| 					from	tdisg030
+| 					where	tdisg030._index1 = {:whinh312.rcno,:whinh312.rcln,:whinh312.orno,:whinh312.pono}
+| 					and	tdisg030.iqty > 0
+| 					selectdo
+| 					selectempty
+| 						dal.set.error.message("@Kindly issue previous Vendor Material.")
+| 						return(DALHOOKERROR)
+| 					endselect
+| 				endif
+| 				endif
+| 			endselect
+| 									|#ISGEC018001.so
+| 			select	tdisg027.*
+| 			from	tdisg027 for update
+| 			where	tdisg027._index2 = {:whinh312.orno,:whinh312.pono}
+| 			selectdo
+| 				select	tdisg030.aqty, tdisg030.iqty, tdisg030.flag 
+| 				from	tdisg030 for update
+| 				where	tdisg030._index2 = {:tdisg027.rcno, :tdisg027.recl, :whinh312.orno,:whinh312.pono}
+| 				selectdo
+| 					tdisg030.aqty = tdisg030.aqty + tdisg030.iqty
+| 					tdisg030.flag = 1
+| 					db.update(ttdisg030, db.retry, e)
+| 				endselect
+| 				
+| 				tdisg027.aqty = tdisg030.aqty
+| 				db.update(ttdisg027,db.retry,e)
+| 			endselect
+									|#ISGEC018001.eo
+		endif									|#ISGEC018001.en
+		break
+	endcase
+	return(0)
+}
+
+function extern long ue.after.before.save.object(long mode)
+{
+	on case mode
+	case DAL_NEW:
+		break
+	case DAL_UPDATE:
+		break
+	endcase
+	return(0)
+}
+
+function extern long ue.before.after.save.object(long mode)
+{
+	on case mode
+	case DAL_NEW:
+		break
+	case DAL_UPDATE:
+		break
+	endcase
+	return(0)
+}
+
+function extern long ue.after.after.save.object(long mode)
+{
+	on case mode
+	case DAL_NEW:
+		break
+	case DAL_UPDATE:
+		if whinh310.stat = whinh.rhst.confirmed then
+			get.project.element.against.receipt.line(whinh310.rcno)
+		endif
+		
+		if whinh310.stat = whinh.rhst.confirmed then      |#ISGEC016015.sn
+			get.var(pid,"whinh310.cdf_cdec",new.value)
+			with.old.object.values.do(get.old.value)
+				 if trim$(old.value) <> trim$(new.value)  then
+					dal.set.error.message("Cannot change Delivery terms after receipt confirmation ")
+					return(DALHOOKERROR)
+				 endif
+		endif						   |#ISGEC016015.en
+		
+		break
+	endcase
+	
+	return(0)
+}
+
+function get.old.value()						|#ISGEC016015.sn
+{
+	get.var(pid,"whinh310.cdf_cdec",old.value)
+}								|#ISGEC016015.en
+
+function extern long ue.before.before.destroy.object()
+{
+	return(0)
+}
+
+function extern long ue.after.before.destroy.object()
+{
+	return(0)
+}
+
+function extern long ue.before.after.destroy.object()
+{
+	return(0)
+}
+
+function extern long ue.after.after.destroy.object()
+{
+	return(0)
+}
+
+
+function get.project.element.against.receipt.line
+				(
+					domain	whinh.shpm	i.rcno
+				)
+{
+	domain	tcorno		o.vers
+	domain	tcorno		o.orno
+	domain	tcpono		o.pono
+	domain	tccprj		o.cprj
+	domain	tppdm.cspa	o.cspa
+	
+	select 	whinh312.orno:o.orno,
+		whinh312.pono:o.pono
+	from	whinh312
+	where	whinh312._index1 = {:i.rcno}
+	and	whinh312.oorg = whinh.oorg.purchase
+	group by whinh312.rcno,whinh312.orno,whinh312.pono
+	selectdo
+		select 	tdpur401.cprj:o.cprj,
+			tdpur401.cspa:o.cspa
+		from	tdpur401
+		where	tdpur401._index1 = {:o.orno,:o.pono}
+		as set with 1 rows
+		selectdo
+			if tpisgdll0012.check_sanction_status(o.cprj,o.vers) then
+			endif
+
+			tpisgdll0012.SanctionControlLine(o.cprj,o.vers,o.cspa)
+		endselect
+	endselect
+	
+}
+
+
+

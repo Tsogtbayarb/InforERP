@@ -1,0 +1,489 @@
+|******************************************************************************
+|* tpisgdll0186  0  VRC B61U a7 isg 
+|* DLL for Billing Budget Header
+|* RAvi Kumar
+|* 19-11-29 [11:55]
+|******************************************************************************
+|* Script Type: Library
+|******************************************************************************
+        
+	table	ttpisg186
+	table	ttpisg086
+	table	ttpisg203
+	table	ttpisg204
+	table	ttcemm030
+	table	ttppdm600
+	table	tcisli235
+	table	ttdisg831
+	table	ttdisg832
+	table	ttpisg039
+	table	tcisli205
+	
+		string	error.message(500)
+		long	found
+	
+#include <bic_dam>
+	
+function extern tpisgdll0186_Update_Status_Type(domain	tccprj	cprj,
+						domain	tcorno	rvsn,
+						domain	tpisg.rvsntype	rtyp,
+						domain	tpisg.rvsnstat	stat)
+{
+	select	tpisg186.rtyp,
+		tpisg186.stat,
+		tpisg186.ccdt
+	from	tpisg186 for update
+ 	where	tpisg186._index1 = {:cprj, :rvsn}
+	as set with 1 rows
+	selectdo
+		if dal.change.object("tpisg186") = 0 then
+			if rtyp = tpisg.rvsntype.complete then
+				dal.set.field("tpisg186.ccdt", tcyesno.yes)
+			endif
+			dal.set.field("tpisg186.rtyp", rtyp)
+			dal.set.field("tpisg186.stat", stat)
+			if dal.save.object("tpisg186") = 0 then
+			else
+				dal.get.error.message(error.message)
+				message(error.message)
+			endif
+		endif
+	endselect
+}
+
+function extern	tpisgdll0186_Update_History(	domain	tccprj	cprj,
+						domain	tcorno	rvsn)
+{
+	select	tpisg186.*
+	from	tpisg186
+	where	tpisg186._index1 = {:cprj, :rvsn}
+	as set with 1 rows
+	selectdo
+		tpisg203.cprj = tpisg186.cprj
+		tpisg203.rvsn = tpisg186.rvsn
+		tpisg203.rtyp = tpisg186.rtyp
+		tpisg203.stat = tpisg186.stat
+		tpisg203.rrby = tpisg186.rrby
+		tpisg203.rrdt = tpisg186.rrdt
+		tpisg203.sadt = tpisg186.sadt
+		tpisg203.raby = tpisg186.raby
+		tpisg203.radt = tpisg186.radt
+		tpisg203.rmks = tpisg186.rmks
+		tpisg203.ccdt = tpisg186.ccdt
+		tpisg203.addc = tpisg186.addc
+		tpisg203.addi = tpisg186.addi
+| 		tpisg203.user = logname$
+| 		tpisg203.ldte = utc.num()
+		db.insert(ttpisg203, db.retry, e)
+		
+		if e = 0 then
+			select	tpisg086.*
+			from	tpisg086
+			where	tpisg086._index1 = {:cprj, :rvsn}
+			selectdo
+				tpisg204.cprj = tpisg086.cprj
+				tpisg204.rvsn = tpisg086.rvsn
+				tpisg204.year = tpisg086.year
+				tpisg204.mnth = tpisg086.mnth
+				tpisg204.budg = tpisg086.budg
+				tpisg204.actu = tpisg086.actu	
+				tpisg204.outl = tpisg086.outl
+				tpisg204.rmks = tpisg086.rmks
+				tpisg204.eunt = tpisg086.eunt
+| 				tpisg204.user = logname$
+| 				tpisg204.ldte = utc.num()
+				db.insert(ttpisg204, db.retry, e)
+			endselect
+		endif
+	endselect
+}
+
+function extern	tpisgdll0186_Increase_rvsn(	domain	tccprj	cprj,
+						domain	tcorno	rvsn,
+						domain	tcamnt	inrease_value)
+{
+	domain	tcorno	new_rvsn
+	
+	new_rvsn = str$(val(rvsn) + inrease_value)
+	
+	select	tpisg186.rvsn,
+		tpisg186.rrby,
+		tpisg186.rrdt,
+		tpisg186.saby,
+		tpisg186.sadt,
+		tpisg186.raby,
+		tpisg186.radt,
+		tpisg186.rmks,
+		tpisg186.ccdt,
+		tpisg186.addc,
+		tpisg186.addi
+	from	tpisg186 for update
+	where	tpisg186._index1 = {:cprj, :rvsn}
+	as set with 1 rows
+	selectdo
+		if inrease_value = 1 then
+			tpisg186.rvsn = str$(round(val(new_rvsn),0,0))
+		else
+			tpisg186.rvsn = new_rvsn
+		endif
+		tpisg186.rrby = ""
+		tpisg186.rrdt = 0
+		tpisg186.saby = ""
+		tpisg186.sadt = 0
+		tpisg186.raby = ""
+		tpisg186.radt = 0
+		tpisg186.ccdt = tcyesno.no
+		tpisg186.addc = tcyesno.no
+		tpisg186.addi = tcyesno.no
+		db.update(ttpisg186, db.retry, e)
+	endselect
+	
+	if e = 0 then
+		select	tpisg086.rvsn
+		from	tpisg086 for update
+		where	tpisg086._index1 = {:cprj, :rvsn}
+		selectdo
+			if inrease_value = 1 then
+				tpisg086.rvsn = str$(round(val(new_rvsn),0,0))
+			else
+				tpisg086.rvsn = new_rvsn
+			endif
+			db.update(ttpisg086, db.retry, e)
+		endselect
+	endif
+}
+
+function extern	tpisgdll0186_update_create_actual_tpisg187(	domain	tfgld.year	year.act,
+								domain	tpisg.month	mnth.act,
+								domain	tcemm.grid	eunt.act)
+{
+	domain	tcamnt	actual.amnt
+		string	error.msg(100)
+		long	curr_comp
+		
+	actual.amnt = 0
+	curr_comp = get.compnr()
+	
+	select	tcemm030.fcmp
+	from	tcemm030
+	where	tcemm030._index1 = {:eunt.act}
+	as set with 1 rows
+	selectdo
+	endselect
+	
+	select	tppdm600.ccur,
+		tppdm600.cprj
+	from	tppdm600
+	where	tppdm600._index7 = {:tcemm030.fcmp}
+	and 	tppdm600.cprj(1;2) <> "DE"
+	and 	tppdm600.cprj(1;1) >= "A"
+	selectdo
+		found = 0
+	
+| 		if trim$(tppdm600.ccur) = "INR" then
+| 			switch.to.company(tcemm030.fcmp)
+| 			actual.amnt = tpisgdll0186_update_actual_domestic(tppdm600.cprj, year.act, mnth.act)
+| 		else
+| 			actual.amnt = tpisgdll0186_update_actual_export(tppdm600.cprj, year.act, mnth.act, tcemm030.fcmp)
+| 		endif
+| 		
+		actual.amnt = tpisgdll0186_update_actual_trans(tppdm600.cprj, year.act, mnth.act)
+		
+		if found = 0 then
+			switch.to.company(curr_comp)
+			select	tpisg086.budg
+			from	tpisg086
+			where	tpisg086._index2 = {:year.act, :mnth.act, :eunt.act, :tppdm600.cprj}
+			as set with 1 rows
+			selectdo
+				found = 1
+				actual.amnt = 0
+			endselect
+		endif
+		
+		if found = 1 then
+			switch.to.company(curr_comp)
+			
+			select	tpisg187.actu
+			from	tpisg187 for update
+			where	tpisg187._index1 = {:year.act, :mnth.act, :eunt.act, :tppdm600.cprj}
+			as set with 1 rows
+			selectdo
+				if dal.change.object("tpisg187") = 0 then
+					dal.set.field("tpisg187.actu", actual.amnt)
+					if dal.save.object("tpisg187") = 0 then
+						commit.transaction()
+					else
+						abort.transaction()
+						dal.get.error.message(error.msg)
+					endif
+				endif
+			selectempty
+				if dal.new.object("tpisg187") = 0 then
+					dal.set.field("tpisg187.year", year.act)
+					dal.set.field("tpisg187.mnth", mnth.act)
+					dal.set.field("tpisg187.eunt", eunt.act)
+					dal.set.field("tpisg187.cprj", tppdm600.cprj)
+					dal.set.field("tpisg187.actu", actual.amnt)
+					if dal.save.object("tpisg187") = 0 then
+						commit.transaction()
+					else
+						abort.transaction()
+						dal.get.error.message(error.msg)
+					endif
+				endif
+			endselect
+		endif
+	endselect
+}
+
+function  domain tcamnt	tpisgdll0186_update_actual_domestic(	domain	tccprj		cprj.d,
+								domain	tfgld.year	year.d,
+								domain	tpisg.month	mnth.d)
+{
+
+	domain	tcamnt	ci999.amnt, ci235.amnt, actu.amnt.dom
+	domain	tcyesno	tmp.remb
+	domain	tcdate	cdot.f, cdot.l
+	domain	tfgld.date	date.f, date.l
+	long	dd, dd.l, mm, yy, hh, mn, ss
+	
+	ci999.amnt = 0 
+	ci235.amnt = 0
+	actu.amnt.dom = 0
+	dd = 01
+	mm = etol(mnth.d)
+	yy = year.d
+	hh = 05
+	mn = 30
+	ss = 24
+	
+	cdot.f = date.to.utc (yy , mm, dd, hh, mn, ss)
+| 	cdot.l = date.to.utc (yy , mm + 1, dd, hh, mn, ss)
+	if mm = 12 then
+		cdot.l = date.to.utc (yy + 1, 1, dd, hh, mn, ss)
+	else
+		cdot.l = date.to.utc (yy, mm + 1, dd, hh, mn, ss)
+	endif
+	date.f = date.to.num(yy, mm, dd)
+	if mm = 12 then
+		date.l = date.to.num(yy + 1, 1, dd)
+	else
+		date.l = date.to.num(yy, mm + 1, dd)
+	endif
+		
+	select	sum(ciisg999.cprc):ci999.amnt
+	from	ciisg999												
+	where	ciisg999._index3 = {:cprj.d}
+	and	(ciisg999.date >= :date.f and ciisg999.date < :date.l)
+	selectdo	
+		found = 1
+	selectempty
+		ci999.amnt = 0
+	endselect
+	
+	select	cisli235.cprj,
+		cisli235.ofbp,
+		cisli235.nins,
+		cisli235.amth,
+		cisli235.slcp
+	from	cisli235				
+	where	cisli235.cprj = :cprj.d
+	and	cisli235.stat in (cisli.stat.printed, cisli.stat.posted)
+	and	(cisli235.codt >= :cdot.f and cisli235.codt < :cdot.l)
+	selectdo	
+		select	tppin020.cdf_remb:tmp.remb
+		from	tppin020
+		where	tppin020._index1 = {:cisli235.cprj, :cisli235.ofbp, :cisli235.nins}
+		and	tppin020._compnr = :cisli235.slcp
+		selectdo
+		endselect
+		if	tmp.remb = tcyesno.no	then
+			found = 1
+			ci235.amnt = ci235.amnt + cisli235.amth(1)
+		endif
+	endselect
+	
+	actu.amnt.dom = ci999.amnt + ci235.amnt
+	actu.amnt.dom = actu.amnt.dom/100000
+	return(actu.amnt.dom)
+}
+
+function domain	tcamnt	tpisgdll0186_update_actual_export(	domain	tccprj		cprj.e,
+								domain	tfgld.year	year.e,
+								domain	tpisg.month	mnth.e,
+								domain	tcncmp		f.comp)
+{
+	domain	tcamnt	actu.amnt.exp
+	domain 	tctran 	new.var.type, prev.var.type
+	domain	tcgld.docn	new.var.docn, prev.var.docn
+	domain 	tcpono	temp
+	domain	tfgld.date	date.f, date.l
+	long	dd, mm, yy
+	long	curr_comp
+		
+	curr_comp = get.compnr()
+	
+	actu.amnt.exp = 0
+	dd = 01
+	mm = etol(mnth.e)
+	yy = year.e
+	
+	date.f = date.to.num(yy, mm, dd)
+	if mm = 12 then
+		date.l = date.to.num(yy + 1, 1, dd)
+	else
+		date.l = date.to.num(yy, mm + 1, dd)
+	endif
+	
+	select	tppdm600.ncmp
+	from	tppdm600
+	where	tppdm600._index1 = {:cprj.e}
+	selectdo
+	endselect
+		
+	select	tdisg831.cprj,
+		tdisg831.ofbp,
+		tdisg831.cinv
+	from	tdisg831,
+		tcmcs052,
+		tccom100
+	where	tdisg831._index4 = {:cprj.e}
+	and	tdisg831.type = tdisg.type.export
+	and	tdisg831.stat in (2,3)
+	and	tdisg831.cinv <> ""
+	and	(tdisg831.cind >= :date.f and tdisg831.cind < :date.l)
+	and	tdisg831.cprj refers to tcmcs052
+	and	tdisg831.ofbp refers to tccom100
+	order by tdisg831.cinv
+	selectdo
+		select	tdisg832.edrn,
+			tdisg832.rcno,
+			tdisg832.rcln,
+			tdisg832.nins
+		from	tdisg832
+		where	tdisg832.cinv = {:tdisg831.cinv}
+		selectdo
+			select	tpisg039.ityp,
+				tpisg039.idoc
+			from	tpisg039
+			where	tpisg039._index1 = {:tdisg831.cprj, :tdisg831.ofbp, :tdisg832.nins, :tdisg832.edrn, :tdisg832.rcno, :tdisg832.rcln}
+			selectdo
+				select	cisli205.ityp,
+					cisli205.idoc
+				from	cisli205
+				where	cisli205._index1 = {:f.comp, :tpisg039.ityp, :tpisg039.idoc}
+				and	cisli205._compnr = :f.comp
+				order by cisli205.ityp, cisli205.idoc
+				selectdo
+					new.var.type  = shiftl$(strip$(cisli205.ityp))
+					new.var.docn  = cisli205.idoc
+					if new.var.type = prev.var.type  and  new.var.docn = prev.var.docn then
+						continue
+					endif	
+					if cisli205.ityp <> "" and cisli205.idoc <> 0 then
+						if temp = 0 then
+							select tppdm600.ncmp		
+							from    tppdm600
+							where   tppdm600._index1 = {:tdisg831.cprj}
+							as set with 1 rows
+							selectdo
+								select cisli235.amth
+								from   cisli235
+								where  cisli235._index2 = {:tppdm600.ncmp, :cisli205.ityp, :cisli205.idoc}
+								and    cisli235.cprj = :tdisg831.cprj
+								and    cisli235.ofbp = :tdisg831.ofbp
+								and    cisli235.invt = tcinvt.installment
+								and	cisli235._compnr = :f.comp
+								selectdo
+									found = 1
+									actu.amnt.exp = actu.amnt.exp + cisli235.amth(1)
+									temp = 1
+								endselect	
+							endselect
+							temp = 0
+						endif
+					endif	
+				endselect
+			endselect
+			prev.var.type = shiftl$(strip$(cisli205.ityp))
+			prev.var.docn = cisli205.idoc
+		endselect
+	endselect
+	actu.amnt.exp = actu.amnt.exp/100000
+	return(actu.amnt.exp)
+}
+
+function domain	tcamnt	tpisgdll0186_update_actual_trans(	domain	tccprj		cprj.d,
+								domain	tfgld.year	year.d,
+								domain	tpisg.month	mnth.d)
+{
+	domain	tcamnt		actu.amnt.exp, credit.amnt, debit.amnt
+	domain	tfgld.date	date.f, date.l
+	long	dd, mm, yy
+	
+	actu.amnt.exp = 0
+	dd = 01
+	mm = etol(mnth.d)
+	yy = year.d
+	
+	date.f = date.to.num(yy, mm, dd)
+	
+	if mm = 12 then
+		date.l = date.to.num(yy + 1, 1, dd)
+	else
+		date.l = date.to.num(yy, mm + 1, dd)
+	endif
+	
+	select	tppdm600.ncmp
+	from	tppdm600
+	where	tppdm600._index1 = {:cprj.d}
+	as set with 1 rows
+	selectdo
+		select	sum(tfgld106.amth(1)):debit.amnt
+		from	tfgld106
+| 		where	tfgld106.otyp in ("STR", "SXP", "CDN", "CCN", "JRV",)
+		where	tfgld106.otyp in ("CCN","CDN","JIC","JPR","JRV","JVF","JVN","PGN","RRC","SCN","SDN","SRN","STR","SUP","SXP")
+		and	tfgld106.leac in ("5310110     ", "5410110     ", "5410111     ", "5410120     ", "5510110     ", "5410112     ",
+| 		where	tfgld106.leac in ("5310110     ", "5410110     ", "5410111     ", "5410120     ", "5510110     ", "5410112     ",
+						"5410121     ", "5629111     ", "5630111     ",
+						"5310111     ","5310112     ","5310151     ","5310310     ","5310410     ","5310510     ",
+						"5310520     ","5310530     ","5310540     ","5310550     ","5310560     ","5510120     ",
+						"5410113     ","5410114     ","5310599     ","5410122     " )
+		and	tfgld106.dim1 = :cprj.d
+		and	tfgld106.dbcr = tfgld.dbcr.debit
+		and	(tfgld106.dcdt >= :date.f and tfgld106.dcdt < :date.l)
+		and	tfgld106._compnr = :tppdm600.ncmp
+		selectdo
+			found = 1
+		selectempty
+			debit.amnt = 0
+		endselect
+		
+		select	sum(tfgld106.amth(1)):credit.amnt
+		from	tfgld106
+| 		where	tfgld106.otyp in ("STR", "SXP", "CDN", "CCN", "JRV")
+		where	tfgld106.otyp in ("CCN","CDN","JIC","JPR","JRV","JVF","JVN","PGN","RRC","SCN","SDN","SRN","STR","SUP","SXP")
+		and	tfgld106.leac in ("5310110     ", "5410110     ", "5410111     ", "5410120     ", "5510110     ", "5410112     ",
+| 		where	tfgld106.leac in ("5310110     ", "5410110     ", "5410111     ", "5410120     ", "5510110     ", "5410112     ",
+						"5410121     ", "5629111     ", "5630111     ",
+						"5310111     ","5310112     ","5310151     ","5310310     ","5310410     ","5310510     ",
+						"5310520     ","5310530     ","5310540     ","5310550     ","5310560     ","5510120     ",
+						"5410113     ","5410114     ","5310599     ","5410122     " )
+		and	tfgld106.dim1 = :cprj.d
+		and	tfgld106.dbcr = tfgld.dbcr.credit
+		and	(tfgld106.dcdt >= :date.f and tfgld106.dcdt < :date.l)
+		and	tfgld106._compnr = :tppdm600.ncmp
+		selectdo
+			found = 1
+		selectempty
+			credit.amnt = 0
+		endselect
+	endselect
+	
+| 	actu.amnt.exp = debit.amnt - credit.amnt
+	actu.amnt.exp = credit.amnt - debit.amnt
+	actu.amnt.exp = actu.amnt.exp/100000
+	return(actu.amnt.exp)
+}
+
