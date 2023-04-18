@@ -1,0 +1,204 @@
+|******************************************************************************
+|* dmisg135  0  VRC B61U a7 isg 
+|* DAL 2 for dmisg135
+|* baan
+|* 15-01-31 [16:38]
+|******************************************************************************
+|* Script Type: DAL
+|******************************************************************************
+|* ISGEC004020, IT0047, Dharmendra, Dt. 07-10-2015, B61U a7 isg
+|*
+|* ID ISGEC016012, Manish Manchanda, 2016-10-07
+|* Modification - zoom filter 
+|* 
+|* GH256CR374, RAvi Kumar, 28/08/2020
+|* Change in check on post order document linking
+|******************************************************************************
+        table	tdmisg135  
+	table	tdmisg134
+	table	tdmisg121
+	table	ttdpur401
+	table	tdmisg140				|GH256CR374.a
+	table	ttdisg002				|GH256CR374.a
+	extern	domain	dmdoc.revv	revision.no	
+	domain	tfgld.sess calling.prog			|#ISGEC004020.n
+	#include <bic_dal2>
+
+function extern long before.open.object.set()
+{
+	get.var(pid,"prog.name$",calling.prog)
+	return(0)
+}
+							|#ISGEC004020.sn
+function extern long after.get.object(long type)
+{
+	if calling.prog = "dmisg1135m100" then
+		if dmisg135.proc = tcyesno.yes then
+			return(DALHOOKERROR)
+		endif	
+		
+		select	dmisg134.orno, dmisg134.stat
+		from	dmisg134
+		where	dmisg134._index1 = {:dmisg135.rcno, :dmisg135.revn}
+		and	dmisg134.stat = dmisg.receipt.evaluation
+		selectdo
+			if isspace(dmisg134.orno) then
+				return(DALHOOKERROR)
+			endif	
+		selectempty
+			return(DALHOOKERROR)
+		endselect
+	endif	
+	return(0)
+}
+							|#ISGEC004020.en
+
+function extern boolean method.is.allowed(
+			long		i.method)
+{
+	select	dmisg134.stat
+	from	dmisg134
+	where	dmisg134._index1 = {:dmisg135.rcno, :dmisg135.revn}
+	selectdo
+	endselect
+		
+	on case i.method
+	case DAL_NEW:
+		if calling.prog = "dmisg1135m100" then
+			return(false)
+		endif
+		if calling.prog = "dmisg1135m000" then
+			if dmisg134.stat <> dmisg.receipt.submitted then
+				return(false)
+			endif
+		endif
+		break	
+	case DAL_UPDATE:
+		if calling.prog = "dmisg1135m100" then
+			if dmisg134.stat <> dmisg.receipt.evaluation then
+				return(false)
+			endif
+		endif
+		if calling.prog = "dmisg1135m000" then
+			if dmisg134.stat <> dmisg.receipt.submitted then
+				return(false)
+			endif
+		endif
+		break
+	case DAL_DESTROY:
+		if calling.prog = "dmisg1135m100" then
+			return(false)
+		endif
+		
+		if calling.prog = "dmisg1135m000" then
+			if dmisg134.stat <> dmisg.receipt.submitted then
+				return(false)
+			endif
+		endif
+		break	
+	endcase
+
+	return(true)
+}
+
+
+function extern long before.new.object()
+{	
+	get.serial.no(dmisg135.rcno, dmisg135.revn, dmisg135.srno)
+	return(0)
+}
+
+function extern boolean dmisg135.idoc.is.valid()
+{	
+| 	select 	dmisg134.orno, dmisg134.pono,							|GH256CR374.com.a
+| 		tdpur401.cprj, tdpur401.cspa
+| 	from	dmisg134, tdpur401
+| 	where	dmisg134._index1 = {:dmisg135.rcno, :dmisg135.revn}
+| 	and	tdpur401._index1 = {dmisg134.orno, dmisg134.pono}
+| 	selectdo
+| 	endselect
+
+| 	select	dmisg140.docn
+| 	from	dmisg140
+	|where	dmisg121._index1 = {:dmisg135.idoc, :revision.no}
+| 	where	dmisg140._index2 = {:tdpur401.cprj}
+	|and	dmisg140.cprj = :tdpur401.cprj 	
+| 	and	dmisg140.cspa = :tdpur401.cspa
+	|and	dmisg121.vend = tcyesno.yes
+	|and	dmisg121.cler = tcyesno.no			|#ISGEC016012.o
+	|and	dmisg121.revd = tcyesno.yes
+| 	selectdo
+| 	selectempty
+| 		return(false)
+| 	endselect
+	
+| 	return(true)										|GH256CR374.com.e
+
+	select	dmisg134.orno,							|GH256CR374.a.s
+		dmisg134.pono
+	from	dmisg134
+	where	dmisg134._index1 = {:dmisg135.rcno, :dmisg135.revn}
+	as set with 1 rows
+	selectdo
+		select	tdisg002.docn,
+			tdisg002.revi
+		from	tdisg002
+		where	tdisg002._index1 = {:dmisg134.orno, :dmisg134.pono}
+		as set with 1 rows
+		selectdo
+			select	dmisg140.docn,
+				dmisg140.cspa,
+				dmisg140.cprj
+			from	dmisg140
+			where	dmisg140.docn = :tdisg002.docn
+| 			and	dmisg140.revn = :tdisg002.revi
+			as set with 1 rows
+			selectdo
+| 				if trim$(dmisg140.docn) = trim$(dmisg135.idoc) then
+| 					return(true)
+| 				else
+| 					dal.set.error.message("@Element of Isgec Vendor Drawing " & 
+| 					trim$(dmisg135.idoc) & " and Specification " & trim$(dmisg140.docn) & 
+| 							" do not match")
+| 					return(DALHOOKERROR)
+| 				endif
+			endselect
+		endselect
+	endselect	
+
+	select	dmisg140.cprj,
+		dmisg140.cspa
+	from	dmisg140
+	where	dmisg140.docn = :dmisg135.idoc
+| 	and	dmisg140.revn = :dmisg135.irev
+	and	dmisg140.cspa = :dmisg140.cspa
+	and	dmisg140.cprj = :dmisg140.cprj
+	as set with 1 rows
+	selectdo
+		return(true)
+	selectempty
+| 		dal.set.error.message("@Element of Isgec Vendor Drawing " & 
+| 				trim$(dmisg135.idoc) & " and Specification " & trim$(dmisg140.docn) & " do not match")
+		dal.set.error.message("@ Element of Isgec Vendor Drawing " & 
+				trim$(dmisg135.idoc) & " is not valid")
+		return(DALHOOKERROR)
+	endselect
+	
+	return(false)
+
+}
+
+function get.serial.no(domain	whinh.shpm	i.rcno,
+			domain	dmdoc.revv	i.revn,
+		ref	domain	tcpono		i.srno)
+{
+	select	max(a_dmisg135.srno):i.srno
+	from	dmisg135 a_dmisg135
+	where	a_dmisg135._index1 = {:i.rcno, :i.revn}
+	selectdo
+	selectempty
+		i.srno = 0
+	endselect
+	i.srno = i.srno + 1	
+}
+

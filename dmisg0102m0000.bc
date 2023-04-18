@@ -1,0 +1,161 @@
+|******************************************************************************
+|* dmisg0102m000  0  VRC B61U a7 isg 
+|* Maintain Sub Item Code for the Item References
+|* merino1                       
+|* 2018-10-05
+|******************************************************************************
+|* Main table dmisg002 Incoming Document Child, Form Type 1
+|******************************************************************************
+|* ID: ISGEC01145, Prasanna Bhuyan, 19-12-2018, VRC B61U a7 isg
+|* Sub item code enable/disable  
+|*
+|* ID: ISGEC01174,Bharti Garg, 12-03-2019,VRC B61U a7 isg
+|* new logic for update button
+|****************************** declaration section ***************************
+declaration:
+
+	table	tdmisg002 | Incoming Document Child
+	table	ttpisg243
+	table	tdmisg140
+	table	tdmisg001						
+
+	extern	domain	tccprj			project, i.pcod
+	extern	domain	tcmcs.s200u		item.ref
+	extern	domain	tcmcs.str256m		sitm.desc
+	extern	domain	dmdoc.docid		docn			|#ISGEC01174.sn
+	extern	domain	dmdoc.revv		revn	
+	extern	domain	tcorno			sub_item
+	extern	domain	tcitem			item,item.1		|#ISGEC01174.en
+|****************************** program section ********************************
+before.display.object:
+	project = ""
+	item.ref = ""
+	select	dmisg001.cprj:project
+	from	dmisg001
+	where	dmisg001._index1 = {:dmisg002.docn,:dmisg002.revn}
+	selectdo
+	selectempty
+		project = ""
+	endselect
+
+	select	dmisg140.iref:item.ref,
+		dmisg140.pcod:i.pcod
+	from	dmisg140
+	where	dmisg140.docn = :dmisg002.docn
+	and	dmisg140.cprj = :project
+	selectdo
+	selectempty
+		item.ref = ""
+		i.pcod 	= "" 			|ISGEC01174.n
+	endselect
+	
+	select	dmisg001.docn,dmisg001.revn					|#ISGEC01174.sn
+	from	dmisg001
+	where	dmisg001._index1 = {:dmisg002.docn,:dmisg002.revn}
+	and	dmisg001.aact <> 20
+	selectdo
+		enable.commands("update")
+	selectempty
+		disable.commands("update")
+	endselect								|#ISGEC01174.en
+
+|****************************** group section **********************************
+field.dmisg002.sitm:
+before.display:										|#ISGEC01145.sn
+	select	dmisg001.wfst,
+		dmisg001.cprj,
+		dmisg001.docn,
+		dmisg001.revn
+	from	dmisg001
+	where	dmisg001._index1 = {:dmisg002.docn,:dmisg002.revn}
+	selectdo
+		if	dmisg001.wfst = ltoe(1) or 
+				dmisg001.wfst = ltoe(2) or
+					dmisg001.wfst = ltoe(3) or
+						dmisg001.wfst = ltoe(4)	then
+			select	dmisg140.pcod,
+				dmisg140.iref
+			from	dmisg140
+			where	dmisg140.cprj = :dmisg001.cprj
+			and	dmisg140.docn = :dmisg001.docn
+			and	dmisg140.revn = :dmisg001.revn
+			as set with 1 rows
+			selectdo
+				select	tpisg243.sitm
+				from	tpisg243
+				where	tpisg243._index1 = {:dmisg140.pcod,:dmisg140.iref}
+				as set with 1 rows
+				selectdo
+					if not isspace(tpisg243.sitm)	then
+						enable.fields("dmisg002.sitm")
+					else
+						disable.fields("dmisg002.sitm")
+					endif
+				selectempty
+					disable.fields("dmisg002.sitm")
+				endselect
+			endselect
+		else
+			disable.fields("dmisg002.sitm")
+		endif
+	endselect										|#ISGEC01145.en
+	
+
+	
+before.zoom:
+	tpisg243.cprd = i.pcod
+	tpisg243.iref = item.ref
+	
+field.sitm.desc:										|ISGEC01174.sn
+before.display:
+	select	tpisg243.sub2,tpisg243.sub3,								
+		tpisg243.sub4
+	from	tpisg243
+	where	tpisg243._index1 = {:i.pcod,:item.ref,:dmisg002.sitm}
+	selectdo
+		sitm.desc = trim$(tpisg243.sub2)&" "&trim$(tpisg243.sub3)&" "&trim$(tpisg243.sub4)	|ISGEC01174.en
+	selectempty
+		sitm.desc = ""
+	endselect
+	
+					|#ISGEC01174.so
+| when.field.changes:			
+| 	select	tpisg243.sub2,tpisg243.sub3,
+| 		tpisg243.sub4
+| 	from	tpisg243
+| 	where	tpisg243._index1 = {:i.pcod,:item.ref,:dmisg002.sitm}
+| 	selectdo
+| 	endselect
+| 	
+| 	sitm.desc = trim$(tpisg243.sub2)&" "&trim$(tpisg243.sub3)&" "&trim$(tpisg243.sub4)	
+		
+					|#ISGEC01174.eo
+|********************************** choice section **************************
+choice.update:									|#ISGEC01174.sn
+on.choice:
+	select	a_dmisg002.docn:docn,a_dmisg002.revn:revn,a_dmisg002.item:item
+	from	dmisg002	a_dmisg002
+	where	a_dmisg002._index1 = {:dmisg002.docn,:dmisg002.revn}
+	selectdo
+		select	dmisg002.item:item.1,dmisg002.sitm:sub_item
+		from	dmisg002	for update
+		where	dmisg002._index1 = {:docn}
+		and	dmisg002.revn < {:revn}
+		and	dmisg002.item = {:item}
+		as set with 1 rows
+		selectdo
+			select	dmisg002.sitm
+			from	dmisg002	for update
+			where	dmisg002._index1 = {:docn,:revn}
+			and	dmisg002.item ={:item.1}
+			selectdo
+				dmisg002.sitm = sub_item
+				db.update(tdmisg002,db.retry,e)
+				if e = 0 then
+					commit.transaction()
+				else
+					abort.transaction()
+				endif
+			endselect
+		endselect
+	endselect								|#ISGEC01174.en

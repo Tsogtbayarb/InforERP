@@ -1,0 +1,217 @@
+|******************************************************************************
+|* dmisg  0  VRC B61U a7 isg 
+|* Upload Projectwise Master Activity List
+|* Ravi Kumar                    
+|* 2019-12-02
+|******************************************************************************
+|* Main table tfisg013 Cashflow Project Description, Form Type 4
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+	table   tdmisg156
+
+	extern 	domain  tcorno		i.pcod	
+	extern 	domain  tccprj		i.cprj
+	extern 	domain  tcmcs.int	i.rlid
+	extern 	domain  tcccty		i.rspd	
+	extern 	domain  tcmcs.long	i.acid
+	extern 	domain  tcpric		i.ohrs	
+	extern 	domain  tcpric		i.phrs	
+	extern 	domain  tcorno		i.drep	
+	extern 	domain  tcyesno		i.outs, i.selc, i.appr
+	extern 	domain  tcccp.date	i.sdat	
+	extern 	domain  tcccp.date	i.edat	
+	extern	domain	tcmcs.str100m	f.file.path
+	extern	domain	tcmcs.str10	i.edat.str, i.sdat.str
+	
+		long			server_file_ptr, ret.num, sdat.dd, sdat.mm, sdat.yy,
+					edat.dd, edat.mm, edat.yy
+		string			tmp.record(2048)
+		domain	tcmcs.str50	server.tmp.file, local.filename
+	
+   
+   #pragma used dll ottdllbw
+#include <bic_dam> 
+#pragma used dll ottstpapihand
+
+
+|****************************** program section ********************************
+
+|****************************** group section **********************************
+group.1:
+init.group:
+   get.screen.defaults()
+
+
+functions:
+function extern browse.file()
+{
+	mess("tigenstring", 0, "Select The File . . .")
+	if seq.open.dialog.local( false, "", "","Text Files(*.csv)|*.csv|All File(*.*)|*.*", f.file.path ) > 0 then
+		mess("tigenstring", 0, "Success . . .")
+	else
+		mess("tigenstring", 0, "Cancelled . . .")
+	endif
+	display.all()
+}
+
+function extern process()
+{
+	display.all()
+| 	
+	if isspace(f.file.path) then
+		mess("tigenstring", 1, "Please Specify a File")
+		return
+	else
+		start.upload.file()
+	endif
+}
+
+function extern start.upload.file()
+{
+	server.tmp.file = creat.tmp.file$( bse.tmp.dir$() )
+	
+	if client2server(f.file.path, server.tmp.file, false, false, true) = 0 then
+		mess("tigenstring", 0, "File Copy to server:tmp successful !")
+		server_file_ptr = seq.open(server.tmp.file, "r")
+		
+		if server_file_ptr then
+			mess("tigenstring", 0, "Update in Progress . . .")
+			read.data()
+			seq.close(server_file_ptr)
+			mess("tigenstring", 0, "Update Complete !!")
+		else
+			mess("tigenstring", 1, "ERROR : File Cannot be Opened")
+		endif
+	else
+		mess("tigenstring", 1, "ERROR : Copy Failed")		
+	endif
+}
+
+
+function init.all.variables()
+{
+	i.pcod = ""
+	i.cprj = ""
+	i.rlid = 0
+	i.rspd = ""
+	i.acid = 0
+	i.ohrs = 0
+	i.phrs = 0
+	i.drep = ""
+	i.outs = empty
+	i.sdat = 0
+	i.edat = 0
+	i.selc = empty
+	i.appr= empty
+}
+
+function read.data()
+{
+	while(not seq.eof(server_file_ptr))
+		mess("tigenstring", 0, "Update in Progress . . .")		
+		init.all.variables()
+		ret.num = seq.gets(tmp.record, 2048, server_file_ptr)
+		if ret.num = 0 then
+		| field sequence                            1, 2, 3, 4, 5
+			ret.num = string.scan(tmp.record, "%s,%s,%d,%s,%d,%f,%s,%d,%f,%s,%s,%d,%d", 
+							i.pcod, i.cprj, i.rlid, i.rspd, 
+							i.acid, i.phrs, i.drep, i.outs, i.ohrs,
+							i.edat.str, i.sdat.str, i.appr, i.selc)
+			if ret.num <> 0 then
+				sdat.dd = lval(i.sdat.str(1;2))
+				sdat.mm = lval(i.sdat.str(4;2))
+				sdat.yy = lval(i.sdat.str(7;4))
+				edat.dd = lval(i.edat.str(1;2))
+				edat.mm = lval(i.edat.str(4;2))
+				edat.yy = lval(i.edat.str(7;4))
+				
+				i.sdat = date.to.num(sdat.yy, sdat.mm, sdat.dd)
+				i.edat = date.to.num(edat.yy, edat.mm, edat.dd)
+				select	dmisg155.phrs:i.ohrs
+				from	dmisg155
+				where	dmisg155._index1 = {:i.pcod, :i.rlid, :i.rspd, :i.acid}
+				as set with 1 rows
+				selectdo
+				endselect
+				insert.data()
+				mess("tigenstring", 0, "Update in Progress . . .")
+			endif
+		endif
+	endwhile
+}
+
+function insert.data()
+{
+	select	dmisg156.*
+	from	dmisg156
+	where	dmisg156._index2 = {:i.pcod, :i.cprj, :i.rlid, :i.rspd, :i.acid}
+	selectdo
+	selectempty
+		select	dmisg145.prod
+		from	dmisg145
+		where	dmisg145._index1 = {:i.pcod}
+		as set with 1 rows
+		selectdo
+			select	tppdm600.cprj
+			from	tppdm600
+			where	tppdm600._index1 = {:i.cprj}
+			as set with 1 rows
+			selectdo
+				select	dmisg140.pcod,
+					dmisg140.cprj
+				from	dmisg140
+				where	dmisg140._index1 = {:i.pcod, :i.cprj}
+				as set with 1 rows
+				selectdo
+					select	tiisg905.rlid
+					from	tiisg905
+					where	tiisg905._index1 = {:i.rlid}
+					as set with 1 rows
+					selectdo
+						select	dmisg090.*
+						from	dmisg090
+						where	dmisg090._index1 = {:i.rspd}
+						as set with 1 rows
+						selectdo
+							select	tiisg909.rlid,
+								tiisg909.acid
+							from	tiisg909
+							where	tiisg909._index1 = {:i.rlid, :i.acid}
+							as set with 1 rows
+							selectdo
+								select	dmisg153.pcod,
+									dmisg153.drep
+								from	dmisg153
+								where	dmisg153._index1 = {:i.pcod, :i.rspd, :i.drep}
+| 								and	dmisg153.drep = :i.drep
+								as set with 1 rows
+								selectdo
+									dmisg156.pcod = i.pcod
+									dmisg156.cprj = i.cprj
+									dmisg156.rlid = i.rlid
+									dmisg156.rspd = i.rspd
+									dmisg156.acid = i.acid
+									dmisg156.ohrs = i.ohrs
+									dmisg156.phrs = i.phrs
+									dmisg156.drep = i.drep
+									dmisg156.outs = i.outs
+									dmisg156.sdat = i.sdat
+									dmisg156.edat = i.edat
+									dmisg156.selc = i.selc
+									dmisg156.appr = i.appr
+									db.insert(tdmisg156, db.retry)
+									commit.transaction()
+								endselect
+							endselect
+						endselect
+					endselect
+				selectempty
+					message("Product %s and Project %s not matched with PMDL", trim$(i.pcod), trim$(i.cprj))
+				endselect
+			endselect
+		endselect
+	endselect
+}

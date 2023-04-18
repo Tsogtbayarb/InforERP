@@ -1,0 +1,119 @@
+|******************************************************************************
+|* dmisg0205m000  0  VRC B61U a7 isg 
+|* Utility for Doc no Expired but Child Item not Expired
+|* Ravi Kumar                    
+|* 2021-03-17
+|******************************************************************************
+|* Main table dmisg005 Incoming Lot Item Master, Form Type 4
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+  table   tdmisg005 | Incoming Lot Item Master
+	table	tdmisg017
+
+   extern  domain  tccprj           cprj.f  
+   extern  domain  tppdm.cspa       cspa.f 
+   extern  domain  dmdoc.docid      docn.f
+   extern  domain  dmdoc.revv       revn.f
+		domain	dmstat	old.stat
+
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+   
+choice.process:
+on.choice:
+	item.expire()
+
+field.cspa.f:
+before.zoom:
+	query.extend.where.in.zoom("tpptc100.cprj = " & quoted.string(cprj.f))
+	
+field.docn.f:
+before.zoom:
+	query.extend.where.in.zoom("dmisg005.cprj = " & quoted.string(cprj.f) & " and dmisg005.cspa = " & quoted.string(cspa.f))
+	
+field.revn.f:
+before.zoom:
+	query.extend.where.in.zoom("dmisg005.cprj = " & quoted.string(cprj.f) & " and dmisg005.cspa = " & quoted.string(cspa.f) 
+				& " and dmisg005.docn = " & quoted.string(docn.f))
+	
+	
+functions:
+function item.expire()
+{
+	long	update.flag
+	update.flag = 0
+	
+	select	dmisg005.cprj,
+		dmisg005.cspa,
+		dmisg005.docn,
+		dmisg005.revn,
+		dmisg005.item,
+		dmisg005.stat
+	from	dmisg005, dmisg001
+	where	dmisg005._index1 = {:cprj.f, :cspa.f, :docn.f, :revn.f}
+	and	dmisg001.docn = dmisg005.docn
+	and	dmisg001.revn = dmisg005.revn
+	and	dmisg005.stat <> dmisg001.stat 
+	and 	dmisg005.stat = dmstat.process
+	and 	dmisg001.stat = dmstat.expire
+	selectdo
+		old.stat = dmisg005.stat
+		select	dmisg005.stat
+		from	dmisg005 for update
+		where	dmisg005._index1 = {:dmisg005.cprj, :dmisg005.cspa, :dmisg005.docn, :dmisg005.revn, :dmisg005.item}
+		as set with 1 rows
+		selectdo
+			update.flag = 1 
+			dmisg005.stat = dmstat.expire
+			db.update(tdmisg005, db.retry)
+			commit.transaction()
+			create.history(dmisg005.cprj, dmisg005.cspa, dmisg005.docn, dmisg005.revn, dmisg005.item, old.stat, dmisg005.stat)
+		endselect
+	endselect
+	
+	if update.flag = 1 then
+		message("Updated")
+	else
+		message("No Item for expire")
+	endif
+}
+
+function create.history(	domain	tccprj		 i.cprj,
+				domain	tccspa		 i.cspa,
+				domain	dmdoc.docid	 i.docn,
+				domain	dmdoc.revv	 i.revn,
+				domain	tcitem		 i.item,
+				domain	dmstat		 i.old.status,
+				domain	dmstat		 i.new.status)
+{
+	dmisg017.cprj = i.cprj
+	dmisg017.cspa = i.cspa
+	dmisg017.docn = i.docn
+	dmisg017.revn = i.revn
+	dmisg017.item = i.item
+	dmisg017.osts = i.old.status
+	dmisg017.nsts = i.new.status
+	dmisg017.user = LOGNAME$
+	dmisg017.ddte = utc.num()
+	db.insert(tdmisg017, db.retry)
+	commit.transaction()
+}
+
+
+
+
+
+
+
+
+
+

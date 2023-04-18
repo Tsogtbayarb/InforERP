@@ -1,0 +1,604 @@
+|******************************************************************************
+|* dmisg1434m300  0  VRC B61U a7 isg 
+|* Post Order Receipt History
+|* merino1                       
+|* 2017-12-26
+|******************************************************************************
+|* Main table dmisg134 Receive Vendor Document, Form Type 4
+|******************************************************************************
+|* ISGECMOD004, IT0386, Saurabh Dubey, 26 December 2017, VRC B61U a7 isg
+|* Merino Services and Support
+|* Post Order Report
+|* Functional : Mrs. Veena(Isgec)
+|******************************************************************************
+|* ID: ISGEC01157,Bharti Garg, 21-01-2019
+|* added new fields and logic for them.
+|*
+|* ID: GH181CR438, RAvi Kumar, 14-11-2019
+|* IDMS Post Order Receipt History Report
+|* 
+|* GH611CR903, RAvi Kumar, 22-07-2021
+|* CR903-Additional disciplines to be added in ERP IDMS for Pre-order and post-order functionality
+|****************************** declaration section ***************************
+declaration:
+
+	table	tdmisg134 | Receive Vendor Document
+	table	tdmisg121
+	table	tdmisg131
+	table	tdmisg135
+	table	tdmisg136
+	table	ttcibd001
+	table	ttccom100
+	table	ttcisg005
+	table	ttdpur200
+	table	ttdpur400
+	table	tdmisg164		|ISGEC01157.n
+	table	tdmisg105		|ISGEC01157.n
+	table	tdmisg132		|RAvi.a.GH181CR438
+
+	extern	domain	tfgld.date	date.f, date.t
+	extern	domain	tccprj		cprj.f, cprj.t
+	extern	domain	whinh.shpm	rcno.f, rcno.t
+		domain	dmdoc.docid	specification.ID
+		domain	tcmcs.long	receipt.cycle.time
+		domain	tcyesno		sent.for.eval(10)
+		domain	tcmcs.str30	technically.cleared.time
+		domain	tcmcs.str100m	specification.desc
+		domain	tcdate		cmp.date.f, cmp.date.t, specification.date, evaluation.date(10)
+		domain	tcdsca		lot.item.desc
+		domain	tcmcs.str5	evaluation.cycle.time(10), evaluated(10), technical.clearance(10)
+		domain	dmisg.eng	engg.dept
+		domain	tcnama		o.vendor.name, evaluator.name(10)
+		domain	tcrqno		indent.no
+		domain	tcdate		status.date, indent.date
+		domain	tcnama		status.user.name
+		domain	tfgld.user	status.user, evaluator
+		domain	tfgld.date	date.A, date.B
+			long		dept.loop
+			
+			string	err.file(100), file.name(100), line(2500)
+			long  	stat.fp, ret2
+			
+		domain	tcdsca		lot.item.owner		|ISGEC01157.n	
+| 		domain	tcmcs.str60m	eval.response(7), cat.dsca	|RAvi.a.GH181CR438	|GH611CR903.old
+		domain	tcmcs.str60m	eval.response(9), cat.dsca	|GH611CR903.new
+		
+| 	#define NO_OF_DEPTS 7		|GH611CR903.old
+	#define NO_OF_DEPTS 9		
+	#pragma used dll ottdllbw 
+	
+	
+
+|****************************** program section ********************************
+before.program:
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+	get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.print.report:	
+on.choice:
+	generate.file()
+	
+		
+
+|****************************** field section *********************************	
+
+field.cprj.f:
+when.field.changes:
+	cprj.t = cprj.f
+
+field.date.f:
+when.field.changes:
+	date.t = date.f
+
+field.rcno.f:
+when.field.changes:
+	rcno.t = rcno.f
+
+
+|****************************** function section ******************************
+
+functions:
+
+function generate.file()
+{
+	err.file = "c:\temp\" & str$(utc.num()) & ".xls"
+	
+	file.name = "c:\temp\" & str$(utc.num())  & ".xls"
+	
+	stat.fp = seq.open(err.file, "w+")
+	
+	generate.header()
+	
+	read.main.table()
+	
+	message("Please refer to file %s in C:", file.name)
+	
+	seq.close(stat.fp)
+	ret2 = server2client(err.file,file.name,1)
+	ret2 = app_start(file.name,"c:","","","")
+}
+
+|* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+function generate.header()
+{
+	if stat.fp >0 then
+		
+		line =concat$("	", 
+			sprintf$("Project ID"),			|1		
+			sprintf$("Vendor Name"),			|2		
+			sprintf$("Receipt No."),			|3		
+			sprintf$("Revision"),				|4		
+			sprintf$("Vendor Docn. ID"),			|5		
+			sprintf$("Revision"),				|6		
+			sprintf$("ISGEC Docn. ID"),			|7		
+			sprintf$("ISGEC Revision"),			|8		
+			sprintf$("Transmittal Reference"),		|9
+			sprintf$("Approval/Comment Category"),		|9.1				|RAvi.a.GH181CR438
+			sprintf$("Post order Receipt creation Date"),	|10		
+			sprintf$("PO to Post Order receipt cycle time"),	|11		
+			sprintf$("Post Order receipt to Evaluation cycle time"),|12		
+			sprintf$("Post Order receipt to Technically cleared cycle time"),|13		
+			sprintf$("Mechanical evaluation cycle time"),	|14		
+			sprintf$("Structure evaluation cycle time"),	|15		
+			sprintf$("Piping evaluation cycle time"),	|16		
+			sprintf$("Process evaluation cycle time"),	|17		
+			sprintf$("C&I evaluation cycle time"),		|18		
+			sprintf$("Electrical evaluation cycle time"),	|19		
+			sprintf$("Quality evaluation cycle time"),	|20		
+			sprintf$("WWS evaluation cycle time"),	|20.1		|GH611CR903.a
+			sprintf$("MHE evaluation cycle time"),	|20.2		|GH611CR903.a			
+			sprintf$("Linked Specification ID"),		|21		
+			sprintf$("Linked Specification Description"),	|22		
+			sprintf$("Specification Released Date"),	|23		
+			sprintf$("Linked Lot Item"),			|24		
+			sprintf$("Lot item description"),		|25		
+			sprintf$("IDMS owner of lot item"),		|25.1		|ISGEC01157.n		
+			sprintf$("Indent no. For the Linked lot Item"),|26		
+			sprintf$("Indent Date"),			|27		
+			sprintf$("PO No. Linked Item"),		|28		
+			sprintf$("PO creation Date"),			|29		
+			sprintf$("Receipt Distribution Date (Sent for Evaluation)"),	|30		
+			sprintf$("Cycle time for distribution"),	|31		
+			sprintf$("Receipt Status ( Current)"),		|32		
+			sprintf$("Receipt Status updated on"),		|33		
+			sprintf$("Receipt Status Maintained by (ID)"),	|34		
+			sprintf$("Receipt Status Maintained by (Name)"),|35		
+			sprintf$("Mechanical Response Received"),	|36		
+			sprintf$("Mechanical Technical Clearance"),	|37		
+			sprintf$("Evaluator submission Date (Mech.)"),	|38		
+			sprintf$("Evaluator Name (Mech.)"),		|39		
+			sprintf$("Response Status (Mech.)"),		|39.1		|ISGEC01157.n		
+			sprintf$("Structure Response Received"),	|40		
+			sprintf$("Structure Technical Clearance"),	|41		
+			sprintf$("Evaluator submission Date (structure.)"),|42		
+			sprintf$("Evaluator Name(structure.)"),	|43		
+			sprintf$("Response Status (structure.)"),	|43.1		|ISGEC01157.n		
+			sprintf$("Piping Response Received"),		|44		
+			sprintf$("Piping Technical Clearance"),	|45		
+			sprintf$("Evaluator submission Date (Piping)"),|46		
+			sprintf$("Evaluator Name(Piping)"),		|47		
+			sprintf$("Response Status (Piping)"),		|47.1		|ISGEC01157.n		
+			sprintf$("Process Response Received"),		|48		
+			sprintf$("Process Technical Clearance"),	|49		
+			sprintf$("Evaluator submission Date (Process)"),|50		
+			sprintf$("Evaluator Name(Process.)"),		|51		
+			sprintf$("Response Status (Process.)"),	|51.1		|ISGEC01157.n		
+			sprintf$("CI Response Received"),		|52		
+			sprintf$("CI Technical Clearance"),		|53		
+			sprintf$("Evaluator submission Date (C & I)"),	|54		
+			sprintf$("Evaluator Name(C&I.)"),		|55		
+			sprintf$("Response Status (C&I.)"),		|55.1		|ISGEC01157.n		
+			sprintf$("Electrical Response Received"),	|56		
+			sprintf$("Electrical Technical Clearance"),	|57		
+			sprintf$("Evaluator submission Date (Electrical)"),	|58		
+			sprintf$("Evaluator Name(Electrical.)"),	|59		
+			sprintf$("Response Status (Electrical.)"),	|59.1		|ISGEC01157.n		
+			sprintf$("Quality Response Received"),		|60		
+			sprintf$("Quality Technical Clearance"),	|61		
+			sprintf$("Evaluator submission Date (Quality)"),|62		
+			sprintf$("Evaluator Name(Quality.)"),		|63		
+			sprintf$("Response Status (Quality.)"),		|63.1		|ISGEC01157.n		
+			sprintf$("WWS Response Received"),		|64			|GH611CR903.a.s		
+			sprintf$("WWS Technical Clearance"),		|65		
+			sprintf$("Evaluator submission Date (WWS)"),	|66		
+			sprintf$("Evaluator Name(WWS.)"),		|67		
+			sprintf$("Response Status (WWS.)"),		|68		
+			sprintf$("MHE Response Received"),		|69		
+			sprintf$("MHE Technical Clearance"),		|70		
+			sprintf$("Evaluator submission Date (MHE)"),	|71		
+			sprintf$("Evaluator Name(MHE.)"),		|72		
+			sprintf$("Response Status (MHE.)"),		|73			|GH611CR903.a.e		
+			sprintf$(""))					|Last		
+	
+		line = strip$(shiftl$(line))
+		seq.puts(line, stat.fp)
+	endif
+}
+
+|* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+function read.main.table()
+{	
+	o.vendor.name = ""
+	convert.dates(date.f, 0, 0, 0, cmp.date.f)
+	convert.dates(date.t, 0, 0, 0, cmp.date.t)
+	
+	select	dmisg134.*, dmisg134.sent:sent.for.eval,
+		tccom100.nama:o.vendor.name, tcibd001.dsca:lot.item.desc
+	from	dmisg134, tccom100, tcibd001
+	where	dmisg134._index2 inrange {:cprj.f, :rcno.f} and {:cprj.t, :rcno.t}
+	and	dmisg134.date inrange :cmp.date.f and :cmp.date.t
+	and	dmisg134.bpid refers to tccom100 UNREF CLEAR
+	and	dmisg134.item refers to tcibd001 UNREF CLEAR
+	and	dmisg134.orno <> ""
+	and	dmisg134.pono <> 0
+	selectdo
+		if isspace(o.vendor.name) then
+			o.vendor.name = dmisg134.nama
+		endif
+		
+		get.indent.and.PO.data()
+		get.linked.specification.data()
+		
+		select	tdpur400.odat
+		from	tdpur400
+		where	tdpur400._index1 = {:dmisg134.orno}
+		selectdo
+		selectempty
+			tdpur400.odat = 0
+		endselect
+		
+		select	dmisg164.ownr				|ISGEC01157.sn
+		from	dmisg164
+		where	dmisg164.item = {:dmisg134.item}
+		selectdo
+			lot.item.owner = enum.descr$("dmisg.eng", dmisg164.ownr)
+		selectempty
+			lot.item.owner = ""
+		endselect					|ISGEC01157.en
+		
+		convert.dates.to.non.utc(dmisg134.date, date.A)
+		convert.dates.to.non.utc(tdpur400.odat, date.B)
+		
+		receipt.cycle.time = (date.A - date.B)
+		
+		select	dmisg135.*
+		from	dmisg135
+		where	dmisg135._index1 = {:dmisg134.rcno, :dmisg134.revn}
+		selectdo
+			initialize.values.in.arrays()
+			dept.loop = 0
+			
+			for dept.loop = 1 to NO_OF_DEPTS 
+				evaluated(1, dept.loop) = enum.descr$("tcyesno", dmisg136.cler, "2")
+	
+				if sent.for.eval(dept.loop) = tcyesno.yes then
+| 					engg.dept = ltoe(dept.loop)			|GH611CR903.a.s
+					if dept.loop = 8 or dept.loop = 9 then
+						engg.dept = ltoe(dept.loop + 1)
+					else
+						engg.dept = ltoe(dept.loop)
+					endif						|GH611CR903.a.e
+					
+					select	dmisg136.*
+					from	dmisg136
+					where	dmisg136._index1 = {
+								:dmisg134.rcno, 
+								:dmisg134.revn,
+								:engg.dept
+								}
+					selectdo
+						assign.the.data(dept.loop)
+						
+						select dmisg105.dsca				|ISGEC01157.sn
+						from	dmisg105
+						where	dmisg105._index1 = {:dmisg136.apid}
+						selectdo
+							eval.response(1,dept.loop) = dmisg105.dsca
+						endselect					|ISGEC01157.en	
+					endselect
+				else
+					evaluation.cycle.time(1, dept.loop) = "N.A"	
+					evaluated(1, dept.loop) = "N.A"	
+					technical.clearance(1, dept.loop) = "N.A"	
+					evaluator.name(1, dept.loop) = "N.A"
+					evaluation.date(dept.loop) = 0
+				endif
+			endfor
+			category()									|RAvi.a.GH181CR438
+			print.detail()
+		endselect	
+	endselect
+}
+
+|* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+
+function print.detail()
+{	
+	line = concat$("	",
+		sprintf$("%s", dmisg134.cprj),				|1			
+		sprintf$("%s", o.vendor.name),				|2
+		sprintf$("%s", trim$(dmisg134.rcno)),			|3
+		sprintf$("%s", trim$(dmisg134.revn)),			|4
+		sprintf$("%s", dmisg135.docn),				|5
+		sprintf$("%s", dmisg135.revi),				|6
+		sprintf$("%s", trim$(dmisg135.idoc)),			|7
+		sprintf$("%s", trim$(dmisg135.irev)),			|8	
+| 		sprintf$("%f", dmisg134.trno),				|9		|ISGEC01157.o
+		sprintf$("%s", trim$(dmisg134.trno)),			|9		|ISGEC01157.n
+		sprintf$("%s", trim$(cat.dsca)),			|9.1		|RAvi.a.GH181CR438
+		sprintf$("%u(%02d/%02m/%04Y)", dmisg134.date),		|10
+		sprintf$("%d", receipt.cycle.time),			|11
+		sprintf$("%s", ""),					|12
+		sprintf$("%s", technically.cleared.time),		|13
+		sprintf$("%s", evaluation.cycle.time(1, 1)),		|14
+		sprintf$("%s", evaluation.cycle.time(1, 2)),		|15
+		sprintf$("%s", evaluation.cycle.time(1, 3)),		|16
+		sprintf$("%s", evaluation.cycle.time(1, 4)),		|17
+		sprintf$("%s", evaluation.cycle.time(1, 5)),		|18
+		sprintf$("%s", evaluation.cycle.time(1, 6)),		|19
+		sprintf$("%s", evaluation.cycle.time(1, 7)),		|20
+		sprintf$("%s", evaluation.cycle.time(1, 8)),		|20.1		|GH611CR903.a
+		sprintf$("%s", evaluation.cycle.time(1, 9)),		|20.2		|GH611CR903.a
+		sprintf$("%s", specification.ID),			|21
+		sprintf$("%s", specification.desc),			|22
+		sprintf$("%u(%02d/%02m/%04Y)", specification.date),	|23
+		sprintf$("%s", dmisg134.item),				|24
+		sprintf$("%s", lot.item.desc),				|25
+		sprintf$("%s", lot.item.owner),			|25.1		|ISGEC01157.n
+		sprintf$("%s", indent.no),				|26
+		sprintf$("%u(%02d/%02m/%04Y)", indent.date),		|27
+		sprintf$("%s", dmisg134.orno),				|28
+		sprintf$("%u(%02d/%02m/%04Y)", tdpur400.odat),		|29
+		sprintf$("%u(%02d/%02m/%04Y)", dmisg134.sdat),		|30
+		sprintf$("%s", ""),					|31
+		sprintf$("%s", enum.descr$("dmisg.receipt", dmisg134.stat, "2")),|32
+		sprintf$("%u(%02d/%02m/%04Y)", status.date),		|33
+		sprintf$("%s", status.user),				|34
+		sprintf$("%s", status.user.name),			|35
+		sprintf$("%s", evaluated(1, 1)),			|36
+		sprintf$("%s", technical.clearance(1, 1)),		|37
+		sprintf$("%u(%02d/%02m/%04Y)", evaluation.date(1)),	|38
+		sprintf$("%s", evaluator.name(1, 1)),			|39
+		sprintf$("%s", eval.response(1,1)),			|39.1			|ISGEC01157.n
+		sprintf$("%s", evaluated(1, 2)),			|40
+		sprintf$("%s", technical.clearance(1, 2)),		|41
+		sprintf$("%u(%02d/%02m/%04Y)", evaluation.date(2)),	|42
+		sprintf$("%s", evaluator.name(1, 2)),			|43
+		sprintf$("%s", eval.response(1, 2)),			|43.1		|ISGEC01157.n
+		sprintf$("%s", evaluated(1, 3)),			|44
+		sprintf$("%s", technical.clearance(1, 3)),		|45
+		sprintf$("%u(%02d/%02m/%04Y)", evaluation.date(3)),	|46
+		sprintf$("%s", evaluator.name(1, 3)),			|47
+		sprintf$("%s", eval.response(1, 3)),			|47.1		|ISGEC01157.n
+		sprintf$("%s", evaluated(1, 4)),			|48
+		sprintf$("%s", technical.clearance(1, 4)),		|49
+		sprintf$("%u(%02d/%02m/%04Y)", evaluation.date(4)),	|50
+		sprintf$("%s", evaluator.name(1, 4)),			|51
+		sprintf$("%s", eval.response(1, 4)),			|51.1		|ISGEC01157.n
+		sprintf$("%s", evaluated(1, 5)),			|52
+		sprintf$("%s", technical.clearance(1, 5)),		|53
+		sprintf$("%u(%02d/%02m/%04Y)", evaluation.date(5)),	|54
+		sprintf$("%s", evaluator.name(1, 5)),			|55
+		sprintf$("%s", eval.response(1, 5)),			|55.1		|ISGEC01157.n
+		sprintf$("%s", evaluated(1, 6)),			|56
+		sprintf$("%s", technical.clearance(1, 6)),		|57
+		sprintf$("%u(%02d/%02m/%04Y)", evaluation.date(6)),	|58
+		sprintf$("%s", evaluator.name(1, 6)),			|59
+		sprintf$("%s", eval.response(1, 6)),			|59.1		|ISGEC01157.n
+		sprintf$("%s", evaluated(1, 7)),			|60
+		sprintf$("%s", technical.clearance(1, 7)),		|61
+		sprintf$("%u(%02d/%02m/%04Y)", evaluation.date(7)),	|62
+		sprintf$("%s", evaluator.name(1, 7)),			|63
+		sprintf$("%s", eval.response(1, 7)),			|63.1		|ISGEC01157.n
+		sprintf$("%s", evaluated(1, 8)),			|64		|GH611CR903.a.s
+		sprintf$("%s", technical.clearance(1, 8)),		|65
+		sprintf$("%u(%02d/%02m/%04Y)", evaluation.date(8)),	|66
+		sprintf$("%s", evaluator.name(1, 8)),			|67
+		sprintf$("%s", eval.response(1, 8)),			|68	
+		sprintf$("%s", evaluated(1, 9)),			|69
+		sprintf$("%s", technical.clearance(1, 9)),		|70
+		sprintf$("%u(%02d/%02m/%04Y)", evaluation.date(9)),	|71
+		sprintf$("%s", evaluator.name(1, 9)),			|72
+		sprintf$("%s", eval.response(1, 9)),			|73		|GH611CR903.a.e
+		sprintf$(""))						|Last
+
+		line = strip$(shiftl$(line))
+		
+		seq.puts(line, stat.fp)
+}
+
+function initialize.values.in.arrays()
+{
+	long k
+	
+	for k = 1 to 10 
+		evaluation.cycle.time(1, k) = ""
+		evaluated(1, k) = ""
+		technical.clearance(1, k) = ""
+		evaluator.name(1, k) = ""
+		evaluation.date(k) = 0
+	endfor
+}
+
+
+function assign.the.data(long i.dept.loop)
+{
+	domain	tcdate	rev.0.date
+	
+	get.receipt.status.data()
+	technical.clearance(1, i.dept.loop) = enum.descr$("tcyesno", dmisg136.cler, "2")
+	evaluation.date(i.dept.loop) = dmisg136.sudt
+	tcisgdll0100.get.user.name(dmisg136.suby, evaluator.name(1, i.dept.loop))
+	
+	if dmisg134.stat = dmisg.receipt.cleared then
+		select	dmisg134.date:rev.0.date
+		from	dmisg134
+		where	dmisg134._index1 = {:dmisg134.rcno, "00"}
+		as set with 1 rows
+		selectdo
+		selectempty
+			rev.0.date = 0
+		endselect
+		
+		convert.dates.to.non.utc(dmisg134.adat, date.A)
+		convert.dates.to.non.utc(rev.0.date, date.B)
+		
+		technically.cleared.time = str$(date.A - date.B)
+		
+		if dmisg136.cler = tcyesno.yes then
+			convert.dates.to.non.utc(dmisg136.date, date.A)
+			convert.dates.to.non.utc(dmisg134.date, date.B)
+			
+			evaluation.cycle.time(1, i.dept.loop) = str$(date.A - date.B)
+		else
+			evaluation.cycle.time(1, i.dept.loop) = "NTC"
+		endif
+	else
+		technically.cleared.time = "Pending for Clearance"
+		evaluation.cycle.time(1, i.dept.loop) = "NTC"
+	endif	
+	
+}
+
+
+function get.indent.and.PO.data()
+{		
+	indent.no = dmisg134.rqno
+	
+	select	tdpur200.rdat:indent.date
+	from	tdpur200
+	where	tdpur200._index1 = {:indent.no}
+	selectdo
+	selectempty
+		indent.date = 0
+	endselect
+}
+
+function get.linked.specification.data()
+{
+	select	dmisg005.docn:specification.ID
+	from	dmisg005
+	where	dmisg005._index1 = {:dmisg134.cprj}
+	and	dmisg005.loti = :dmisg134.item
+	selectdo
+	selectempty
+		specification.ID = ""
+	endselect
+	
+	select	dmisg121.dsca:specification.desc,
+		dmisg121.acdt:specification.date
+	from	dmisg121
+	where	dmisg121._index1 = {:specification.ID, "00"}
+	selectdo
+	selectempty
+		specification.desc = ""
+		specification.date = 0
+	endselect
+}
+
+function get.receipt.status.data()
+{	
+	status.date = 0
+	status.user = ""
+	
+	on case dmisg134.stat
+	case dmisg.receipt.submitted:
+		status.date = dmisg134.date
+		status.user = dmisg134.user
+		break
+		
+	case dmisg.receipt.evaluation:
+		status.date = dmisg134.sdat
+		status.user = dmisg134.suer
+		break
+		
+	case dmisg.receipt.comment:
+	case dmisg.receipt.cleared:
+		status.date = dmisg134.adat
+		status.user = dmisg134.appr
+		break
+	
+	case dmisg.receipt.issued:
+		select	dmisg131.isdt:status.date,
+		 	dmisg131.isby:status.user
+		from	dmisg131
+		where	dmisg131._index1 = {:dmisg134.trno}
+		selectdo
+		selectempty
+			status.date = 0
+			status.user = ""
+		endselect
+	endcase
+	
+	tcisgdll0100.get.user.name(status.user, status.user.name)
+}
+
+function convert.dates
+	(
+		domain	tfgld.date	i.date,
+		domain	tcmcs.long 	i.hh,
+		domain	tcmcs.long 	i.mm,
+		domain	tcmcs.long 	i.ss,
+	ref	domain 	tcdate		o.date
+	)
+{
+	domain	tcmcs.long	yr, mnth, day
+	
+	yr = 0
+	mnth = 0
+	day = 0
+	
+	num.to.date(i.date, yr, mnth, day)
+	o.date = date.to.utc(yr, mnth, day, i.hh , i.mm, i.ss)
+}
+
+function convert.dates.to.non.utc
+			(
+				domain	tcdate		i.date,
+			ref	domain	tfgld.date	o.ref.date
+			)
+{
+	long yy, mm, dd, hh, mn, ss
+	
+	o.ref.date = 0
+	
+	yy = 0	|* Year
+	mm = 0	|* Month
+	dd = 0	|* Day
+	hh = 0	|* Hous
+	mn = 0	|* Minutes
+	ss = 0	|* Seconds
+	
+	utc.to.date(i.date, yy, mm, dd, hh, mn, ss)
+	o.ref.date = date.to.num(yy, mm, dd)
+}
+
+function category()								|RAvi.a.s.GH181CR438
+{	
+	select	dmisg132.stid
+	from	dmisg132
+	where	dmisg132._index1 = {:dmisg134.trno}
+	as set with 1 rows
+	selectdo	
+		select	dmisg123.dsca:cat.dsca
+		from	dmisg123
+		where	dmisg123._index1 = {:dmisg132.stid}
+		as set with 1 rows
+		selectdo
+		selectempty
+			cat.dsca = ""
+		endselect
+	selectempty
+		cat.dsca = ""
+	endselect
+}
+										|RAvi.a.e.GH181CR438

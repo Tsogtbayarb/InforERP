@@ -1,0 +1,453 @@
+|******************************************************************************
+|* dmisg1131m200  0  VRC B61U a7 isg 
+|* Transmittal Issue
+|* Installation user             
+|* 2015-01-29
+|******************************************************************************
+|* Main table dmisg131 Transmittal Creation and Submission for Approval, Form Type 1
+|******************************************************************************
+|* ISGEC004004, IT0047, Dharmendra, Dt. 30-01-2015, B61U a7 isg
+|*
+|* ISGEC004020, IT0047, Dharmendra, Dt. 07-10-2015, B61U a7 isg
+|
+|
+| ID ISGEC016011	Ankit Sharma	30/09/2016
+| Added description
+|
+|* ID : ISGEC01048, IT0386, Saurabh Dubey, 04 December 2017, VRC B61U a7 isg
+|* Modificatins for Mail
+|*
+|* ID : ISGECMOD007, IT0386, Saurabh Dubey, 15 January 2018, VRC B61U a7 isg 
+|* POS Functionality New
+|* Functional : Mrs. Veena (Isgec)
+|*
+|* ID : ISGECMOD019, IT0478, Atul Ojha, 23 March 2018, VRC B61U a7 isg 
+|* Modificatins in Mail Alerts
+|*
+|* ID : ISGEC0160,IT0479,Anadi Shankar,11-06-2018.
+|* Mail To Supply Engg.
+
+|****************************** declaration section ***************************
+declaration:
+#include               <bic_cmf>
+	table   tdmisg131 | Transmittal Creation and Submission for Approval
+	table   tdmisg132
+	table   tdmisg134
+	table		ttdisg604
+	table		ttppdm600
+	table		ttcmcs065
+	table		ttccom001
+	table		ttcemm030
+	table		tdmisg129
+	table		tbpmdm001
+	table		ttccom001
+	table		tdmisg163	|* POS Request Header
+	table		tdmisg166	|* POS Request Lines
+
+	string	query.string(500)
+	extern	domain tcdsca	sending
+	extern	domain tcdsca	submission
+	extern	domain	tcdsca	sent
+	extern	domain 	tcpono	tran.print, serial
+	extern	domain	tcnama	transmittal,created.by, issued.by, approver.by
+	extern	domain	tclogn	login.user		|#ISGEC004020.sn
+	extern	domain tcemm.grid user.division
+	extern	domain	tcpono	length			|#ISGEC004020.en
+	
+	extern domain	tcmcs.str100 note.1
+	extern domain	tcmcs.str100 subject.1, subject.2
+	extern domain	tcnama 	contact.name
+	extern	domain	tcmcs.long	temp.brp.id		|#ISGEC01048.n
+		domain	dmdoc.docid	o.dmisg132.docn
+		domain	dmdoc.revv	o.dmisg132.revn
+			string 		attach.file(150)	|#ISGEC01048.n
+	domain	tcemm.grid	supplyengg.division
+|****************************** program section ********************************
+after.form.read:
+	enable.save.on.occ.change()
+
+
+before.program:					|#ISGEC004020.so
+| 	query.string = ""
+| 	
+| 	query.string = "dmisg131.dprj in (select dmisg129.cprj from dmisg129 where dmisg129._index3 = :logname$)"
+| 	query.string = strip$(query.string) & " and dmisg131.type in (select dmisg129.tran from dmisg129 where dmisg129._index3 = :logname$)"
+| 	query.string = strip$(query.string) & " and dmisg131.stat = dmisg.doc.rec.underiss"
+| 	query.extend.where(query.string)
+							|#ISGEC004020.eo
+
+choice.print.data:
+on.choice:
+	if rprt_open() then						
+		tdisgdll831rep_transmittal(dmisg131.tran)
+		rprt_close()
+	else
+		choice.again()
+	endif
+	
+|****************************** field section **********************************
+field.tccom001.nama:
+before.display:
+	select	tccom001.nama
+	from	tccom001
+	where	tccom001._index4 = {:dmisg131.apsu}
+	selectdo
+	selectempty
+		tccom001.nama = ""
+	endselect	
+
+|****************************** function section **********************************
+functions:
+
+function extern process()
+{
+	select	dmisg131.*	
+	from	dmisg131 for update
+	where	dmisg131._index1 = {:dmisg131.tran}
+	and	dmisg131.stat = dmisg.doc.rec.underiss
+	and	(dmisg131.iisu = tcyesno.yes or dmisg131.retn = tcyesno.yes)
+	selectdo
+		if dmisg131.iisu = tcyesno.yes then
+			dmisg131.isdt = utc.num()
+			dmisg131.isby = logname$
+			dmisg131.stat = dmisg.doc.rec.issued
+			db.update(tdmisg131, db.retry)
+		else
+			dmisg131.isby = logname$
+			dmisg131.stat = dmisg.doc.rec.returned
+			db.update(tdmisg131, db.retry)
+		endif
+		
+		select 	dmisg132.issu
+		from	dmisg132 for update
+		where	dmisg132._index1 = {:dmisg131.tran}
+		selectdo
+			dmisg132.issu = tcyesno.yes
+			db.update(tdmisg132, db.retry)
+		endselect
+		|************************
+		select	dmisg134.trno, dmisg134.stat
+		from	dmisg134 for update
+		where	dmisg134.trno = {:dmisg131.tran}
+		selectdo
+			dmisg134.stat = dmisg.receipt.issued				
+			db.update(tdmisg134, db.retry)
+		endselect
+		|************************
+		
+		|update.POS.data()	|#ISGECMOD007.n
+			
+		login.user = logname$
+		length = len(login.user)
+		login.user = strip$(login.user) & string.set$(" ", 16-length)
+		
+		user.division = get.user.division()
+		if not isspace(user.division) then
+			temp.brp.id = brp.open("rdmisg143101000", "TEXT_TST", 0)	
+			if temp.brp.id > 0 then				|#ISGEC01048.sn
+				tdisgdll831rep_transmittal.brp(dmisg131.tran, temp.brp.id)
+				brp.close(temp.brp.id)
+				attach.file = bse.tmp.dir$() & "/fileout_mail.pdf"
+				send.email.alert()
+			endif								
+										|#ISGEC01048.en
+| 			send.email.alert()	|#ISGEC01048.o
+		endif		
+		message("Process Complete.")
+	selectempty
+		message("No record processed")	
+	endselect
+	commit.transaction()
+}
+
+function domain tcemm.grid get.user.division()
+{
+	domain tcemm.grid division
+	
+	division = ""
+	select	tccom001.cwoc
+	from	tccom001
+	where	tccom001._index4 = {:dmisg131.user}
+	selectdo
+		if not isspace(tccom001.cwoc) then
+			select	tcmcs065.comp, tcmcs065.ccal
+			from	tcmcs065
+			where	tcmcs065._index1 = {:tccom001.cwoc}
+			selectdo
+				select	tcemm030.eunt
+				from	tcemm030
+				where	tcemm030.fcmp = :tcmcs065.comp
+				and	tcemm030.ccal = :tcmcs065.ccal
+				as set with 1 rows
+				selectdo
+					division = tcemm030.eunt
+				selectempty
+					
+				endselect	
+			endselect
+		else
+	
+		endif
+	endselect
+	return(division)
+
+}
+			|#ISGECMOD007.sn
+function update.POS.data()
+{
+	select 	dmisg132.docn:o.dmisg132.docn,
+		dmisg132.revn:o.dmisg132.revn
+	from	dmisg132
+	where	dmisg132._index1 = {:dmisg131.tran}
+	selectdo
+		select	dmisg163.rcno, dmisg163.revn
+		from	dmisg163 for update
+		where	dmisg163._index1 = {:dmisg131.cprj}
+		and	dmisg163.psta = dmisg.pos.stat.requested
+		selectdo
+			select	dmisg166.sdat, dmisg166.drev
+			from	dmisg166 for update
+			where	dmisg166._index1 = {
+						:dmisg131.cprj,
+						:dmisg163.rcno,
+						:dmisg163.revn,
+						:o.dmisg132.docn
+						}
+			selectdo	
+				if lval(o.dmisg132.revn) > lval(dmisg166.drev) then |* as revision stored as string
+					dmisg166.sdat = utc.num()
+					db.update(tdmisg166, db.retry, e)
+					
+					if e = 0 then
+						select	dmisg166.sdat		|* to check whether POS Specification Receipt Date in other 
+						from	dmisg166		|* Lines have been updated, if yes the change the status of 
+						where	dmisg166._index1 = {	|* header to POS Issued
+									:dmisg131.cprj,
+									:dmisg163.rcno,
+									:dmisg163.revn
+									}
+						and	(dmisg166.docn <> :o.dmisg132.docn	
+						 	or	dmisg166.drev <> :o.dmisg132.revn)	
+						and	dmisg166.sdat = 0
+						selectdo
+						selectempty
+							dmisg163.psta = dmisg.pos.stat.issued
+							db.update(tdmisg163, db.retry, e)
+						endselect
+					endif
+				endif	
+			endselect	
+		endselect
+	endselect
+}					|#ISGECMOD007.en
+
+function send.email.alert()
+{
+	string tmp.file(200),line(500)
+	long fp
+	
+	long    message.ID
+        long    to.ID
+	long    cc.id										|#ISGECMOD019.n						
+	long    attachment.ID
+        long    ret
+	long stat 
+	
+	tmp.file = creat.tmp.file$(bse.tmp.dir$())
+	fp = seq.open(tmp.file,"w+")
+	if fp <=0 then
+		message("Temp file can not be created")
+	endif
+
+	line = ""
+	
+	if dmisg131.iisu = tcyesno.yes then			|#Anadi.sn 27-06-2018
+		line = strip$(line) & "Transmittal No. " & dmisg131.tran & " Type " & enum.descr$("dmisg.tran.typ", dmisg131.type)|& chr$(13)&chr$(10)
+		line = strip$(line) & " has been Issued." & chr$(13)&chr$(10)
+	else
+		line = strip$(line) & "Transmittal No. " & dmisg131.tran & " Type " & enum.descr$("dmisg.tran.typ", dmisg131.type)|& chr$(13)&chr$(10)
+		line = strip$(line) & " has been Rejected." & chr$(13)&chr$(10)
+	endif							|#Anadi.en 27-06-2018
+
+
+	
+	
+	seq.write(line,len(line),fp)
+	
+	line = "Please See Attachment for Details."
+	seq.write(line,len(line),fp)
+	ret = seq.close(fp)
+
+	select 	bpmdm001.mail,tccom001.nama 
+	from 	tccom001,bpmdm001
+	where 	tccom001._index4 = {:dmisg131.isby}
+	and	tccom001.emno refers to bpmdm001
+	as set with 1 rows
+	selectdo
+	selectempty
+		bpmdm001.mail = ""
+	endselect
+
+	if isspace(bpmdm001.mail) then
+		message("Email ID for user " & dmisg131.isby & " Not maintained")
+	endif		
+	
+	|******* Email Header
+        message.ID = cmf.create()
+	line = "Issued " & enum.descr$("dmisg.tran.typ", dmisg131.type) & "Transmittal" & dmisg131.tran & " For" & dmisg131.dprj
+	line = trim$(line) & " - " & trim$(dmisg131.subj) 					|#ISGECMOD019.n
+	ret = cmf.setClass(message.ID, "CMF.NOTE.EMAIL")
+        ret = cmf.setSubject(message.ID,line)
+	
+	|******** from ID	
+	to.ID = cmf.createRecipient(message.ID, ttcmf.role.from)  
+	ret = cmf.setRecipientName(to.ID,tccom001.nama)
+        ret = cmf.setRecipientAddress(to.ID, bpmdm001.mail)	
+	ret = cmf.setRecipientType(to.ID, "SMTP")
+ 
+	|******** to ID
+												|#ISGECMOD019.sn	
+	|Mail to Internal Transmittal Employee
+	select 	bpmdm001.mail,tccom001.emno,
+		tccom001.nama
+	from 	tccom001,bpmdm001
+	where 	tccom001._index4 = {:dmisg131.logn}
+	and	tccom001.emno refers to bpmdm001 UNREF CLEAR
+	and	bpmdm001.mail <> ""
+	selectdo
+		to.ID = cmf.createRecipient(message.ID, ttcmf.role.to)  
+		ret = cmf.setRecipientName(to.ID,tccom001.nama)
+		ret = cmf.setRecipientAddress(to.ID, bpmdm001.mail)	
+		ret = cmf.setRecipientResponsibility(to.ID, "TRUE")		
+		ret = cmf.setRecipientType(to.ID, "SMTP")
+	selectempty
+	endselect
+	
+	
+												|#ISGECMOD019.en
+
+	select	dmisg129.*
+	from	dmisg129
+	where	dmisg129._index1 = {:user.division, :dmisg131.dprj, :dmisg131.type}
+	selectdo
+		select 	bpmdm001.mail,tccom001.nama 
+		from 	tccom001,bpmdm001
+		where 	tccom001._index4 = {:dmisg129.logn}
+		and	tccom001.emno refers to bpmdm001
+		and	bpmdm001.mail <> ""
+		selectdo
+| 			to.ID = cmf.createRecipient(message.ID, ttcmf.role.to)  		|#ISGECMOD019.so		
+| 			ret = cmf.setRecipientName(to.ID,tccom001.nama)
+| 			ret = cmf.setRecipientAddress(to.ID, bpmdm001.mail)	
+| 			ret = cmf.setRecipientResponsibility(to.ID, "TRUE")		
+| 			ret = cmf.setRecipientType(to.ID, "SMTP")				|#ISGECMOD019.eo
+			
+												|#ISGECMOD019.sn
+			cc.ID = cmf.createRecipient(message.ID, ttcmf.role.cc)  
+			ret = cmf.setRecipientName(cc.ID,tccom001.nama)
+			ret = cmf.setRecipientAddress(cc.ID, bpmdm001.mail)	
+			ret = cmf.setRecipientResponsibility(cc.ID, "TRUE")		
+			ret = cmf.setRecipientType(cc.ID, "SMTP")
+												|#ISGECMOD019.en
+		selectempty
+		endselect
+	endselect
+	
+	|MAIL to Supply Chain Engg.											|#ISGEC0160.sn 08-06-2018
+	
+	get.division()
+	
+	if dmisg131.type = dmisg.tran.typ.vendor then
+		select	tdisg604.mail,tdisg604.sueg,tccom001.nama
+		from	tdisg604,tccom001
+		where	tdisg604._index1 = {:supplyengg.division,:dmisg131.ofbp}
+		and	tdisg604.sueg refers to tccom001
+		selectdo
+			cc.ID = cmf.createRecipient(message.ID, ttcmf.role.cc)  
+			ret = cmf.setRecipientName(cc.ID,tccom001.nama)
+			ret = cmf.setRecipientAddress(cc.ID, tdisg604.mail)	
+			ret = cmf.setRecipientResponsibility(cc.ID, "TRUE")		
+			ret = cmf.setRecipientType(cc.ID, "SMTP")
+		endselect													|#ISGEC0160.en 08-06-2018
+	endif
+	
+	
+	
+	
+	|Mail to creator also
+	select 	bpmdm001.mail,tccom001.nama 
+	from 	tccom001,bpmdm001
+	where 	tccom001._index4 = {:dmisg131.user}
+	and	tccom001.emno refers to bpmdm001
+	and	bpmdm001.mail <> ""
+	selectdo
+| 		to.ID = cmf.createRecipient(message.ID, ttcmf.role.to)  			|#ISGECMOD019.so		
+| 		ret = cmf.setRecipientName(to.ID,tccom001.nama)
+| 		ret = cmf.setRecipientAddress(to.ID, bpmdm001.mail)	
+| 		ret = cmf.setRecipientResponsibility(to.ID, "TRUE")		
+| 		ret = cmf.setRecipientType(to.ID, "SMTP")					|#ISGECMOD019.eo
+			
+												|#ISGECMOD019.sn
+		cc.ID = cmf.createRecipient(message.ID, ttcmf.role.cc)  
+		ret = cmf.setRecipientName(cc.ID,tccom001.nama)
+		ret = cmf.setRecipientAddress(cc.ID, bpmdm001.mail)	
+		ret = cmf.setRecipientResponsibility(cc.ID, "TRUE")		
+		ret = cmf.setRecipientType(cc.ID, "SMTP")
+												|#ISGECMOD019.en
+	selectempty
+	endselect
+	
+	|********* Mail Body
+	attachment.ID = cmf.createAttachment(message.ID)
+	ret = cmf.setAttachmentBody(attachment.ID,ttyeno.yes)
+	ret = cmf.setAttachmentMIME(attachment.ID,"text/plain")                       
+	ret = cmf.setAttachmentFileName(attachment.ID,tmp.file,"abc.txt")
+									|#ISGEC01048.sn
+	attachment.ID = cmf.createAttachment(message.ID)
+	ret = cmf.setAttachmentBody(attachment.ID,ttyeno.no)
+	ret = cmf.setAttachmentMIME(attachment.ID,"text/plain")                       
+	ret = cmf.setAttachmentFileName(attachment.ID,attach.file, "Transmittal_Details.pdf")	
+									|#ISGEC01048.en
+		
+
+	|*********  Send mail
+        if message.ID <>0 then
+                stat = cmf.startService("SMTP",2)
+                if stat <> 0 then
+                        message("Message could not be sent "&
+                                "(Infor ERP Enterprise eMessage Connector"&
+                                " service did not start)")
+		endif
+			
+                stat = cmf.send(message.ID,"SMTP")
+                if stat<>0 then
+                        message("Message could not be sent "& "(Infor ERP Enterprise eMessage Connector "&
+                                "service refused message)")
+                        cmf.stopService("SMTP",2)
+                endif
+                stat = cmf.stopService("SMTP",2)
+        endif	
+}
+						|#ISGEC004020.en
+
+
+
+function  get.division()
+{
+	select	tppdm600.ncmp
+	from	tppdm600
+	where	tppdm600._index1 = {:dmisg131.dprj}
+	selectdo
+		select	tcemm030.eunt
+		from	tcemm030
+		where	tcemm030.fcmp = :tppdm600.ncmp
+		as set with 1 rows
+		selectdo
+			supplyengg.division = tcemm030.eunt
+		selectempty
+			
+		endselect	
+	endselect
+}
+
+

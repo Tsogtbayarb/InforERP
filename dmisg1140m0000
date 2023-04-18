@@ -1,0 +1,874 @@
+|******************************************************************************
+|* dmisg1140m000  0  VRC B61U a7 isg 
+|* Maintain Master Document List
+|* merino1                       
+|* 2017-08-24
+|******************************************************************************
+|* Main table dmisg140 Master Document List, Form Type 1
+|******************************************************************************
+|* ID:ISGEC01041, Sumit Bansal, 13/09/2017
+|* New Development
+|*
+|* ID:ISGEC0181,Anadi Shankar,15-06-2018
+|* Fetch Data From SMDL And tpisg229
+|
+|* ID: ISGEC01117, Sahil Sharma, 29-Oct-2018, VRC B61U a7 isg
+|* Update Baseline Schedule from Control Tower
+|*
+|* ID: ISGECMOD035, Atul Ojha, 05/11/2018, VRC B61U a7 isg
+|* Changes in Outlook Start & Finish Date Updation
+|*
+|* ID: ISGEC01128, Prasanna Bhuyan, VRC B61U a7 isg, 27-11-2018
+|* Code block as per discussion with Veena Mam
+|*
+|* ID: ISGEC01145, Prasanna Bhuyan, VRC B61U a7 isg, 20-12-2018
+|* Update item reference blank in case when it is not present in Project master 
+|*
+|* ID ISGEC002039, Arun Chauhan, 26-06-2019
+|* Check add on insertion and updation
+|*
+|* ID GH222CR000, RAvi Kumar, 03-12-2019
+|* PMDL displaying different document no. than stored in table
+|*
+|* ID GH347CR000, RAvi Kumar, 13-06-2020
+|* System should show same element in session which is stored in PMDL table
+|*
+|* GH646CR960.28102021, Utam kumar singh
+|* PMDL cannot be created if Element is not applicable for Project.
+
+|****************************** declaration section ***************************
+declaration:
+
+	table	tdmisg140 | Master Document List
+	table	tdmisg141
+	table	tdmisg147
+	table	tdmisg148
+	table	ttcmcs052
+	table	ttpmsl000
+	table	ttpptc100
+	table	tdmisg153
+	table	tdmisg156
+	table	ttcmcs036
+	table	ttpisg230	|#Anadi.n
+	|table	tdmisg160	|#ISGEC0181.n
+	table	ttpisg220
+	table	ttpisg239
+	
+#include <bic_dam>
+#pragma used dll otcmcsdll0095
+
+	extern	domain	tcmcs.str25	i.iuid
+	extern	domain	tcpono		cnt.rec, cnt.rcvd.rec
+	long	found								|#Atul.14.03.2018.n
+	
+		domain	tcdate		valid.utc				|#Sahil.Sharma.20.02.2019.sn
+		domain	tfgld.date	valid.date				
+		domain	tcnama		user.name
+										|#Sahil.Sharma.20.02.2019.en
+
+|****************************** program section ********************************
+before.program:							|#Sahil.Sharma.20.02.2019.sn
+	valid.utc = date.to.utc(2000,01,01,00,00,00)
+	valid.date = date.to.num(2000,01,01)
+	user.name = logname$
+									|#Sahil.Sharma.20.02.2019.en
+	
+before.display.object:
+	if dmisg140.appr = tcyesno.yes then
+		disable.fields("dmisg140.bssd", actual.occ)
+		disable.fields("dmisg140.bsfd", actual.occ)
+		disable.fields("dmisg140.docn", actual.occ)
+	else
+		enable.fields("dmisg140.bssd", actual.occ)
+		enable.fields("dmisg140.bsfd", actual.occ)
+		enable.fields("dmisg140.docn", actual.occ)
+	endif
+	
+										|#Atul.14.03.2018.sn
+	if dmisg140.acdt > 0 then
+		disable.commands(modify.set)
+	else
+		enable.commands(modify.set)
+	endif	
+										|#Atul.14.03.2018.en	
+	select	tpisg220.cprj
+	from	tpisg220
+	where	tpisg220._index1 = {:dmisg140.cprj}
+	as set with 1 rows
+	selectdo
+		disable.fields("dmisg140.bssd", actual.occ)
+		disable.fields("dmisg140.bsfd", actual.occ)
+| 		disable.fields("dmisg140.rssd", actual.occ)			|#ISGEC01128.sn
+| 		disable.fields("dmisg140.rsfd", actual.occ)			|#ISGEC01128.en
+	selectempty
+		enable.fields("dmisg140.bssd", actual.occ)
+		enable.fields("dmisg140.bsfd", actual.occ)
+| 		enable.fields("dmisg140.rssd", actual.occ)			|#ISGEC01128.sn
+| 		enable.fields("dmisg140.rsfd", actual.occ)			|#ISGEC01128.en
+	endselect
+|****************************** zoom section ********************************
+
+zoom.from.all:
+on.entry:
+	disable.commands(add.set)
+
+|****************************** group section **********************************
+										|#Atul.14.04.2018.sn	
+group.1:								
+init.group:
+	create.extra.toolbar("dmisg1235m000",	"notes")
+										|#Atul.14.04.2018.en
+
+|****************************** choice section *********************************
+
+choice.dmisg1154m000:
+before.choice:
+	if dmisg140.inpt = tcyesno.no then
+		message("You are not allow to Continue")
+		choice.again()
+	endif
+	
+choice.update.record:
+on.choice:
+	chk_inpt.rcvd.stat()
+	
+choice.update.baseline:
+before.choice:										|#Sahil.Sharma.21.02.2019.sn
+| 	if (trim$(user.name) = "merino1") or (trim$(user.name) = "0330") then
+| 	else
+| 		message("Session Under Testing. Please Try After Some Time.")
+| 		choice.again()
+| 	endif
+											|#Sahil.Sharma.21.02.2019.en
+on.choice:
+	tpisg220.frez = tcyesno.no
+	select tpisg220.frez from tpisg220 
+	where tpisg220.cprj = :dmisg140.cprj
+	selectdo endselect
+	if tpisg220.frez = tcyesno.yes then
+		update.item.reference(dmisg140.pcod,dmisg140.cprj)			|#ISGEC01145.n
+		update.baseline()
+	| 	update.revised.schedule.dates(dmisg140.pcod,dmisg140.cprj)		|#ISGECMOD035.n
+	endif
+											|#Sahil.Sharma.18.02.2019.sn
+choice.mark.delete:
+before.choice:
+	if dmisg140.acdt <> 0 then
+		message("Record cannot be deleted as Actual Release Date is present!")
+		choice.again()
+	endif
+	
+| choice.mark.occur:
+| before.choice:
+| 	do.selection(false,disable.delete)
+											|#Sahil.Sharma.18.02.2019.en	
+|****************************** field section **********************************
+
+field.all:
+init.field:
+attr.dorp = 1
+										|#Atul.14.03.2018.sn
+field.dmisg140.cprj:
+on.input:
+	found = 0
+	select	isg140.pcod
+	from	dmisg140 isg140
+	where	isg140.cprj = :dmisg140.cprj
+	as set with 1 rows
+	selectdo
+		found = 1
+	selectempty
+	endselect	
+	
+	if found = 1 then
+		message("Project already maintained")
+		input.again()
+	endif	
+										|#Atul.14.03.2018.en
+
+field.tcmcs052.dsca:
+before.display:
+	select	tcmcs052.dsca
+	from	tcmcs052
+	where	tcmcs052._index1 = {:dmisg140.cprj}
+	selectdo
+	selectempty
+		tcmcs052.dsca = ""
+	endselect
+
+field.dmisg140.iref:
+before.zoom:
+	tpisg239.pcod = dmisg140.pcod
+	tpisg239.cprj = dmisg140.cprj
+	
+check.input:
+	if dmisg140.orgn <> "CLI"	then				|#ISGEC01145.n
+		select tpisg220.cprj					|#ISGEC01100.sn
+		from	tpisg220
+		where	tpisg220._index1 = {:dmisg140.cprj}
+		as set with 1 rows
+		selectdo						|#ISGEC01100.en
+			select tpisg232.iref
+			from	tpisg232
+			where	tpisg232._index1 = {:dmisg140.pcod, :dmisg140.iref}
+			selectdo
+			selectempty
+				if (dmisg140.uidn(1;3) <> "BLS") then
+					select	tpisg220.sub1
+					from	tpisg220
+					where	tpisg220._index1 = {:dmisg140.cprj}
+					and	tpisg220.cact =:dmisg140.iref
+					selectdo
+					selectempty
+						message("Invalid Value for Item Reference!")
+						set.input.error("")
+					endselect
+				else
+					message("Invalid Value for Item Reference!")
+					set.input.error("")
+				endif
+			endselect
+		endselect
+	endif								|#ISGEC01145.n
+
+
+field.dmisg140.cspa:
+before.display:					|ISGEC002039.n
+| 	dmisg140.cspa = trim$(dmisg140.uidn(1;8))	|ISGEC002039.n |GH347CR000.com
+	
+							|ISGEC002039.so
+| before.zoom:
+| 	query.extend.where.in.zoom("tpptc100.cprj = " & quoted.string(dmisg140.cprj))
+
+| check.input:
+| 	select	tpptc100.cprj, tpptc100.cspa
+| 	from	tpptc100
+| 	where	tpptc100._index1 = {:dmisg140.cprj, :dmisg140.cspa}
+| 	selectdo
+| 		if not Check_Element_Level(dmisg140.cprj, dmisg140.cspa) then
+| 			message("Element must be Equal or Greater than Level 4")
+| 			set.input.error("", e)
+| 			break
+| 		endif
+| 	selectempty
+| 		message("Element does not exist with this project")
+| 		set.input.error("", e)
+| 		break
+| 	endselect
+							|ISGEC002039.eo
+field.dmisg140.drep:
+before.zoom:
+	query.extend.where.in.zoom("dmisg145.prod = " & quoted.string(dmisg140.pcod))
+
+field.dmisg140.oscd:
+before.field:
+	select	dmisg153.oscd
+	from	dmisg153
+	where	dmisg153.drep = {:dmisg140.drep}
+	selectdo
+	selectempty
+		dmisg153.oscd = tcyesno.no
+	endselect
+	
+field.dmisg140.uidn:
+before.zoom:
+	dmisg148.pcod = dmisg140.pcod
+	
+check.input:
+	select	dmisg148.uidn,
+		dmisg148.cspa									|GH646CR960.28102021.add
+	from	dmisg148
+	where	dmisg148._index1 = {:dmisg140.pcod, :dmisg140.uidn}
+	and	dmisg148.iuse = tcyesno.yes
+	selectdo
+		select	tpisg063.cspa								|GH646CR960.28102021.start					
+		from	tpisg063
+		where	tpisg063._index1 = {:dmisg140.cprj, :dmisg148.cspa}
+		and	tpisg063.appl = tcyesno.yes
+		selectdo
+		selectempty
+			message("Element '%s' not applicable for Project '%s' , Record cannot be inserted in PMDL.",dmisg148.cspa,dmisg140.cprj)
+			set.input.error("", e)
+		endselect									|GH646CR960.28102021.end
+	selectempty
+		message("Invalid UID")
+		set.input.error("", e)
+	endselect
+
+after.input:
+	assign.other.values()
+	dmisg140.docn = trim$(dmisg140.cprj)&"-"&trim$(dmisg140.uidn) |ISGEC002039.n
+	dmisg140.cspa = trim$(dmisg140.uidn(1;8))	|ISGEC002039.n
+	
+							|ISGEC002039.sn
+| field.dmisg140.docn:								|GH222CR000.com
+| before.display:
+| 	dmisg140.docn = trim$(dmisg140.cprj)&"-"&trim$(dmisg140.uidn)
+							|ISGEC002039.en
+
+field.dmisg140.bsfd:
+when.field.changes:
+	dmisg140.rsfd = dmisg140.bsfd
+
+field.dmisg140.soft:
+check.input:
+	select	dmisg147.scod
+	from	dmisg147
+	where	dmisg147._index1 = {:dmisg140.soft}
+	selectdo
+	selectempty
+		message("Invalid Software Used Code")		
+		set.input.error("", e)
+	endselect
+	
+field.dmisg140.acdt:				|#13/3/2019.prasanna.sn
+init.field:
+	attr.dorp = 1				
+	
+field.dmisg140.adct:
+init.field:
+	attr.dorp = 1				|#13/3/2019.prasanna.en
+
+| field.dmisg140.docn:								|#ISGEC0181.sn 15-06-2018
+| after.field:
+| 	fetch.data.from.tpisg230()
+| 	get.activity.itemref.smdl()						|#ISGEC0181.en 15-06-2018
+|****************************** main.table.io section **************************
+
+main.table.io:
+before.write:
+	assign.other.values()
+	check.insert.data()
+	
+before.rewrite:
+	assign.other.values.update()
+	check.insert.data()
+	
+	
+|****************************** function section *******************************
+
+functions:
+
+function boolean Check_Element_Level(domain	tccprj		i.cprj,
+				      domain	tppdm.cspa	i.cspa)
+{
+	long	level
+	domain	tppdm.cspa	o.elem
+	tcmcs.dll0095.read.parm("tpmsl000")
+	level = tpmsl000.levl + 1
+		
+	select 	tpest120.sele:o.elem
+	from	tpest120
+	where	tpest120._index1 = {:i.cprj}
+	and	tpest120.sele = :i.cspa
+	and	tpest120.levl > :level
+	as set with 1 rows
+	selectdo
+		return(true)
+	endselect
+	return(false)
+	
+}
+
+function chk_inpt.rcvd.stat()
+{
+	select	dmisg140.irst, dmisg140.uidn, dmisg140.inpt
+	from	dmisg140	for update
+	where	dmisg140._index1 = {:dmisg140.pcod, :dmisg140.cprj}
+	selectdo
+		if dmisg140.inpt = tcyesno.no then
+			dmisg140.irst = dmir.status.na
+		else
+			updt_inpt.rcvd.stat()
+		endif
+		
+		db.update(tdmisg140, db.retry, e)
+			
+		if e = 0 then
+			commit.transaction()
+		else
+			abort.transaction()
+		endif
+	endselect
+}
+
+function updt_inpt.rcvd.stat()
+{
+	cnt.rec = 0
+	cnt.rcvd.rec = 0
+	select	dmisg154.iuid:i.iuid
+	from	dmisg154
+	where	dmisg154._index1 = {:dmisg140.pcod, :dmisg140.cprj, :dmisg140.uidn}
+	selectdo
+		cnt.rec = cnt.rec + 1
+		select	dmisg140.acdt
+		from	dmisg140
+		where	dmisg140._index1 = {:dmisg140.pcod, :dmisg140.cprj, :i.iuid}
+		selectdo
+			if dmisg140.acdt > 0 then
+				cnt.rcvd.rec = cnt.rcvd.rec + 1
+			endif
+		endselect
+	selectempty
+		dmisg140.irst = ltoe(0)
+	selecteos
+		if (cnt.rec > 0) and (cnt.rec = cnt.rcvd.rec) then
+			dmisg140.irst = dmir.status.rcvd
+		endif
+		if (cnt.rec > 0) and (cnt.rcvd.rec = 0) then
+			dmisg140.irst = dmir.status.pndg
+		endif
+		if (cnt.rec > 0) and (cnt.rcvd.rec <> 0) and (cnt.rcvd.rec < cnt.rec) then
+			dmisg140.irst = dmir.status.prcv
+		endif
+	endselect
+}
+
+
+function assign.other.values()
+{
+	select	dmisg148.*
+	from	dmisg148
+	where	dmisg148._index1 = {:dmisg140.pcod, :dmisg140.uidn}
+	selectdo
+| 		dmisg140.docn = dmisg148.dnum		|ISGEC002039.o
+		dmisg140.dsca = dmisg148.titl
+		dmisg140.cspa = dmisg148.cspa		
+		dmisg140.type = dmisg148.catg
+		dmisg140.resp = dmisg148.rspd
+		dmisg140.size = dmisg148.size
+		dmisg140.orgn = dmisg148.down
+		dmisg140.soft = dmisg148.soft
+		dmisg140.dwgs = dmisg148.dwgs
+		dmisg140.genm = dmisg148.genm
+		dmisg140.inpt = dmisg148.inpt
+		dmisg140.seqn = dmisg148.seqn
+		dmisg140.rsfd = dmisg140.bsfd
+		dmisg140.iref = dmisg148.iref
+		
+		calculate.hours()
+	endselect
+}
+
+function assign.other.values.update()
+{
+	select	dmisg148.*
+	from	dmisg148
+	where	dmisg148._index1 = {:dmisg140.pcod, :dmisg140.uidn}
+	selectdo
+		dmisg140.cspa = dmisg148.cspa
+		dmisg140.type = dmisg148.catg
+		dmisg140.resp = dmisg148.rspd
+		dmisg140.size = dmisg148.size
+		dmisg140.orgn = dmisg148.down
+		dmisg140.soft = dmisg148.soft
+		dmisg140.dwgs = dmisg148.dwgs
+		dmisg140.genm = dmisg148.genm
+		dmisg140.inpt = dmisg148.inpt
+		dmisg140.seqn = dmisg148.seqn
+		
+		calculate.hours()
+	endselect
+}
+
+function calculate.hours()
+{
+	select	dmisg153.*
+	from	dmisg153
+	where	dmisg153._index1 = {:dmisg140.pcod, :dmisg140.resp}
+	and	dmisg153.drep = :dmisg140.drep
+	and	dmisg153.oscd = :dmisg140.oscd
+	selectdo
+		dmisg140.dhrs = dmisg148.drhr * (dmisg153.dref / 100)
+		dmisg140.chrs = dmisg148.chhr * (dmisg153.chef / 100)
+		dmisg140.ehrs = dmisg148.lehr * (dmisg153.leef / 100)
+		dmisg140.lmhr = dmisg148.lmhr * (dmisg153.lmef / 100)
+		dmisg140.dref = dmisg153.dref
+		dmisg140.chef = dmisg153.chef
+		dmisg140.leef = dmisg153.leef
+		dmisg140.lmef = dmisg153.lmef
+	selectempty
+		dmisg140.dref = 0.0
+		dmisg140.chef = 0.0
+		dmisg140.leef = 0.0
+		dmisg140.lmef = 0.0
+		dmisg140.dhrs = 0.0
+		dmisg140.chrs = 0.0
+		dmisg140.ehrs = 0.0
+		dmisg140.lmhr = 0.0
+	endselect
+}
+
+| function fetch.data.from.tpisg230()							|#ISGEC0181.sn
+| {
+
+| 	select	tpisg230.*
+| 	from	tpisg230
+| 	where	tpisg230.dwno = :dmisg140.docn
+| 	order by tpisg230.trdt asc
+| 	as set with 1 rows
+| 	selectdo
+| 		on case tpisg230.bohd
+| 		case "CT_POSENTFORAPPROVAL":
+| 			dmisg140.pcdt = tpisg230.trdt
+| 			break
+| 		case "CT_POAPPROVED":
+| 			dmisg140.padt = tpisg230.trdt
+| 			break
+| 		case "CT_POSTORDERDRGAPPROVAL":
+| 			dmisg140.podt = tpisg230.trdt
+| 			break
+| 		case "CT_PREORDERTECHCLEAR":
+| 			dmisg140.prdt = tpisg230.trdt
+| 			break
+| 		case "CT_POSTORDERDRGSUBMIT":
+| 			dmisg140.psdt = tpisg230.trdt
+| 			break
+| 		case "CT_INDENTAPPROVED":
+| 			dmisg140.iadt = tpisg230.trdt
+| 			break
+| 		case "CT_INTADVANCEREALEASE":
+| 			dmisg140.itdt = tpisg230.trdt
+| 			break
+| 		case "CT_FIRSTADVANCEREALEASE":
+| 			dmisg140.fadt = tpisg230.trdt
+| 			break
+| 		endcase
+| 	endselect
+| }
+
+| function get.activity.itemref.smdl()
+| {
+| 	select	dmisg148.pcod,
+| 		dmisg148.uidn
+| 	from	dmisg148
+| 	where	dmisg148.dnum = :dmisg140.docn
+| 	selectdo
+| 		select	dmisg160.acty,
+| 			dmisg160.itrf
+| 		from	dmisg160
+| 		where	dmisg160._index1 = {:dmisg148.pcod,:dmisg148.uidn}
+| 		selectdo
+| 			dmisg140.iref = dmisg160.itrf
+| 			dmisg140.acty = dmisg160.acty
+| 		selectempty
+| 			dmisg160.acty = ""
+| 			dmisg160.itrf = ""
+| 		endselect
+| 	endselect
+| 		
+
+| }												|#ISGEC0181.en
+
+function update.baseline()
+{
+	domain	tcdate		BaselineStart, BaselineFinish,
+				OutlookManualStart, OutlookManualFinish,			|#ISGECMOD035.sn
+				OutlookStartdate, OutlookFinishdate				|#prasanna.n.24.12.2018
+	domain	tfgld.date	OutlookStart, OutlookFinish					|#ISGECMOD035.en
+	domain	tcmcs.str50	m.bohd								|#prasanna.n.24.12.2018
+	domain	tcyesno	ItemRefFlag								|#veena.09-01-2019
+	
+	select	dmisg140.bssd, dmisg140.bsfd,
+		dmisg140.rssd, dmisg140.rsfd,
+		dmisg140.cprj, dmisg140.iref,
+		dmisg140.mosd, dmisg140.moed,
+		dmisg140.flag, dmisg140.orgn
+	from	dmisg140	for update
+	where	dmisg140._index1 = {:dmisg140.pcod, :dmisg140.cprj}
+	selectdo
+		ItemRefFlag = tcyesno.yes							|#veena.sn.09-01-2019
+		select	tpisg220.cact					
+		from	tpisg220
+		where	tpisg220._index1 = {:dmisg140.cprj}
+		and	tpisg220.cact =:dmisg140.iref
+		selectdo
+			ItemRefFlag = tcyesno.no
+		endselect									
+			
+			
+		|if dmisg140.orgn = "VEN" then						|#prasanna.sn.24.12.2018
+		if dmisg140.orgn = "VEN" and ItemRefFlag = tcyesno.yes	then			|#veena.en.09-01-2019
+			m.bohd = "CT_POSTORDERDRGAPPROVAL"
+		else
+			m.bohd = "CT_DOCUMENTAPPROVED"
+		endif									|#prasanna.en.24.12.2018
+		
+		if not isspace(dmisg140.iref) then
+			select	tpisg220.cprj, tpisg220.sdst, tpisg220.sdfn,
+				tpisg220.oted, tpisg220.otsd,
+				tpisg220.mosd, tpisg220.moed					|#ISGECMOD035.n
+			from	tpisg220
+			where	tpisg220._index1 = {:dmisg140.cprj}
+| 			and	tpisg220.bohd = "CT_DOCUMENTAPPROVED"				|#prasanna.o.24.12.2018
+			and	tpisg220.bohd = :m.bohd						|#prasanna.n.24.12.2018
+			and	(tpisg220.sub1 =:dmisg140.iref
+			or	tpisg220.cact =:dmisg140.iref)
+			as set with 1 rows
+			selectdo
+				OutlookStart = tpisg220.otsd
+				OutlookFinish = tpisg220.oted
+				
+				change_from_date_to_utc(OutlookStart, OutlookStartdate)			|#prasanna.sn.24.12.2018	
+				change_from_date_to_utc(OutlookFinish, OutlookFinishdate)		|#prasanna.en.24.12.2018
+				change_from_date_to_utc(tpisg220.sdst, BaselineStart)
+				change_from_date_to_utc(tpisg220.sdfn, BaselineFinish)
+				
+				change_from_date_to_utc(tpisg220.mosd, OutlookManualStart)	|#ISGECMOD035.sn
+				change_from_date_to_utc(tpisg220.moed, OutlookManualFinish)	|#ISGECMOD035.en
+			
+				dmisg140.bssd = BaselineStart
+				dmisg140.bsfd = BaselineFinish
+				dmisg140.mosd = OutlookStart	|dmisg140.mosd is system outlook start date	|#ISGECMOD035.sn
+				dmisg140.moed = OutlookFinish	|dmisg140.moed is system outlook Finish date
+														|#Sahil.Sharma.20.02.2019.so
+| 				if	OutlookManualStart = 0 and OutlookStartdate = 0	then			|#prasanna.sn.24.12.2018
+| 					dmisg140.rssd = BaselineStart
+| 				else
+| 					if	OutlookManualStart > OutlookStartdate	then			
+| 						dmisg140.rssd = OutlookManualStart
+| 					else
+| 						dmisg140.rssd = OutlookStartdate						
+| 					endif
+| 				endif
+| 				
+| 				
+| 				if	OutlookManualFinish = 0 and OutlookFinishdate = 0	then
+| 					dmisg140.rsfd = BaselineFinish
+| 				else
+| 					if	OutlookManualFinish > OutlookFinishdate	then			
+| 						dmisg140.rsfd = OutlookManualFinish
+| 					else
+| 						dmisg140.rsfd = OutlookFinishdate						
+| 					endif
+| 				endif										|#prasanna.en.24.12.2018
+														|#Sahil.Sharma.20.02.2019.eo
+				
+				if dmisg140.rssd < valid.utc then						|#Sahil.Sharma.20.02.2019.sn
+					if OutlookStartdate > valid.date then
+						dmisg140.rssd = OutlookStartdate
+					else
+						dmisg140.rssd = BaselineStart
+					endif
+				endif
+						
+				if dmisg140.rsfd < valid.utc then						
+					if OutlookFinishdate > valid.date then
+						dmisg140.rsfd = OutlookFinishdate
+					else
+						dmisg140.rsfd = BaselineFinish
+					endif
+				endif
+														|#Sahil.Sharma.20.02.2019.en
+				
+				
+				
+				dmisg140.flag = dmdateflag.manual
+												|#ISGECMOD035.en
+											
+| 				dmisg140.rssd = OutlookStart					|#ISGECMOD035.so
+| 				dmisg140.rsfd = OutlookFinish					|#ISGECMOD035.eo				
+
+				db.update(tdmisg140, db.retry, e)
+			selectempty
+				select	tpisg220.cprj
+				from	tpisg220
+				where	tpisg220._index1 = {:dmisg140.cprj}
+				as set with 1 rows
+				selectdo
+					dmisg140.bssd = 0
+					dmisg140.bsfd = 0
+					dmisg140.mosd = 0					|#ISGECMOD035.sn
+					dmisg140.flag = empty
+					dmisg140.moed = 0					|#ISGECMOD035.en
+					dmisg140.rssd = 0				
+					dmisg140.rsfd = 0				
+					db.update(tdmisg140, db.retry, e)
+				endselect
+			endselect
+		else
+			select	tpisg220.cprj
+			from	tpisg220
+			where	tpisg220._index1 = {:dmisg140.cprj}
+			as set with 1 rows
+			selectdo
+				dmisg140.bssd = 0
+				dmisg140.bsfd = 0
+				dmisg140.mosd = 0						|#ISGECMOD035.sn
+				dmisg140.flag = empty
+				dmisg140.moed = 0						|#ISGECMOD035.en
+				dmisg140.rssd = 0					
+				dmisg140.rsfd = 0					
+				db.update(tdmisg140, db.retry, e)
+			endselect
+		endif
+	endselect
+	if e = 0 then
+		commit.transaction()
+	endif
+}
+
+function change_from_date_to_utc(domain tfgld.date	i.date,
+			 ref	domain	tcdate		o.utc)
+{
+	domain	tcmcs.long	yy,mm,dd,hrs,mnths,secs
+	yy = 0
+	mm = 0
+	dd = 0
+	hrs = 0
+	mnths = 0
+	secs = 0
+	o.utc = 0
+	
+	if i.date <> 0 then
+		num.to.date(i.date,yy,mm,dd)
+		o.utc = date.to.utc(yy,mm,dd,00,00,00)
+	else
+		o.utc = 0
+	endif
+}
+												|#ISEGCMOD035.sn
+| function update.revised.schedule.dates(
+| 		domain	tcorno		in.pcod,
+| 		domain	tccprj		in.cprj)	
+| {
+| 	domain	tcdate		curr.date,
+| 				OS.SystemDate,
+| 				OF.SystemDate
+| 	
+| 	found = 0
+| 	
+| 	curr.date = utc.num()
+| 	
+| 	select	dmisg140.bssd, dmisg140.bsfd,
+| 		dmisg140.rssd, dmisg140.rsfd,
+| 		dmisg140.mosd, dmisg140.moed,
+| 		dmisg140.flag
+| 	from	dmisg140	for update
+| 	where	dmisg140._index1 = {:in.pcod, :in.cprj}
+| 	and	dmisg140.flag = dmdateflag.manual
+| 	and	dmisg140.iref <> ""
+| 	selectdo	
+| 		change_from_date_to_utc(dmisg140.mosd,OS.SystemDate)
+| 		change_from_date_to_utc(dmisg140.moed,OF.SystemDate)
+| 		if (dmisg140.rssd > curr.date) then
+| 			found = 1
+| 			if OS.SystemDate > dmisg140.bssd then
+| 				dmisg140.rssd = dmisg140.bssd
+| 				dmisg140.flag = dmdateflag.baseline
+| 			else
+| 				dmisg140.rssd = OS.SystemDate
+| 				dmisg140.flag = dmdateflag.system
+| 			endif	
+| 		endif	
+| 		
+| 		if (dmisg140.rsfd > curr.date) then
+| 			found = 1
+| 			if OF.SystemDate > dmisg140.bsfd then
+| 				dmisg140.rsfd = dmisg140.bsfd
+| 				dmisg140.flag = dmdateflag.baseline
+| 			else
+| 				dmisg140.rsfd = OF.SystemDate
+| 				dmisg140.flag = dmdateflag.system
+| 			endif	
+| 		endif	
+| 		
+| 		if found then	
+| 			db.update(tdmisg140,db.retry,e)
+| 		endif	
+| 	endselect
+
+| 	if not e then
+| 		commit.transaction()
+| 	else
+| 		abort.transaction()
+| 	endif	
+| }
+												|#ISGECMOD035.en
+function update.item.reference(								|#ISGEC01145.sn
+					domain	tcorno	a.pcod,
+					domain	tccprj	a.cprj
+									)
+{
+	select	dmisg140.cprj,
+		dmisg140.pcod,
+		dmisg140.iref
+	from	dmisg140	for update
+	where	dmisg140._index1 = {:a.pcod, :a.cprj}
+	selectdo
+		if not isspace(dmisg140.iref)	then
+			select	tpisg220.cprj
+			from	tpisg220
+			where	tpisg220._index1 = {:dmisg140.cprj, :dmisg140.pcod}
+			and	(tpisg220.sub1 = :dmisg140.iref
+			or	tpisg220.cact = :dmisg140.iref)
+			as set with 1 rows
+			selectdo 
+			selectempty
+				dmisg140.iref = ""
+				db.update(tdmisg140, db.retry, e)
+				if e = 0 then
+					commit.transaction()
+				endif
+			endselect
+		endif
+	endselect
+}
+
+function check.insert.data()						|ISGEC002039.sn
+{
+	long a.pstn							
+	domain	tccprj 		a.proj
+	domain	tcmcs.str25	a.uid
+	domain	tppdm.cspa	a.elem
+	a.proj = ""
+	a.uid = ""
+	a.pstn = pos(dmisg140.docn,"-")
+	a.proj = trim$(dmisg140.docn(1;a.pstn-1))
+	a.uid = trim$(dmisg140.docn(a.pstn+1;25))
+	if trim$(dmisg140.cprj) <> a.proj then				
+		message("Project Number & document ID is not matching")
+		choice.again()
+		else if  trim$(dmisg140.uidn) <> a.uid then 
+			message("UID & document ID is not matching")
+			choice.again()
+			else if trim$(dmisg140.uidn(1;8)) <> trim$(dmisg140.cspa) then
+				message("UID & Element is not matching")
+				choice.again()
+			endif
+		endif
+	endif	
+	select	tpptc100.cprj, tpptc100.cspa
+	from	tpptc100
+	where	tpptc100._index1 = {:dmisg140.cprj, :dmisg140.cspa}
+	selectdo
+		if not Check_Element_Level(dmisg140.cprj, dmisg140.cspa) then
+			message("Element must be Equal or Greater than Level 4")
+			choice.again()
+		endif
+	selectempty
+		message("Element does not exist with this project")
+		choice.again()
+	endselect
+	select a_dmisg140.pcod,
+		a_dmisg140.cprj
+	from   dmisg140 a_dmisg140
+	where	a_dmisg140._index1 <> {:dmisg140.pcod}
+	and	a_dmisg140.cprj = :dmisg140.cprj	
+	group by a_dmisg140.cprj,a_dmisg140.pcod
+	selectdo
+		message("Product & Project code is not matching")
+		choice.again()
+	endselect
+									
+}									|ISGEC002039.en
+
+| function disable.delete()
+| {
+| 	if dmisg140.acdt = 0 then
+| 		disable.commands(mark.delete)
+| 	else
+| 		enable.commands(mark.delete)
+| 	endif	
+| }
+												|#ISGEC01145.en	

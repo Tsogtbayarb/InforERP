@@ -1,0 +1,116 @@
+|******************************************************************************
+|* dmisg005  0  VRC B61U a7 live
+|* DAL2 for dmisg005
+|* tools1
+|* 14-05-05 [12:42]
+|******************************************************************************
+|* Script Type: DAL
+|******************************************************************************
+                                                                                
+#include <bic_dal2>
+
+	table		tdmisg005
+	table		ttpptc120
+	table		ttcisg004
+	table		ttcibd001
+	
+	domain	tcitem	loti.item
+function extern long before.open.object.set()
+{						
+	define.field.dependencies()
+	return(0)
+}
+
+function extern long before.save.object(long type)
+{
+	if dmisg005.stat = dmstat.expire then
+		Change_Item_Release_Line_Status(dmisg005.cprj,dmisg005.cspa,
+				dmisg005.loti,dmisg005.item)
+| 				dmisg005.loti,dmisg005.seqn,dmisg005.srnb)
+	endif
+	return(0)
+}
+
+
+|**********************   FIELD HOOKS *******************
+
+function extern boolean dmisg005.loti.is.valid(long type)
+{
+	on case type
+	case DAL_UPDATE :
+		with.old.object.values.do(get.old.values)
+
+		select	tcibd001.ctyp						|GH420CR772.a.s
+		from	tcibd001
+		where	tcibd001._index1 = {:loti.item}
+		as set with 1 rows
+		selectdo
+			if tcibd001.ctyp = "091" then
+				dal.set.error.message("@ Stand Lot Item cannot be changed")
+				return(DALHOOKERROR)
+			endif
+		endselect
+		break
+	endcase
+	
+	select 	tpptc120.item
+	from	tpptc120
+	where	tpptc120._index1 = {:dmisg005.cprj,:dmisg005.cspa}
+	and	tpptc120.item = :dmisg005.loti
+	as set with 1 rows
+	selectdo
+	selectempty
+		dal.set.error.message("@ Enter Valid Lot Item")
+		return(DALHOOKERROR)
+	endselect
+	
+	return(true)
+}
+
+function get.old.values()
+{
+	loti.item = dmisg005.loti
+}
+
+|**** Dependencies Section ****************************************************
+
+function void define.field.dependencies()
+{
+	|* Initialize field relations.
+	dal.init.field.dependencies()
+					
+	dal.field.depends.on("dmisg005.loti",
+		HOOK_IS_VALID,		"dmisg005.cprj",
+					"dmisg005.cspa")
+	|* Add direct dependent fields.
+	|* Please keep the fields in alphabetical order.
+
+	dal.finalize.field.dependencies()
+}
+
+|****************************
+function long Change_Item_Release_Line_Status
+			(
+				domain	tccprj		i.cprj,		|Projec
+				domain	tppdm.cspa	i.cspa,		|Element
+				domain	tcitem		i.item,		|Lot Item
+				domain	tcitem		i.citm		|Item 
+			)
+{
+	long	ret
+	
+	|db.retry.point()
+	select 	tcisg004.stat
+	from	tcisg004 for update
+	where	tcisg004._index1 = {:i.cprj,:i.cspa,:i.item,:i.citm}
+	selectdo
+		dal.change.object("tcisg004")
+		dal.set.field("tcisg004.stat", dmstat.expire)
+		ret = dal.save.object("tcisg004")
+		if	ret <> 0	then
+			return(DALHOOKERROR)
+		endif
+	endselect
+	
+	return(0)
+}

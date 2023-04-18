@@ -1,0 +1,928 @@
+|******************************************************************************
+|* dmisg1114m001  0  VRC B61U a7 isg 
+|* DCR for Approval
+|* Installation user             
+|* 2015-01-14
+|******************************************************************************
+|* Main table dmisg114 DCR, Form Type 1
+|******************************************************************************
+|* ISGEC004003, IT0047, Dharmendra, Dt. 21-01-2015, B61U a7 isg    
+|*
+|* PATCH001018, Dharmendra, 13-03-2015
+|*****************************************************************************
+|*IDENT PATCH002030, Mani sharma , Dt . 14-04-2015, VRC B61u a7 isg   
+|*Email Alert on Accept/Reject
+|******************************************************************************
+|* IDENT ISGEC01127 Saikat Ghosh, Date 28-07-2015, Case 36522 
+|* PLM-Update Incoming document Master needs modifications 
+|* Requirement:
+|* 	When DCR is approved, ERP generates XML file to UNLOCK, in this case only 
+|*	the key word will be changed to REVISED.
+|*
+|* ISGEC004021, Dharmendra, 12-10-2015, B61U a7 isg
+|*
+|* ISGEC017001, Manish Manchanda, 2017-01-04
+|* Modifications - date field set to default.
+|*
+|* GH173CR487, RAvi Kumar, 25-10-2019
+|* Generate log and email alert if previous version of Item is not expired on DCR approval
+|*
+|****************************** declaration section ***************************
+declaration:
+
+  table   tdmisg114 | DCR
+  table   tdmisg115
+  table   tdmisg001
+  table   tdmisg005
+  table   tdmisg003
+  table   tdmisg000
+  table   tdmisg101
+  table   tbpmdm001
+  table   ttccom001
+  table   tdmisg103
+  table		ttpmsl000			|#ISGEC004021.sn
+  table		tdmisg121			|#ISGEC004021.en
+  table		tdmisg116  			|RAvi.a.GH173CR487
+  table		tdmisg117  			|RAvi.a.GH173CR487
+  table		ttcmcs052  			|RAvi.a.GH173CR487
+  table		ttppdm090  			|RAvi.a.GH173CR487
+  table		ttcibd001  			|RAvi.a.GH173CR487
+  
+|   extern	domain	tfgld.user	o.emno
+  string	query.string(200)
+  string	unlock.path(100)
+  domain	tcmcs.str100	approver.remarks(1)
+    extern	domain	dmdoc.revv	new.revision	|#ISGEC004021.sn
+      extern	domain	tcpono	revision.no				|#ISGEC004021.en
+  domain tclogn 	v.logname
+  domain	tcmcs.s512m	body.attachment				|RAvi.a.GH173CR487
+	extern	long	file.ret, flag.alert					|RAvi.a.GH173CR487
+	extern	domain	tcdate	date.log
+  #include <bic_dam>
+  #include <bic_cmf>
+  #include <bic_text>
+
+|****************************** program section ********************************
+before.program:
+| 	o.emno = logname$
+| 	query.string = "dmisg114.user = :o.emno and (dmisg114.stat = dmisg.dcr.approval or dmisg114.stat = dmisg.dcr.approved)"
+
+| 	query.extend.where(query.string)
+	tcmcs.dll0095.read.parm("tpmsl000")			|#ISGEC004021.n
+|****************************** choice section **********************************
+choice.process:
+before.choice:
+	if not check.conditions() then
+		choice.again()
+	endif	
+	
+on.choice:
+	process.dcr()
+	if send.email.alert() then
+		message("Sending Email Failed")
+	endif	
+
+after.choice:										|RAvi.a.s.GH173CR487
+	create.log.docwise()
+	create.log.itemwise()
+	
+functions:
+
+function process.dcr()
+{
+	if dmisg114.rejc = tcyesno.yes then
+		reject.dcr()
+	else if dmisg114.accp = tcyesno.yes then
+		if	ask.enum("dmisg000004", tcyesno.no) = tcyesno.yes	then
+			|This will also expire all linked documents........?
+			v.logname = logname$
+			select	dmisg000.*
+			from 	dmisg000
+			where 	dmisg000._index1 = {:v.logname}
+			as set with 1 rows
+			selectdo
+				unlock.path = strip$(dmisg000.ulok)
+				accept.dcr()
+			selectempty
+				message("Unlock Path Not Maintained for this User")
+			endselect
+		endif	
+	endif	
+	endif
+}
+
+function reject.dcr()
+{
+	select	dmisg114.*
+	from	dmisg114 for update
+	where	dmisg114._index1 = {:dmisg114.dcrn}
+	selectdo
+		dmisg114.stat = dmisg.dcr.creation
+		dmisg114.proc = tcyesno.no
+		db.update(tdmisg114, db.retry, e)
+		
+		select 	dmisg115.*
+		from	dmisg115
+		where	dmisg115._index1 = {:dmisg114.dcrn}
+		selectdo
+			select 	dmisg001.wfst
+			from	dmisg001 for update
+			where	dmisg001._index1 = {:dmisg115.docd, :dmisg115.revn}
+			selectdo
+				dmisg001.wfst = dmisg.wfst.released
+				db.update(tdmisg001, db.retry, e)
+			endselect
+		endselect
+		
+		commit.transaction()
+	endselect
+	message("DCR has been rejected.")
+}
+
+
+function accept.dcr()
+{
+	select	dmisg114.*
+	from	dmisg114 for update
+	where	dmisg114._index1 = {:dmisg114.dcrn}
+	selectdo
+		dmisg114.stat = dmisg.dcr.approved
+		dmisg114.appt = utc.num()
+		db.update(tdmisg114, db.retry, e)
+		
+		select 	dmisg115.*
+		from	dmisg115
+		where	dmisg115._index1 = {:dmisg114.dcrn}
+		selectdo
+			Change_Status()
+			if tpmsl000.dms3 = tcyesno.yes then	|#ISGEC004021.sn
+				create_new_revision_in_document()
+			endif					|#ISGEC004021.en
+		endselect
+		
+		commit.transaction()
+	endselect
+	message("DCR has been approved.")
+
+}
+
+
+function Change_Status()
+{
+	long	ret, k, rt, ret_val
+	string	tmp.error(100), error(200)
+	
+	select	dmisg001.*
+	from	dmisg001 for update
+	where	dmisg001._index1 = {:dmisg115.docd, :dmisg115.revn}
+	selectdo
+		dal.change.object("dmisg001")
+		dal.set.field("dmisg001.stat", dmstat.expire)
+		dal.set.field("dmisg001.wfst", dmisg.wfst.underrevision)
+		ret = dal.save.object("dmisg001")
+		error = ""
+		tmp.error = ""
+		if	ret <> 0	then
+			error = ""
+			rt = dal.count.error.messages()
+			for k = rt to 1 step -1
+				ret_val = dal.get.error.message(tmp.error)
+				error = error & trim$(tmp.error)
+			endfor
+		endif	
+		if	not isspace(error)	then
+			mess("@" & error, 0)
+		endif	
+		Change_Status_Incoming_Lot_Item()
+		create.xml.file()
+	endselect
+	clean.mess()	
+}
+
+function Change_Status_Incoming_Lot_Item()
+{
+	long	ret1, k, rt1, ret_val
+	string	tmp.error(100), error1(200)
+	
+	select	dmisg005.stat, dmisg005.cprj, dmisg005.cspa, dmisg005.loti,
+		dmisg005.item
+	from	dmisg005 for update
+	where	dmisg005.docn = {:dmisg115.docd}
+	and	dmisg005.revn = {:dmisg115.revn}
+	selectdo
+		dal.change.object("dmisg005")
+		dal.set.field("dmisg005.stat", dmstat.expire)
+		ret1 = dal.save.object("dmisg005")
+		error1 = ""
+		tmp.error = ""
+		if	ret1 <> 0	then
+			error1 = ""
+			rt1 = dal.count.error.messages()
+			for k = rt1 to 1 step -1
+				ret_val = dal.get.error.message(tmp.error)
+				error1 = error1 & trim$(tmp.error)
+			endfor
+		endif	
+		if	not isspace(error1)	then
+			mess("@" & error1, 0)
+		endif
+		|Change_Status_Item_Release_Line()
+	endselect	
+}
+
+function boolean check.conditions()
+{
+	if dmisg114.stat = dmisg.dcr.approved then
+		message("DCR is already approved.")
+		return(false)
+	endif
+	
+	if dmisg114.accp = tcyesno.no and dmisg114.rejc = tcyesno.no then
+		message("select Accept or Reject.")
+		return(false)
+	endif
+	
+	return(true)
+}
+
+function create.xml.file()
+{
+	long    Head1, Head2, Head3, Head4, retval, cmfId, fd.write
+	
+	Head1 = 0
+	Head2 = 0
+	Head3 = 0
+	Head4 = 0
+	retval = 0
+	cmfId = 0
+	fd.write = 0
+
+	if not isspace(unlock.path) then
+	
+		cmfId = xmlNewNode("InforLN-PLM")
+| 		Head2 = xmlSetAttribute(cmfID, "Type","Unlock")				|#ISGEC01127.o
+ 		Head2 = xmlSetAttribute(cmfID, "Type", "Revised")			|#ISGEC01127.n
+
+		Head1 = xmlNewDataElement("Documents","", cmfId)
+	
+		Head3 = xmlNewDataElement("Document","", Head1)
+	
+		retval = xmlSetAttribute(Head3, "VaultUserName",trim$(dmisg001.user))
+		retval = xmlSetAttribute(Head3, "VaultDBName",trim$(dmisg001.name))
+		retval = xmlSetAttribute(Head3, "FileName",trim$(dmisg001.dsca))	|# PATCH001018.n
+		retval = xmlSetAttribute(Head3, "IsgecDataSource",trim$(dmisg001.sorc))
+		retval = xmlSetAttribute(Head3, "Main","True")
+		retval = xmlSetAttribute(Head3, "ComponentStatus",trim$(dmisg114.comp))
+		retval = xmlSetAttribute(Head3, "ApprovalRequiredBy",dmisg114.apdt)
+		retval = xmlSetAttribute(Head3, "Description",trim$(dmisg114.dsca))
+		retval = xmlSetAttribute(Head3, "RequestPriority",dmisg114.reqs)
+		retval = xmlSetAttribute(Head3, "DCRCategory",dmisg115.catg)
+		retval = xmlSetAttribute(Head3, "DCRDate",dmisg114.apdt)
+		retval = xmlSetAttribute(Head3, "DCRNo",trim$(dmisg115.dcrn))
+		retval = xmlSetAttribute(Head3, "UserID",trim$(logname$))
+		retval = xmlSetAttribute(Head3, "RevisionNo",trim$(dmisg001.revn))
+		retval = xmlSetAttribute(Head3, "DocumentID",trim$(dmisg001.dcid))
+		retval = xmlSetAttribute(Head3, "Element",trim$(dmisg001.cspa))	
+		retval = xmlSetAttribute(Head3, "Project",trim$(dmisg001.cprj))
+		
+		select	dmisg003.*
+		from	dmisg003
+		where	dmisg003._index1 = {:dmisg001.docn, :dmisg001.revn}
+		selectdo
+			Head4 = xmlNewDataElement("Document","", Head1)
+
+			retval = xmlSetAttribute(Head4, "Type",ltoe(1))
+			retval = xmlSetAttribute(Head4, "Status",trim$(dmisg003.stat))
+			retval = xmlSetAttribute(Head4, "PDF_filename",trim$(dmisg003.pdff))
+			retval = xmlSetAttribute(Head4, "Main","False")			|# PATCH001018.n
+			retval = xmlSetAttribute(Head4, "DrawingNumber",trim$(dmisg003.drgn))
+			retval = xmlSetAttribute(Head4, "DocumentRevision",trim$(dmisg003.drev))
+			retval = xmlSetAttribute(Head4, "DrawingTitle",trim$(dmisg003.dcfn))
+			retval = xmlSetAttribute(Head4, "DocumentFileName",trim$(dmisg003.drgt))
+		endselect
+		
+		fd.write = seq.open(unlock.path & "\" & trim$(dmisg001.docn) & ".xml", "w")
+	
+		xmlWritePretty(fd.write, cmfId, 0 )
+		seq.close(fd.write)
+	
+		xmlDelete(cmfId, 0)
+
+	endif
+
+}
+
+
+function long send.email.alert()						|PATCH002030.sn
+{
+	string tmp.file(200),line(500)
+	long fp,srno
+	domain	tclogn	user.id
+	long    message.ID
+        long    to.ID
+        long    attachment.ID
+        long    ret
+
+        domain ttcmf.prov service       
+                        |Infor ERP Enterprise eMessage Connector service for 
+                        |transporting messages
+        long stat       |Variable to hold return values
+        long mid        |CMF message id
+	
+	tmp.file = creat.tmp.file$(bse.tmp.dir$())
+	fp = seq.open(tmp.file,"w+")
+	if fp <=0 then
+		message("Temp file can not be created")
+		return(1)
+	endif
+	
+	user.id = logname$
+	
+	select 	bpmdm001.mail,tccom001.nama 
+	from 	tccom001,bpmdm001
+	where 	tccom001._index4 = {:user.id}
+	and	tccom001.emno refers to bpmdm001
+	as set with 1 rows
+	selectdo
+	selectempty
+		bpmdm001.mail = ""
+	endselect
+	
+	if isspace(bpmdm001.mail) then
+		message("Email ID for DCR Approver/Rejector" & tccom001.nama & " Not maintained")
+		return(1)
+	endif		
+	
+	line = ""
+	if dmisg114.accp = tcyesno.yes  then
+| 		ret = text.to.buf("dmisg114.remk", language$, 1, approver.remarks)
+		line = strip$(line) & "Your DCR No. " & dmisg114.dcrn & "with Document No. "&dmisg115.docd & "and Revision No." &dmisg115.revn &"has been Approved"
+		line = strip$(line) & " with the following remarks -" & strip$(shiftl$(dmisg114.remk)) & " by " & tccom001.nama & "."
+	endif
+	
+	if dmisg114.rejc = tcyesno.yes  then
+| 		ret = text.to.buf("dmisg114.remk", language$, 1, approver.remarks)
+		line = strip$(line) & "Your DCR No. " & dmisg114.dcrn & "with Document No. "&dmisg115.docd & "and Revision No." &dmisg115.revn &"has been Rejected"
+		line = strip$(line) & " with the following remarks -" & strip$(shiftl$(dmisg114.remk)) & " by " & tccom001.nama & "."
+	endif
+	
+	seq.write(line,len(line),fp)
+	ret = seq.close(fp)
+	
+	
+	
+	
+	|******* Email Header
+        message.ID = cmf.create()
+	
+	if dmisg114.accp = tcyesno.yes then
+		line = "Regarding Approval of DCR No. " & str$(dmisg114.dcrn) & "."
+	else
+		line = "Regarding Rejection of DCR No. " & str$(dmisg114.dcrn) & "."	
+	endif
+        ret = cmf.setClass(message.ID, "CMF.NOTE.EMAIL")
+        ret = cmf.setSubject(message.ID,line)
+	
+	|******** from ID
+	to.ID = cmf.createRecipient(message.ID, ttcmf.role.from)  
+	ret = cmf.setRecipientName(to.ID,tccom001.nama)
+        ret = cmf.setRecipientAddress(to.ID, bpmdm001.mail)	
+	ret = cmf.setRecipientType(to.ID, "SMTP")
+ 
+	|******** to ID
+	if dmisg114.accp = tcyesno.yes then 
+		select dmisg101.eunt
+		from   dmisg101
+		where  dmisg101._index2 = {:dmisg114.user,dmisg.cact.approver} 
+		as set with 1 rows
+		selectdo
+		endselect
+		
+		
+		select dmisg103.emno
+		from    dmisg103
+		where   dmisg103._index2 = {:dmisg101.eunt,:dmisg114.cspa,:dmisg114.cprj}
+		and     dmisg103.aopt = (dmalert.dcr.app)
+		selectdo
+			create.receiptant(dmisg103.emno,message.ID)
+		selectempty
+			select dmisg103.emno
+			from    dmisg103
+			where   dmisg103._index2 = {:dmisg101.eunt,:dmisg114.cspa}
+			and     dmisg103.aopt = (dmalert.dcr.app)
+			selectdo
+				create.receiptant(dmisg103.emno,message.ID)
+			selectempty
+				select dmisg103.emno
+				from   dmisg103
+				where  dmisg103._index1 = {dmalert.dcr.app,:dmisg101.eunt}
+				selectdo
+					create.receiptant(dmisg103.emno,message.ID)
+				endselect	
+			endselect	
+		endselect
+	endif	
+	if dmisg114.rejc = tcyesno.yes then 
+		select 	bpmdm001.mail,tccom001.nama 
+		from 	tccom001,bpmdm001
+		where 	tccom001._index4 = {:dmisg114.crea}
+		and	tccom001.emno refers to bpmdm001
+		selectdo
+			to.ID = cmf.createRecipient(message.ID, ttcmf.role.to)  
+			ret = cmf.setRecipientName(to.ID,tccom001.nama)
+			ret = cmf.setRecipientAddress(to.ID, bpmdm001.mail)	
+			ret = cmf.setRecipientResponsibility(to.ID, "TRUE")		
+			ret = cmf.setRecipientType(to.ID, "SMTP")
+		selectempty
+			message("Email ID for Approver "& tccom001.nama &" not Maintained" )
+			return(1)
+		endselect
+	endif 
+	|********* Mail Body
+	attachment.ID = cmf.createAttachment(message.ID)
+	ret = cmf.setAttachmentBody(attachment.ID,ttyeno.yes)
+	ret = cmf.setAttachmentMIME(attachment.ID,"text/plain")                       
+	ret = cmf.setAttachmentFileName(attachment.ID,tmp.file,"abc.txt")
+
+
+	|*********  Send mail
+        if message.ID <>0 then
+                stat = cmf.startService("SMTP",2)
+                if stat<>0 then
+                        message("Message could not be sent "&
+                                "(Infor ERP Enterprise eMessage Connector"&
+                                " service did not start)")
+                        return(1)
+                endif
+                stat = cmf.send(message.ID,"SMTP")
+                if stat<>0 then
+                        message("Message could not be sent "& "(Infor ERP Enterprise eMessage Connector "&
+                                "service refused message)")
+                        cmf.stopService("SMTP",2)
+                        return(1)
+                endif
+                stat = cmf.stopService("SMTP",2)
+        endif
+	return(0)
+}
+							
+function long create.receiptant(domain tcemno in.emno,long i.message.ID)
+{
+
+	long    to.ID,ret
+	
+	select 	bpmdm001.mail,tccom001.nama 
+	from 	tccom001,bpmdm001
+	where 	tccom001._index1 = {:in.emno}
+	and	tccom001.emno refers to bpmdm001
+	selectdo
+		to.ID = cmf.createRecipient(i.message.ID, ttcmf.role.to)  
+		ret = cmf.setRecipientName(to.ID,tccom001.nama)
+		ret = cmf.setRecipientAddress(to.ID, bpmdm001.mail)	
+		ret = cmf.setRecipientResponsibility(to.ID, "TRUE")		
+		ret = cmf.setRecipientType(to.ID, "SMTP")
+	selectempty
+		message("Email ID for Approver/Rejector not maintained" )
+		return(1)
+	endselect
+	return(0)	
+}									|PATCH002030.en
+
+								|#ISGEC004021.sn
+function create_new_revision_in_document()								
+{
+	select	dmisg121.*
+	from	dmisg121
+	where	dmisg121._index1 = {:dmisg115.docd, :dmisg115.revn}
+	selectdo
+		revision.no = val(dmisg115.revn)
+		revision.no = revision.no + 1
+		new.revision = "0" & str$(revision.no)
+		
+		dmisg121.docn = dmisg121.docn
+		dmisg121.revn = new.revision
+		dmisg121.cprj = dmisg121.cprj
+		dmisg121.dsca = dmisg121.dsca
+		dmisg121.aldo = ""
+		dmisg121.alre = ""
+		dmisg121.cspa = dmisg121.cspa
+		dmisg121.type = dmisg121.type
+		dmisg121.resp = dmisg121.resp
+		dmisg121.eunt = dmisg121.eunt
+		dmisg121.size = dmisg121.size
+		dmisg121.orgn = dmisg121.orgn
+		dmisg121.subm = dmisg121.subm
+		dmisg121.intr = dmisg121.intr
+		dmisg121.prod = dmisg121.prod
+		dmisg121.erec = dmisg121.erec
+		dmisg121.info = dmisg121.info
+		dmisg121.remk = ""
+		dmisg121.pldt = 0
+		dmisg121.rele = tcyesno.no
+		dmisg121.acdt = 0
+		dmisg121.vend = dmisg121.vend
+		dmisg121.bpid = ""
+		dmisg121.revd = tcyesno.no
+| 		dmisg121.redt = 0						|#ISGEC017001.o
+		dmisg121.redt	=	date.to.utc(1975, 01, 01, 0, 0, 0)	|#ISGEC017001.n							
+		dmisg121.logn = ""
+		dmisg121.verk = ""
+		dmisg121.extn = tcyesno.no
+		dmisg121.ofbp = ""
+		dmisg121.nama = ""
+		dmisg121.eogn = ""
+| 		dmisg121.exdt = 0						|#ISGEC017001.o
+		dmisg121.exdt	=	date.to.utc(1975, 01, 01, 0, 0, 0)	|#ISGEC017001.n								
+		dmisg121.exrk = ""
+		dmisg121.cler = tcyesno.no
+		dmisg121.bloc = tcyesno.no
+		dmisg121.appr = dmisg121.appr
+		db.insert(tdmisg121, db.retry)
+	endselect
+}
+								
+								|#ISGEC004021.en
+								
+function create.log.docwise()								|RAvi.a.s.GH173CR487
+{
+	flag.alert = 0
+	date.log = utc.num()
+	
+	select	dmisg115.dcrn,
+		dmisg115.docd,
+		dmisg115.revn
+	from	dmisg115
+	where	dmisg115._index1 = {:dmisg114.dcrn}
+	selectdo
+		select	dmisg001.stat
+		from	dmisg001
+		where	dmisg001._index1 = {:dmisg115.docd, :dmisg115.revn}
+		and	dmisg001.stat <> dmstat.expire
+		as set with 1 rows
+		selectdo
+			flag.alert = 1
+			dmisg116.cprj = dmisg114.cprj
+			dmisg116.cspa = dmisg114.cspa
+			dmisg116.dcrn = dmisg114.dcrn
+			dmisg116.docd = dmisg115.docd
+			dmisg116.revn = dmisg115.revn
+			dmisg116.stat = dmisg114.stat
+			dmisg116.dsta = dmisg001.stat
+			dmisg116.ddte = date.log
+			dmisg116.user = logname$
+			db.insert(tdmisg116, db.retry)
+		endselect
+	endselect
+	commit.transaction()
+}
+
+function create.log.itemwise()		
+{
+	
+	select	dmisg115.dcrn,
+		dmisg115.docd,
+		dmisg115.revn
+	from	dmisg115
+	where	dmisg115._index1 = {:dmisg114.dcrn}
+	selectdo
+		select	dmisg005.stat,
+			dmisg005.item
+		from	dmisg005
+		where	dmisg005.docn = :dmisg115.docd
+		and	dmisg005.revn = :dmisg115.revn
+		and	dmisg005.stat <> dmstat.expire
+		as set with 1 rows
+		selectdo
+			flag.alert = 1
+			dmisg117.cprj = dmisg114.cprj
+			dmisg117.cspa = dmisg114.cspa
+			dmisg117.dcrn = dmisg114.dcrn
+			dmisg117.docd = dmisg115.docd
+			dmisg117.revn = dmisg115.revn
+			dmisg117.item = dmisg005.item
+			dmisg117.stat = dmisg114.stat
+			dmisg117.dsta = dmisg005.stat
+			dmisg117.ddte = date.log
+			dmisg117.user = logname$
+			db.insert(tdmisg117, db.retry)
+		endselect
+	endselect
+	commit.transaction()
+	
+	if flag.alert = 1 then
+		send.email.alert.log()
+	endif
+}
+
+function send.email.alert.log()
+{
+	string tmp.file(200),line(500)
+	long fp
+	domain tcemno	emno.code
+	domain	tfgld.user	user.code
+	
+	long    message.ID
+        long    to.ID
+        long    attachment.ID
+        long    ret
+
+	double	amount
+	domain	tccprj	cprj
+        domain	ttcmf.prov service
+        long stat       
+        long mid        
+	domain  ttaad.user       server.user
+	domain  tcdate           server.time
+	
+	tmp.file = bse.tmp.dir$()
+	body.attachment = strip$(tmp.file) & "/Body" & server.user & ".html"
+	file.ret = seq.open(body.attachment , "w+")
+	if file.ret <= 0 then
+		message("Temp file can not be created")
+	endif
+	
+	|******Documentwise DCR Exception**********
+	select	dmisg116.*
+	from	dmisg116
+	where	dmisg116.dcrn = :dmisg114.dcrn
+	and	dmisg116.user = :logname$
+	and	dmisg116.ddte = :date.log
+	as set with 1 rows
+	selectdo
+		line = concat$("	","<p1>","","</p1>") 
+		fp = seq.puts(line , file.ret)
+
+		line = concat$("	", "<p1>", "Following Document not expiry through DCR No. " & dmisg114.dcrn & "<br><br>", "</p1>")
+		fp = seq.puts(line, file.ret)
+
+		line = concat$("	","<p1>","Document Detail -","<br><br>","</p1>")	
+		fp = seq.puts(line, file.ret)
+		
+		line = concat$("	","<table","border=","1"," >")
+		fp = seq.puts(line, file.ret)
+			
+		line = concat$("	","<tr>")
+		fp = seq.puts(line, file.ret)
+		
+		line = concat$("	","<th align =left>","Project","</th>")
+		fp = seq.puts(line, file.ret)
+		
+		line = concat$("	","<th align =left>","Description","</th>")
+		fp = seq.puts(line, file.ret)
+		
+		line = concat$("	","<th align =left>","Element","</th>")
+		fp = seq.puts(line, file.ret)
+		
+		line = concat$("	","<th align =left>","Description","</th>")
+		fp = seq.puts(line, file.ret)
+		
+		line = concat$("	","<th align =left>","Document No.","</th>")
+		fp = seq.puts(line, file.ret)
+		
+		line = concat$("	","<th align =left>","Revision","</th>")
+		fp = seq.puts(line, file.ret)
+		
+		line = concat$("	","<th align =left>","DCR Status","</th>")
+		fp = seq.puts(line, file.ret)
+		
+		line = concat$("	","<th align =left>","Document Status","</th>")
+		fp = seq.puts(line, file.ret)
+		
+		line = concat$("	","</tr>")
+		fp = seq.puts(line , file.ret)
+		
+		select	dmisg116.*,
+			tcmcs052.dsca,
+			tppdm090.desc
+		from	dmisg116,
+			tcmcs052,
+			tppdm090
+		where	dmisg116.dcrn = :dmisg114.dcrn
+		and	dmisg116.user = :logname$
+		and	dmisg116.ddte = :date.log
+		and	dmisg116.cprj refers to tcmcs052
+		and	dmisg116.cspa refers to tppdm090
+		selectdo
+			line = concat$("	","<tr>")
+			fp = seq.puts(line , file.ret)
+	| 		
+			line = concat$("	","<th align =left>", dmisg116.cprj, "</th>")
+			fp = seq.puts(line , file.ret)
+			
+			line = concat$("	", "<th align =left>", tcmcs052.dsca, "</th>")
+			fp = seq.puts(line , file.ret)
+		
+			line = concat$("	","<th align =left>", dmisg116.cspa, "</th>")
+			fp = seq.puts(line , file.ret)
+			
+			line = concat$("	", "<th align =left>", tppdm090.desc, "</th>")
+			fp = seq.puts(line , file.ret)
+		
+			line = concat$("	", "<th align =left>", dmisg116.docd, "</th>")
+			fp = seq.puts(line , file.ret)
+			
+			line = concat$("	", "<th align =left>", dmisg116.revn, "</th>")
+			fp = seq.puts(line , file.ret)
+			
+			line = concat$("	", "<th align =left>", trim$(enum.descr$("dmisg.dcr", dmisg116.stat)), "</th>")
+			fp = seq.puts(line , file.ret)
+			
+			line = concat$("	", "<th align =left>", trim$(enum.descr$("dmstat", dmisg116.dsta)), "</th>")
+			fp = seq.puts(line , file.ret)
+			
+			line = concat$("	", "</tr>")
+			fp = seq.puts(line , file.ret)
+		endselect
+		
+		line = concat$("	","</table>","<br><br>")
+		fp = seq.puts(line , file.ret)
+	endselect
+	
+	
+	|**************Itemwise DCR Exception******************
+	select	dmisg117.*
+	from	dmisg117
+	where	dmisg117.dcrn = :dmisg114.dcrn	
+	and	dmisg117.user = :logname$
+	and	dmisg117.ddte = :date.log
+	as set with 1 rows
+	selectdo
+		line = concat$("	","<p1>","","</p1>") 
+		fp = seq.puts(line , file.ret)
+
+		line = concat$("	", "<p1>", "Following Item is not expiry for your DCR No. " & dmisg114.dcrn & "<br><br>", "</p1>")
+		fp = seq.puts(line, file.ret)
+
+		line = concat$("	","<p1>","Item Detail -","<br><br>","</p1>")	
+		fp = seq.puts(line, file.ret)
+		
+		line = concat$("	","<table","border=","1"," >")
+		fp = seq.puts(line, file.ret)
+			
+		line = concat$("	","<tr>")
+		fp = seq.puts(line, file.ret)
+		
+		line = concat$("	","<th align =left>","Project","</th>")
+		fp = seq.puts(line, file.ret)
+		
+		line = concat$("	","<th align =left>","Description","</th>")
+		fp = seq.puts(line, file.ret)
+		
+		line = concat$("	","<th align =left>","Element","</th>")
+		fp = seq.puts(line, file.ret)
+		
+		line = concat$("	","<th align =left>","Description","</th>")
+		fp = seq.puts(line, file.ret)
+		
+		line = concat$("	","<th align =left>","Document No.","</th>")
+		fp = seq.puts(line, file.ret)
+		
+		line = concat$("	","<th align =left>","Revision","</th>")
+		fp = seq.puts(line, file.ret)
+		
+		line = concat$("	","<th align =left>","Item","</th>")
+		fp = seq.puts(line, file.ret)
+		
+		line = concat$("	","<th align =left>","DCR Status","</th>")
+		fp = seq.puts(line, file.ret)
+		
+		line = concat$("	","<th align =left>","Document Status","</th>")
+		fp = seq.puts(line, file.ret)
+
+		line = concat$("	","</tr>")
+		fp = seq.puts(line , file.ret)
+		
+		select	dmisg117.*,
+			tcmcs052.dsca,
+			tppdm090.desc
+		from	dmisg117, tcmcs052, tppdm090
+		where	dmisg117.dcrn = :dmisg114.dcrn
+		and	dmisg117.user = :logname$
+		and	dmisg117.ddte = :date.log
+		and	dmisg117.cprj refers to tcmcs052
+		and	dmisg117.cspa refers to tppdm090
+		selectdo
+			line = concat$("	","<tr>")
+			fp = seq.puts(line , file.ret)
+	| 		
+			line = concat$("	","<th align =left>", dmisg117.cprj, "</th>")
+			fp = seq.puts(line , file.ret)
+			
+			line = concat$("	", "<th align =left>", tcmcs052.dsca, "</th>")
+			fp = seq.puts(line , file.ret)
+			
+			line = concat$("	","<th align =left>", dmisg117.cspa, "</th>")
+			fp = seq.puts(line , file.ret)
+			
+			line = concat$("	", "<th align =left>", tppdm090.desc, "</th>")
+			fp = seq.puts(line , file.ret)
+			
+			line = concat$("	", "<th align =left>", dmisg117.docd, "</th>")
+			fp = seq.puts(line , file.ret)
+			
+			line = concat$("	", "<th align =left>", dmisg117.revn, "</th>")
+			fp = seq.puts(line , file.ret)
+			
+			line = concat$("	", "<th align =left>", trim$(dmisg117.item), "</th>")
+			fp = seq.puts(line , file.ret)
+			
+			line = concat$("	", "<th align =left>", trim$(enum.descr$("dmisg.dcr", dmisg117.stat)), "</th>")
+			fp = seq.puts(line , file.ret)
+			
+			line = concat$("	", "<th align =left>", trim$(enum.descr$("dmstat", dmisg117.dsta)), "</th>")
+			fp = seq.puts(line , file.ret)
+			
+			line = concat$("	", "</tr>")
+			fp = seq.puts(line , file.ret)
+		endselect
+		
+		line = concat$("	","</table>","<br><br>")
+		fp = seq.puts(line , file.ret)
+	endselect
+
+	line = concat$("	","<p1>","Note - This is an autogenerated e-mail.","<br><br>","</p1>")
+	fp = seq.puts(line , file.ret)
+	
+	ret = seq.close(file.ret)
+	|******* Email Header
+        message.ID = cmf.create()
+	
+	line = "Document/Item is not expiry for DCR No. " & trim$(dmisg114.dcrn)
+	
+        ret = cmf.setClass(message.ID, "CMF.NOTE.EMAIL")
+        ret = cmf.setSubject(message.ID, line)
+	
+	
+	select	bpmdm001.mail,
+		tccom001.nama
+	from	tccom001,
+		bpmdm001
+	where	tccom001._index4 = {:logname$}
+	and	tccom001.emno refers to bpmdm001
+	as set with 1 rows
+	selectdo
+	selectempty
+		bpmdm001.mail = ""
+	endselect
+	
+	if isspace(bpmdm001.mail) then
+		message("Email ID for user " & user.code & " Not maintained")
+	endif	
+	
+	|******** from ID
+	to.ID = cmf.createRecipient(message.ID, ttcmf.role.from)  
+	ret = cmf.setRecipientName(to.ID, tccom001.nama)
+        ret = cmf.setRecipientAddress(to.ID, bpmdm001.mail)	
+	ret = cmf.setRecipientType(to.ID, "SMTP")
+	
+
+	bpmdm001.mail = ""
+	tccom001.nama = ""
+	
+	select	bpmdm001.mail,
+		tccom001.nama 
+	from	tccom001,
+		bpmdm001
+	where	tccom001._index1 = {:dmisg114.user}
+	and	tccom001.emno refers to bpmdm001
+	as set with 1 rows
+	selectdo
+	selectempty
+		bpmdm001.mail = ""
+	endselect
+	bpmdm001.mail = "ravi.kumar2@isgec.co.in"		|For testing
+	
+	if isspace(bpmdm001.mail) then
+		message("Email ID for requester " & dmisg114.user & " Not maintained")
+	else
+		to.ID = cmf.createRecipient(message.ID, ttcmf.role.to)  
+		ret = cmf.setRecipientName(to.ID, tccom001.nama)
+		ret = cmf.setRecipientAddress(to.ID, bpmdm001.mail)
+		ret = cmf.setRecipientResponsibility(to.ID, "TRUE")	
+		ret = cmf.setRecipientType(to.ID, "SMTP")
+	endif
+	
+	|********* Mail Body**************************
+	attachment.ID = cmf.createAttachment(message.ID)
+	ret = cmf.setAttachmentBody(attachment.ID, ttyeno.yes)
+	ret = cmf.setAttachmentMIME(attachment.ID, "text/html")                       
+	ret = cmf.setAttachmentFileName(attachment.ID, body.attachment)
+
+
+	|*********  Send mail**************************
+        if message.ID <>0 then
+                stat = cmf.startService("SMTP", 2)
+                if stat<>0 then
+                        message("Message could not be sent "&
+                                "(Infor ERP Enterprise eMessage Connector"&
+                                " service did not start)")
+                endif
+                stat = cmf.send(message.ID,"SMTP")
+                if stat<>0 then
+                        message("Message could not be sent " & "(Infor ERP Enterprise eMessage Connector " & "service refused message)")
+                        cmf.stopService("SMTP", 2)
+                endif
+                stat = cmf.stopService("SMTP", 2)
+        endif
+}								
+													|RAvi.a.e.GH173CR487

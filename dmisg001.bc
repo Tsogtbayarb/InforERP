@@ -1,0 +1,576 @@
+|******************************************************************************
+|* dmisg001  0  VRC B61U a7 live
+|* DAL2 for dmisg001
+|* baan
+|* 14-08-22 [14:31]
+|******************************************************************************
+|* Script Type: DAL
+|******************************************************************************
+|* ISGECDV001057, IT0205, Arjit Gupta, Dt. 24-09-2014, VRC B61U a7 live
+|* Drawing Release Date and Drawing Release by captured when Drawing Released
+
+|* ISGECDVPLM001, Sujeet Kumar,	2014-12-23
+|* PLM Functionality.
+|* Functional: Mr. Nishant Kaushik/Vikas Yadav
+|*
+|* ISGECDV001211, IT0047, Dharmendra, Dt. 05-01-2015, VRC B61U a7 live
+|* Changes done as discussed with Nishant Kaushik
+|*
+|* ISGEC004003, IT0047, Dharmendra, Dt. 12-01-2015, B61U a7 isg
+|* 
+|* ID GH372CR000, RAvi Kumar, 18-07-2020
+|* IR147016-Remove check from Reviewer session of PLM
+|*
+|* GH436CR775, RAvi Kumar, 19-11-2020
+|* Engineering-Manual selection of Approver/Reviewer to be restricted if person is not authorized for the same
+|******************************************************************************
+                                                                                
+#include <bic_dal2>
+
+	table	tdmisg001
+	table   ttccom001
+	table	tdmisg101			|#ISGEC004003.n
+						|#ISGEC004003.sn
+	extern	domain	tcemno		o.emno
+	extern	domain tcemm.grid	division	
+	extern	domain	tcccty		grouped
+						|#ISGEC004003.en
+long	global.value
+
+function extern long before.open.object.set()
+{
+	dal.field.depends.on("dmisg001.ract.1",
+					HOOK_IS_APPLICABLE , "dmisg001.ract.2")
+	dal.field.depends.on("dmisg001.ract.2",
+					HOOK_IS_APPLICABLE, "dmisg001.ract.1")
+					
+	dal.field.depends.on("dmisg001.aact.1",
+					HOOK_IS_APPLICABLE, "dmisg001.aact.2","dmisg001.aact.3")
+	
+	dal.field.depends.on("dmisg001.aact.2",
+					HOOK_IS_APPLICABLE, "dmisg001.aact.1","dmisg001.aact.2")
+	
+	dal.field.depends.on("dmisg001.aact.3",
+					HOOK_IS_APPLICABLE, "dmisg001.aact.1","dmisg001.aact.1")
+	dal.field.depends.on("dmisg001.ausr",
+					HOOK_IS_APPLICABLE, "dmisg001.ract.2")				
+					
+					
+	return(0)
+}
+
+function extern long before.new.object()				|SM-23082014.sn
+{
+	if global.value = 1 then
+		dmisg001.crtp = tcyesno.yes
+	else
+		dmisg001.crtp = tcyesno.no
+	endif	
+	return(0)
+}									|SM-23082014.en
+
+function extern long before.save.object(long type)			
+{
+						|#ISGECDV001057.sn
+	domain	tfgld.sess calling.prog					|#ISGEC004003.n
+	
+	on case type
+		case DAL_NEW:
+			if	dmisg001.stat = dmstat.process	then
+				dmisg001.drdt = utc.num()
+				dmisg001.drur = logname$
+			endif	
+									|#ISGEC004003.sn
+			get.var(pid,"prog.name$",calling.prog)
+
+			if calling.prog = "dmisg0501m300" then	
+				dmisg001.user = logname$
+			endif
+									|#ISGEC004003.en
+			break
+		case DAL_UPDATE:
+			if	dmisg001.stat = dmstat.process	then
+				dmisg001.drdt = utc.num()
+				dmisg001.drur = logname$
+			endif
+			break
+	Endcase		
+						|#ISGECDV001057.en
+	return(0)
+}									
+
+function extern boolean method.is.allowed(long type)
+{
+	if global.value = 1 then
+		on case type
+			case	DAL_NEW :
+				break
+			case	DAL_UPDATE :
+				if 	dmisg001.stat <> dmstat.submitted then
+					return(false)
+				endif
+				break
+			case	DAL_DESTROY :
+				break
+		endcase
+	endif	
+	
+	return(true)
+}
+							|#ISGECDV001211.sn
+function extern boolean modify.document.is.allowed()
+{
+	if dmisg001.wfst = dmisg.wfst.submitted and dmisg001.stat = dmstat.submitted then
+		return(true)
+	endif
+	return(false)
+
+}
+							|#ISGECDV001211.en
+
+function extern long after.get.object()			
+{
+	if global.value = 1 then
+		if dmisg001.crtp = tcyesno.yes then
+		else
+			return(DALHOOKERROR)
+		endif
+	endif
+		
+	return(0)
+}							
+
+function extern set.global.variable(long i.value)
+{
+	global.value = i.value
+}
+
+
+function extern boolean dmisg001.rusr.is.readonly()
+{
+	domain	tfgld.sess		calling.prog
+	
+	get.var(pid,"prog.name$",calling.prog)
+	
+	if calling.prog = "dmisg0101m200" and dmisg001.wfst = dmisg.wfst.submitted then
+		if dmisgdll0100.document.reviewer.required(dmisg001.type,tcyesno.yes) then
+			return(false)
+		else
+			return(true)
+		endif
+	endif
+
+	return(true)
+}
+						|#ISGEC004003.sn
+function extern boolean dmisg001.rusr.is.valid()
+{
+	domain	tfgld.sess calling.prog
+	get.var(pid,"prog.name$",calling.prog)
+	division = ""
+	grouped = ""
+	
+	if calling.prog = "dmisg0101m200" then
+		select 	dmisg101.*
+		from	dmisg101
+		where	dmisg101._index2 = {:o.emno, dmisg.cact.designer}
+		as set with 1 rows
+		selectdo
+			division = dmisg101.eunt
+			grouped = dmisg101.grup
+		endselect
+		
+		if isspace(grouped) then
+			select	dmisg101.emno
+			from	dmisg101
+| 			where	dmisg101._index1 = {:division}					|GH372CR000.com
+			where	dmisg101.emno = :dmisg001.rusr
+			and	dmisg101.cact = dmisg.cact.reviewer
+			selectdo
+				select	tiisg906.emno 						|GH436CR775.a.s
+				from	tiisg906 
+				where	tiisg906._index1 = {:dmisg101.emno}
+				and	tiisg906.stat = tcyesno.yes
+				selectdo
+				selectempty
+					return(false)
+				endselect							|GH436CR775.a.e
+			selectempty
+				return(false)
+			endselect
+		else
+			select	dmisg101.emno
+			from	dmisg101
+| 			where	dmisg101._index1 = {:division, :grouped, :dmisg001.rusr, dmisg.cact.reviewer}	|GH372CR000.com
+			where	dmisg101.grup = :grouped							|GH372CR000.a
+			and	dmisg101.emno = :dmisg001.rusr							|GH372CR000.a
+			and	dmisg101.cact = dmisg.cact.reviewer						|GH372CR000.a
+			selectdo
+				select	tiisg906.emno 								|GH436CR775.a.s
+				from	tiisg906 
+				where	tiisg906._index1 = {:dmisg101.emno}
+				and	tiisg906.stat = tcyesno.yes
+				selectdo
+				selectempty
+					return(false)
+				endselect									|GH436CR775.a.s
+			selectempty
+				return(false)
+			endselect
+		endif	
+	endif
+
+	return(true)
+}
+						|#ISGEC004003.en
+function extern boolean dmisg001.ausr.is.readonly()
+{
+	domain	tfgld.sess		calling.prog
+	
+	get.var(pid,"prog.name$",calling.prog)
+		
+	if calling.prog = "dmisg0101m200" and dmisg001.wfst = dmisg.wfst.submitted then
+		if dmisgdll0100.document.reviewer.required(dmisg001.type,tcyesno.no) then
+			return(false)
+		else
+			return(true)
+		endif
+	endif
+
+
+	if 	calling.prog = "dmisg0101m300" and
+		dmisg001.wfst = dmisg.wfst.underreview and 
+		dmisg001.ract = dmisg.act.na then
+		if dmisg001.ract.1 = tcyesno.yes then
+			return(true)
+		else
+			return(false)
+		endif
+	endif
+	
+	return(true)
+}
+						|#ISGEC004003.sn
+function extern boolean dmisg001.ausr.is.valid()
+{
+	domain	tfgld.sess calling.prog
+	get.var(pid,"prog.name$",calling.prog)
+	division = ""
+	grouped = ""
+	
+	if calling.prog = "dmisg0101m300" or calling.prog = "dmisg0101m200" then
+		select 	dmisg101.*
+		from	dmisg101
+		where	dmisg101._index2 = {:o.emno, dmisg.cact.reviewer}
+		as set with 1 rows
+		selectdo
+			division = dmisg101.eunt
+			grouped = dmisg101.grup
+		endselect
+		
+		if isspace(grouped) then
+			select	dmisg101.emno
+			from	dmisg101
+| 			where	dmisg101._index1 = {:division}						|GH372CR000.com
+			where	dmisg101.emno = :dmisg001.ausr
+			and	dmisg101.cact = dmisg.cact.approver
+			selectdo
+				select	tiisg906.emno 						|GH436CR775.a.s
+				from	tiisg906 
+				where	tiisg906._index1 = {:dmisg101.emno}
+				and	tiisg906.stat = tcyesno.yes
+				selectdo
+				selectempty
+					return(false)
+				endselect							|GH436CR775.a.e
+			selectempty
+				return(false)
+			endselect
+		else
+			select	dmisg101.emno
+			from	dmisg101
+| 			where	dmisg101._index1 = {:division, :grouped, :dmisg001.ausr, dmisg.cact.approver}	|GH372CR000.com
+			where	dmisg101.grup = :grouped							|GH372CR000.a
+			and	dmisg101.emno = :dmisg001.ausr							|GH372CR000.a
+			and	dmisg101.cact = dmisg.cact.approver						|GH372CR000.a
+			selectdo
+				select	tiisg906.emno 						|GH436CR775.a.s
+				from	tiisg906 
+				where	tiisg906._index1 = {:dmisg101.emno}
+				and	tiisg906.stat = tcyesno.yes
+				selectdo
+				selectempty
+					return(false)
+				endselect							|GH436CR775.a.e
+			selectempty
+				return(false)
+			endselect
+		endif	
+	endif
+
+	return(true)
+}
+							|#ISGEC004003.en	
+function extern boolean dmisg001.ausr.is.applicable()
+{
+	domain	tfgld.sess calling.prog
+	
+	get.var(pid,"prog.name$",calling.prog)
+	
+	if calling.prog = "dmisg0101m300" then
+		if dmisg001.ract.2 = tcyesno.no then
+			return(false)
+		endif	
+	endif	
+	return(true)
+}
+
+function extern boolean dmisg001.ract.1.is.applicable()
+{
+	domain	tfgld.sess		calling.prog
+	
+	get.var(pid,"prog.name$",calling.prog)
+	
+	if 	calling.prog = "dmisg0101m300" then 
+		if dmisg001.ract.2 = tcyesno.yes then
+			return(false)
+		endif
+	endif	
+	return(true)
+}
+
+function extern boolean dmisg001.ract.1.is.readonly()
+{
+	domain	tfgld.sess		calling.prog
+	
+	get.var(pid,"prog.name$",calling.prog)
+	
+	if 	calling.prog = "dmisg0101m300" and 
+		dmisg001.wfst = dmisg.wfst.underreview and 
+		dmisg001.ract = dmisg.act.na then
+		return(false)
+	endif
+	
+	return(true)
+}
+
+function extern boolean dmisg001.ract.2.is.applicable()
+{
+	domain	tfgld.sess		calling.prog
+	
+	get.var(pid,"prog.name$",calling.prog)
+	
+	if 	calling.prog = "dmisg0101m300" then 
+		if dmisg001.ract.1 = tcyesno.yes then
+			return(false)
+		endif
+	endif
+	
+	
+	return(true)
+}
+
+function extern boolean dmisg001.ract.2.is.readonly()
+{
+	domain	tfgld.sess		calling.prog
+	
+	get.var(pid,"prog.name$",calling.prog)
+	
+	if 	calling.prog = "dmisg0101m300" and 
+		dmisg001.wfst = dmisg.wfst.underreview and 
+		dmisg001.ract = dmisg.act.na then
+		return(false)
+	endif
+	
+	return(true)
+}
+
+
+function extern boolean dmisg001.aact.1.is.readonly()
+{
+	domain	tfgld.sess		calling.prog
+	
+	get.var(pid,"prog.name$",calling.prog)
+	
+	if 	calling.prog = "dmisg0101m400" and 
+		dmisg001.wfst = dmisg.wfst.underapproval and
+		dmisg001.aact = dmisg.act.na then
+		return(false)
+	endif
+	
+	return(true)
+}
+
+function extern boolean dmisg001.aact.1.is.applicable()
+{
+	domain	tfgld.sess		calling.prog
+	
+	get.var(pid,"prog.name$",calling.prog)
+	
+	if calling.prog = "dmisg0101m400" then
+		if 	dmisg001.aact.2 = tcyesno.yes or 
+			dmisg001.aact.3 = tcyesno.yes then
+			return(false)
+		endif
+	endif
+	
+	
+	return(true)
+}
+
+function extern boolean dmisg001.aact.2.is.readonly()
+{
+	domain	tfgld.sess		calling.prog
+	
+	get.var(pid,"prog.name$",calling.prog)
+	
+	if 	calling.prog = "dmisg0101m400" and 
+		dmisg001.wfst = dmisg.wfst.underapproval and
+		dmisg001.aact = dmisg.act.na then
+		return(false)
+	endif
+	
+	return(true)
+}
+
+function extern boolean dmisg001.aact.2.is.applicable()
+{
+	domain	tfgld.sess		calling.prog
+	
+	get.var(pid,"prog.name$",calling.prog)
+	
+	if calling.prog = "dmisg0101m400" then
+		if 	dmisg001.aact.1 = tcyesno.yes or 
+			dmisg001.aact.3 = tcyesno.yes then
+			return(false)
+		endif
+	endif
+	
+	
+	return(true)
+}
+
+function extern boolean dmisg001.aact.3.is.readonly()
+{
+	domain	tfgld.sess		calling.prog
+	
+	get.var(pid,"prog.name$",calling.prog)
+	
+	if 	calling.prog = "dmisg0101m400" and 
+		dmisg001.wfst = dmisg.wfst.underapproval and
+		dmisg001.aact = dmisg.act.na then
+		return(false)
+	endif
+	
+	return(true)
+}
+
+function extern boolean dmisg001.aact.3.is.applicable()
+{
+	domain	tfgld.sess		calling.prog
+	
+	get.var(pid,"prog.name$",calling.prog)
+	
+	if calling.prog = "dmisg0101m400" then
+		if 	dmisg001.aact.1 = tcyesno.yes or 
+			dmisg001.aact.2 = tcyesno.yes then
+			return(false)
+		endif
+	endif
+	
+	
+	return(true)
+}
+
+
+function extern boolean dmisg001.type.is.applicable()
+{
+	domain	tfgld.sess		calling.prog
+	
+	get.var(pid,"prog.name$",calling.prog)
+
+	if calling.prog = "dmisg0101m100" then
+		if dmisg001.wfst = dmisg.wfst.submitted then
+			return(true)
+		else
+			return(false)
+		endif
+	endif
+
+	return(true)
+
+}
+
+function extern boolean dmisg001.user.is.applicable()
+{
+	domain	tfgld.sess		calling.prog
+	
+	get.var(pid,"prog.name$",calling.prog)
+
+	if calling.prog = "dmisg0101m100" then
+		if dmisg001.wfst = dmisg.wfst.submitted then
+			return(true)
+		else
+			return(false)
+		endif
+	endif
+
+	return(true)
+
+}
+
+function extern boolean dmisg001.user.is.valid()
+{
+	domain	tfgld.sess		calling.prog
+	
+	get.var(pid,"prog.name$",calling.prog)
+
+	if calling.prog = "dmisg0101m100" then
+		select	tccom001.loco
+		from	tccom001
+		where	tccom001._index4 = {:dmisg001.user}
+		selectdo
+		selectempty
+			return(false)
+		endselect
+	endif
+
+	return(true)
+
+}
+
+| function extern boolean dmisg001.rere.is.applicable()
+| {
+| 	
+| 	if dmisg001.ract = dmisg.act.na then 
+| 		return(true)
+| 	endif	
+| 	return(false)
+| }
+
+function extern boolean dmisg001.rere.is.readonly()
+{
+	
+	if dmisg001.ract = dmisg.act.na then 
+		return(false)
+	endif	
+	return(true)
+}
+
+| function extern boolean dmisg001.apre.is.applicable()
+| {
+| 	
+| 	if dmisg001.aact = dmisg.act.na then 
+| 		return(true)
+| 	endif	
+| 	return(false)
+| }
+
+function extern boolean dmisg001.apre.is.readonly()
+{
+	
+	if dmisg001.aact = dmisg.act.na then 
+		return(false)
+	endif	
+	return(true)
+}

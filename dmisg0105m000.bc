@@ -1,0 +1,801 @@
+|******************************************************************************
+|* dmisg0105m000  0  VRC B61U a7 live
+|* Lot Item Creation
+|* Tools                         
+|* 2014-05-03
+|******************************************************************************
+|* Main table dmisg005 Incoming Lot Item Master, Form Type 1
+|******************************************************************************
+|* ESSP: 3847, Ritu Shrivastava, 09-06-2014,  B61U a7 live
+|*
+|* Arjit Kumar Gupta, 16-07-2014, B61U a7 live
+|* Removed All comented and not required logic
+|* 
+|* ISGEC001002, IT0205, Arjit Gupta, 04/09/2014 B61U a7 isg
+|* Removed status check as suggested by Mr. Nishant Verma
+|* 
+|* ISGECDV001007, IT0205, Arjit Gupta, 08-09-2014, VRC B61U a7 live
+|* Child Item Description if not present then pick from tcibd001 if standard item 
+|*
+|* ISGEC001160, IT0205, Arjit Gupta, VRC B61U a7 isg, Dt. 14-11-2014
+|* Add a form field for Drawing Release Date
+|*
+|* ID: ISGEC01119, Priya Jindal, 30/10/2018, VRC B61U a7 isg
+|* Changes in conditions for lot field enabling
+|*
+|* ID: GH194CR508, RAvi Kumar, 01-11-2019, VRC B61U a7 isg
+|* If drawing is expired its Items cannot be released
+|* 
+|* GH533CR000, RAvi Kumar, 01-04-2021
+|* IR175083 -Issue Standard Item code show double in display item master 
+|****************************** declaration section ***************************
+declaration:
+
+	table	tdmisg005 | Incoming Lot Item Master
+extern	table	ttpptc120
+	table	ttcisg003
+	table	ttcisg004
+	table	ttcibd001	|#ISGECDV001007.n
+	
+	table	ttcmcs052,ttppdm090
+
+	extern	domain	tcdate		var.drdt	|#ISGEC001160.n
+	extern	domain	tcmcs.long	revision	|ISGEC01119.n
+	extern	domain	dmdoc.revv	str.revn	|ISGEC01119.n
+	long	lng
+#include <bic_dam>	
+|****************************** program section ********************************
+before.program:
+	inputfield.invisible("dmisg005.loti.segment.1", "dmisg005.item.segment.1")
+	
+before.display.object:
+	set.enum.values.for.field("dmisg005.stat",dmstat.process, dmstat.released, dmstat.expire)
+	set.enable.disable.fields()
+	
+	
+after.form.read:
+	enable.save.on.occ.change()
+
+|****************************** choice section ********************************
+
+choice.process.cont:
+before.choice:
+	|* Check If Revision is Changed and Same Item has to be released
+	|* Previous item status must be in Expire Mode
+	|* Message pop-up and user will do the expire activity manually
+	
+	on case curr.key
+		case	2:
+			|#ISGEC001002.so
+| 			if	not Check_Lot_Item_ProjectElement_Wise(dmisg005.cprj, dmisg005.cspa)	then
+| 				message("Lot Item Not Linked")
+| 				choice.again()
+| 			endif
+			
+| 			if	not Lot_Item_Processed_ProjectElement_wise(dmisg005.cprj, dmisg005.cspa)	then
+| 				message("Status is not Processed")
+| 				choice.again()
+| 			endif
+			|#ISGEC001002.eo
+			break
+		case	1:
+			|#ISGEC001002.so
+| 			if	not Check_Lot_Item_Project_Document_Wise(dmisg005.cprj, dmisg005.cspa,
+| 								dmisg005.docn, dmisg005.revn)	then
+| 				message("Lot Item Not Linked")
+| 				choice.again()					
+| 			endif
+			
+| 			if	not Lot_Item_Processed_Project_Documentwise(dmisg005.cprj, dmisg005.cspa,
+| 									dmisg005.docn, dmisg005.revn)	then
+| 				message("Status is not Processed")
+| 				choice.again()
+| 			endif
+			|#ISGEC001002.eo
+			break
+		case	3:
+			|#ISGEC001002.so
+| 			if	not Check_Lot_Item_Project_Wise(dmisg005.cprj, dmisg005.docn,
+| 								dmisg005.revn)	then
+| 				message("Lot Item Not Linked")
+| 				choice.again()					
+| 			endif
+			
+| 			if	not Lot_Item_Processed_Project_Wise(dmisg005.cprj, dmisg005.docn,
+| 									dmisg005.revn)	then
+| 				message("Status is not Processed")
+| 				choice.again()
+| 			endif
+			|#ISGEC001002.eo
+			break	
+	ENDCASE		
+	if check.item.released() then						|GH533CR000.a.s
+	else
+		message("Item " & trim$(dmisg005.item) & " already released")
+		choice.again()
+	endif									|GH533CR000.a.e 
+	|Check()
+	
+	if not check.release_item() then						|RAvi.a.s.GH194CR508
+		message("Status of Drawing " & trim$(dmisg005.docn) & " is expired, Item " & trim$(dmisg005.item) & "cannot be released")
+		choice.again()
+	endif		
+												|RAvi.a.e.GH194CR508
+				
+on.choice:
+	on case curr.key
+		case	2:
+			Insert_Record_to_ItemRelease_ProjectElement()
+			break
+		case	1:
+			Insert_Record_to_ItemRelease_Project_Document()
+			break
+		case	3:
+			Insert_Record_to_ItemRelease_Project()
+			break	
+	ENDCASE		
+	
+	message("Released")
+	
+choice.fill.lot.item:
+on.choice:
+	on case	curr.key
+		case	2:
+			if	number.of.marks = 1	then
+				Copy_Lot_Item_ProjectElement_wise(dmisg005.cprj, dmisg005.cspa, dmisg005.loti)
+			else
+				message("Please Select One Record to Copy")
+				choice.again()
+			endif
+			break
+		case	1:
+			if	number.of.marks = 1	then
+				Copy_Lot_Item_Project_Documentwise(dmisg005.cprj, dmisg005.cspa,
+									dmisg005.docn, dmisg005.revn, dmisg005.loti)
+			else
+				message("Please Select One Record to Copy")
+				choice.again()
+			endif
+			break
+		case	3:
+			if	number.of.marks = 1	then
+				Copy_Lot_Item_Project_Wise(dmisg005.cprj, dmisg005.docn,
+									dmisg005.revn, dmisg005.loti)
+			else
+				message("Please Select One Record to Copy")
+				choice.again()
+			endif
+			break	
+	ENDCASE		
+	
+|****************************** group section **********************************
+
+field.dmisg005.loti:
+before.zoom:
+	
+	tpptc120.cprj = dmisg005.cprj
+	tpptc120.cspa = dmisg005.cspa
+
+| 	query.extend.where.in.zoom("tpptc120._index1 = {:dmisg005.cprj, :dmisg005.cspa}")	|MERINO018119.o
+	query.extend.where.in.zoom("tpptc120._index1 = {:dmisg005.cprj, :dmisg005.cspa} and tpptc120.cdf_acti = tcyesno.yes") |MERINO018119.n
+	
+						|#ISGECDV001007.sn
+field.dmisg005.dsca:
+before.display:
+	if	isspace(dmisg005.dsca)	then
+		select	tcibd001.dsca
+		from	tcibd001
+		where	tcibd001._index1 = {:dmisg005.item}
+		selectdo
+			dmisg005.dsca = tcibd001.dsca
+		endselect
+	endif
+						|#ISGECDV001007.en
+						
+field.dmisg005.cprj:
+after.field:
+	select	tcmcs052.dsca
+	from	tcmcs052
+	where	tcmcs052._index1 = {:dmisg005.cprj}
+	selectdo
+	selectempty
+		tcmcs052.dsca = ""
+	endselect
+	
+field.dmisg005.cspa:
+after.field:
+	select	tppdm090.desc
+	from	tppdm090
+	where	tppdm090._index1 = {:dmisg005.cspa}
+	selectdo
+	selectempty	
+		tppdm090.desc = ""
+	endselect	
+	
+							|#ISGEC001160.sn
+field.var.drdt:	
+before.display:
+	var.drdt = Get_Drawing_Release_Date(dmisg005.docn, dmisg005.revn)	
+							|#ISGEC001160.en
+|*****************  Functions *************************************************
+functions:
+
+function Check()
+{
+	long o.found
+	select 	dmisg005.item,
+		dmisg005.docn,
+		dmisg005.revn
+	from	dmisg005
+	where	dmisg005._index1 = {:dmisg005.cprj,:dmisg005.cspa}
+	and	dmisg005.stat  = dmstat.submitted
+	and	dmisg005.loti <> ""
+	selectdo
+		on.main.table(CheckExistingItem,dmisg005.cprj,dmisg005.cspa,
+			dmisg005.docn,dmisg005.revn,dmisg005.item,o.found)
+		if o.found then
+			message("%s Item Must be in Expired Status",dmisg005.item)
+			choice.again()
+		endif
+	endselect
+}
+function CheckExistingItem
+			(
+				domain tccprj		i.cprj,
+				domain tppdm.cspa	i.cspa,
+				domain dmdoc.docid	i.docn,
+				domain 	dmdoc.revv	i.revn,
+				domain 	tcitem		i.item,
+			ref	boolean o.found
+			)
+{
+	select 	dmisg005.stat
+	from	dmisg005
+	where	dmisg005._index1 = {:i.cprj,:i.cspa,:i.docn}
+	and	dmisg005.item = :i.item
+	and	dmisg005.stat <> dmstat.expire
+	and	dmisg005.revn <> :i.revn
+	as set with 1 rows
+	selectdo
+		o.found = true
+	endselect
+	if	not o.found	then
+		o.found = false
+	endif
+	
+}
+
+|******************************* Release ***********************
+function Insert_Record_to_ItemRelease_ProjectElement()
+{
+	domain	tcitem		m.loti	fixed
+	long	ret
+	
+	set.fmin(m.loti)
+	select 	dmisg005.*
+	from	dmisg005
+	where	dmisg005._index1 = {:dmisg005.cprj, :dmisg005.cspa}
+	and	dmisg005.stat  = dmstat.process
+	and	dmisg005.loti <> {:m.loti}
+	selectdo
+		if ItemReleaseHeader(dmisg005.cprj,dmisg005.cspa,
+				dmisg005.loti) then
+			ItemReleaseLines(dmisg005.cprj,dmisg005.cspa,
+				dmisg005.loti,dmisg005.item,dmisg005.dsca,
+				dmisg005.docn,dmisg005.revn,dmisg005.wght,dmisg005.qnty,dmisg005.cuni)
+			select dmisg005.stat,
+				dmisg005.srnb
+			from	dmisg005 for update
+			where	dmisg005._index1 = {:dmisg005.cprj,:dmisg005.cspa,
+						:dmisg005.docn,:dmisg005.revn,:dmisg005.item}
+			selectdo
+				dal.change.object("dmisg005")
+				dal.set.field("dmisg005.stat", dmstat.released)
+				ret = dal.save.object("dmisg005")
+			endselect
+		endif	
+	endselect
+	Change_Status_Document_Master(dmisg005.docn, dmisg005.revn)
+	commit.transaction()
+}
+
+function Insert_Record_to_ItemRelease_Project_Document()
+{
+	domain	tcitem		m.loti fixed
+	long	ret
+	
+	
+	set.fmin(m.loti)
+	select 	dmisg005.*
+	from	dmisg005
+	where	dmisg005._index1 = {:dmisg005.cprj,:dmisg005.cspa, :dmisg005.docn, :dmisg005.revn}
+	and	dmisg005.stat  = dmstat.process
+	and	dmisg005.loti <> {:m.loti}
+	selectdo
+		if ItemReleaseHeader(dmisg005.cprj,dmisg005.cspa,
+				dmisg005.loti) then
+			ItemReleaseLines(dmisg005.cprj,dmisg005.cspa,
+				dmisg005.loti,dmisg005.item,dmisg005.dsca,
+				dmisg005.docn,dmisg005.revn,dmisg005.wght,dmisg005.qnty,dmisg005.cuni)
+			select dmisg005.stat,
+				dmisg005.srnb
+			from	dmisg005 for update
+			where	dmisg005._index1 = {:dmisg005.cprj,:dmisg005.cspa,
+						:dmisg005.docn,:dmisg005.revn,:dmisg005.item}
+			selectdo
+				dal.change.object("dmisg005")
+				dal.set.field("dmisg005.stat", dmstat.released)
+				ret = dal.save.object("dmisg005")
+			endselect
+		endif	
+	endselect
+	Change_Status_Document_Master(dmisg005.docn, dmisg005.revn)
+	commit.transaction()
+}
+
+function Insert_Record_to_ItemRelease_Project()
+{
+	domain	tcitem		m.loti fixed
+	long	ret
+	
+	
+	set.fmin(m.loti)
+	select 	dmisg005.*
+	from	dmisg005
+	where	dmisg005._index3 = {:dmisg005.cprj, :dmisg005.docn, :dmisg005.revn}
+	and	dmisg005.stat  = dmstat.process
+	and	dmisg005.loti <> {:m.loti}
+	selectdo
+		if ItemReleaseHeader(dmisg005.cprj,dmisg005.cspa,
+				dmisg005.loti) then
+			ItemReleaseLines(dmisg005.cprj,dmisg005.cspa,
+				dmisg005.loti,dmisg005.item,dmisg005.dsca,
+				dmisg005.docn,dmisg005.revn,dmisg005.wght,dmisg005.qnty,dmisg005.cuni)
+			select dmisg005.stat,
+				dmisg005.srnb
+			from	dmisg005 for update
+			where	dmisg005._index1 = {:dmisg005.cprj,:dmisg005.cspa,
+						:dmisg005.docn,:dmisg005.revn,:dmisg005.item}
+			selectdo
+				dal.change.object("dmisg005")
+				dal.set.field("dmisg005.stat", dmstat.released)
+				ret = dal.save.object("dmisg005")
+			endselect
+		endif	
+	endselect
+	Change_Status_Document_Master(dmisg005.docn, dmisg005.revn)
+	commit.transaction()
+}
+
+|***************  Create Item Release Header ******************************
+function boolean ItemReleaseHeader
+		(
+			domain	tccprj		i.cprj,	|Project Code
+			domain	tppdm.cspa	i.cspa,	|Element
+			domain	tcitem		i.loti	|Lot Item 
+		)
+{
+	long	ret
+	
+	select 	tcisg003.proj
+	from	tcisg003
+	where	tcisg003._index1 = {:i.cprj, :i.cspa, :i.loti}
+	as set with 1 rows
+	selectdo
+		return(true)
+	selectempty
+		dal.new.object("tcisg003")
+		dal.set.field("tcisg003.proj", i.cprj)
+		dal.set.field("tcisg003.elmt", i.cspa)
+		dal.set.field("tcisg003.item", i.loti)
+		ret = dal.save.object("tcisg003")
+		if	ret = 0	then
+			return(true)
+		endif
+	endselect	
+	
+	return(false)
+}
+
+
+|***************  Create Item Release Lines ******************************
+
+function ItemReleaseLines
+		(
+			domain	tccprj		i.cprj,	|Project Code
+			domain	tppdm.cspa	i.cspa,	|Element
+			domain	tcitem		i.loti,	|Lot Item 
+			domain	tcitem		i.item,	|Item/ [Item Release Child Item]
+			domain	tcmcs.str100	i.desc,	|Item Description [Length on tcisg004 is 30]
+			domain	dmdoc.docid	i.docn,	|Document Number
+			domain	dmdoc.revv	i.rvid,	|Document Revision No [ Item Release Drawing Revision]
+			domain	tcqiv1		i.wght,	|Weight
+			domain	tcqiv1		i.qnty,	|Quantity
+			domain	tccuni		i.cuni	|Unit	
+		)
+{
+	long	ret
+	
+	select	tcisg004.item, tcisg004.desc, tcisg004.docn, tcisg004.rvid,
+		tcisg004.wght, tcisg004.qnty, tcisg004.quom, tcisg004.stat,
+		tcisg004.rcpt
+	from	tcisg004 for update
+	where	tcisg004._index1 = {:i.cprj, :i.cspa, :i.loti, :i.item}
+	selectdo
+		if	tcisg004.rcpt = tcyesno.yes	then
+			Update.error.tcisg006(i.cprj, i.cspa, i.loti,
+						i.item, i.docn, i.rvid)
+		else	
+			dal.change.object("tcisg004")
+			dal.set.field("tcisg004.desc", i.desc)	
+			dal.set.field("tcisg004.docn", i.docn)	
+			dal.set.field("tcisg004.rvid", i.rvid)	
+			dal.set.field("tcisg004.wght", i.wght)	
+			dal.set.field("tcisg004.qnty", i.qnty)	
+			dal.set.field("tcisg004.quom", i.cuni)	
+			dal.set.field("tcisg004.stat", dmstat.released)	
+			ret = dal.save.object("tcisg004")
+		endif	
+	selectempty
+		dal.new.object("tcisg004")
+		dal.set.field("tcisg004.proj", i.cprj)	
+		dal.set.field("tcisg004.elmt", i.cspa)	
+		dal.set.field("tcisg004.itmh", i.loti)	
+		dal.set.field("tcisg004.item", i.item)	
+		dal.set.field("tcisg004.desc", i.desc)	
+		dal.set.field("tcisg004.docn", i.docn)	
+		dal.set.field("tcisg004.rvid", i.rvid)	
+		dal.set.field("tcisg004.wght", i.wght)	
+		dal.set.field("tcisg004.qnty", i.qnty)	
+		dal.set.field("tcisg004.quom", i.cuni)	
+		dal.set.field("tcisg004.stat", dmstat.released)	
+		ret = dal.save.object("tcisg004")
+	endselect	
+	
+}
+
+
+|********************** Check Lot Item *****************************
+function boolean Check_Lot_Item_ProjectElement_Wise(domain	tccprj	l.cprj,
+					domain	tppdm.cspa	l.cspa)
+{
+	domain	tcitem	l.loti, t.loti fixed
+	
+	set.fmin(t.loti)
+	
+	select	a_dmisg005.loti:l.loti
+	from	dmisg005 a_dmisg005
+	where	a_dmisg005._index2 = {:l.cprj, :l.cspa, :t.loti}
+	selectdo
+		return(false)
+	endselect
+	
+	return(true)
+}		
+
+function boolean Check_Lot_Item_Project_Document_Wise(domain	tccprj	l.cprj,
+					domain	tppdm.cspa	l.cspa,
+					domain	dmdoc.docid	l.docn,
+					domain	dmdoc.revv	l.revi)
+{
+	domain	tcitem	l.loti, t.loti fixed
+	
+	set.fmin(t.loti)
+	
+	select	a_dmisg005.loti:l.loti
+	from	dmisg005 a_dmisg005
+	where	a_dmisg005._index1 = {:l.cprj, :l.cspa, :l.docn, :l.revi}
+	and	a_dmisg005.loti = {:t.loti}
+	selectdo
+		return(false)
+	endselect
+	
+	return(true)
+}
+
+function boolean Check_Lot_Item_Project_Wise(domain	tccprj	l.cprj,
+					domain	dmdoc.docid	l.docn,
+					domain	dmdoc.revv	l.revi)
+{
+	domain	tcitem	l.loti, t.loti fixed
+	
+	set.fmin(t.loti)
+	
+	select	a_dmisg005.loti:l.loti
+	from	dmisg005 a_dmisg005
+	where	a_dmisg005._index3 = {:l.cprj, :l.docn, :l.revi}
+	and	a_dmisg005.loti = {:t.loti}
+	selectdo
+		return(false)
+	endselect
+	
+	return(true)
+}
+
+|************************ Check Status Lot Item Processed *******
+function boolean Lot_Item_Processed_ProjectElement_wise(domain	tccprj	l.cprj,
+					domain	tppdm.cspa	l.cspa)
+{
+	domain	dmstat	l.stat
+	
+	select	a_dmisg005.stat:l.stat
+	from	dmisg005 a_dmisg005
+	where	a_dmisg005._index1 = {:l.cprj, :l.cspa}
+	and	a_dmisg005.stat <> dmstat.process
+	selectdo
+		return(false)
+	endselect
+	
+	return(true)
+}
+
+function boolean Lot_Item_Processed_Project_Documentwise(domain	tccprj	l.cprj,
+					domain	tppdm.cspa	l.cspa,
+					domain	dmdoc.docid	l.docn,
+					domain	dmdoc.revv	l.revi)
+{
+	domain	dmstat	l.stat
+	
+	select	a_dmisg005.stat:l.stat
+	from	dmisg005 a_dmisg005
+	where	a_dmisg005._index1 = {:l.cprj, :l.cspa, :l.docn, :l.revi}
+	and	a_dmisg005.stat <> dmstat.process
+	selectdo
+		return(false)
+	endselect
+	
+	return(true)
+}
+
+function boolean Lot_Item_Processed_Project_Wise(domain	tccprj	l.cprj,
+					domain	dmdoc.docid	l.docn,
+					domain	dmdoc.revv	l.revi)
+{
+	domain	dmstat	l.stat
+	
+	select	a_dmisg005.stat:l.stat
+	from	dmisg005 a_dmisg005
+	where	a_dmisg005._index3 = {:l.cprj, :l.docn, :l.revi}
+	and	a_dmisg005.stat <> dmstat.process
+	selectdo
+		return(false)
+	endselect
+	
+	return(true)
+}
+
+|******************* Change Document Master Status 
+function Change_Status_Document_Master(domain	dmdoc.docid	l.docn,
+					domain	dmdoc.revv	l.revi)
+{
+	long	ret
+	
+	select	dmisg001.stat
+	from	dmisg001 for update
+	where	dmisg001._index1 = {:l.docn, :l.revi}
+	selectdo
+		dal.change.object("dmisg001")
+		dal.set.field("dmisg001.stat", dmstat.released)
+		ret = dal.save.object("dmisg001")
+	endselect	
+}					
+|******************* Update Error Log ************
+function Update.error.tcisg006(domain	tccprj		u.cprj,
+				domain	tppdm.cspa	u.cspa,
+				domain	tcitem		u.loti,
+				domain	tcitem		u.item,
+				domain	dmdoc.docid	u.docn,
+				domain	dmdoc.revv	u.rvid)
+{
+	string	tmp.error(100)
+	long	ret
+	
+	tmp.error = "Not Released. Receipt Maintain"
+	select	tcisg006.*
+	from	tcisg006 for update
+	where	tcisg006._index1 = {:u.cprj, :u.cspa, :u.loti, :u.item}
+	selectdo
+		dal.change.object("tcisg006")
+		dal.set.field("tcisg006.docn", u.docn)
+		dal.set.field("tcisg006.rvid", u.rvid)
+		dal.set.field("tcisg006.eror", tmp.error)
+		ret = dal.save.object("tcisg006")
+	selectempty
+		dal.new.object("tcisg006")
+		dal.set.field("tcisg006.proj", u.cprj)
+		dal.set.field("tcisg006.elmt", u.cspa)
+		dal.set.field("tcisg006.itmh", u.loti)
+		dal.set.field("tcisg006.item", u.item)
+		dal.set.field("tcisg006.docn", u.docn)
+		dal.set.field("tcisg006.rvid", u.rvid)
+		dal.set.field("tcisg006.eror", tmp.error)
+		ret = dal.save.object("tcisg006")
+	endselect	
+}			
+
+|************************** Enable/Disable Fields ***********
+function set.enable.disable.fields()
+{
+	if	dmisg005.stat =dmstat.process	then
+| 		enable.fields("dmisg005.loti", actual.occ)		|ISGEC01119.o
+		if trim$(dmisg005.revn) = "00" or isspace(dmisg005.revn) then	|ISGEC01119.sn
+			enable.fields("dmisg005.loti", actual.occ)
+		else	
+			revision = lval(dmisg005.revn)
+			revision = revision - 1
+			str.revn = "0" & str$(revision)
+			
+			select	tcisg004.*
+			from	tcisg004
+			where	tcisg004._index1 = {:dmisg005.cprj,:dmisg005.cspa,
+							:dmisg005.loti,:dmisg005.item}
+| 			and	tcisg004.rvid = :str.revn
+			and	(tcisg004.indt = tcyesno.yes or tcisg004.refq = tcyesno.yes or tcisg004.orno = tcyesno.yes)
+			as set with 1 rows
+			selectdo
+				disable.fields("dmisg005.loti", actual.occ)
+			endselect						
+		endif								|ISGEC01119.en
+				
+	else	
+		disable.fields("dmisg005.loti", actual.occ)
+	endif	
+}
+
+|************************* Fill Lot Item **************
+function Copy_Lot_Item_ProjectElement_wise(
+		domain	tccprj		u.cprj,
+		domain	tppdm.cspa	u.cspa,
+		domain	tcitem		u.loti
+				)
+{
+	long	ret.val,  rt1, k, ret_val
+	string	error1(100)
+
+	select	dmisg005.loti
+	from	dmisg005 for update
+	where	dmisg005._index1 = {:u.cprj, :u.cspa}
+	and	dmisg005.stat = dmstat.process
+	selectdo
+		dal.change.object("dmisg005")
+		dal.set.field("dmisg005.loti", u.loti)
+		ret.val = dal.save.object("dmisg005")
+		if	ret.val = 0	then
+			commit.transaction()
+		else
+			error1 = ""
+			rt1 = dal.count.error.messages()
+			for k = rt1 to 1 step -1
+				ret_val = dal.get.error.message(error1)
+			endfor
+			abort.transaction()
+		endif
+	endselect	
+}
+
+function Copy_Lot_Item_Project_Documentwise(
+		domain	tccprj		u.cprj,
+		domain	tppdm.cspa	u.cspa,
+		domain	dmdoc.docid	u.docn,
+		domain	dmdoc.revv	u.revi,
+		domain	tcitem		u.loti
+				)
+{
+	long	ret.val,  rt1, k, ret_val
+	string	error1(100)
+
+	select	dmisg005.loti
+	from	dmisg005 for update
+	where	dmisg005._index1 = {:u.cprj, :u.cspa, :u.docn, :u.revi}
+	and	dmisg005.stat = dmstat.process
+	selectdo
+		dal.change.object("dmisg005")
+		dal.set.field("dmisg005.loti", u.loti)
+		ret.val = dal.save.object("dmisg005")
+		if	ret.val = 0	then
+			commit.transaction()
+		else
+			error1 = ""
+			rt1 = dal.count.error.messages()
+			for k = rt1 to 1 step -1
+				ret_val = dal.get.error.message(error1)
+			endfor
+			abort.transaction()
+		endif
+	endselect	
+}
+
+function Copy_Lot_Item_Project_Wise(
+		domain	tccprj		u.cprj,
+		domain	dmdoc.docid	u.docn,
+		domain	dmdoc.revv	u.revi,
+		domain	tcitem		u.loti
+				)
+{
+	long	ret.val,  rt1, k, ret_val
+	string	error1(100)
+
+	select	dmisg005.loti
+	from	dmisg005 for update
+	where	dmisg005._index3 = {:u.cprj, :u.docn, :u.revi}
+	and	dmisg005.stat = dmstat.process
+	selectdo
+		dal.change.object("dmisg005")
+		dal.set.field("dmisg005.loti", u.loti)
+		ret.val = dal.save.object("dmisg005")
+		if	ret.val = 0	then
+			commit.transaction()
+		else
+			error1 = ""
+			rt1 = dal.count.error.messages()
+			for k = rt1 to 1 step -1
+				ret_val = dal.get.error.message(error1)
+			endfor
+			abort.transaction()
+		endif
+	endselect	
+}
+
+							|#ISGEC001160.sn
+function domain tcdate Get_Drawing_Release_Date
+			(
+			domain	dmdoc.docid 	in.docn,
+			domain	dmdoc.revv	in.revn
+			)
+{
+	domain	tcdate	tmp.drdt
+	
+	tmp.drdt = 0
+	select	dr_dmisg001.drdt:tmp.drdt
+	from	dmisg001 dr_dmisg001
+	where	dr_dmisg001._index1 = {:in.docn, :in.revn}
+	selectdo
+	selectempty
+		tmp.drdt = 0
+	endselect
+	
+	return(tmp.drdt)
+}
+							|#ISGEC001160.en
+							
+function boolean check.release_item()						|RAvi.a.s.GH194CR508
+{
+	domain	tcitem		m.loti	fixed
+	long	ret
+	
+	set.fmin(m.loti)
+	select 	dmisg005.*
+	from	dmisg005
+	where	dmisg005._index1 = {:dmisg005.cprj, :dmisg005.cspa}
+	and	dmisg005.stat  = dmstat.process
+	and	dmisg005.loti <> {:m.loti}
+	selectdo
+		select	dmisg001.stat
+		from	dmisg001
+		where	dmisg001._index1 = {:dmisg005.docn, :dmisg005.revn}
+		and	dmisg001.stat = dmstat.expire
+		as set with 1 rows
+		selectdo
+			return(false)
+		endselect
+	endselect
+	
+	return(true)
+}
+										|RAvi.a.e.GH194CR508
+
+function boolean check.item.released()							|GH533CR000.a.s
+{
+	select	tcisg004.*
+	from	tcisg004
+	where	tcisg004._index1 = {:dmisg005.cprj, :dmisg005.cspa, :dmisg005.loti, :dmisg005.item}
+	and	tcisg004.docn = :dmisg005.docn
+	and	tcisg004.rvid = :dmisg005.revn
+	as set with 1 rows
+	selectdo
+		return(false)
+	endselect
+	
+	return(true)
+}											|GH533CR000.a.e
+

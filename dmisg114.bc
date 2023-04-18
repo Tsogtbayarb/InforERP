@@ -1,0 +1,313 @@
+|******************************************************************************
+|* dmisg114  0  VRC B61U a7 isg 
+|* DAL 2 for dmisg114
+|* baan
+|* 15-01-13 [12:48]
+|******************************************************************************
+|* Script Type: DAL
+|*
+|* ISGEC004003, IT0047, Dharmendra, Dt. 13-01-2015, B61U a7 isg
+|*
+|* ISGEC015056, IT0289, shilpa Janardanan, Dt. 4-sep-2015
+|* Initialise the record
+
+|* ISGEC015057, IT0289, shilpa Janardanan, Dt. 4-sep-2015
+|* check on deletion, that line should be deleted before  deleting header
+|*
+|* GH436CR775, RAvi Kumar, 19-11-2020
+|* Engineering-Manual selection of Approver/Reviewer to be restricted if person is not authorized for the same
+|******************************************************************************
+        table tdmisg114  
+	table tdmisg115
+	table ttcmcs050
+	table ttpmsl000
+	table ttpptc100
+	table ttccom001
+	table tdmisg101
+	
+	extern	domain tcemm.grid	division.no
+	extern	domain	tcemno		requestor.emp, approver.emp
+	#include <bic_dal2>
+	#include "itcmcs2000"	|* DAL(-GUI) Support Defines
+
+
+function extern long before.open.object.set()
+{
+	read.parameters()
+	
+	dal.field.depends.on("dmisg114.accp",
+					HOOK_IS_APPLICABLE, "dmisg114.rejc")
+	dal.field.depends.on("dmisg114.rejc",
+					HOOK_IS_APPLICABLE, "dmisg114.accp")
+
+	return(0)
+}
+
+function extern boolean method.is.allowed(long i.method)
+{
+	domain	tfgld.sess		calling.prog
+	
+	on case i.method
+	case DAL_NEW:
+		if not new.method.is.allowed() then
+			dal.set.error.message("dmisg00001")
+			|* Ypu are not authorised to create DCR.
+			return(false)
+		endif
+	
+		break
+	case DAL_UPDATE:
+		get.var(pid,"prog.name$",calling.prog)
+		
+		if calling.prog = "dmisg1114m000" then
+			if dmisg114.proc = tcyesno.yes then
+				return(false)
+			
+				
+			endif				|#ISGEC015007.en
+| 		else if calling.prog = "dmisg1114m001" then
+| 			if dmisg114.stat = dmisg.dcr.approved then
+| 				return(false)
+| 			endif
+| 		endif		
+		endif
+		break
+	case DAL_DESTROY:
+		if dmisg114.proc = tcyesno.yes then
+			return(false)
+		else			|#ISGEC015057.sn
+				select	dmisg115.*
+				from	dmisg115
+				where	dmisg115._index1 = {:dmisg114.dcrn}
+				as set with 1 rows
+				selectdo
+					dal.set.error.message("dmisg00003")
+					return(false)
+				selectempty
+					return(true)
+				endselect
+		endif			|#ISGEC015057.en
+		break
+	endcase
+
+	return(true)
+}
+
+function extern long before.save.object(long type)
+{
+	on case type
+	case DAL_NEW:
+		if  tcmcs.dll0050.check.and.generate.order.number(
+				3, dmisg114.dcrn, tpmsl000.dcnr, 
+				9, dmisg114.dcrn) then
+			return(DALHOOKERROR)
+		endif
+		dmisg114.crea = logname$
+		dmisg114.crdt = utc.num()	
+		break
+	endcase	
+	return(0)
+}
+
+function long read.parameters()
+{
+	RETIFNOK(tcmcs.dll0095.read.parm("tpmsl000"))
+	return(0)
+}
+
+function extern long before.new.object()
+{	
+	select	tcmcs050.seri
+	from	tcmcs050
+	where	tcmcs050._index1 = {:tpmsl000.dcnr}
+	as set with 1 rows
+	selectdo
+	endselect
+	
+	dmisg114.dcrn = tcmcs050.seri
+
+	return(0)
+}
+
+function extern boolean dmisg114.dcrn.is.valid()
+{
+	if len(trim$(dmisg114.dcrn)) <> 9 then
+		select	tcmcs050.seri
+		from	tcmcs050
+		where	tcmcs050._index1 = {:tpmsl000.dcnr, :dmisg114.dcrn}
+		selectdo
+		selectempty
+			return(false)
+		endselect
+	endif
+	return(true)
+
+}
+
+function extern boolean dmisg114.accp.is.applicable()
+{
+	domain	tfgld.sess calling.prog
+	
+	get.var(pid,"prog.name$",calling.prog)
+	if calling.prog = "dmisg1114m001" then
+		if dmisg114.stat <> dmisg.dcr.approval then
+			return(false)
+		endif
+	
+		if dmisg114.rejc = tcyesno.yes then 
+			return(false)
+		endif
+	endif	
+	
+	return(true)
+}
+
+function extern boolean dmisg114.rejc.is.applicable()
+{
+	domain	tfgld.sess calling.prog
+	
+	get.var(pid,"prog.name$",calling.prog)
+	if calling.prog = "dmisg1114m001" then
+		if dmisg114.stat <> dmisg.dcr.approval then
+			return(false)
+		endif
+		
+		if dmisg114.accp = tcyesno.yes then 
+			return(false)
+		endif
+	endif	
+	
+	return(true)
+}
+
+function extern boolean dmisg114.remk.is.applicable()
+{
+	if dmisg114.stat <> dmisg.dcr.approval then
+		return(false)
+	endif
+	
+	return(true)
+}
+
+function extern boolean dmisg114.cprj.is.mandatory()
+{
+	return(true)
+}
+
+function extern boolean dmisg114.cprj.is.readonly()
+{
+	if find.lines() then
+		return(true)
+	endif
+	return(false)
+}
+
+function extern boolean dmisg114.cspa.is.valid()
+{
+	select	tpptc100.cspa
+	from	tpptc100
+	where	tpptc100._index1 = {:dmisg114.cprj, :dmisg114.cspa}
+	selectdo
+	selectempty
+		return(false)
+	endselect
+	return(true)
+}
+
+function extern boolean dmisg114.cspa.is.mandatory()
+{
+	return(true)
+}
+
+function extern boolean dmisg114.cspa.is.readonly()
+{
+	if find.lines() then
+		return(true)
+	endif
+	return(false)
+}
+
+function extern boolean dmisg114.user.is.valid()
+{
+	domain	tfgld.sess		calling.prog
+	get.var(pid,"prog.name$",calling.prog)
+	if calling.prog = "dmisg1114m000" then
+		
+	select 	tccom001.emno:requestor.emp
+	from	tccom001
+	where	tccom001._index4 = {:logname$}
+| 	where	tccom001._index4 = {:dmisg114.crea}
+	as set with 1 rows
+	selectdo
+	selectempty
+		requestor.emp = ""		|#ISGEC015056.n
+	endselect
+
+	select 	dmisg101.eunt:division.no
+	from	dmisg101
+	where	dmisg101._index2 = {:requestor.emp, dmisg.cact.requestor}
+	as set with 1 rows
+	selectdo
+	selectempty
+		division.no = ""
+	endselect
+	
+	select 	tccom001.emno:approver.emp
+	from	tccom001
+	where	tccom001._index4 = {:dmisg114.user}
+	as set with 1 rows
+	selectdo
+	selectempty
+		approver.emp = ""		|#ISGEC015056.n
+	endselect
+	
+	select 	dmisg101.eunt
+	from	dmisg101
+| 	where	dmisg101._index2 = {:approver.emp, dmisg.cact.approver, :division.no}
+	where	dmisg101._index2 = {:approver.emp, dmisg.cact.approver}
+	and	dmisg101.dcrr = tcyesno.yes					|GH436CR775.a
+	as set with 1 rows
+	selectdo
+	selectempty
+		return(false)
+	endselect
+	endif
+	return(true)
+	
+}
+
+
+function boolean find.lines()
+{
+	select	dmisg115.*
+	from	dmisg115
+	where	dmisg115._index1 = {:dmisg114.dcrn}
+	as set with 1 rows
+	selectdo
+		return(true)
+	endselect
+	return(false)
+
+}
+
+function boolean new.method.is.allowed()
+{
+	select 	tccom001.emno
+	from	tccom001
+	where	tccom001._index4 = {:logname$}
+	as set with 1 rows
+	selectdo
+	selectempty
+	endselect
+	
+	select 	dmisg101.*
+	from	dmisg101
+	where	dmisg101._index2 = {:tccom001.emno, dmisg.cact.requestor}
+	as set with 1 rows
+	selectdo
+	selectempty
+		return(false)
+	endselect
+	
+	return(true)
+}

@@ -1,0 +1,383 @@
+|******************************************************************************
+|* dmisg1440m700  0  VRC B61U a7 isg 
+|* Indent Report
+|* merino1                       
+|* 2019-05-31
+|******************************************************************************
+|* Main table dmisg140 Project MDL, Form Type 4
+|******************************************************************************
+|* ISGEC001235, Arun Chauhan, 15-06-2019
+|* Add logic Report Print Elememt wise
+|****************************** declaration section ***************************
+declaration:
+
+	table  	tdmisg140 | Project MDL
+	table	ttcemm110
+	table	ttppdm600
+	table	ttpisg012
+	table	ttpptc100
+	
+	
+	extern  domain  tccprj           cprj.f    fixed
+	extern  domain  tccprj           cprj.t    fixed
+	extern	domain	tcemm.grid	eunt.f, eunt.t
+	extern	domain	tcdate		date.f, date.t
+	extern	domain	tppdm.cspa	cspa.f, cspa.t, print.element,element.l3,element.l4
+	extern	domain	tcncmp		curr.comp
+	extern	domain	dmisg.levl	levl.f
+		domain	tcperc		total.no.of.plan, plan.doc.per.base, plan.doc.per.rev, actual.doc.rel
+		domain	tcperc		perc.doc.plan.base, perc.doc.plan.rev, perc.of.drgs
+		domain	tcamnt		total.elem, ind.val.base, ind.val.rev, actual.ind
+	string	err.file(100), file.name(100), line(1000)
+	long	stat.fp, ret2
+		domain	tcyesno		print.con
+	
+#pragma used dll ottdllbw
+
+|****************************** program section ********************************
+before.program:
+	curr.comp = get.compnr()
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+choice.generate:
+on.choice:
+	generate.file()	
+	
+|****************************** field section *********************************
+
+field.eunt.f:
+when.field.changes:
+   eunt.t = eunt.f
+
+field.cprj.f:
+when.field.changes:	
+   cprj.t = cprj.f
+
+field.date.f:
+when.field.changes:
+   date.t = date.f
+
+field.cspa.f:
+before.zoom:											|ISGEC001235.n						
+	query.extend.where.in.zoom("tpptc100.cprj inrange '"&cprj.t&"' and '"&cprj.f&"'")	|ISGEC001235.n
+when.field.changes:
+	cspa.t = cspa.f
+
+|****************************** function section ******************************
+
+functions:
+function extern generate.file()
+{	
+	err.file = bse.tmp.dir$() & str$(utc.num()) & ".xls"
+	
+	file.name = "C:\temp\" & str$(utc.num())  & ".xls"
+	
+	stat.fp = seq.open(err.file, "w+")
+	if stat.fp >0 then
+ 		seq.seek(0, 0, stat.fp)
+	endif	
+	
+	generate.input.fields()			|ISGEC001235.n
+	generate.header()			|ISGEC001235.n
+	generate.formula.header()
+	select	tcemm110.*, tppdm600.seak
+	from	tcemm110, tppdm600
+	where	tcemm110._index1 inrange {7, :curr.comp, :cprj.f} and {7, :curr.comp, :cprj.t}
+	and	tcemm110.grid inrange {:eunt.f} and {:eunt.t}
+	and	tcemm110.enid refers to tppdm600
+	selectdo
+		element.l3 = ""
+		if etol(levl.f) = 1 then 			
+			select tpest120.sele:element.l3
+			from	tpest120
+			where	tpest120._index1 = {:tcemm110.enid,"001","ELE"}
+			and 	tpest120.sele inrange :cspa.f and :cspa.t
+			and 	tpest120.levl = 2
+			selectdo
+				initilize.variable()		
+				select tpest120.sele:print.element
+				from	tpest120
+				where	tpest120._index1 = {:tcemm110.enid,"001","ELE"}
+				and 	tpest120.pele = :element.l3
+				and 	tpest120.levl = 3
+				selectdo
+					get.data.l3.and.l4(print.element)
+					element.l4 = ""
+					select tpest120.sele:element.l4
+					from	tpest120
+					where	tpest120._index1 = {:tcemm110.enid,"001","ELE"}
+					and 	tpest120.pele = :print.element
+					and 	tpest120.levl = 4
+					selectdo
+						get.data.l3.and.l4(element.l4)
+					endselect
+					if total.no.of.plan > 0 then
+						perc.doc.plan.base = (plan.doc.per.base/ total.no.of.plan) * 100
+						perc.doc.plan.rev = (plan.doc.per.rev/total.no.of.plan) * 100
+						perc.of.drgs = (actual.doc.rel/total.no.of.plan) * 100
+					endif	
+					
+					on case levl.f
+					case dmisg.levl.three:
+						select 	sum(tpisg012.totl):total.elem
+						from	tpisg012
+						where	tpisg012._index1 = {:tcemm110.enid}
+						and	tpisg012.elem = :element.l3
+						and	tpisg012.levl = 2
+						selectdo
+							print.con = tcyesno.yes
+						selectempty
+							total.elem = 0.00
+							print.con = tcyesno.no
+						endselect
+						break
+					endcase
+
+					ind.val.base = (perc.doc.plan.base * total.elem)/ 100
+					ind.val.rev = (perc.doc.plan.rev * total.elem)/ 100
+					actual.ind = (perc.of.drgs * total.elem)/100
+					
+				endselect
+			if print.con = tcyesno.yes then
+				print.element = element.l3
+				write.data()
+			endif
+			endselect
+		else
+			select tpest120.sele:element.l3
+			from	tpest120
+			where	tpest120._index1 = {:tcemm110.enid,"001","ELE"}
+			and 	tpest120.sele inrange :cspa.f and :cspa.t
+			and 	tpest120.levl = 3
+			selectdo
+				initilize.variable()
+				element.l4 = ""
+				select tpest120.sele:element.l4
+				from	tpest120
+				where	tpest120._index1 = {:tcemm110.enid,"001","ELE"}
+				and 	tpest120.pele = :element.l3
+				and 	tpest120.levl = 4
+				selectdo
+					get.data.l3.and.l4(element.l4)
+					if total.no.of.plan > 0 then
+						perc.doc.plan.base = (plan.doc.per.base/ total.no.of.plan) * 100
+						perc.doc.plan.rev = (plan.doc.per.rev/total.no.of.plan) * 100
+						perc.of.drgs = (actual.doc.rel/total.no.of.plan) * 100
+					endif	
+					
+					on case levl.f
+					case dmisg.levl.four:
+					case dmisg.levl.five:
+						select 	sum(tpisg012.totl):total.elem
+						from	tpisg012
+						where	tpisg012._index1 = {:tcemm110.enid}
+						and	tpisg012.elem = :element.l3
+						and	tpisg012.levl = 3
+						selectdo
+							print.con = tcyesno.yes
+						selectempty
+							total.elem = 0.00
+							print.con = tcyesno.no
+						endselect
+						break
+					endcase
+					ind.val.base = (perc.doc.plan.base * total.elem)/ 100
+					ind.val.rev = (perc.doc.plan.rev * total.elem)/ 100
+					actual.ind = (perc.of.drgs * total.elem)/100
+				endselect
+				if print.con = tcyesno.yes then
+					print.element = element.l3
+					write.data()
+				endif
+			endselect
+
+
+		endif
+	endselect	
+	
+	seq.close(stat.fp)
+	ret2 = server2client(err.file,file.name,1)
+	ret2 = app_start(file.name,"c:","","","")
+	
+	
+}
+					
+function generate.input.fields()
+{
+	line= 	concat$("	",
+		sprintf$("Division -   ") & sprintf$("%s",eunt.f) & "  To  " & sprintf$("%s",eunt.t))|1
+	line = strip$(shiftl$(line))		
+	seq.puts(line, stat.fp)
+
+	line= 	concat$("	", 
+		sprintf$("Project -   ") & sprintf$("%s",cprj.f) & "  To  " & sprintf$("%s",cprj.t))|1
+	line = strip$(shiftl$(line))		
+	seq.puts(line, stat.fp)
+	
+	line= 	concat$("	",
+		sprintf$("Date -   ") & sprintf$("%u(%02d/%02m/%04Y)",date.f) & "  To  " & sprintf$("%u(%02d/%02m/%04Y)",date.t))|1
+	line = strip$(shiftl$(line))		
+	seq.puts(line, stat.fp)
+	
+	line= 	concat$("	",
+		sprintf$("Element Level -   ") & sprintf$("%s",enum.descr$("dmisg.levl",levl.f)))
+	line = strip$(shiftl$(line))		
+	seq.puts(line, stat.fp)
+	
+	line= 	concat$("	",
+		sprintf$("Element -    ") & sprintf$("%s",cspa.f) & "  To  " & sprintf$("%s",cspa.t))|1
+	line = strip$(shiftl$(line))		
+	seq.puts(line, stat.fp)
+	
+	line= 	concat$("	",
+		sprintf$(""))		|1
+	line = strip$(shiftl$(line))		
+	seq.puts(line, stat.fp)
+}
+												
+function generate.header()
+{
+	line= 	concat$("	",
+		sprintf$("Project"),										|1
+		sprintf$("Project Name"),			  		      				|2
+		sprintf$("Element"),					               				|3
+		sprintf$("Element Description"),				       				|4
+		sprintf$("Total no Document planned for the element as per PMDL"),			   	|5
+		sprintf$("No of planned Documents as per Base plan(in a particular period)"),			|6
+		sprintf$("No of planned Documents as per latest Revised plan(in a particular period)"),	|7
+		sprintf$("Actual Documents Released(in a particular period"),					|8
+		sprintf$("Perc. of Documents planned as per Base plan in a particular period wrt total"),	|9
+		sprintf$("Perc. of Documents planned as per revised/latest plan in a particular period wrt total"),|10
+		sprintf$("Perc. of drgs actual drgs Released wrt total"),					|11
+		sprintf$("Total Element budget"),								|12
+		sprintf$("Value of documents as per base plan(Rs)"),						|13
+		sprintf$("Value of documents as per revised plan(Rs)"),					|14
+		sprintf$("Value of documents actually released (Rs)"))						|15
+		
+	line = strip$(shiftl$(line))		
+	seq.puts(line, stat.fp)		
+}
+					
+function generate.formula.header()
+{
+	line= 	concat$("	",
+		sprintf$("a"),		|1
+		sprintf$("b"),	      	|2
+		sprintf$("c"),		|3
+		sprintf$("c1"),	|4
+		sprintf$("d"),		|5
+		sprintf$("e"),	|6
+		sprintf$("f"),		|7
+		sprintf$("f1"),	|8
+		sprintf$("g=(e/d)*100"),	|9
+		sprintf$("h=(f/d)*100"),	|10
+		sprintf$("h1=(f1/d)*100"),	|11
+		sprintf$("i"),			|12
+		sprintf$("j=(g*i)/100"),	|13
+		sprintf$("k=(h*i)/100"),	|14
+		sprintf$("l=(h1*i)/100"))	|15
+		
+	line = strip$(shiftl$(line))		
+	seq.puts(line, stat.fp)		
+}
+					|ISGEC001235.en
+function write.data()
+{	
+	line =	concat$("	",
+		sprintf$("%s",tcemm110.enid),			|1
+		sprintf$("%s",tppdm600.seak),			|2
+		sprintf$("%s",print.element),			|3
+		sprintf$("%s",tpptc100.desc),			|4
+		sprintf$("%d",total.no.of.plan),		|5	
+		sprintf$("%d",plan.doc.per.base),		|6	
+		sprintf$("%d",plan.doc.per.rev),		|7	
+		sprintf$("%d",actual.doc.rel),			|8	
+		sprintf$("%f",perc.doc.plan.base),		|9	
+		sprintf$("%f",perc.doc.plan.rev),		|10	
+		sprintf$("%f",perc.of.drgs),			|11	
+		sprintf$("%f",total.elem),			|12	
+		sprintf$("%f",ind.val.base),			|13	
+		sprintf$("%f",ind.val.rev),			|14	
+		sprintf$("%f",actual.ind))			|15	
+		
+		line = strip$(shiftl$(line))
+		seq.puts(line, stat.fp)
+}	
+
+
+
+function get.data.l3.and.l4(domain	tppdm.cspa	i.element)
+{
+	select 	tpptc100.desc
+	from	tpptc100
+	where	tpptc100._index1 = {:tcemm110.enid, :element.l3}
+	selectdo
+	endselect
+	
+	select 	dmisg140.uidn
+	from 	dmisg140
+	where  	dmisg140._index2 = {:tcemm110.enid}
+	and	dmisg140.cspa = :i.element
+	and	dmisg140.orgn = "ISG"
+	selectdo
+		total.no.of.plan = total.no.of.plan+1 
+	endselect
+	
+	select 	dmisg140.uidn
+	from 	dmisg140
+	where  	dmisg140._index2 = {:tcemm110.enid}
+	and	dmisg140.cspa = :i.element
+	and	dmisg140.orgn = "ISG"
+	and	dmisg140.bsfd between :date.f and :date.t
+	and	dmisg140.bsfd <> 0 		
+	selectdo
+		plan.doc.per.base = plan.doc.per.base + 1
+	endselect
+	
+	select 	dmisg140.uidn
+	from 	dmisg140
+	where  	dmisg140._index2 = {:tcemm110.enid}
+	and	dmisg140.cspa = :i.element
+	and	dmisg140.orgn = "ISG"
+	and	dmisg140.rsfd between :date.f and :date.t
+	and	dmisg140.rsfd <> 0 		
+	selectdo
+		plan.doc.per.rev = plan.doc.per.rev + 1
+	endselect
+	
+	select dmisg140.uidn
+	from 	dmisg140
+	where  	dmisg140._index2 = {:tcemm110.enid}
+	and	dmisg140.cspa = :i.element
+	and	dmisg140.orgn = "ISG"
+	and	dmisg140.acdt between :date.f and :date.t
+	and 	dmisg140.acdt <> 0		
+	selectdo
+		actual.doc.rel = actual.doc.rel + 1
+	endselect
+	
+}
+
+function initilize.variable()
+{
+	print.con = tcyesno.no
+	total.no.of.plan = 0
+	plan.doc.per.base = 0
+	plan.doc.per.rev = 0
+	actual.doc.rel = 0
+	perc.doc.plan.base = 0
+	perc.doc.plan.rev = 0
+	perc.of.drgs = 0
+	total.elem = 0
+	ind.val.base = 0
+	ind.val.rev = 0
+	actual.ind = 0
+	print.element = ""
+
+}

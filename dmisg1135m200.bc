@@ -1,0 +1,100 @@
+|******************************************************************************
+|* dmisg1135m200  0  VRC B61U a7 isg 
+|* Add multiple Isgec Document ID
+|* Ravi Kumar                    
+|* 2020-12-28
+|******************************************************************************
+|* Main table dmisg135 Receive Document Lines, Form Type 1
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+  table   tdmisg135 | Receive Document Lines
+  table   tdmisg134
+  table   ttdisg002
+  table   tdmisg140
+
+	extern	domain	whinh.shpm	i.rcno
+	extern	domain	dmdoc.revv	i.revn, i.revi.docn, i.revi.idoc, revision.no
+	extern	domain	tcpono		i.srno
+	extern	domain	dmdoc.docid	i.docn, i.idoc
+	extern	domain	tcmcs.str100m	i.dsca
+	extern	domain	tcdate		i.date
+	extern	domain	tcmcs.str100	i.remk
+		string	query.string(500)
+	
+
+|****************************** program section ********************************
+before.program:
+	import("dmisg135.rcno", i.rcno)
+	import("dmisg135.revn", i.revn)
+	import("dmisg135.srno", i.srno)
+	import("dmisg135.docn", i.docn)
+	import("dmisg135.revi", i.revi.docn)
+	import("dmisg135.dsca", i.dsca)
+	import("dmisg135.idoc", i.idoc)
+	import("dmisg135.irev", i.revi.idoc)
+	import("dmisg135.date", i.date)
+	import("dmisg135.remk", i.remk)
+	
+	query.string = "dmisg135.rcno = " & quoted.string(i.rcno) & " and dmisg135.revn = " & quoted.string(i.revn)
+				& " and dmisg135.srno = " & str$(i.srno)
+	query.extend.where(query.string)
+	
+before.new.object:
+	dmisg135.srno = i.srno
+	dmisg135.docn = i.docn
+	dmisg135.revi = i.revi.docn
+	dmisg135.dsca = i.dsca
+	dmisg135.idoc = ""
+	dmisg135.irev = ""
+	dmisg135.date = 0
+	dmisg135.remk = ""
+	dmisg135.proc = tcyesno.no
+
+|****************************** group section **********************************
+
+field.dmisg135.idoc:
+before.zoom:	
+	query.string = ""
+	select 	dmisg134.orno, dmisg134.pono										
+	from	dmisg134
+	where	dmisg134._index1 = {:dmisg135.rcno, :dmisg135.revn}
+	selectdo
+		select	tdisg002.docn, 
+			tdisg002.revi
+		from	tdisg002
+		where	tdisg002._index1 = {:dmisg134.orno, :dmisg134.pono}
+		as set with 1 rows
+		selectdo
+			select	dmisg140.cprj,
+				dmisg140.cspa
+			from	dmisg140
+			where	dmisg140.docn = :tdisg002.docn
+			and	dmisg140.revn = :tdisg002.revi
+			as set with 1 rows
+			selectdo
+			endselect
+		endselect
+	endselect
+	
+	query.string = strip$(query.string) & "dmisg140.cprj = " & quoted.string(dmisg140.cprj)
+	query.string = strip$(query.string) & " and dmisg140.cspa = " & quoted.string(dmisg140.cspa)
+	query.string = strip$(query.string) & " and dmisg140.orgn = " & chr$(34) & "VEN" & chr$(34)
+	query.extend.where.in.zoom(query.string)										
+	
+	
+after.input:
+	select	dmisg140.revn:revision.no
+	from	dmisg140
+	where	dmisg140.docn = :dmisg135.idoc
+	selectdo
+	endselect
+	if isspace(revision.no) then
+		revision.no = "00"
+	endif
+	
+	dmisg135.irev = revision.no
+
+

@@ -1,0 +1,410 @@
+|******************************************************************************
+|* dmisg1137  0  VRC B61U a7 isg 
+|* Receive file from External Originator
+|* Installation user             
+|* 2015-02-03
+|******************************************************************************
+|* Main table dmisg137 Receive file from External Originator, Form Type 1
+|******************************************************************************
+|* ISGEC004004, IT0047, Dharmendra, Dt. 30-01-2015, B61U a7 isg                   
+|*
+|* ID: GH320CR618, RAvi Kumar, 26-05-2020
+|* Replace attachment check based on new customised attachment
+
+|****************************** declaration section ***************************
+declaration:
+
+  table   tdmisg137 | Receive file from External Originator
+  table   ttcmcs050
+  table   ttpmsl000
+  table		ttpptc100
+  table		ttcmcs052
+  table		tdmisg138
+  table		tdmcom010
+  table		tdmisg121
+  
+  table		ttcmcs052			
+  table		ttccom001			
+  table		tdmisg140
+  table		tbpmdm001			
+  table		tdmisg152			
+  
+  |**********************************Mail**************************************		
+		extern	domain	tfgld.date	date.f,date.t
+		extern	domain	ttdsca		sender.name1
+		extern	domain	tcinfo		sender.mail,sender.mail1
+		extern	domain	tcncmp		g.current.comp
+		extern	domain	ttaad.user	g.current.user
+		extern	domain	tcmcs.str70	u.specification.keyword, u.keyword
+		extern long ret
+				string	int.file1(100),int.file2(100)					
+				domain	tfmsl.ackn	get.status.for.mail
+				domain	dmcom.shrtid	g.trtp					
+				domain	dmcom.lnkd	g.trid				
+	
+|* CMF Variables
+	domain	ttcmf.prov	service
+	domain	ttcmf.role	cmf.role
+	domain	tcmcs.s512m	attachment.file
+	domain	tcmcs.s132m	cmf.err.mesg
+	long	message.ID,fp
+	long	attachment.ID,i1
+	long	err				
+	#include  <bic_cmf>
+	#pragma used dll ottdllcmf						|#GSTLIVE01010.en
+  
+
+
+|****************************** program section ********************************
+before.program:
+	read.parameters()
+
+choice.process:
+before.choice:	
+| 	if not check.linking() then	|#SD12122017.sn
+| 		choice.again()
+| 	endif				|#SD12122017.en
+	if not check.attachment.available() then			|GH320CR618.a.s
+		choice.again()
+	endif								|GH320CR618.a.e
+	
+on.choice:
+	update.document.list()
+
+
+|****************************** field section **********************************
+field.dmisg137.rcno:
+before.zoom:
+	tcmcs050.nrgr = tpmsl000.rcno
+
+field.tcmcs052.dsca:
+before.display:
+	select	tcmcs052.dsca
+	from	tcmcs052
+	where	tcmcs052._index1 = {:dmisg137.cprj}
+	selectdo
+	selectempty
+		tcmcs052.dsca = ""
+	endselect
+	
+field.dmisg137.cspa:
+before.zoom:
+	tpptc100.cprj = dmisg137.cprj
+
+field.tpptc100.desc:
+before.display:
+	select	tpptc100.desc
+	from	tpptc100
+	where	tpptc100._index1 = {:dmisg137.cprj, :dmisg137.cspa}
+	selectdo
+	selectempty
+		tpptc100.desc = ""
+	endselect
+	
+field.dmisg137.bpid:
+when.field.changes:
+	select	tccom100.nama:dmisg137.nama
+	from	tccom100
+	where	tccom100._index1 = {:dmisg137.bpid}
+	selectdo
+	selectempty
+		dmisg137.nama = ""
+	endselect
+
+	
+
+|****************************** function section **********************************
+functions:
+
+function read.parameters()
+{
+	tcmcs.dll0095.read.parm("tpmsl000")
+}
+
+function update.document.list()
+{
+	select	dmisg138.*
+	from	dmisg138
+	where	dmisg138._index1 = {:dmisg137.rcno}
+	selectdo
+		send.email()
+		select	dmisg140.dsca, dmisg140.acdt, dmisg140.lrrd,
+			dmisg140.revn
+		from	dmisg140 for update
+		where	dmisg140.docn = :dmisg138.docn
+		selectdo
+			dmisg140.dsca = dmisg138.dsca
+			dmisg140.revn = dmisg138.revn
+			if lval(dmisg138.revn) = 0 then
+				dmisg140.acdt = dmisg137.date
+			else
+				dmisg140.lrrd = dmisg137.date
+			endif
+			db.update(tdmisg140, db.retry)
+		endselect
+	endselect
+	
+	on.main.table(update.dmisg137.status)
+	
+	commit.transaction()
+}
+
+function update.dmisg137.status()
+{
+	select	dmisg137.proc
+	from	dmisg137 for update
+	where	dmisg137._index1 = {:dmisg137.rcno}
+	selectdo
+		dmisg137.proc = tcyesno.yes
+		db.update(tdmisg137, db.retry)
+	endselect
+	
+}
+
+		
+function long send.email()							|#GSTLIVE01010.sn
+{
+	long	file.ret1
+	string  file.name1(100),file.name(100),mdir(100),abc(100),d.mdir(100)
+	domain	tcmcs.s132m	mail.subject
+	domain	ttdsca		sender.name
+	domain	ttdsca		recipient.name
+	domain	tcinfo		recipient.mail
+	domain	tcmcs.str6	role.str
+	long	from.ID, to.ID, cc.ID,found 
+	 domain	ttaad.user	user
+	user = logname$
+	domain ttcmf.prov service       
+                        |Infor ERP Enterprise eMessage Connector service for 
+                        |transporting messages
+        long stat       |Variable to hold return values
+        long mid   
+	 
+	 
+	domain	tcmcs.str100m Supplier
+	domain	tcmcs.str100m project
+	domain	tcmcs.str100m tot.amnt 
+		
+	select 	bpmdm001.mail,tccom001.emno, tccom001.nama
+	from 	tccom001,bpmdm001
+	where 	tccom001._index4 = {:dmisg137.logn}
+	and	tccom001.emno refers to bpmdm001
+	as set with 1 rows
+	selectdo
+	selectempty
+		bpmdm001.mail = ""
+	endselect
+	
+	Supplier=""
+	project=""
+	
+	select	tcmcs052.dsca
+	from	tcmcs052
+	where	tcmcs052._index1={:dmisg137.cprj}
+	as set with 1 rows
+	selectdo
+		 
+	selectempty
+		project=""
+		tcmcs052.dsca=""
+	endselect
+	
+	tot.amnt =""
+	mail.subject = "Design Inputs for Project Code  " & trim$(dmisg137.cprj)  &"."
+
+	message.ID = cmf.create()
+	ret = cmf.setClass(message.ID,"CMF.NOTE")
+	ret = cmf.setSubject(message.ID,mail.subject)
+	ret = cmf.setPriority(message.ID, ttcmf.prio.high)
+	ret = cmf.setSensitivity(message.ID, ttcmf.sens.confidential)
+	
+	|* Set Sender
+	
+	cmf.role = ttcmf.role.from
+	ret = cmf.convertroletostring(cmf.role, role.str)
+
+	tt.user(g.current.user,sender.name)
+		
+	sender.name =  trim$(tccom001.nama)
+	sender.mail1 = trim$(bpmdm001.mail)
+		
+	from.ID = cmf.createRecipient(message.ID, ttcmf.role.from)
+	ret = cmf.setRecipientName(from.ID, sender.name)
+	ret = cmf.setRecipientAddress(from.ID,sender.mail1)
+	ret = cmf.setRecipientType(from.ID, "SMTP")
+
+	|* Set To Recipient 
+	
+	
+| 	recipient.mail = "saurabhdubey@merinoservices.com"
+| 	recipient.name = "SAURABH DUBEY"
+
+	select	dmisg140.resp
+	from	dmisg140
+	where 	dmisg140.cprj=:dmisg137.cprj
+	as set with 1 rows
+	selectdo
+		select	dmisg152.ecod
+		from	dmisg152
+		where	dmisg152._index1={:dmisg137.cprj}
+		selectdo
+			create.recipient(dmisg152.ecod,message.ID)
+		selectempty
+			dmisg152.ecod=""
+		endselect
+	selectempty
+		dmisg140.resp=""
+	endselect
+		
+	cmf.role = ttcmf.role.to
+	ret = cmf.convertroletostring(cmf.role, role.str)
+	
+		
+|	Body
+	abc = bse.tmp.dir$()
+	file.name1 = strip$(abc) &"/Body Text"&".txt"
+	
+	file.ret1 = seq.open(file.name1 , "w+")
+	if file.ret1 <=0 then
+                message("Error in creating file %d",fp)		 
+        else
+		
+		file.ret1 = seq.open(file.name1,"w+")
+
+		seq.puts("Dear Sir," & chr$(13),file.ret1)
+		seq.puts("" & chr$(13),file.ret1)
+		seq.puts("Following Inputs were released in the system.",file.ret1)
+		seq.puts("" & chr$(13),file.ret1)
+		seq.puts("Project Code : " & strip$(shiftl$(dmisg137.cprj)) &",",file.ret1)
+		seq.puts("" & chr$(13),file.ret1)
+		seq.puts("Project Description : " & strip$(shiftl$(tcmcs052.dsca)) &", ",file.ret1)
+		seq.puts("" & chr$(13),file.ret1)
+		seq.puts("DRG/DOC ID : " & strip$(shiftl$(dmisg138.docn)) &".",file.ret1)
+		seq.puts("" & chr$(13),file.ret1)
+		
+		seq.puts("Description : " & strip$(shiftl$(dmisg138.dsca)) &".",file.ret1)
+		seq.puts("" & chr$(13),file.ret1)
+		
+		
+		seq.puts("Revision  : " & strip$(shiftl$(dmisg138.revn)) ,file.ret1)
+		seq.puts("" & chr$(13),file.ret1)
+		seq.puts("" & chr$(13),file.ret1)
+		
+		
+		seq.puts("This is a Computer-generated email, please do not reply to this message" & chr$(13),file.ret1)				
+	endif
+
+	seq.close(file.ret1)	
+	
+	attachment.ID = cmf.createAttachment(message.ID)
+	ret = cmf.setAttachmentBody(attachment.ID,ttyeno.yes) 
+	ret = cmf.setAttachmentMIME(attachment.ID,"text/plain")
+	ret = cmf.setAttachmentFileName(attachment.ID,file.name1)
+|*********  Send mail
+        if message.ID <>0 then
+                stat = cmf.startService("SMTP",2)
+                if stat<>0 then
+			message("Message could not be sent(Infor ERP Enterprise eMessage Connector service did not start)")
+                        return(1)
+                endif
+                stat = cmf.send(message.ID,"SMTP")
+                if stat<>0 then
+			message("Message could not be sent(Infor ERP Enterprise eMessage Connector service refused message)")
+                        cmf.stopService("SMTP",2)
+                        return(1)
+                endif
+                stat = cmf.stopService("SMTP",2)		
+        endif
+	return(0)
+}							
+
+
+function long create.recipient(domain tcemno in.emno,long i.message.ID)
+{
+	long    to.ID,ret
+	
+	select 	bpmdm001.mail,tccom001.emno, tccom001.nama 
+	from 	tccom001,bpmdm001
+	where 	tccom001._index1 = {:in.emno}
+	and	tccom001.emno refers to bpmdm001
+	selectdo
+		to.ID = cmf.createRecipient(i.message.ID, ttcmf.role.to)  
+		ret = cmf.setRecipientName(to.ID,tccom001.nama)
+		ret = cmf.setRecipientAddress(to.ID, bpmdm001.mail)	
+		ret = cmf.setRecipientResponsibility(to.ID, "TRUE")		
+		ret = cmf.setRecipientType(to.ID, "SMTP")
+	selectempty
+		message("Email ID of "&tccom001.nama&" not maintained" )
+		return(1)
+	endselect
+	return(0)	
+}	
+				|#SD12122017.sn
+function boolean check.linking()
+{
+	domain	dmdoc.docid	o.docd
+	domain	dmdoc.revv	o.revn
+	domain	whinh.shpm	o.rcpt
+	domain	dmcom.lnkd	created.trid	
+	domain	tcmcs.str1	quote.str
+		long		rcpt.flag
+		
+		
+	g.trtp = "EXT ORIGINAT DOC"
+	quote.str = chr$(34)
+	
+	select	dmisg138.rcno:o.rcpt,
+	 	dmisg138.revn:o.revn,
+	 	dmisg138.docn:o.docd
+	from	dmisg138
+	where	dmisg138._index1 = {:dmisg137.rcno}
+	selectdo
+		created.trid = 	"{" & quote.str & o.rcpt & quote.str & 
+				"," & quote.str & o.docd & quote.str &
+				"," & quote.str & o.revn & quote.str & "}"
+		
+		if not dmisgdll0100.check.attachment.done(g.trtp, created.trid) then
+			message("Attachment has not been done against all lines...")
+			return(false)
+		endif
+	selectempty
+		message("No Records To Process...")
+		return(false)
+	endselect
+	
+	return(true)
+}
+				|#SD12122017.en
+				
+function boolean check.attachment.available()								|GH320CR618.a.s
+{
+	domain	dmdoc.docid	o.docd
+	domain	dmdoc.revv	o.revn
+	domain	whinh.shpm	o.rcpt
+	domain	tcmcs.str50	pass.string, handle.string					
+	domain	tcncmp		curr.comp								
+		
+	curr.comp = get.compnr()								
+	handle.string = ""
+	pass.string = ""
+	handle.string =  "IDMSEXTERNALORIGINATOR_" & str$(curr.comp)				
+
+	select	dmisg138.rcno:o.rcpt,
+	 	dmisg138.revn:o.revn,
+	 	dmisg138.docn:o.docd
+	from	dmisg138
+	where	dmisg138._index1 = {:dmisg137.rcno}
+	selectdo
+		pass.string = trim$(o.rcpt) & "_" & trim$(o.docd) & "_" & trim$(o.revn)		
+		if not dmisgdll0100.check.attachment.is.done(pass.string, handle.string) then
+			message("Attachment has not been done against all lines...")
+			return(false)
+		endif									
+	selectempty	
+		message("No Records To Process...")
+		return(false)
+	endselect
+	
+	return(true)
+}													|GH320CR618.a.e
+

@@ -1,0 +1,296 @@
+|******************************************************************************
+|* dmisg0402m001  0  VRC B61U a7 isg 
+|* Print Part Item Session
+|* Installation user             
+|* 2015-01-23
+|******************************************************************************
+|* Main table dmisg002 Incoming Document Child, Form Type 4
+|******************************************************************************
+|* IDENT ISGEC01173,Prasanna Bhuyan,11-03-2019 VRC B61U a7 isg  
+|* New Development
+|*
+|* ID: ISGEC002030, Bharti Garg, 24-04-2019
+|* Changes in report
+|****************************** declaration section ***************************
+declaration:
+
+	table	tdmisg002 | Incoming Document Child
+	table	ttcmcs052  
+	table	ttdisg002 
+	table  	ttdpur401
+	table  	ttppdm090
+	table  	tdmisg140
+	table  	ttpisg243
+	table  	ttpisg220	|#ISGEC002030.n
+	table  	tdmisg001	|#ISGEC002030.n
+  
+	extern	domain	tppdm.cspa	cspa.f,cspa.t
+	extern	domain	tcorno		orno.f,orno.t
+	extern	domain 	tccprj		cprj.f,cprj.t,i.cprj  
+		domain	tcmcs.str100	sub.item.desc
+			long 		stat.fp,ret2,flag
+			string		line(2000), err.file(100), file.name(100)
+	extern	domain	tcyesno		ch.po			
+   #pragma used dll ottdllbw 
+
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+        
+choice.print:
+on.choice:
+	generate.file()
+
+|****************************** field section *********************************
+field.cprj.f:
+when.field.changes:
+	cprj.t = cprj.f
+
+field.cspa.f:
+when.field.changes:
+	cspa.t = cspa.f
+
+before.zoom:
+	query.extend.where.in.zoom("tpptc100.cprj="&quoted.string(cprj.f))
+	
+field.cspa.t:
+before.zoom:
+	query.extend.where.in.zoom("tpptc100.cprj="&quoted.string(cprj.t))
+
+field.orno.f:
+when.field.changes:
+	orno.t = orno.f
+	
+field.ch.po:
+when.field.changes:
+	if ch.po = tcyesno.yes then
+		set.fmin(cprj.f)
+		set.fmax(cprj.t)
+		set.fmin(cspa.f)
+		set.fmax(cspa.t)
+		disable.fields("cprj.f")
+		disable.fields("cprj.t")
+		disable.fields("cspa.f")
+		disable.fields("cspa.t")
+		enable.fields("orno.f")
+		enable.fields("orno.t")
+		flag = 1 
+	else
+		set.fmin(orno.f)
+		set.fmax(orno.t)
+		enable.fields("cprj.f")
+		enable.fields("cprj.t")
+		enable.fields("cspa.f")
+		enable.fields("cspa.t")
+		disable.fields("orno.f")
+		disable.fields("orno.t")
+		flag = 0 
+	endif
+|****************************** function section ******************************
+
+functions:
+
+function  generate.file()
+{
+	err.file = bse.dir$() & str$(utc.num()) & ".xls"
+	file.name = "c:\temp\" & str$(utc.num())  & ".xls"
+	stat.fp = seq.open(err.file, "w+")
+	process.file()
+	message("Please refer to file %s in C:", file.name)
+	seq.close(stat.fp)
+	ret2 = server2client(err.file,file.name,1)
+	ret2 = app_start(file.name,"c:","","","")
+}
+
+function process.file()
+{
+	generate.header()
+	if ch.po = tcyesno.no then			|#ISGEC002030.sn
+		read.main.table()
+	else
+		read.main.table1()
+	endif						|#ISGEC002030.en
+}
+
+function generate.header()
+{
+	if stat.fp >0 then
+		
+		line = concat$("	", 
+			sprintf$("Project Code"),			|1
+			sprintf$("Project Name"),			|2
+			sprintf$("Element Code"),			|3
+			sprintf$("Element Name"),			|4
+			sprintf$("PO Number"),				|5
+			sprintf$("PO Line No."),			|6
+			sprintf$("Drawing No."),			|7
+			sprintf$("Drawing No. Description"),		|8
+			sprintf$("Item Code"),				|9
+			sprintf$("Item Description"),			|10
+			sprintf$("Sub Item Code"),			|11
+			sprintf$("Sub Item Description"),		|12
+			sprintf$("Planned Dispatch Date"))		|13	|#ISGEC002030.n
+			
+		line = strip$(shiftl$(line))
+		seq.puts(line, stat.fp)
+	endif
+	
+}
+
+function print.detail()
+{
+	if ch.po = tcyesno.yes then						|#ISGEC002030.sn
+		i.cprj = tdpur401.cprj								
+	else
+		i.cprj = dmisg001.cprj						|#ISGEC002030.en	
+	endif									|#ISGEC002030.sn
+	line =	concat$("	",
+		sprintf$("%s",trim$(i.cprj)),				|1	|#ISGEC002030.n
+		sprintf$("%s",trim$(tcmcs052.dsca)),			|2				
+		sprintf$("%s",dmisg002.elem),				|3				
+		sprintf$("%s",trim$(tppdm090.desc)),			|4	
+		sprintf$("%s",tdisg002.orno),				|5				
+		sprintf$("%s",tdisg002.pono),				|6
+		sprintf$("%s",tdisg002.docn),				|7
+		sprintf$("%s",trim$(dmisg140.dsca)),			|8
+		sprintf$("%s",trim$(tdisg002.item)),			|9
+		sprintf$("%s",trim$(tdisg002.desc)),			|10
+		sprintf$("%s",dmisg002.sitm),				|11
+		sprintf$("%s",trim$(sub.item.desc)),			|12
+		sprintf$("%D(%02d/%02m/%04Y)",tpisg220.oted))		|13		|#ISGEC002030.n
+		
+		line = strip$(shiftl$(line))
+		seq.puts(line, stat.fp)
+}
+
+function read.main.table1()						|#ISGEC002030.sn				
+{
+	select	tdisg002.orno, tdisg002.pono,
+		tdisg002.docn, tdisg002.item,
+		tdisg002.desc, tdisg002.revi,
+		tdpur401.orno, tdpur401.pono, 
+		tdpur401.cprj, tdpur401.cspa, 
+		tcmcs052.dsca
+	from	tdisg002,tdpur401, tcmcs052
+	where	tdisg002._index1 inrange {:orno.f} and {:orno.t}
+	and 	tdpur401.orno = tdisg002.orno
+	and 	tdpur401.pono = tdisg002.pono
+	and 	tdpur401._index2 inrange {:cprj.f} and {:cprj.t}
+	and 	tdpur401.cspa inrange :cspa.f and :cspa.t
+	and	tdpur401.cprj refers to tcmcs052 UNREF CLEAR
+	selectdo
+		select	dmisg002.elem, dmisg002.sitm,
+			tppdm090.desc
+		from	dmisg002, tppdm090
+		where	dmisg002._index1 = {:tdisg002.docn, :tdisg002.revi}
+		and	dmisg002.elem = :tdpur401.cspa
+		and	dmisg002.elem refers to tppdm090 UNREF CLEAR
+		as set with 1 rows
+		selectdo
+		selectempty
+			tppdm090.desc = ""
+		endselect
+		
+		select	dmisg140.pcod, dmisg140.iref, dmisg140.dsca,
+			dmisg140.cprj								|#ISGEC002030.n
+| 			|tpisg243.sub2, tpisg243.sub3, tpisg243.sub4				|#ISGEC002030.o
+| 		|from	dmisg140, tpisg243							|#ISGEC002030.o
+		from	dmisg140								|#ISGEC002030.n
+		where	dmisg140.docn = :tdisg002.docn
+| 		|and	tpisg243._index1 = {dmisg140.pcod, dmisg140.iref,:dmisg002.sitm}	|#ISGEC002030.o
+		selectdo
+			select	tpisg243.sub2, tpisg243.sub3, tpisg243.sub4			|#ISGEC002030.sn
+			from	tpisg243
+			where	tpisg243._index1 = {:dmisg140.pcod, :dmisg140.iref,:dmisg002.sitm}
+			selectdo								|#ISGEC002030.en
+				sub.item.desc = trim$(tpisg243.sub2) & "" & trim$(tpisg243.sub3) & "" & trim$(tpisg243.sub4)
+			endselect								
+			
+			select	tpisg220.oted					|#ISGEC002030.sn
+			from	tpisg220
+			where	tpisg220.cprj = :tdpur401.cprj
+			and	tpisg220.sub1 = :dmisg140.iref
+			and	tpisg220.bohd = "CT_MATERIALDISPATCHE" 
+			and	tpisg220.sitm = :dmisg002.sitm
+			selectdo
+			selectempty
+				tpisg220.oted = 0 
+			endselect						|#ISGEC002030.en
+		selectempty
+			sub.item.desc = ""
+			dmisg140.dsca = ""
+		endselect
+		
+		
+		
+		print.detail()
+		
+	endselect
+}										|#ISGEC002030.en
+
+function read.main.table()
+{
+	select	dmisg002.item, dmisg002.docn, dmisg002.revn, dmisg002.elem, dmisg002.sitm,
+		tppdm090.desc,tcmcs052.dsca,
+		dmisg001.cprj					|#ISGEC002030.n
+	from	dmisg002, tppdm090, dmisg001, tcmcs052
+	where	dmisg001.docn = dmisg002.docn
+	and	dmisg001.revn = dmisg002.revn
+	and	dmisg001.cprj = tcmcs052.cprj
+	and 	dmisg001.cprj  between :cprj.f and :cprj.t
+	and	dmisg002.elem between :cspa.f and :cspa.t
+	and	dmisg002.elem refers to tppdm090 UNREF CLEAR
+	and 	dmisg001.stat in(dmstat.released, dmstat.process) 
+	and 	dmisg002.sitm <> ""
+	selectdo
+		tdisg002.orno=""
+		tdisg002.pono=0
+		select	tdisg002.orno, tdisg002.pono,
+			tdisg002.docn,tdisg002.item,tdisg002.desc				|#ISGEC002030.n
+		from	tdisg002
+		where	tdisg002.item  = :dmisg002.item
+		and	tdisg002.docn = :dmisg002.docn
+		|and orno between :orno.f and :orno.t
+		selectdo
+		endselect
+		
+		select	dmisg140.pcod, dmisg140.iref, dmisg140.dsca,
+| 			tpisg243.sub2, tpisg243.sub3, tpisg243.sub4,				|#ISGEC002030.o
+			dmisg140.cprj								|#ISGEC002030.n
+| 		from	dmisg140, tpisg243							|#ISGEC002030.o
+		from	dmisg140								|#ISGEC002030.n
+		where	dmisg140.docn = :dmisg002.docn
+| 		and	tpisg243._index1 = {dmisg140.pcod, dmisg140.iref,:dmisg002.sitm}	|#ISGEC002030.o
+		selectdo
+			select	tpisg243.sub2, tpisg243.sub3, tpisg243.sub4			|#ISGEC002030.sn
+			from	tpisg243
+			where	tpisg243._index1 = {:dmisg140.pcod, :dmisg140.iref,:dmisg002.sitm}
+			selectdo								|#ISGEC002030.en
+				sub.item.desc = trim$(tpisg243.sub2) & "" & trim$(tpisg243.sub3) & "" & trim$(tpisg243.sub4)
+			endselect								|#ISGEC002030.n
+			
+			select	tpisg220.oted					|#ISGEC002030.sn
+			from	tpisg220
+			where	tpisg220.cprj = :dmisg140.cprj
+			and	tpisg220.sub1 = :dmisg140.iref
+			and	tpisg220.bohd = "CT_MATERIALDISPATCHE" 
+			and	tpisg220.sitm = :dmisg002.sitm
+			selectdo
+			selectempty
+				tpisg220.oted = 0 
+			endselect						|#ISGEC002030.en
+			
+		selectempty
+			sub.item.desc = ""
+			dmisg140.dsca = ""
+		endselect		
+		print.detail()
+	endselect
+}

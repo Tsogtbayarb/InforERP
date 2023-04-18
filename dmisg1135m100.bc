@@ -1,0 +1,302 @@
+|******************************************************************************
+|* dmisg1135m100  0  VRC B61U a7 isg 
+|* Link Vendor Document in Master Document List
+|* Installation user             
+|* 2015-02-02
+|******************************************************************************
+|* Main table dmisg135 Receive Document Lines, Form Type 1
+|******************************************************************************
+|* ISGEC004004, IT0047, Dharmendra, Dt. 30-01-2015, B61U a7 isg
+|*
+|* ISGEC004020, IT0047, Dharmendra, Dt. 08-10-2015, B61U a7 isg
+|*
+|* ID ISGEC016012, Manish Manchanda, 2016-10-07
+|* Modification - zoom filter 
+|*
+|* ID: ISGEC01100, Sahil Sharma, 04-Oct-2018, B61U a7 isg
+|* Modifications on zoom Filter
+|*
+|* ID: ISGEC01155, Sahil Sharma,11-Jan-2019, B61U a7 isg
+|* Isgec Document Zoom Filter
+|*
+|* GH256CR374, RAvi Kumar, 28/08/2020
+|* Issue while linking document in post order due to different element of PO and document
+|* 
+|* GH458CR355, RAvi Kumar, 28-12-2020
+|* Facility to maintain multiple Isgec Drawings Numbers against single receipt
+|****************************** declaration section ***************************
+declaration:
+
+  table   tdmisg135 | Receive Document Lines
+  table	tdmisg134
+  table	tdmisg140
+  table	tdmisg121
+  table	ttdpur401
+  table	ttdisg002
+  extern	domain	dmdoc.revv	revision.no
+  string	query.string(300), query.string.zoom(200), hold.iref(500)
+  extern	domain	tcorno	order.no.post, get.orno
+		domain	tccprj			cprj
+		domain	tcorno			pcod
+		domain	tcccty			ven.dr
+		domain	tcmcs.s200u		old.iref
+		domain	tcpono			flag
+  long ret
+	
+	extern	domain	dmdoc.docid	idoc	
+
+|****************************** program section ********************************
+before.program:						|#ISGEC004020.so
+	ven.dr = "VEN"
+	import("dmisg134.orno", get.orno)
+| 	query.string = ""				
+| 	order.no.post = ""
+| 	query.string = "dmisg135.proc = tcyesno.no and"
+| 	query.string = strip$(query.string) & " dmisg135.rcno in(select dmisg134.rcno from dmisg134 where dmisg134._index4 = dmisg.receipt.submitted"
+| 	query.string = strip$(query.string) & " and dmisg134.orno <> "& quoted.string(order.no.post) & ")"
+| 	query.extend.where(query.string)
+								|#ISGEC004020.eo
+|****************************** choice section **********************************
+choice.link.document:
+on.choice:
+| 	do.selection(false, link_all_document)			|#ISGEC004020.o
+| 	link_all_document()					|#ISGEC004020.n
+	do.selection(false,link_all_document)			|GH458CR355.a	
+	
+choice.add.multiple:						|GH458CR355.a.s
+on.choice:
+	start.synchronized.child("dmisg1135m200", "dmisg135.rcno", "dmisg135.rcno", "dmisg135.revn", "dmisg135.revn",
+				"dmisg135.srno", "dmisg135.srno")
+								|GH458CR355.a.e
+	
+|****************************** group section **********************************
+group.2:
+init.group:
+
+ret = create.extra.toolbar(
+		"dmisg1434m500",	"tcgen:activate")
+|****************************** field section **********************************
+field.dmisg135.idoc:
+before.zoom:
+| 	select 	dmisg134.orno, dmisg134.pono,							|#ISGEC01100.so				|GH256CR374.com.a
+| 		tdpur401.cprj, tdpur401.cspa
+| 	from	dmisg134, tdpur401
+| 	where	dmisg134._index1 = {:dmisg135.rcno, :dmisg135.revn}
+| 	and	tdpur401._index1 = {dmisg134.orno, dmisg134.pono}
+| 	selectdo
+| 	endselect
+| 	
+| 	query.string.zoom = ""
+| 	query.string.zoom = "dmisg121.vend = tcyesno.yes and dmisg121.cler = tcyesno.no and dmisg121.revd = tcyesno.no"		|#ISGEC016012.o
+| 	query.string.zoom = "dmisg121.vend = tcyesno.yes"									|#ISGEC016012.n
+| 	query.string.zoom = strip$(query.string.zoom) & " and dmisg121.cprj = " & quoted.string(tdpur401.cprj)
+| 	query.string.zoom = strip$(query.string.zoom) & " and dmisg121.cspa = " & quoted.string(tdpur401.cspa)
+| 	query.extend.where.in.zoom(query.string.zoom)
+												|#ISGEC01100.eo
+| 	select	dmisg140.cprj:cprj, dmisg140.pcod:pcod								
+| 	from	dmisg140, tdisg002
+| 	where	tdisg002._index1 = {:get.orno}
+| 	and	tdisg002.docn = dmisg140.docn
+| 	selectdo
+| 	endselect
+|  	
+| 	dmisg140.cprj = cprj
+| 	dmisg140.pcod = pcod											
+	
+		
+										|#ISGEC01155.sn
+| 	old.iref = ""
+| 	hold.iref = ""									
+| 	flag = 1
+| 	select	dmisg134.orno,tdisg002.docn, dmisg140.iref
+| 	from	dmisg134, tdisg002, dmisg140
+| 	where	dmisg134._index1 = {:dmisg135.rcno, :dmisg135.revn}
+| 	and	tdisg002._index1 = {dmisg134.orno}
+| 	and	tdisg002.docn = dmisg140.docn
+| 	selectdo
+| 		if flag = 1 then
+| 			hold.iref = trim$(dmisg140.iref)
+| 			old.iref = dmisg140.iref
+| 			flag = flag + 1 
+| 		else
+| 			if old.iref <> dmisg140.iref then
+| 				hold.iref = hold.iref &", "&trim$(dmisg140.iref)
+| 				old.iref = dmisg140.iref
+| 			endif
+| 		endif
+| 	endselect
+	
+	
+	
+| 		query.string = ""
+| 	| 	query.string = "dmisg140.docn in (select tdisg002.docn, dmisg140.orgn from tdisg002, dmisg140" 
+| 	| 	query.string = query.string & " where tdisg002.orno = "&quoted.string(dmisg134.orno)
+| 	| 	query.string = query.string & " and tdisg002.docn = dmisg140.docn"
+| 	| 	query.string = query.string & " and dmisg140.orgn = "&quoted.string(ven.dr)
+| 				
+| 	| 	query.string = "dmisg140.docn in (select tdisg002.docn from tdisg002" 
+| 	| 	query.string = query.string & " where tdisg002.orno = "&quoted.string(dmisg134.orno)&")"
+| 	| 	query.string = query.string & " and dmisg140.orgn = "&quoted.string(ven.dr)
+| 		query.string = strip$(query.string) & "dmisg140.cprj = " & quoted.string(tdpur401.cprj)
+| 		query.string = strip$(query.string) & " and dmisg140.cspa = " & quoted.string(tdpur401.cspa)
+| 		query.string = strip$(query.string) & " and dmisg140.orgn = " &quoted.string(ven.dr)
+| 	| 	query.string = "dmisg140.iref in ("&quoted.string(hold.iref)& ") and dmisg140.orgn = " &quoted.string(ven.dr)
+| 		query.extend.where.in.zoom(query.string)										
+| 													|#ISGEC01155.en			|GH256CR374.com.e
+
+	query.string = ""
+	select 	dmisg134.orno, dmisg134.pono							|#ISGEC01100.so			|GH256CR374.com.a
+	from	dmisg134
+	where	dmisg134._index1 = {:dmisg135.rcno, :dmisg135.revn}
+	selectdo
+		select	tdisg002.docn, 
+			tdisg002.revi
+		from	tdisg002
+		where	tdisg002._index1 = {:dmisg134.orno, :dmisg134.pono}
+		as set with 1 rows
+		selectdo
+			select	dmisg140.cprj,
+				dmisg140.cspa
+			from	dmisg140
+			where	dmisg140.docn = :tdisg002.docn
+| 			and	dmisg140.revn = :tdisg002.revi
+			as set with 1 rows
+			selectdo
+			endselect
+		endselect
+	endselect
+	
+	query.string = strip$(query.string) & "dmisg140.cprj = " & quoted.string(trim$(dmisg140.cprj))
+	query.string = strip$(query.string) & " and dmisg140.cspa = " & quoted.string(dmisg140.cspa)
+	query.string = strip$(query.string) & " and dmisg140.orgn = " & chr$(34) & "VEN" & chr$(34)
+| 	query.string = strip$(query.string) & " and dmisg140.orgn = " &quoted.string(ven.dr)
+	query.extend.where.in.zoom(query.string)		
+	
+after.input:
+	select	dmisg140.revn:revision.no
+	from	dmisg140
+	where	dmisg140.docn = :dmisg135.idoc
+	selectdo
+	endselect
+	if isspace(revision.no) then
+		revision.no = "00"
+	endif
+	
+	dmisg135.irev = revision.no
+	
+field.idoc:
+before.display:
+	select	dmisg135.idoc:idoc
+	from	dmisg135
+	where	dmisg135._index1 = {:dmisg135.rcno, :dmisg135.revn, :dmisg135.srno, :dmisg135.idoc}
+	as set with 1 rows
+	selectdo
+	selectempty
+		idoc = ""
+	endselect
+when.field.changes:
+	select	dmisg135.idoc
+	from	dmisg135
+	where	dmisg135._index1 = {:dmisg135.rcno, :dmisg135.revn, :dmisg135.srno, :idoc}
+	as set with 1 rows
+	selectdo
+		if idoc <> dmisg135.idoc then
+			message("Record alrady exist")
+			choice.again()
+		endif
+	selectempty
+		dmisg135.idoc = idoc
+		refresh()
+	endselect
+	
+before.zoom:
+query.string = ""
+	select 	dmisg134.orno, dmisg134.pono
+	from	dmisg134
+	where	dmisg134._index1 = {:dmisg135.rcno, :dmisg135.revn}
+	selectdo
+		select	tdisg002.docn, 
+			tdisg002.revi
+		from	tdisg002
+		where	tdisg002._index1 = {:dmisg134.orno, :dmisg134.pono}
+		as set with 1 rows
+		selectdo
+			select	dmisg140.cprj,
+				dmisg140.cspa
+			from	dmisg140
+			where	dmisg140.docn = :tdisg002.docn
+			and	dmisg140.revn = :tdisg002.revi
+			as set with 1 rows
+			selectdo
+			endselect
+		endselect
+	endselect
+	
+	query.string = strip$(query.string) & "dmisg140.cprj = " & quoted.string(dmisg140.cprj)
+	query.string = strip$(query.string) & " and dmisg140.cspa = " & quoted.string(dmisg140.cspa)
+	query.string = strip$(query.string) & " and dmisg140.orgn = " & chr$(34) & "VEN" & chr$(34)
+	query.extend.where.in.zoom(query.string)										
+	
+	
+after.input:
+	select	dmisg140.revn:revision.no
+	from	dmisg140
+	where	dmisg140.docn = :dmisg135.idoc
+	selectdo
+	endselect
+	if isspace(revision.no) then
+		revision.no = "00"
+	endif	
+	dmisg135.irev = revision.no
+
+|****************************** function section **********************************
+functions:
+
+function link_all_document()
+{
+	if isspace(dmisg135.idoc) or isspace(dmisg135.irev) then
+		message("Isgec Document No. OR Revision No. is blank for Receipt No %s and Revision No. %s", dmisg135.rcno, dmisg135.revn)
+	else	
+		select	dmisg134.bpid|, dmisg134.stat
+		from	dmisg134| for update
+		where	dmisg134._index1 = {:dmisg135.rcno, :dmisg135.revn}
+		selectdo
+| 			dmisg134.stat = dmisg.receipt.linked
+| 			db.update(tdmisg134, db.retry)
+		endselect
+		
+		select	dmisg121.*
+		from	dmisg121 for update
+		where	dmisg121._index1 = {:dmisg135.idoc, :dmisg135.irev}
+		selectdo
+			dmisg121.bpid = dmisg134.bpid
+			dmisg121.logn = logname$
+			dmisg121.revd = tcyesno.yes
+			dmisg121.redt = utc.num()
+			dmisg121.verk = dmisg135.remk
+			dmisg121.aldo = dmisg135.docn
+			dmisg121.alre = dmisg135.revi
+			db.update(tdmisg121, db.retry)
+		endselect
+		
+		on.main.table(update.dmisg135.process)
+		
+		commit.transaction()
+	endif
+	
+}
+
+function update.dmisg135.process()
+{
+	select 	dmisg135.proc
+	from	dmisg135 for update
+| 	where	dmisg135._index1 = {:dmisg135.rcno, :dmisg135.revn, :dmisg135.srno}
+	where	dmisg135._index1 = {:dmisg135.rcno, :dmisg135.revn, :dmisg135.srno, :dmisg135.idoc}		|GH458CR355.cng
+	selectdo
+		dmisg135.proc = tcyesno.yes
+		db.update(tdmisg135, db.retry)
+	endselect
+
+}
+
+

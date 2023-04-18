@@ -1,0 +1,1047 @@
+|******************************************************************************
+|* dmisgdll0100  0  VRC B61U a7 live
+|* PLM Functionality
+|* baan
+|* 14-12-23 [15:15]
+|******************************************************************************
+|* Script Type: Library
+|******************************************************************************
+|* ID : ISGECMOD003, IT0386, Saurabh Dubey, 15 December 2017, VRC B61U a7 isg
+|* Modifications for Auto Allocation of Vendor Documents 
+|*
+|* ID: ISGEC01087, Bharti Garg, 03-07-2018
+|* Added a logic for email for closed status.
+|******************************************************************************
+|* ID: ISGEC01122, Prasanna Bhuyan, VRC B61U a7 isg, 19/11/2018
+|* Modifications  
+|* 
+|* ID :ISGEC01153,Bharti Garg, 09-01-2019
+|* changes in mail subject
+|*
+|* #GH88.18.10.2019, Adarsh Pal, VRC B61U a7 isg, 18-10-2019
+|* Change in from-address of E-mail Alert from dmisg134.suer to dmisg134.user         
+|*
+|* ID: GH320CR618, RAvi Kumar, 26-05-2020
+|* Replace attachment check based on new customised attachment
+|* 
+|* GH611CR903, RAvi Kumar, 21-07-2021
+|* CR903-Additional disciplines to be added in ERP IDMS for Pre-order and post-order functionality
+|******************************************************************************
+                                                                                
+	table	tdmcom010
+	table	tdmisg134
+	table	tdmisg162
+	table  	tdmisg133
+	table  	tdmisg135
+	table	tdmisg231			|#ISGEC01122.n
+	table	tdmisg136
+	table	tbpmdm001
+	table	ttccom001
+	
+	domain	tcemm.grid	o.dmisg134.eunt	|#ISGECMOD003.sn
+	domain	tcitem		o.dmisg134.item
+	domain	tccprj		o.dmisg134.cprj
+	domain	tcnama		o.dmisg134.nama
+	domain	tcnama		o.dmisg134.nama.1
+	domain	tccom.bpid	o.dmisg134.bpid
+	domain	dmisg.receipt	o.dmisg134.stat
+	domain	whinh.shpm	o.dmisg134.rcno
+	domain	dmdoc.revv	o.dmisg134.revn
+	domain	tclogn		o.dmisg134.user
+	domain	tcorno		o.dmisg134.orno
+	domain	tcdsca		o.item.desc
+	domain	tcdsca		o.project.desc
+	domain	tcyesno		department.involved(10)
+						|#ISGECMOD003.en
+	
+	domain	tcdsca		elv.rspons		|#ISGEC01087.n
+	domain	tcccty		i.apid
+	domain	dmisg.eng	o.dmisg136.engi
+	domain	tfgld.user	o.dmisg136.logn
+					|#ISGECMOD003.sn
+	#include <bic_cmf>
+| 	#define NO_OF_DEPTS 7					|GH611CR903.old
+	#define NO_OF_DEPTS 9					|GH611CR903.new
+	#define PREORDER_RECEIPT isspace(o.dmisg134.orno)
+	#define POSTORDER_RECEIPT not isspace(o.dmisg134.orno)
+	
+	#pragma used dll otccomdll4050
+	#pragma used dll otcisgdll0100	
+	#pragma used dll obpmdmdll5001
+					|#ISGECMOD003.en
+		
+function extern boolean dmisgdll0100.approval.rule.document.master
+				(
+					domain	tfgld.user	i.user,
+				ref 	domain	tcemno		o.emno
+				)
+{
+	domain	tcemno	o.dmisg101.emno
+	
+	o.emno = get.employee.number.against.logon(i.user)
+	
+	select 	dmisg101.emno:o.dmisg101.emno
+	from	dmisg101
+	where	dmisg101._index2 = {:o.emno}
+	as set with 1 rows
+	selectdo
+	selectempty
+		return(false)
+	endselect
+	
+	return(true)
+}
+
+
+function domain tcemno get.employee.number.against.logon
+				(
+					domain	tfgld.user	i.user
+				)
+{
+	domain	tcemno		o.emno
+	select 	tccom001.emno:o.emno
+	from	tccom001
+	where	tccom001._index4 = {:i.user}
+	as set with 1 rows
+	selectdo
+	selectempty
+		o.emno = ""
+	endselect
+	
+	
+	return(o.emno)
+}
+
+
+function extern boolean dmisgdll0100.document.reviewer.required
+				(
+					domain	dmdoc.typeid	i.type,
+					domain	tcyesno		i.reqr
+				)
+{
+	domain	dmdoc.typeid	o.type
+	
+	select 	dmisg100.type:o.type
+	from	dmisg100
+	where	dmisg100._index1 = {:i.type}
+	and	dmisg100.reqr = :i.reqr
+	as set with 1 rows
+	selectdo
+	selectempty
+		return(false)
+	endselect
+	return(true)
+}
+
+
+
+function extern boolean dmisgdll0100.document.view
+				(
+					domain	tfgld.user	i.user,
+				ref 	domain	tcemno		o.emno
+				)
+{
+	domain	tcemno		o.dmisg110.emno
+	o.emno = get.employee.number.against.logon(i.user)
+
+	
+	select 	dmisg110.emno:o.dmisg110.emno
+	from	dmisg110
+	where	dmisg110._index1 = {:o.emno}
+	as set with 1 rows
+	selectdo
+	selectempty
+		return(false)
+	endselect
+	
+	return(true)
+}
+
+					|#ISGECMOD003.sn, Saurabh Dubey
+function extern boolean dmisgdll0100.check.attachment.done
+					(
+						domain	dmcom.shrtid	i.trtp,					
+						domain	dmcom.lnkd	i.trid	
+					)
+{
+	DLLUSAGE
+		This DLL checks whether attachment has been done in dmcom010(Object Links)
+		against keyfields of a table.
+		
+		Input	:	i.trtp - Object Type
+		 	:	i.trid - Object ID
+			
+		Return	:	True - Attachment Exist	
+				False - No File Attached
+	ENDDLLUSAGE
+	
+	domain	dmcom.lnkd	bind.trid	
+	
+	select	dmcom010.trid:bind.trid
+	from	dmcom010
+	where	dmcom010._index4 = {:i.trtp, :i.trid}
+	selectdo
+	selectempty
+		return(false)
+	endselect
+	
+	return(true)
+}
+
+function extern string dmisgdll0100.forward.receipt.to.departments
+						(
+							domain	whinh.shpm	i.rcpt,
+							domain	dmdoc.revv	i.revn
+						)
+{
+	string	o.err.mess(200)
+	
+	domain 	tcsern 		i, found
+	
+	i = 0
+	found = 0
+	o.err.mess = ""
+	
+	select	dmisg134.rcno:o.dmisg134.rcno,
+	 	dmisg134.revn:o.dmisg134.revn,
+	 	dmisg134.eunt:o.dmisg134.eunt,
+	 	dmisg134.item:o.dmisg134.item,
+	 	dmisg134.cprj:o.dmisg134.cprj,
+	 	dmisg134.bpid:o.dmisg134.bpid,
+	 	dmisg134.nama:o.dmisg134.nama,
+	 	dmisg134.orno:o.dmisg134.orno,
+	 	dmisg134.stat:o.dmisg134.stat,
+	 	dmisg134.user:o.dmisg134.user,
+		tcibd001.dsca:o.item.desc,
+		tcmcs052.dsca:o.project.desc
+	from	dmisg134, tcibd001, tcmcs052
+	where	dmisg134._index1 = {:i.rcpt, :i.revn}
+	and	dmisg134.item refers to tcibd001 UNREF CLEAR
+	and	dmisg134.cprj refers to tcmcs052 UNREF CLEAR
+	selectdo
+	selectempty
+		o.dmisg134.rcno = ""
+		o.dmisg134.revn = ""
+		o.dmisg134.eunt = ""
+		o.dmisg134.item = ""
+		o.dmisg134.cprj = ""
+		o.dmisg134.bpid = ""
+		o.dmisg134.nama = ""
+		o.dmisg134.orno = ""
+		o.dmisg134.user = ""
+		o.item.desc = ""
+		o.project.desc = ""
+	endselect
+	
+	for i = 1 to NO_OF_DEPTS
+		department.involved(i) = tcyesno.no
+	endfor
+	
+	if PREORDER_RECEIPT then	|* For Preorder 
+		select	dmisg162.sent:department.involved
+		from	dmisg162
+		where	dmisg162._index1 = {:o.dmisg134.eunt, :o.dmisg134.item}
+		selectdo
+		endselect
+	else					|* for Post Order
+		select	dmisg164.sent:department.involved
+		from	dmisg164
+		where	dmisg164._index1 = {:o.dmisg134.eunt, :o.dmisg134.item}
+		selectdo
+		endselect
+	endif	
+	
+	if o.dmisg134.stat = dmisg.receipt.submitted then
+		for i = 1 to NO_OF_DEPTS
+			if department.involved(i) = tcyesno.yes then
+				send.to.dept(i)
+				found = i
+			endif	
+		endfor
+		
+		if found then
+			select	dmisg134.suer, dmisg134.sdat, dmisg134.stat,
+				dmisg134.sent
+			from	dmisg134 for update
+			where	dmisg134._index1 = {:o.dmisg134.rcno, :o.dmisg134.revn}
+			selectdo
+				dmisg134.suer = logname$
+				dmisg134.sdat = utc.num()
+				dmisg134.stat = dmisg.receipt.evaluation
+				
+				for i = 1 to NO_OF_DEPTS
+					dmisg134.sent(i) = department.involved(i) 
+				endfor
+				
+				db.update(tdmisg134, db.retry, e)
+				if e = 0 then
+					commit.transaction()
+					send.email.alert()
+				else
+					abort.transaction()
+				endif
+			endselect	
+		else
+			o.err.mess = 	"1|Not any Engineering department selected for Receipt No. " & 
+					trim$(o.dmisg134.rcno) & " and Revision " & trim$(o.dmisg134.revn)
+			return(o.err.mess)
+		endif
+	else
+		o.err.mess = 	"1|Receipt No. " & trim$(o.dmisg134.rcno) & " and Revision " & 
+				trim$(o.dmisg134.revn) & " not in Submitted State."
+		return(o.err.mess)
+	endif
+	
+	if isspace(o.err.mess) then
+		o.err.mess = "0|Process Completed...."
+	endif	
+	
+	return(o.err.mess)
+}
+			
+					
+function send.to.dept(domain tcsern i.engi)
+{	
+	domain 	dmisg.eng 	engg.dept
+	
+	determine.department(i.engi, engg.dept)
+	
+	select	dmisg136.*
+	from	dmisg136 for update
+	where	dmisg136._index1 = {
+				:o.dmisg134.rcno, 
+				:o.dmisg134.revn, 
+				:engg.dept
+				}
+	selectdo
+	selectempty
+		dmisg136.rcno = o.dmisg134.rcno
+		dmisg136.revn = o.dmisg134.revn
+		dmisg136.engi = engg.dept
+		dmisg136.cprj = o.dmisg134.cprj				
+		dmisg136.item = o.dmisg134.item
+		dmisg136.bpid = o.dmisg134.bpid
+		dmisg136.nama = o.dmisg134.nama				
+		db.insert(tdmisg136, db.skip.dupl)
+	endselect
+}
+
+
+function determine.department
+			(
+				domain	tcsern		i.engi,
+			ref	domain	dmisg.eng	o.dept
+			)
+{
+	on case i.engi
+	case 1:
+		o.dept = dmisg.eng.mechanical
+		break
+	case 2:
+		o.dept = dmisg.eng.structure
+		break
+	case 3:
+		o.dept = dmisg.eng.piping
+		break
+	case 4:
+		o.dept = dmisg.eng.process
+		break
+	case 5:
+		o.dept = dmisg.eng.ci
+		break
+	case 6:
+		o.dept = dmisg.eng.electrical
+		break
+	case 7:
+		o.dept = dmisg.eng.others
+		break
+	case 8:						|GH611CR903.a.s
+		o.dept = dmisg.eng.wws
+		break
+	case 9:
+		o.dept = dmisg.eng.mhe
+		break					|GH611CR903.a.e
+	endcase
+}
+							
+function send.email.alert()
+{
+	domain	tcnama		to.nama, from.nama, cc.nama, user.name,
+				nama						|#ISGEC01122.n
+	domain	tcmail		to.mail, from.mail, cc.mail
+	domain	tcemno		to.emno, from.emno, cc.emno
+	domain	tclogn		o.dmisg133.logn
+	domain	dmisg.eng	o.dmisg133.engi
+	domain	tcmcs.str60	dept.line(30)			|#ISGEC01087.o	
+| 	domain	tcmcs.str60	dept.line(60)			|#ISGEC01087.n			
+
+
+	
+	string	tmp.file(200),line(600)
+	long 	fp, cnt.val, k
+	
+	long   	message.ID
+        long   	attachment.ID
+        long   	ret
+	long 	stat 
+	
+	for cnt.val = 1 to 30 step 1
+		dept.line(1, cnt.val) = ""
+	endfor
+	
+	tcisgdll0100.get.user.name(o.dmisg134.user, user.name)
+
+	
+| 	get.Email.details(	dmisg134.suer,
+	get.Email.details(	dmisg134.user,				|#GH88.18.10.2019
+				from.emno,
+				from.nama,
+				from.mail
+				)
+
+	if isspace(from.mail) then
+		message("Email ID for user " & dmisg134.suer & " Not maintained")
+	endif		
+	
+	|******* Email Header
+	line = ""
+        message.ID = cmf.create()
+	if PREORDER_RECEIPT then	|* For Preorder
+| 		line = 	strip$(line) & "(TEST MAIL) " & trim$(o.dmisg134.cprj) & 
+		line = 	strip$(line) & "(MAIL ALERT) " & trim$(o.dmisg134.cprj) & 
+			" Offer For " & trim$(o.item.desc) & " from " & o.dmisg134.nama
+	else
+| 		line = 	strip$(line) & "(TEST MAIL) " & trim$(o.dmisg134.cprj) & 	|* For Post Order
+		line = 	strip$(line) & "(MAIL ALERT) " & trim$(o.dmisg134.cprj) & 	|* For Post Order
+			" Drawing/Document For " & trim$(o.item.desc) & " from " & o.dmisg134.nama
+	endif		
+	
+	ret = cmf.setClass(message.ID, "CMF.NOTE.EMAIL")
+        ret = cmf.setSubject(message.ID,line)
+	
+| 	from.mail = "veena@isgec.co.in"
+| 	from.nama = "Veena Mam"
+	
+	|******** from ID
+	
+	assign.mail.ID(	message.ID,
+			from.mail,
+			from.nama,
+			ttcmf.role.from
+			)
+ 
+	|******** to ID
+	
+	tmp.file = creat.tmp.file$(bse.tmp.dir$()) & ".html"
+	fp = seq.open(tmp.file,"w+")
+	if fp <=0 then
+		message("Temp file can not be created")
+	endif
+
+	line = ""	
+	seq.write(line,len(line),fp)
+	
+	if PREORDER_RECEIPT then
+		line = "This is to inform you that the following offer is now available in ERP-LN for your review." & chr$(13)	
+	else
+		line = "This is to inform you that the following Drawing/Document is now available in ERP-LN for your review." & chr$(13)
+	endif	
+	seq.write(line, len(line), fp)
+														|Adarsh.sn
+		line = "Vendor Name: " & trim$(o.dmisg134.nama) & chr$(13)
+		seq.write(line,len(line),fp)
+														|Adarsh.en
+	line = "<P>Please login and complete review at the earliest.</P>" & chr$(13) & chr$(13) 
+	seq.write(line, len(line), fp)
+	
+	line = "<P>" & chr$(160) & "</P>"
+	seq.write(line, len(line), fp)
+	
+	line = "<P>Project ID : " & o.dmisg134.cprj & "</P>"	
+	seq.write(line, len(line), fp)
+	line = "<P>Project Name : " & o.project.desc & "</P>"	
+	seq.write(line, len(line), fp)
+	line = "<P><B>Receipt No. : " & o.dmisg134.rcno & " REV No : "  & o.dmisg134.revn & "</B>" & "</P>"	
+	seq.write(line, len(line), fp)
+	line = "<P>Received From : " & user.name & "</P>"	
+	seq.write(line, len(line), fp)
+	line = "<P><B>Distributed To : " & "</B></P>"	
+	seq.write(line, len(line), fp)
+	
+	cnt.val = 0
+	
+	select	dmisg133.engi:o.dmisg133.engi,
+		dmisg133.logn:o.dmisg133.logn
+	from	dmisg133
+	where	dmisg133.eunt = :o.dmisg134.eunt
+	and	dmisg133.cprj = :o.dmisg134.cprj
+	order by dmisg133.engi
+| 	as set with 1 rows	|for test
+	selectdo
+		k = etol(o.dmisg133.engi)
+		
+		if department.involved(k) = tcyesno.yes then		|* If department is involved in Lot Item
+			
+			get.Email.details(	o.dmisg133.logn,
+						to.emno,
+						to.nama,
+						to.mail
+						)
+			
+| 			to.mail = "saurabhdubey@merinoservices.com"
+| 			to.nama = "SAURABH DUBEY"
+
+			assign.mail.ID(	message.ID,
+					to.mail,
+					to.nama,
+					ttcmf.role.to
+					)
+			
+			cnt.val = cnt.val + 1
+			
+			dept.line(1, cnt.val) =	"<P>" & enum.descr$("dmisg.eng", o.dmisg133.engi, "2") &
+						" : " & to.nama & "</P>"
+		endif
+	endselect
+	k = 0	
+	for k = 1 to cnt.val step 1
+		line = dept.line(1, k) & chr$(13)
+		if not isspace(line) then
+			seq.write(line, len(line), fp)
+		endif	
+	endfor
+
+	if POSTORDER_RECEIPT then	|* For Post Order
+		write.receipt.details(fp)
+	endif	
+	
+	line = "<P>" & chr$(160) & "</P>"
+	seq.write(line, len(line), fp)
+	line = "<P>" & chr$(160) & "</P>"
+	seq.write(line, len(line), fp)
+	
+	line = "<P><B>This is an Automatic generated mail and do not reply to this.</B></P>" 
+	seq.write(line, len(line), fp)
+	
+	ret = seq.close(fp)
+	
+	get.Email.details(	o.dmisg134.user,
+				cc.emno,	
+				cc.nama,		
+				cc.mail		
+				)
+	
+	assign.mail.ID(	message.ID,
+			cc.mail,
+			cc.nama,
+			ttcmf.role.cc
+			)
+		
+	select	dmisg231.mail,							|#ISGEC01122.sn
+		tccom001.nama:nama				
+	from	dmisg231,tccom001
+	where	dmisg231._index1 =	{:o.dmisg134.cprj}
+	and	dmisg231.emno refers to tccom001 UNREF CLEAR
+	selectdo
+		assign.mail.ID(	message.ID,				
+				dmisg231.mail,
+				nama,
+				ttcmf.role.cc
+				)
+	endselect									|#ISGEC01122.en	
+			
+	|********* Mail Body
+	attachment.ID = cmf.createAttachment(message.ID)
+	ret = cmf.setAttachmentBody(attachment.ID,ttyeno.yes)
+| 	ret = cmf.setAttachmentMIME(attachment.ID,"text/plain")                       
+	ret = cmf.setAttachmentMIME(attachment.ID,"text/html")                       
+	ret = cmf.setAttachmentFileName(attachment.ID,tmp.file,"abc.txt")
+
+
+	|*********  Send mail
+        if message.ID <>0 then
+                stat = cmf.startService("SMTP",2)
+                if stat <> 0 then
+                        message("Message could not be sent "&
+                                "(Infor ERP Enterprise eMessage Connector"&
+                                " service did not start)")
+		endif
+			
+                stat = cmf.send(message.ID,"SMTP")
+                if stat<>0 then
+                        message("Message could not be sent "& "(Infor ERP Enterprise eMessage Connector "&
+                                "service refused message)")
+                        cmf.stopService("SMTP",2)
+                endif
+                stat = cmf.stopService("SMTP",2)
+        endif	
+}					
+
+function get.Email.details
+		(
+			domain	tclogn	i.logn,
+		ref	domain	tcemno	o.emno,
+		ref	domain	tcnama	o.nama,
+		ref	domain	tcmail	o.mail
+		)
+{
+	if not tccom.dll4050.get.employee.descr.by.logincode(	i.logn,	
+								o.emno,		|* ref Employee
+								o.nama) then	|* ref Employee Name
+		
+		if not bpmdm.dll5001.get.e.mail(	true,
+							o.emno,
+							o.mail) then
+		endif
+	else
+		message("User %s Not Found...", i.logn)
+	endif	
+}	
+
+function assign.mail.ID
+		(
+				long		i.msg.id,
+			domain	tcmail		i.person.mail,
+			domain	tcnama		i.person.name,
+			domain	ttcmf.role	i.role		|* Role (eg CC, To, From)
+		)
+{
+	long	to.ID, rval
+	
+	to.ID = cmf.createRecipient(i.msg.id, i.role)  
+	rval = cmf.setRecipientName(to.ID, i.person.name)
+	rval = cmf.setRecipientAddress(to.ID, i.person.mail)	
+	rval = cmf.setRecipientResponsibility(to.ID, "TRUE")		
+	rval = cmf.setRecipientType(to.ID, "SMTP")
+}
+
+function write.receipt.details(long file.pntr)
+{
+	domain	dmdoc.docid	o.dmisg135.docn, o.dmisg135.idoc
+	domain	dmdoc.revv	o.dmisg135.revi, o.dmisg135.irev
+	domain	tcmcs.str100	o.dmisg135.dsca
+	domain	tcpono		o.dmisg135.srno
+	domain	tcdate		o.dmisg135.date
+	
+		long 	file.rval
+	
+	file.rval = seq.puts("<HTML>", file.pntr)
+	file.rval = seq.puts("<BODY>", file.pntr)
+	
+	file.rval = seq.puts("<TABLE>", file.pntr)
+	file.rval = seq.puts("<TR>", file.pntr)
+	file.rval = seq.puts("<TD COLSPAN=""3"" NOWRAP STYLE = ""FONT-SIZE:16""><B>" & "</B>", file.pntr)
+	
+	file.rval = seq.puts("</TR>", file.pntr)
+	file.rval = seq.puts("</TABLE>", file.pntr)
+	file.rval = seq.puts("<TABLE>", file.pntr)
+	file.rval = seq.puts("<TR>", file.pntr)
+	
+	file.rval = seq.puts("<TD align = ""center"" bgcolor = ""YELLOW"" style = ""border:3px solid black"">  <B>Sr. No.</B>", file.pntr)		|1
+	file.rval = seq.puts("<TD align = ""center"" bgcolor = ""YELLOW"" style = ""border:3px solid black""> <B>Vendor Doc. ID</B>", file.pntr)	|2
+	file.rval = seq.puts("<TD align = ""center"" bgcolor = ""YELLOW"" style = ""border:3px solid black""> <B>Revision</B>", file.pntr)		|3
+	file.rval = seq.puts("<TD align = ""center"" bgcolor = ""YELLOW"" style = ""border:3px solid black""> <B>Description</B>", file.pntr)		|4
+	file.rval = seq.puts("<TD align = ""center"" bgcolor = ""YELLOW"" style = ""border:3px solid black""> <B>Isgec Doc ID</B>", file.pntr)		|5
+	file.rval = seq.puts("<TD align = ""center"" bgcolor = ""YELLOW"" style = ""border:3px solid black""> <B>Revision</B>", file.pntr)		|6
+	file.rval = seq.puts("<TD align = ""center"" bgcolor = ""YELLOW"" style = ""border:3px solid black""> <B>Receipt Date</B>", file.pntr)		|7
+	
+	select	dmisg135.srno:o.dmisg135.srno,
+	 	dmisg135.docn:o.dmisg135.docn,
+	 	dmisg135.revi:o.dmisg135.revi,
+	 	dmisg135.idoc:o.dmisg135.idoc,
+	 	dmisg135.irev:o.dmisg135.irev,
+	 	dmisg135.dsca:o.dmisg135.dsca,
+	 	dmisg135.date:o.dmisg135.date
+	from	dmisg135
+	where	dmisg135._index1 = {:o.dmisg134.rcno, :o.dmisg134.revn}
+	selectdo
+		file.rval = seq.puts("<TR>", file.pntr)
+		
+		file.rval = seq.puts("<TD align = ""center"" style = ""border:2px solid black"">" & str$(o.dmisg135.srno), file.pntr)		|1
+		file.rval = seq.puts("<TD align = ""center"" style = ""border:2px solid black"">" & trim$(o.dmisg135.docn), file.pntr)		|2
+		file.rval = seq.puts("<TD align = ""center"" style = ""border:2px solid black"">" & trim$(o.dmisg135.revi), file.pntr)		|3
+		file.rval = seq.puts("<TD align = ""center"" style = ""border:2px solid black"">" & trim$(o.dmisg135.dsca), file.pntr)		|4
+		file.rval = seq.puts("<TD align = ""center"" style = ""border:2px solid black"">" & trim$(o.dmisg135.idoc), file.pntr)		|5
+		file.rval = seq.puts("<TD align = ""center"" style = ""border:2px solid black"">" & trim$(o.dmisg135.irev), file.pntr)		|6
+		file.rval = seq.puts("<TD align = ""center"" style = ""border:2px solid black"">" & sprintf$("%u(%02d/%02m/%04Y)", o.dmisg135.date), file.pntr)|7
+		
+		file.rval = seq.puts("</TR>", file.pntr)
+	endselect
+	file.rval = seq.puts("</TABLE>", file.pntr)
+	file.rval = seq.puts("</BODY>", file.pntr)
+	file.rval = seq.puts("</HTML>", file.pntr)
+}
+
+				|#ISGECMOD003.en
+				
+| function extern string dmisgdll0100.closed.status.for.dmisg134		|#ISGEC01087.sn
+function extern string dmisgdll0100.status.for.dmisg134.for.status		|#ISGEC01153.n		
+						(
+							domain	whinh.shpm	i.rcpt,
+							domain	dmdoc.revv	i.revn
+						)
+{
+	string	o.err.mess(200)
+	
+	domain 	tcsern 		i, found
+	
+	i = 0
+	found = 0
+	o.err.mess = ""
+	
+	select	dmisg134.rcno:o.dmisg134.rcno,
+	 	dmisg134.revn:o.dmisg134.revn,
+	 	dmisg134.eunt:o.dmisg134.eunt,
+	 	dmisg134.item:o.dmisg134.item,
+	 	dmisg134.cprj:o.dmisg134.cprj,
+	 	dmisg134.bpid:o.dmisg134.bpid,
+	 	dmisg134.nama:o.dmisg134.nama,
+	 	dmisg134.orno:o.dmisg134.orno,
+	 	dmisg134.stat:o.dmisg134.stat,
+	 	dmisg134.user:o.dmisg134.user,
+		tcibd001.dsca:o.item.desc,
+		tcmcs052.dsca:o.project.desc
+	from	dmisg134, tcibd001, tcmcs052
+	where	dmisg134._index1 = {:i.rcpt, :i.revn}
+	and	dmisg134.item refers to tcibd001 UNREF CLEAR
+	and	dmisg134.cprj refers to tcmcs052 UNREF CLEAR
+	selectdo
+											|#GH105.sn
+		select	tccom100.nama:o.dmisg134.nama.1
+		from	tccom100
+		where	tccom100._index1 = {:o.dmisg134.bpid}
+		selectdo
+		selectempty
+			o.dmisg134.nama.1 = ""
+		endselect
+											|#GH105.en
+	selectempty
+		o.dmisg134.rcno = ""
+		o.dmisg134.revn = ""
+		o.dmisg134.eunt = ""
+		o.dmisg134.item = ""
+		o.dmisg134.cprj = ""
+		o.dmisg134.bpid = ""
+		o.dmisg134.nama = ""
+		o.dmisg134.orno = ""
+		o.dmisg134.user = ""
+		o.item.desc = ""
+		o.project.desc = ""
+	endselect
+	
+	for i = 1 to NO_OF_DEPTS
+		department.involved(i) = tcyesno.no
+	endfor
+	
+	if PREORDER_RECEIPT then	|* For Preorder 
+		select	dmisg162.sent:department.involved
+		from	dmisg162
+		where	dmisg162._index1 = {:o.dmisg134.eunt, :o.dmisg134.item}
+		selectdo
+		endselect
+	else					|* for Post Order
+		select	dmisg164.sent:department.involved
+		from	dmisg164
+		where	dmisg164._index1 = {:o.dmisg134.eunt, :o.dmisg134.item}
+		selectdo
+		endselect
+	endif	
+| 	
+| 	if o.dmisg134.stat = dmisg.receipt.submitted then
+		for i = 1 to NO_OF_DEPTS
+			if department.involved(i) = tcyesno.yes then
+				send.to.dept(i)
+				found = i
+			endif	
+		endfor
+| 		
+		if found then
+| 			select	dmisg134.suer, dmisg134.sdat, dmisg134.stat,
+| 				dmisg134.sent
+| 			from	dmisg134 for update
+| 			where	dmisg134._index1 = {:o.dmisg134.rcno, :o.dmisg134.revn}
+| 			selectdo
+| 				dmisg134.suer = logname$
+| 				dmisg134.sdat = utc.num()
+| 				dmisg134.stat = dmisg.receipt.evaluation
+| 				
+| 				for i = 1 to NO_OF_DEPTS
+| 					dmisg134.sent(i) = department.involved(i) 
+| 				endfor
+| 				
+| 				db.update(tdmisg134, db.retry, e)
+| 				if e = 0 then
+| 					commit.transaction()
+| 					send.email.alert.closed()
+					send.email.alert.for.status()	|#ISGEC01153.n					
+| 				else
+| 					abort.transaction()
+| 				endif
+| 			endselect	
+		else
+			o.err.mess = 	"1|Not any Engineering department selected for Receipt No. " & 
+					trim$(o.dmisg134.rcno) & " and Revision " & trim$(o.dmisg134.revn)
+			return(o.err.mess)
+		endif
+| 	else
+| 		o.err.mess = 	"1|Receipt No. " & trim$(o.dmisg134.rcno) & " and Revision " & 
+| 				trim$(o.dmisg134.revn) & " not in Submitted State."
+| 		return(o.err.mess)
+| 	endif
+	
+	if isspace(o.err.mess) then
+		o.err.mess = "0|Process Completed...."
+	endif	
+	
+	return(o.err.mess)
+}											
+
+| function send.email.alert.closed()				|ISGEC01153.o
+function send.email.alert.for.status()					|#ISGEC01153.n
+{
+	domain	tcnama		to.nama, from.nama, cc.nama, user.name
+	domain	tcmail		to.mail, from.mail, cc.mail
+	domain	tcemno		to.emno, from.emno, cc.emno
+	domain	tclogn		o.dmisg133.logn
+	domain	dmisg.eng	o.dmisg133.engi
+	domain	tcmcs.str100	dept.line(90)
+	
+	string	tmp.file(200),line(600)
+	long 	fp, cnt.val, k
+	
+	long   	message.ID
+        long   	attachment.ID
+        long   	ret
+	long 	stat 
+	
+| 	elv.rspons = ""
+	for cnt.val = 1 to 30 step 1
+		dept.line(1, cnt.val) = ""
+	endfor
+	
+	tcisgdll0100.get.user.name(o.dmisg134.user, user.name)
+	
+	get.Email.details(	dmisg134.suer,
+				from.emno,
+				from.nama,
+				from.mail
+				)
+
+	if isspace(from.mail) then
+		message("Email ID for user " & dmisg134.suer & " Not maintained")
+	endif		
+	
+	|******* Email Header
+	line = ""
+        message.ID = cmf.create()
+	if PREORDER_RECEIPT then	|* For Preorder
+| 		line = 	strip$(line) & "(TEST MAIL) " & trim$(o.dmisg134.cprj) & 
+| 		line = 	strip$(line) & "(MAIL ALERT) " & trim$(o.dmisg134.cprj) & 	|ISGEC01153.o
+		line = 	strip$(line) & trim$(o.dmisg134.cprj) & 			|ISGEC01153.n
+
+			" Offer For " & trim$(o.item.desc) & " from " & trim$(o.dmisg134.nama) &
+			" against " & trim$(o.dmisg134.rcno) & " evaluated with " & trim$(enum.descr$("dmisg.receipt",o.dmisg134.stat)) 		|#ISGEC01153.n
+
+	else
+| 		line = 	strip$(line) & "(TEST MAIL) " & trim$(o.dmisg134.cprj) & 	|* For Post Order
+| 		line = 	strip$(line) & "(MAIL ALERT) " & trim$(o.dmisg134.cprj) & 	|* For Post Order	|ISGEC01153.o
+		line = 	strip$(line) & "Post Order: " &  trim$(o.dmisg134.cprj) & 	|* For Post Order		|ISGEC01153.n
+
+			" Drawing/Document For " & trim$(o.item.desc) & " from " & trim$(o.dmisg134.nama.1) &		|ISGEC01153.o
+			" against " & trim$(o.dmisg134.rcno) & " evaluated with " & trim$(enum.descr$("dmisg.receipt",o.dmisg134.stat))		|#ISGEC01153.n
+
+	endif		
+	
+	ret = cmf.setClass(message.ID, "CMF.NOTE.EMAIL")
+        ret = cmf.setSubject(message.ID,line)
+	
+| 	from.mail = "veena@isgec.co.in"
+| 	from.nama = "Veena Mam"
+	
+	|******** from ID
+	
+	assign.mail.ID(	message.ID,
+			from.mail,
+			from.nama,
+			ttcmf.role.from
+			)
+ 
+	|******** to ID
+	
+	tmp.file = creat.tmp.file$(bse.tmp.dir$()) & ".html"
+	fp = seq.open(tmp.file,"w+")
+	if fp <=0 then
+		message("Temp file can not be created")
+	endif
+
+	line = ""	
+	seq.write(line,len(line),fp)
+	
+	if PREORDER_RECEIPT then
+| 		line = "Following receipt is not evaluated due to the reason specified against the Evaluator name." & chr$(13)	|ISGEC01153.o	
+		line = "Following receipt is evaluated with the reason specified against the Evaluator name." & chr$(13)	|ISGEC01153.n	
+| 	else
+| 		line = "This is to inform you that the following Drawing/Document is now available in ERP-LN for your review." & chr$(13)
+	endif	
+	seq.write(line, len(line), fp)
+	
+| 	line = "<P>Please login and complete review at the earliest.</P>" & chr$(13) & chr$(13) 
+| 	seq.write(line, len(line), fp)
+	
+	line = "<P>" & chr$(160) & "</P>"
+	seq.write(line, len(line), fp)
+	
+	line = "<P>Project ID : " & o.dmisg134.cprj & "</P>"	
+	seq.write(line, len(line), fp)
+	line = "<P>Project Name : " & o.project.desc & "</P>"	
+	seq.write(line, len(line), fp)
+	line = "<P><B>Receipt No. : " & o.dmisg134.rcno & " REV No : "  & o.dmisg134.revn & "</B>" & "</P>"	
+	seq.write(line, len(line), fp)
+	line = "<P>Received From : " & user.name & "</P>"	
+	seq.write(line, len(line), fp)
+	line = "<P><B>Evaluator Response : " & "</B></P>"	
+	seq.write(line, len(line), fp)
+	
+	cnt.val = 0
+| 	elv.rspons = ""
+
+
+	select	dmisg136.apid, dmisg136.engi:o.dmisg136.engi,
+		dmisg105.dsca:elv.rspons, 
+		dmisg136.suby
+	from	dmisg136, dmisg105
+	where	dmisg136._index1 = {:o.dmisg134.rcno, :o.dmisg134.revn}
+	and	dmisg136.apid refers to dmisg105 UNREF CLEAR
+	selectdo
+		get.Email.details(dmisg136.suby,
+				to.emno,
+				to.nama,
+				to.mail)
+		assign.mail.ID(	message.ID,
+				to.mail,
+				to.nama,
+				ttcmf.role.to)
+			
+		cnt.val = cnt.val + 1
+			
+		dept.line(1, cnt.val) =	"<P>" & enum.descr$("dmisg.eng", o.dmisg136.engi, "2") &
+					" : " & to.nama & "-" & elv.rspons & "</P>"
+
+		select	dmisg133.engi:o.dmisg133.engi,
+			dmisg133.logn:o.dmisg133.logn
+		from	dmisg133
+		where	dmisg133.eunt = :o.dmisg134.eunt
+		and	dmisg133.cprj = :o.dmisg134.cprj
+		and	dmisg133.engi = :o.dmisg136.engi
+		and	dmisg133.logn <> :dmisg136.suby
+		order by dmisg133.engi
+		selectdo
+			get.Email.details(o.dmisg133.logn,
+						to.emno,
+						to.nama,
+						to.mail)
+
+			assign.mail.ID(	message.ID,
+					to.mail,
+					to.nama,
+					ttcmf.role.to
+					)
+			
+			cnt.val = cnt.val + 1
+			
+			dept.line(1, cnt.val) =	"<P>" & enum.descr$("dmisg.eng", o.dmisg133.engi, "2") &
+						" : " & to.nama & "</P>"
+		endselect
+	endselect
+	k = 0	
+	for k = 1 to cnt.val step 1
+		line = dept.line(1, k) & chr$(13)
+		if not isspace(line) then
+			seq.write(line, len(line), fp)
+		endif	
+	endfor
+
+	if POSTORDER_RECEIPT then	|* For Post Order
+		write.receipt.details(fp)
+	endif	
+	
+	line = "<P>" & chr$(160) & "</P>"
+	seq.write(line, len(line), fp)
+	line = "<P>" & chr$(160) & "</P>"
+	seq.write(line, len(line), fp)
+	
+	line = "<P><B>This is an Automatic generated mail and do not reply to this.</B></P>" 
+	seq.write(line, len(line), fp)
+	
+	ret = seq.close(fp)
+	
+	get.Email.details(	o.dmisg134.user,
+				cc.emno,	
+				cc.nama,		
+				cc.mail		
+				)
+	
+	assign.mail.ID(	message.ID,
+			cc.mail,
+			cc.nama,
+			ttcmf.role.cc
+			)
+					
+	|********* Mail Body
+	attachment.ID = cmf.createAttachment(message.ID)
+	ret = cmf.setAttachmentBody(attachment.ID,ttyeno.yes)
+| 	ret = cmf.setAttachmentMIME(attachment.ID,"text/plain")                       
+	ret = cmf.setAttachmentMIME(attachment.ID,"text/html")                       
+	ret = cmf.setAttachmentFileName(attachment.ID,tmp.file,"abc.txt")
+
+
+	|*********  Send mail
+        if message.ID <>0 then
+                stat = cmf.startService("SMTP",2)
+                if stat <> 0 then
+                        message("Message could not be sent "&
+                                "(Infor ERP Enterprise eMessage Connector"&
+                                " service did not start)")
+		endif
+			
+                stat = cmf.send(message.ID,"SMTP")
+                if stat<>0 then
+                        message("Message could not be sent "& "(Infor ERP Enterprise eMessage Connector "&
+                                "service refused message)")
+                        cmf.stopService("SMTP",2)
+                endif
+                stat = cmf.stopService("SMTP",2)
+        endif	
+}							|#ISGEC01087.en
+		
+
+function extern boolean dmisgdll0100.check.attachment.is.done					|GH320CR618.a.s
+					(
+						domain	tcmcs.str50	i.pass.string,					
+						domain	tcmcs.str50	i.handle.string	
+					)
+{
+	DLLUSAGE
+		This DLL checks whether attachment has been done in dmcom010(Object Links)
+		against keyfields of a table.
+		
+		Input	:	i.pass.string - Pass String
+		 	:	i.handle.string - Attachment handle
+			
+		Return	:	True - Attachment Exist	
+				False - No File Attached
+	ENDDLLUSAGE
+	
+	select	tcisg132.drid
+	from	tcisg132
+	where	tcisg132.hndl = :i.handle.string
+	and	tcisg132.indx = :i.pass.string
+	as set with 1 rows
+	selectdo
+	selectempty
+		return(false)
+	endselect
+	
+	return(true)
+}
+												|GH320CR618.a.e

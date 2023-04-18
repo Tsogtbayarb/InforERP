@@ -1,0 +1,2981 @@
+|******************************************************************************
+|* ciisgdll00800  0  VRC B61U a7 isg 
+|* Dll For E-Invoicing
+|* tv0001
+|* 20-03-02 [12:01]
+|******************************************************************************
+|* Script Type: Library
+|* 
+|* GH422CR753, RAvi Kumar, 21-10-2020
+|* Sale Reversal
+|******************************************************************************
+                                                                                
+  
+  table   tcisli205 | Invoice-Source Relations
+  table   tcisli206 | Invoice Tax Amounts by Tax Code 
+  table   tcisli235 | Project Sales Invoice Details
+  table   ttcmcs052 | Projects
+  table   ttfgld018 | Documents
+  table   ttccom130 | Addresses
+  table   ttccom100 | Business Partners
+  table   ttpisg039 | Installment Wise Receipt
+  table   ttdisg831 | Billing Advice 
+  table   ttdisg832 | Billing Advice Lines
+  table   ttpisg030 | Reimbursement
+  table   ttcibd001 | Items - General
+  table   ttpptc100 | Elements
+  table   ttcmcs036 | Tax Codes by Country
+  table   ttppin020 | Installments
+  table   ttctax400 | Registration Numbers by Business Partners
+  table   ttttxt010 | Texts
+  table   ttppdm740 | Project Business Partners
+  table   ttfisg001 | IR Details
+  table   ttfisg002 | Maintain IR Wise	GR Details
+  table   ttfisg003 | GR Details
+  table   ttcmcs143 | State/Provinces
+  table   twhinh310 | Maintain Receipt Headers
+  table   tciisg000 | Reimbursment Parameter
+  table   tciisg001 | Reimbursment Tax
+  table   ttfacr200 | Open Items (Sales Invoices & Receipts)
+  table   ttpisg045 | Project Wise Address
+  table   ttdisg842
+	table	ttdpur406 |* Purchase Actual Receipts
+	table	ttctax941
+	table	ttcmcs032
+	table	ttcemm170
+	table	tciisg803
+	
+table	ttcemm030	
+table	ttpisg122
+table	tciisg101
+table	ttccom139
+table	tciisg800
+table	tciisg801
+table	tciisg802
+table	ttpisg031
+table	ttpisg131
+
+extern	domain	tctran		tran.f,i.ityp
+extern	domain	tfgld.docn	docn.f,i.idoc
+
+
+extern	domain	tcorno		code.f,str.doc
+extern	domain	tcdsca		code.dsca
+extern	domain	tcncmp		scmp.f
+extern	domain	tcncmp		sfcp.f
+
+
+	domain	tcncmp		current_company	
+
+extern	domain	tcncmp		v.sfcp,curr.comp
+extern	domain	tcmcs.str12	v.invn
+extern	domain	tcmcs.str40	item.desc,v.ln01,v.ln02,v.ln03,v.ln04,v.ln05,v.rtyp,v.rtyp1
+extern	domain	tcdsca		v.txid.desc1,v.txid.desc2,v.txid.desc3,v.txid.desc4
+extern	domain	tcnama		v.itbp,v.nama
+extern	domain	tcamnt		v.txah1,v.txah2,v.txah3,v.txah4,total,gross.invoice,hold.rval,v.rval
+		long		i,flag,rpt.no,rpt.no1,j,k,rpt.no2,rpt.no3,flag1 ,rpt.no4
+extern	domain	tcoqan		v.nins,p,v.nins1	
+extern	domain	tcyesno		v.remb,v.remb1
+extern	domain	tctax.txnb	var.cst,var.lst
+extern	domain	tcmcs.str215	var.text,var.text1,v.txt1,v.txt2,v.txt3,v.txt4
+extern	domain	tcorno		v.rcno,v.rcno1
+extern	domain	tcpono		v.rcln,v.rcln1		
+extern	domain	tcdsca		v.plcf,v.plct
+extern	domain	tcmcs.str30	hold.rtyp(10)		
+extern	domain	tcamnt		hold.rval1(10)	
+extern	domain	tfgld.amnt	var.advn,var.retn	
+extern	domain	tppdm.aalc	var.ed.tax,var.cst.tax,a,ed.tax,edu.cess,she.cess	
+extern	domain	tcmcs.str30	new.einv.l,old.einv.l	
+extern	domain	tfacp.isup	new.grno,old.grno
+extern	domain	tcmcs.str16	progname
+extern	domain	tfgld.date	v.date
+
+	extern	domain	tcmcs.str15	invoice.type		|#ISGEC001183.n
+	extern	domain	tcmcs.str15	copies		        |#ISGEC01110.sn
+	extern	domain	tcmcs.str70	record.desc		      
+	long   g 					        |#ISGEC01110.en
+
+	extern	domain	tcpric		rate
+	extern	domain	tccuni		unit
+	extern	domain	tcamnt		assv.val, bill.val, o.rval
+	extern	domain	tcqiv1		goods.qnty
+	extern	domain	tccom.bpid	i.bpid
+	extern	domain	tcorno		v.edrn, edrn.f
+	extern	domain	tcpvat		cgst.rate, sgst.rate, igst.rate, cess.rate,tcs.rate
+	extern	domain	tcamnt		cgst.amnt, sgst.amnt, igst.amnt, cess.amnt, tot.amnt,tcs.amnt
+	extern	domain	tcamnt		tot.gst.amnt, tot.assv.val,tot.tcs.amnt
+	extern	domain	tccprj		v.cprj
+	extern	domain	tcmcs.cste	gstn.b.cste
+	extern	domain	tcmcs.cste	gstn.c.cste
+	extern	domain	tcdsca		gstn.c.cste.desc, o.stad.desc
+	extern	domain	tcfovn		gstn.b.no	|* Bill To GSTIN
+	extern	domain	tcfovn		gstn.s.no1	|* Ship To GSTIN
+	extern	domain	tctax.txnb	gstn.c.no1	|* Isgec(Company) GSTIN
+	extern	domain	tcmcs.str2	gstn.b.code,own.st.code	
+	extern	domain	tcmcs.str2	gstn.s.code,o.gstn.s.code	
+	extern	domain	tcmcs.long	i.rcno	
+	extern	domain	tcccur		frmt.f
+	extern	domain	tcdsca		frmt.dsca
+extern	domain	tcyesno		i.spcl
+		domain	tfgld.user	o.user
+|*******************************************************************************
+	domain	tcmcs.str15	report.code8	|#ISGEC016021.n
+	domain	tcmcs.str15	report.code0
+	domain	tcmcs.str15	report.code1
+	domain	tcmcs.str15	report.code2
+	domain	tcmcs.str15	report.code3
+	domain	tcmcs.str15	report.code5	|#ISGEC01035.n
+	domain	tcmcs.str15	report.code6	|#ISGEC01035.n
+	domain	tcmcs.str15	report.code7	|#ISGEC01035.n
+	domain	tcmcs.str1	o.rep1,o.rep2
+	long 	brp.report.0
+	long 	brp.report.1
+	long 	brp.report.2
+	long 	brp.report.3
+	long 	brp.report.5	|#ISGEC01035.n
+	long 	brp.report.6	|#ISGEC01035.n
+	long 	brp.report.8	|#ISGEC016021.n
+
+
+extern domain  tctax.txnb GSTIN
+extern domain  tcmcs.str5 TaxSch
+extern domain  tcpono Version
+extern domain  tcmcs.str70 Irn
+extern domain  tcmcs.str6 Tran_Catg
+extern domain  tcmcs.str5 Tran_RegRev
+extern domain  tcmcs.str5 Tran_Typ
+extern domain  tcyesno Tran_EcmTrn
+extern domain  tctax.txnb Tran_EcmGstin
+extern domain  tcmcs.str5 Doc_Typ
+extern domain  tcmcs.str15 Doc_No
+extern domain  tcmcs.str15 Doc_OrgInvNo
+extern domain  tcdate Doc_Dt
+extern domain  tctax.txnb BillFrom_Gstin
+extern domain  tcnama BillFrom_TrdNm
+extern domain  tcdsca BillFrom_Bno
+extern domain  tcdsca BillFrom_Bnm
+extern domain  tcdsca BillFrom_Flno
+extern domain  tcdsca BillFrom_Loc
+extern domain  tcdsca BillFrom_Dst
+extern domain  tcpstc BillFrom_Pin
+extern domain  tcmcs.cste BillFrom_Stcd
+extern domain  tctelp BillFrom_Ph
+extern domain  tcmail BillFrom_Em
+extern domain  tctax.txnb BillTo_Gstin
+extern domain  tcnama BillTo_TrdNm
+extern domain  tcdsca BillTo_Bno
+extern domain  tcdsca BillTo_Bnm
+extern domain  tcdsca BillTo_Flno
+extern domain  tcdsca BillTo_Loc
+extern domain  tcdsca BillTo_Dst
+extern domain  tcpstc BillTo_Pin
+extern domain  tcmcs.cste BillTo_Stcd
+extern domain  tctelp BillTo_Ph
+extern domain  tcmail BillTo_Em
+extern domain  tctax.txnb ShipFrom_Gstin
+extern domain  tcnama ShipFrom_TrdNm
+extern domain  tcdsca ShipFrom_Bno
+extern domain  tcdsca ShipFrom_Bnm
+extern domain  tcdsca ShipFrom_Flno
+extern domain  tcdsca ShipFrom_Loc
+extern domain  tcdsca ShipFrom_Dst
+extern domain  tcpstc ShipFrom_Pin
+extern domain  tcmcs.cste ShipFrom_Stcd
+extern domain  tctelp ShipFrom_Ph
+extern domain  tcmail ShipFrom_Em
+extern domain  tctax.txnb ShipTo_Gstin
+extern domain  tcnama ShipTo_TrdNm
+extern domain  tcdsca ShipTo_Bno
+extern domain  tcdsca ShipTo_Bnm
+extern domain  tcdsca ShipTo_Flno
+extern domain  tcdsca ShipTo_Loc
+extern domain  tcdsca ShipTo_Dst
+extern domain  tcpstc ShipTo_Pin
+extern domain  tcmcs.cste ShipTo_Stcd
+extern domain  tctelp ShipTo_Ph
+extern domain  tcmail ShipTo_Em
+	extern domain  tcitem Item_PrdNm
+	extern domain  tcdsca Item_PrdDesc
+	extern domain  tchsnc.l Item_HsnCd
+	extern domain  tcdsca Item_Barcde
+	extern domain  tcqiv1 Item_Qty
+	extern domain  tcqiv1 Item_FreeQty
+	extern domain  tccuni Item_Unit
+	extern domain  tcpric Item_UnitPrice
+	extern domain  tcamnt Item_TotAmt
+	extern domain  tcamnt Item_Discount
+	extern domain  tcamnt Item_OthChrg
+	extern domain  tcamnt Item_AssAmt
+	extern domain  tcpvat Item_CgstRt
+	extern domain  tcpvat Item_SgstRt
+	extern domain  tcpvat Item_IgstRt
+	extern domain  tcpvat Item_CesRt
+	extern domain  tcamnt Item_CesNonAdval
+	extern domain  tcpvat Item_StateCes
+	extern domain  tcamnt Item_TotItemVal
+	extern domain  tcdsca Item_Batch_Nm
+	extern domain  tcdate Item_Batch_ExpDt
+	extern domain  tcdate Item_Batch_WrDt
+	extern domain  tcamnt Val_AssVal
+	extern domain  tcamnt Val_CgstVal
+	extern domain  tcamnt Val_SgstVal
+	extern domain  tcamnt Val_IgstVal
+	extern domain  tcamnt Val_CesVal
+	extern domain  tcamnt Val_StCesVal
+	extern domain  tcamnt Val_CesNonAdVal
+	extern domain  tcamnt Val_Disc
+	extern domain  tcamnt Val_OthChrg
+	extern domain  tcamnt Val_TotInvVal
+	extern domain  tcnama Pay_Nam
+	extern domain  tcpaym Pay_Mode
+	extern domain  tcmcs.str15 Pay_FinInsBr
+	extern domain  tccpay Pay_PayTerm
+	extern domain  tcmcs.str15 Pay_PayInstr
+	extern domain  tcmcs.str15 Pay_CrTrn
+	extern domain  tcmcs.str15 Pay_DirDr
+	extern domain  tcmcs.long Pay_CrDay
+	extern domain  tcamnt Pay_BalAmt
+	extern domain  tfgld.date Pay_PayDueDt
+	extern domain  tcdsca Pay_AcctDet
+	extern domain  tcdsca Ref_InvRmk
+	extern domain  tcdate Ref_InvStDt
+	extern domain  tcdate Ref_InvEndDt
+	extern domain  tcmcs.str15 Ref_PrecInvNo
+	extern domain  tcdate Ref_PrecInvDt
+	extern domain  tcmcs.str15 Ref_RecAdvRef
+	extern domain  tcdsca Ref_TendRef
+	extern domain  tcdsca Ref_ContrRef
+	extern domain  tcdsca Ref_ExtRef
+	extern domain  tcdsca Ref_ProjRef
+	extern domain  tcdsca Ref_PORef
+	extern domain  tcmcs.str5 Exp_ExpCat
+	extern domain  tcmcs.str10 Exp_WthPay
+	extern domain  tcmcs.str15 Exp_ShipBNo
+	extern domain  tcdate Exp_ShipBDt
+	extern domain  tcmcs.str15 Exp_Port
+	extern domain  tcamnt Exp_InvForCur
+	extern domain  tcccur Exp_ForCur
+	extern domain  tcccty Exp_CntCode
+	extern domain  tcguid GetQRImg
+	extern domain  tcmcs.str100 GetSignedInvoice
+	extern	long print.gr	
+	extern	long print.tax
+	extern	domain	tcmcs.str15	invoice.no	
+	extern	domain	tcnama		ofbp.nama
+	extern	domain	tcnama		itbp.nama
+	extern	domain	tcmcs.str50	gr.number 
+	extern	domain	tcnama		gr.bp.nama
+	extern	domain	tcnama		ir.bp.nama
+	extern	domain	tfgld.amnt	adv.tfacr200.amth	
+	extern	domain	tfgld.amnt	adv.gst.amnt	
+	extern	domain	tfgld.amnt	ret.tfacr200.amth	
+	extern	domain	tctax.txnb.l	o.lst.tctax940
+	extern	domain	tctax.txnb.l	o.cst.tctax940
+extern	domain	tfgld.amnt	o.freight1, o.excise1,o.vat1, o.cst1,o.service1	
+extern domain tcsrnb		o.srno
+
+extern	domain	tctax.txnb	lst.tctax400.fovn
+extern	domain	tctax.txnb	cst.tctax400.fovn
+extern	domain	tctax.txnb	ser.tctax400.fovn
+extern	domain	tctax.txnb	tan.tctax400.fovn
+extern	domain	tfgld.year	o.tfgld018.year
+extern	domain	tfgld.prod	o.tfgld018.prod
+extern	domain	tcdsca		our.state.dsca
+extern	domain	tctelp		our.telp
+extern	domain	tcmcs.str100m	our.address
+extern	domain	tcmcs.str80m	full.name
+extern	domain	tccom.cadr	o.regn.cadr
+extern domain tccom.cadr	own.cadr
+extern	domain	tcnama		o.regn.nama
+extern	domain	tcmcs.str100m	o.regn.ln01,own.location
+extern	domain	tcmcs.str100m	o.regn.ln02
+extern	domain	tcmcs.str100m	o.regn.ln03
+extern	domain	tcmcs.str100m	o.regn.ln04
+extern	domain	tcmcs.str100m	o.regn.ln05
+extern	domain	tcmcs.str100m	o.regn.ln06
+extern	domain	tctelp		o.regn.telp
+extern	domain	tcccty		o.regn.ccty
+extern	domain	tcmcs.cste	o.regn.cste
+extern	domain	tcmcs.str100m	o.cus.ln01
+extern	domain	tcmcs.str100m	o.cus.ln02
+extern	domain	tcmcs.str100m	o.cus.ln03
+extern	domain	tcmcs.str100m	o.cus.ln04
+extern	domain	tcmcs.str100m	o.cus.ln05
+extern	domain	tcmcs.str100m	o.cus.ln06
+extern	domain	tctelp		o.cus.telp
+extern	domain	tcccty		o.cus.ccty
+extern	domain	tcmcs.cste	o.cus.cste
+extern	domain	tcnama		o.cus.nama, o.user.name
+extern	domain	tcnama		o.cons.nama
+extern	domain	tcmcs.str100m	o.cons.ln01
+extern	domain	tcmcs.str100m	o.cons.ln02
+extern	domain	tcmcs.str100m	o.cons.ln03
+extern	domain	tcmcs.str100m	o.cons.ln04
+extern	domain	tcmcs.str100m	o.cons.ln05
+extern	domain	tcmcs.str100m	o.cons.ln06
+extern	domain	tctelp		o.cons.telp
+extern	domain	tcccty		o.cons.ccty
+extern	domain	tcmcs.cste	o.cons.cste
+extern domain tcncmp          ncmp.code
+extern domain tcmcs.str100	r.str
+extern	domain	tcmcs.str50		company.name
+extern	domain	tcmcs.str50	own.line1, own.line2
+extern domain tcdsca          ncmp.name
+	extern	domain	tcmcs.st33	filename
+	extern	domain	tiedm.revi	doc.revi
+		domain	tcmcs.str215	outfile
+		domain	tcdate		current.date, start.date, curr.date, date.f, date.t
+		domain	tcqiv1		hold.qstk
+		domain	tcbool		first.record
+		domain	tcamnt		total.duty.1, cgst.t, sgst.t,net.amnt
+		domain	tcamnt		igst.t, gstcess.t, total.duty.2, total.duty.3
+		domain	tcmcs.str50	field1		
+		domain	tcmcs.str50	eg
+		domain	tcmcs.str100	amtdecode1,amtdecode2,amtdecode3,amtdecode0
+		domain 	tcpono		srno.var
+		domain 	tcmcs.str2	perc.var
+		domain 	tcmcs.str60	add.line.1,ship.to.add.line.1,ship.to.add.line.2
+		domain 	tcmcs.str100m	ship.to.bp.nama
+		domain 	tcperc		perc
+		domain	tcmcs.str50	comp.name
+		domain	tcdsca		format.var,rpt_nam_rule
+		domain	tcncmp		curr.cmp
+		domain	tcpvat		gst.cess.rate
+		domain	tcamnt		cgst, ugst
+		domain	tcamnt		sgst
+		domain	tcamnt		igst
+		domain	tcamnt		gst.cess
+		domain	tctax.txnb	own.gstin	
+		domain	tcrefa		po.refa
+		domain	tcmcs.str20	orig.inv.no
+		domain	tcdate		orig.date
+		domain	tfgld.date	odno.var
+		domain	tcamnt		f.inv.value
+		domain	tcccur		f.currency
+		domain	tctax.txnb	billfrm.gst, billto.gst, shipfrm.gst, shipto.gst	
+		domain	tcnama		billfrm.trdnm, billto.trdnm, shipfrm.trdnm, shipto.trdnm
+		domain	tcpstc		billfrm.pin, billto.pin, shipfrm.pin, shipto.pin,own.pin, bp.pin.shipto, bp.pin.billto		|RAvi.a.29092020.bp.pin
+		domain	tcmcs.str100m	billfrm.bnm, billto.bnm, shipfrm.bnm, shipto.bnm
+		domain	tccom.bldg	billfrm.bno, billto.bno, shipfrm.bno, shipto.bno
+		domain	tccom.blfl	billfrm.flno, billto.flno, shipfrm.flno, shipto.flno
+		domain	tcdsca		billfrm.dst, billto.dst, shipfrm.dst, shipto.dst
+		domain	tcdsca		billfrm.loc, billto.loc, shipfrm.loc, shipto.loc
+		domain	tcmcs.cste	billfrm.stcd, billto.stcd, shipfrm.stcd, shipto.stcd
+		domain	tctelp		billfrm.ph, billto.ph, shipfrm.ph, shipto.ph,own.ph
+		domain	tcmail		billfrm.em, billto.em, shipfrm.em, shipto.em
+		domain	tcmcs.cste	sold.state.code,ship.state.code,our.state.code
+		domain	tcmcs.str10 	vat.or.cst
+		domain	tcamnt		r.excise.duty,r.esess,r.shec,r.vat,r.sur.vat
+		domain	tcperc		r.excise.rate,r.esess.rate,r.shec.rate,r.vat.rate,r.sur.vat.rate
+		domain	tcamnt		line.discount,taxable.amount,total.duty
+		domain	tctax.txnb	ship.gstn,sold.gstn
+		domain	tctax.txnb.l	gst.var
+		domain	tcmcs.str100	f.ser.inp.path, temp.path, f.path
+		domain	tcmcs.str50	server.tmp.file, local.filename
+		domain	tcnama		payee.name
+
+			string	       	ip.string(1024)
+			string		unique.id(40)
+			string 		header1(5024), header2(5024)
+			string		final.str(10048), qnty.strng(10)
+			string	       	ip.string1(10000)
+			string		tmp.record(2048)
+			long    	in.fp	        			|Input file ptr
+			long		out.fp					|Output File
+			long		close.out.fp
+			long		ret1, ret,  f.monthno
+			long    	in.fp1	        			|Input file ptr
+			long		server_file_ptr
+			long		ret.num,dd,mm,yy
+	string	res.errmes(500),res.errcode(10),res.status(10),res.gstin(100),res.docn(20),res.docd(20),
+		res.doct(10),res.irn(100),res.ack(100),res.ackd(100),res.singi(999),res.signqr(999),irn.stat(10)
+		
+		extern	domain	tcamnt	cgst.amount, sgst.amount, igst.amount, cess.amount, stcess.amount			|RAvi.a
+
+		
+|Defines
+#define SCANS	"%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s"
+#define	FIELDS	res.errmes,res.errcode,res.status,res.gstin,res.docn,res.docd,res.doct,res.irn,res.ack,res.ackd,res.singi,res.signqr,irn.stat
+
+#include <bic_tt>
+#include <bic_dam>
+#pragma used dll        ottdllbw
+#define DEL	  ","
+#pragma used dll ottstpapihand
+|*******************************Function Section********************************
+                                                                                
+function extern ciisgdll00800.extract.einvoicing.data(domain	tcncmp		i.sfcp,
+						     domain	tctran		i.ityp,
+						     domain	tcgld.docn	i.idoc)
+{
+
+	domain	tctax.catg.l	o.tctax940.catg.l
+	print.gr = 0
+	print.tax = 0
+	invoice.no = ""
+	gross.invoice = 0
+	ofbp.nama = ""
+	itbp.nama = ""
+	gr.number = ""
+	adv.tfacr200.amth = 0
+	ret.tfacr200.amth = 0
+	o.lst.tctax940 = ""
+	o.cst.tctax940 = ""
+	o.excise1 = 0.0
+	o.vat1 = 0.0
+	o.service1 = 0.0
+	o.cst1 = 0.0
+	o.freight1 =0.0
+	tot.gst.amnt = 0.00
+	tot.assv.val = 0.00
+	o.srno = 0	|#ISGEC017006.n
+	
+	tcisgdll0100.get.user.name(logname$, o.user.name)
+	select	cisli205.ityp,
+		cisli205.idoc,
+		cisli205.idat,
+		cisli205.sfcp,
+		cisli205.ofbp,
+		cisli205.itbp,
+		cisli205.txct,
+		cisli205.ofad,
+		cisli205.itoa,
+		cisli205.rnso.l,
+		cisli205.ccur,
+		cisli205.amti
+		,cisli205.brid					|#ISGEC019009.n
+	from 	cisli205
+	where  	cisli205._index1 = {:i.sfcp,:i.ityp,:i.idoc}
+	and	cisli205._compnr = :i.sfcp
+	order by cisli205._index1
+	selectdo
+| 		invoice.no = cisli205.ityp & " " & str$(cisli205.idoc)
+		invoice.no = cisli205.ityp &  trim$(str$(cisli205.idoc))
+		ncmp.code = cisli205.sfcp
+		get.name(ncmp.code)							|PATCH001008.n
+		select	cisli235.slcp,
+			cisli235.cprj,
+			cisli235.ofbp,
+			cisli235.nins,
+			cisli235.ityp,
+			cisli235.idoc,
+			cisli235.ccur,
+			cisli235.scmp
+		from	cisli235
+		where	cisli235._index2 = {:cisli205.sfcp,:cisli205.ityp,:cisli205.idoc}
+		and	cisli235.invt = tcinvt.installment
+		and	cisli235._compnr = :i.sfcp
+		selectdo
+			
+			select 	tcmcs052.dsca
+			from	tcmcs052
+			where	tcmcs052._index1 = {:cisli235.cprj}
+			and	tcmcs052._compnr = :cisli235.slcp
+			as set with 1 rows
+			selectdo
+			endselect
+									|#GH185CR501.sn
+			select	tpisg045.icyn
+			from	tpisg045
+			where	tpisg045._index1 = {:cisli235.cprj}
+			and	tpisg045.icyn = 1
+			selectdo
+				r.str = "If Payment is not made by due date,Interest will be charged @24% p.a."
+			selectempty
+				r.str = ""
+			endselect
+									|#GH185CR501.en
+									
+			iciisg2405.get.LST.CST.details(cisli235.slcp,cisli205.ofbp,cisli205.txct,
+						lst.tctax400.fovn,cst.tctax400.fovn,ser.tctax400.fovn,tan.tctax400.fovn)
+			iciisg2405.get.fiscal.tax.year(cisli235.scmp,cisli205.ityp,
+						cisli205.idoc,o.tfgld018.year,o.tfgld018.prod)
+			iciisg2405.get.registration.numbers.by.financial.company(cisli235.slcp,
+					cisli205.rnso.l,o.lst.tctax940,o.cst.tctax940,
+					our.state.dsca,our.telp,our.address)
+			iciisg2405.get.contact.info(cisli235.slcp,cisli205.ofbp,full.name)
+			
+			ofbp.nama = ""
+			itbp.nama = ""
+			
+			ofbp.nama = iciisg2405.get.bp.name(cisli235.slcp,cisli205.ofbp)
+			itbp.nama = iciisg2405.get.bp.name(cisli235.slcp,cisli205.itbp)
+				
+			
+			select	tpisg045.txt1,
+				tpisg045.txt2,
+				tpisg045.txt3,
+				tpisg045.txt4,
+				tpisg045.agre,
+				tpisg045.refr,
+				tpisg045.cadr,
+				tpisg045.codr,
+				tpisg045.lin1,
+				tpisg045.lin2,
+				tpisg045.lin3,
+				tpisg045.lin4,
+				tpisg045.lin5,
+				tpisg045.lin6,
+				tpisg045.cstr,				|#ISGEC001188.sn
+				tpisg045.cprj,
+				tpisg045.adpr,
+				tpisg045.rtpr,
+				tpisg045.lstr				|#ISGEC001188.en
+			from	tpisg045
+			where	tpisg045._index1 = {:cisli235.cprj}
+			and	tpisg045._compnr = :cisli235.slcp
+			as set with 1 rows
+			selectdo
+			selectempty
+				tpisg045.txt1 = 0
+				tpisg045.txt2 = 0
+				tpisg045.txt3= 0
+				tpisg045.txt4 = 0
+				tpisg045.cstr = 0
+				tpisg045.lstr = 0
+				tpisg045.rtpr = 0.00
+				tpisg045.adpr = 0.00
+			endselect
+			
+			get.cst.lst.regn(tpisg045.cstr, tpisg045.lstr)		|#ISGEC001188.n
+			
+			select	tdisg831.*					|#ISGEC018005.sn
+			from	tdisg831
+			where	tdisg831._index4 = {:cisli235.cprj,:cisli235.ofbp}	|#ISGEC01104.o
+| 			where	tdisg831._index1 = {:blng}			|#ISGEC01104.sn
+| 			and	tdisg831.cprj = {:cisli235.cprj}
+| 			and	tdisg831.ofbp = {:cisli235.ofbp}		|#ISGEC01104.en
+			and	tdisg831.spcl = tcyesno.yes
+			and	tdisg831.edrn = {:tpisg039.edrn}				|#ISGEC01104.n
+			as set with 1 rows
+			selectdo
+			selectempty
+				tpisg045.txt3 = 0
+			endselect						|#ISGEC018005.en
+									
+			
+			
+									|#ISGEC019009.sn
+			select	tcemm030.lcmp
+			from	tcemm030
+			where	tcemm030.fcmp = {:i.sfcp}
+			selectdo
+				select	tdisg831.cadr
+				from	tdisg831
+				where	tdisg831.brid	=	{:cisli205.brid}
+				and 	tdisg831.scmp = 	:i.sfcp
+				and 	tdisg831._compnr = 	:tcemm030.lcmp
+				as set with 1 rows
+				selectdo
+				selectempty
+					tdisg831.cadr	=	0
+				endselect
+			selectempty
+				tcemm030.lcmp = 0
+				tdisg831.cadr	=	0
+			endselect
+			
+										|#ISGEC019009.en
+			
+			select 	tctax940.cdf_cadr:o.regn.cadr,
+				tctax940.catg:o.tctax940.catg.l,
+				tctax940.regn					|#ISGEC01110.n
+			from	tctax940
+			where	tctax940._index1 = {:cisli205.rnso.l}
+			and	tctax940._compnr = :cisli235.slcp
+			as set with 1 rows
+			selectdo
+				on case o.tctax940.catg.l
+				case	tctax.catg.l.vat:
+				case	tctax.catg.l.lst:
+| 				case	tctax.catg.l.n.a:			|#ISGEC001183.o
+					invoice.type = "Tax Invoice"
+					break
+										|#ISGEC001183.sn
+				case	tctax.catg.l.n.a:			
+					invoice.type = "Debit Note"
+					break
+										|#ISGEC001183.en
+				default:
+					invoice.type = "Sales Invoice"
+				endcase
+			endselect
+						|#SD26052017.sn
+			select	tpisg122.gstn.b,
+				tpisg122.gstn.s,
+				tpisg122.gstn.c,
+				tpisg122.stad,
+				tpisg122.btad				
+			from	tpisg122
+			where	tpisg122._index1 = {:cisli235.cprj}
+			selectdo
+			selectempty
+				tpisg122.gstn.b = 0
+				tpisg122.gstn.s = 0
+				tpisg122.gstn.c = 0
+				tpisg122.stad = ""
+				tpisg122.btad = ""
+			endselect
+			
+			tcisgdll0100.get.financial.company.address.CDF.from.seqn(tpisg122.gstn.c, own.cadr)
+			get.own.data()
+							
+			iciisg2405.get.address.lines(cisli235.slcp,tpisg122.btad,
+				o.regn.nama,o.regn.ln01,o.regn.ln02,
+				o.regn.ln03,o.regn.ln04,o.regn.ln05,o.regn.ln06,
+				o.regn.telp, o.regn.ccty, o.regn.cste)
+			
+			iciisg2405.get.address.lines(cisli235.slcp,tpisg122.btad,
+				o.cus.nama,o.cus.ln01,o.cus.ln02,
+				o.cus.ln03,o.cus.ln04,o.cus.ln05,o.cus.ln06,
+				o.cus.telp, o.cus.ccty, o.cus.cste)
+				
+			get.bp.pin(tpisg122.btad, bp.pin.billto)								|RAvi.a.29092020
+			
+			iciisg2405.get.address.lines(cisli235.slcp,tpisg122.stad,
+				o.cons.nama,o.cons.ln01,o.cons.ln02,
+				o.cons.ln03,o.cons.ln04,o.cons.ln05,o.cons.ln06,
+				o.cons.telp, o.cons.ccty, o.cons.cste)
+				
+			gstn.b.code = get.statutory.code(o.regn.ccty, o.regn.cste)
+			
+			gstn.s.code = get.statutory.code(o.cons.ccty, o.cons.cste)
+			
+			o.gstn.s.code = get.statutory.code(o.regn.ccty, o.regn.cste)
+			
+			gstn.c.cste = o.regn.cste
+			
+			tcisgdll0100.get.state.description(o.regn.ccty, o.regn.cste, gstn.c.cste.desc)				
+			tcisgdll0100.get.state.description(o.cons.ccty, o.cons.cste, o.stad.desc)
+			
+			tctax.dll4100.get.bp.reg.number.based.on.seq.l(tpisg122.gstn.b, gstn.b.no)
+
+			BillTo_Gstin = gstn.b.no
+			BillTo_TrdNm = o.regn.ln01
+			BillTo_Bno = str.replace$(o.regn.ln02, ",", " ")
+			BillTo_Bnm = str.replace$(o.regn.ln03, ",", " ")
+			BillTo_Flno = ""
+			BillTo_Loc = gstn.c.cste.desc
+			BillTo_Dst = gstn.c.cste.desc
+| 			BillTo_Pin = tccom130.pstc
+			BillTo_Pin = bp.pin.billto										|RAvi.a.29092020
+			BillTo_Stcd = gstn.b.code
+			BillTo_Ph = ""
+			BillTo_Em = ""
+			
+			tctax.dll4100.get.bp.reg.number.based.on.seq.l(tpisg122.gstn.s, gstn.s.no1)
+			get.bp.pin(tpisg122.stad, bp.pin.shipto)								|RAvi.a.29092020
+			
+			if tdisg831.ashp = tcyesno.yes then		|For Actual Shipment
+				ShipTo_Gstin = gstn.s.no1
+				ShipTo_TrdNm = o.cons.ln01
+				ShipTo_Bno = str.replace$(o.cons.ln02, ",", " ")
+				ShipTo_Bnm = str.replace$(o.cons.ln03, ",", " ")
+				ShipTo_Flno = ""
+				ShipTo_Loc = o.stad.desc
+				ShipTo_Dst = o.stad.desc
+	| 			ShipTo_Pin = tccom130.pstc
+				ShipTo_Pin = bp.pin.shipto										|RAvi.a.29092020
+				ShipTo_Stcd = gstn.s.code
+				ShipTo_Ph = ""
+				ShipTo_Em = ""
+			else
+				ShipTo_Gstin = gstn.b.no
+				ShipTo_TrdNm = o.regn.ln01
+				ShipTo_Bno = str.replace$(o.regn.ln02, ",", " ")
+				ShipTo_Bnm = str.replace$(o.regn.ln03, ",", " ")
+				ShipTo_Flno = ""
+				ShipTo_Loc = gstn.c.cste.desc
+				ShipTo_Dst = gstn.c.cste.desc
+	| 			ShipTo_Pin = tccom130.pstc
+				ShipTo_Pin = bp.pin.billto										|RAvi.a.29092020
+				ShipTo_Stcd = gstn.b.code
+				ShipTo_Ph = ""
+				ShipTo_Em = ""
+			endif
+			
+			tctax.dll9140.get.own.reg.number.based.on.seq(tpisg122.gstn.c, gstn.c.no1)
+			
+			BillFrom_Gstin = gstn.c.no1
+			BillFrom_TrdNm = company.name
+			BillFrom_Bno = str.replace$(own.line1, ",", " ")
+			BillFrom_Bnm = str.replace$(own.line2, ",", " ")
+			BillFrom_Flno = ""
+			BillFrom_Loc = own.location
+			BillFrom_Dst = own.location
+			BillFrom_Pin = own.pin
+			BillFrom_Stcd = own.st.code
+			BillFrom_Ph = own.ph
+			BillFrom_Em = ""
+			
+			ShipFrom_Gstin = gstn.c.no1
+			ShipFrom_TrdNm = company.name
+			ShipFrom_Bno = str.replace$(own.line1, ",", " ")
+			ShipFrom_Bnm = str.replace$(own.line2, ",", " ")
+			ShipFrom_Flno = ""
+			ShipFrom_Loc = own.location
+			ShipFrom_Dst = own.location
+			ShipFrom_Pin = own.pin
+			ShipFrom_Stcd = own.st.code
+			ShipFrom_Ph = own.ph
+			ShipFrom_Em = ""
+
+								|#SD26052017.en
+			
+			select 	ciisg101.txta
+			from	ciisg101
+			where	ciisg101._index1 = {:cisli205.rnso.l}
+			and	ciisg101._compnr = :cisli235.slcp
+			as set with 1 rows
+			selectdo
+			selectempty
+				ciisg101.txta = 0
+			endselect
+			
+		endselect
+		
+		
+		iciisg2405.get.advance.retention(cisli235.scmp,cisli205.ityp,cisli205.idoc,
+					adv.tfacr200.amth,ret.tfacr200.amth)			|#ISGEC01075
+		
+		
+		select	ciisg802.*
+		from	ciisg802
+		where	ciisg802._index1 = {:unit}
+		selectdo
+		selectempty
+			
+		endselect
+		
+		GSTIN = gstn.c.no1
+		TaxSch = "GST"
+		Version = 1.0
+		Irn = ""
+		Tran_Catg = "B2B"
+		Tran_RegRev = "N"
+		Tran_Typ = "REG"
+		Tran_EcmTrn = tcyesno.no
+		Tran_EcmGstin = ""
+		Doc_Typ = "INV"
+		Doc_No = invoice.no
+		Doc_OrgInvNo = ""
+		Doc_Dt = cisli205.idat
+| 		BillFrom_Gstin = gstn.c.no1
+| 		BillFrom_TrdNm = company.name
+| 		BillFrom_Bno = tccom130.namc
+| 		BillFrom_Bnm = ""
+| 		BillFrom_Flno = ""
+| 		BillFrom_Loc = own.line1
+| 		BillFrom_Dst = ""
+| 		BillFrom_Pin = tccom130.pstc
+| 		BillFrom_Stcd = gstn.c.cste
+| 		BillFrom_Ph = ""
+| 		BillFrom_Em = ""
+| 		BillTo_Gstin = gstn.b.no
+| 		BillTo_TrdNm = o.regn.ln01
+| 		BillTo_Bno = ""
+| 		BillTo_Bnm = ""
+| 		BillTo_Flno = o.regn.ln02
+| 		BillTo_Loc = o.regn.ln03
+| 		BillTo_Dst = ""
+| 		BillTo_Pin = ""
+| 		BillTo_Stcd = gstn.b.code
+| 		BillTo_Ph = ""
+| 		BillTo_Em = ""
+| 		ShipFrom_Gstin = ""
+| 		ShipFrom_TrdNm = ""
+| 		ShipFrom_Bno = ""
+| 		ShipFrom_Bnm = ""
+| 		ShipFrom_Flno = ""
+| 		ShipFrom_Loc = ""
+| 		ShipFrom_Dst = ""
+| 		ShipFrom_Pin = ""
+| 		ShipFrom_Stcd = ""
+| 		ShipFrom_Ph = ""
+| 		ShipFrom_Em = ""
+| 		ShipTo_Gstin = gstn.s.no1
+| 		ShipTo_TrdNm = o.cons.ln01
+| 		ShipTo_Bno = ""
+| 		ShipTo_Bnm = ""
+| 		ShipTo_Flno = o.cons.ln02
+| 		ShipTo_Loc = o.cons.ln03
+| 		ShipTo_Dst = ""
+| 		ShipTo_Pin = ""
+| 		ShipTo_Stcd = gstn.s.code
+| 		ShipTo_Ph = ""
+| 		ShipTo_Em = ""
+	| 		Item_PrdNm = trim$(tdisg832.gdsc)
+	| 		Item_PrdDesc = trim$(tdisg832.gdsc)
+	| 		Item_HsnCd = tdisg832.code
+	| 		Item_Barcde = ""
+	| 		Item_Qty = goods.qnty
+	| 		Item_FreeQty = 0
+	| 		Item_Unit = ciisg802.guni|unit
+	| 		Item_UnitPrice = rate
+	| 		Item_TotAmt = goods.qnty*rate
+	| 		Item_Discount = 0.00
+	| 		Item_OthChrg = 0.00
+	| 		Item_AssAmt = Item_TotAmt-Item_Discount+Item_OthChrg
+	| 		Item_CgstRt = cgst.rate
+	| 		Item_SgstRt = sgst.rate
+	| 		Item_IgstRt = igst.rate
+	| 		Item_CesRt = cess.rate
+	| 		Item_CesNonAdval = 0.00
+	| 		Item_StateCes = 0.00
+	| 		Item_TotItemVal = tot.amnt
+	| 		Item_Batch_Nm = ""
+	| 		Item_Batch_ExpDt = 0
+	| 		Item_Batch_WrDt = 0
+	| 		Val_AssVal = assv.val
+	| 		Val_CgstVal = cgst.amnt
+	| 		Val_SgstVal = sgst.amnt
+	| 		Val_IgstVal = igst.amnt
+	| 		Val_CesVal = cess.amnt
+	| 		Val_StCesVal = 0.00
+	| 		Val_CesNonAdVal = 0.00
+	| 		Val_Disc = 0.00
+	| 		Val_OthChrg = 0.00
+	| 		Val_TotInvVal = net.amnt
+		Pay_Nam = ""
+		Pay_Mode = ""
+		Pay_FinInsBr = ""
+		Pay_PayTerm = ""
+		Pay_PayInstr = ""
+		Pay_CrTrn = ""
+		Pay_DirDr = ""
+		Pay_CrDay = 0
+		Pay_BalAmt = 0.00
+		Pay_PayDueDt = 0
+		Pay_AcctDet = ""
+		Ref_InvRmk = ""
+		Ref_InvStDt = 0
+		Ref_InvEndDt = 0
+		Ref_PrecInvNo = ""
+		Ref_PrecInvDt = 0
+		Ref_RecAdvRef = ""
+		Ref_TendRef = ""
+		Ref_ContrRef = ""
+		Ref_ExtRef = ""
+		Ref_ProjRef = ""
+		Ref_PORef = tpisg045.refr(1;16)
+		Exp_ExpCat = ""
+		Exp_WthPay = ""
+		Exp_ShipBNo = ""
+		Exp_ShipBDt = 0
+		Exp_Port = ""
+		Exp_InvForCur = 0.00
+		Exp_ForCur = ""
+		Exp_CntCode = ""
+										|#Paras.sn
+| 		select	tdisg842.shno:Exp_ShipBNo,
+| 			tdisg842.sdat:Exp_ShipBDt,
+| 			tdisg842.port:Exp_Port			
+| 		from	tdisg842
+| 		where	tdisg842._index2 = {:tdisg831.sbno}
+| 		as set with 1 rows
+| 		selectdo
+| 		endselect							|#Paras.en		
+		
+| 		if report.code1 = "rciisg240502000" then					
+| 			brp.ready(brp.report.1)
+| 		endif
+| 										
+| 		if report.code2 = "rciisg240502000" then		|#ISGEC016021.o						
+| 			brp.ready(brp.report.2)
+| 		endif
+| 	
+| 	|**** Billing Schedule Details
+
+| 	tot.amnt =0.0	|#ISGEC017006.n
+	iciisg2405.get.installment.line(cisli235.slcp,cisli205.ityp,cisli205.idoc,tcyesno.no)
+| 	
+	iciisg2405.get.installment.line(cisli235.slcp,cisli205.ityp,cisli205.idoc,tcyesno.yes)
+| 	
+| 	
+| 					
+| 	|**** Print Invoice Details ***********
+| 	iciisg2405.get.invoice.details(cisli235.slcp,cisli205.ityp,cisli205.idoc)
+| 	|**** PRINT GR DETAILS ****************
+| 	if brp.report.5 = 0 then	|#ISGEC01035.n
+| 		brp.ready(brp.report.0)
+| 	endif	|#ISGEC01035.n
+| 	
+| 	
+| 	if report.code6 = "rciisg24050200d" or report.code6 = "rciisg24050200r" 		|#ISGEC01088.n	|#ISGEC016021.n 
+| 			or report.code8 = "rciisg24050200m" then 
+| 		print.gr = 1
+| 		
+| 		iciisg2405.get.gr.details(cisli235.slcp,cisli205.ityp,cisli205.idoc)
+| 	endif
+| 		print.gr = 0
+	endselect
+	str.doc = str$(i.idoc)
+	select	ciisg803.*
+	from	ciisg803
+	where	ciisg803._index1 = {:i.sfcp, :i.ityp, :str.doc}
+	order by ciisg803.valu desc
+	as set with 1 rows
+	selectdo
+		Item_PrdNm = "         "& trim$(ciisg803.item)
+		Item_PrdDesc = ciisg803.dsca
+		Item_HsnCd = ciisg803.hsnc
+		Item_Barcde = ciisg803.barc
+		Item_Qty = ciisg803.qnty
+		Item_FreeQty = ciisg803.fqty
+		Item_Unit = ciisg803.cuni
+		Item_UnitPrice = ciisg803.pric
+		Item_TotAmt = ciisg803.amnt
+		Item_Discount = ciisg803.disc
+		Item_OthChrg = ciisg803.othc
+		Item_AssAmt = ciisg803.assv
+		Item_CgstRt = ciisg803.cgst
+		Item_SgstRt = ciisg803.sgst
+		Item_IgstRt = ciisg803.igst
+		Item_CesRt = ciisg803.cess
+		Item_CesNonAdval = ciisg803.cnaa
+		Item_StateCes = ciisg803.scsr
+		Item_TotItemVal = ciisg803.valu
+		Item_Batch_Nm = ciisg803.batn
+		Item_Batch_ExpDt = ciisg803.bate
+		Item_Batch_WrDt = ciisg803.ward
+	endselect
+	Val_AssVal = 0
+	Val_CgstVal = 0
+	Val_SgstVal = 0
+	Val_IgstVal = 0
+	Val_CesVal = 0
+	Val_StCesVal = 0
+	Val_CesNonAdVal = 0
+	Val_Disc = 0
+	Val_OthChrg = 0
+	Val_TotInvVal = 0
+	
+	select	ciisg803.*
+	from	ciisg803
+	where	ciisg803._index1 = {:i.sfcp, :i.ityp, :str.doc}
+	selectdo	
+		Val_AssVal = Val_AssVal + ciisg803.assv		|inr.amnt				|RAvi.a.s.29092020
+| 		Val_CgstVal = Val_CgstVal + (ciisg803.assv*ciisg803.cgst/100) 	|0.00
+| 		Val_SgstVal = Val_SgstVal + (ciisg803.assv*ciisg803.sgst/100) 	|0.00
+| 		Val_IgstVal = Val_IgstVal + (ciisg803.assv*ciisg803.igst/100) 	|0.00
+| 		Val_CesVal = Val_CesVal + ciisg803.cess 	|0.00
+| 		Val_StCesVal = Val_StCesVal + ciisg803.scsr 	|0.00
+
+		Val_CgstVal = Val_CgstVal +  ciisg803.camt	|0.00
+		Val_SgstVal = Val_SgstVal +  ciisg803.samt	|0.00
+		Val_IgstVal = Val_IgstVal +  ciisg803.iamt	|0.00
+		Val_CesVal = Val_CesVal + ciisg803.cesa 	|0.00
+		Val_StCesVal = Val_StCesVal + ciisg803.cssa 	|0.00					|RAvi.a.e.29092020			
+		
+		Val_CesNonAdVal = Val_CesNonAdVal + ciisg803.cnaa 	|0.00
+		Val_Disc = Val_Disc + ciisg803.disc|0.00
+		Val_OthChrg = Val_OthChrg + ciisg803.othc|0.00
+		Val_TotInvVal = Val_TotInvVal + ciisg803.valu|final.total.inr
+	endselect
+	
+	insert.data.ciisg800()
+| 	select	ciisg800.*
+| 	from	ciisg800
+| 	where	ciisg800._index1 = {:i.sfcp, :i.ityp, :str.doc}
+| 	selectdo
+| 		ciisgdll00800.export.data.to.csv(i.sfcp,i.ityp,i.idoc)
+| 	selectempty
+| 		message("Invoice Not update on E-Invoice table.")
+| 	endselect
+	
+	|*************old
+	
+| 	unique.id = logname$ & " " &
+| 				sprintf$("%D(%02d-%02m-%04Y)", date.num()) & " " &
+| 				str$(time.num()) & " " & str$(pid)
+| 	
+| 	select	cisli305.*
+| 	from	cisli305
+| 	where	cisli305._index1 = {:hold.comp, :hlod.tran, :hold.docn}
+| 	and	cisli305.stat = tcsli.stat.posted
+| 	selectdo
+| 		if cisli305.ccur <> "INR" then
+| 			f.currency = cisli305.ccur
+| 			f.inv.value = cisli305.amti
+| 		else
+| 			f.currency = ""
+| 			f.inv.value = 0
+| 		endif
+
+| 		select	tcmcs013.dsca
+| 		from	tcmcs013
+| 		where	tcmcs013._index1 = {:cisli305.cpay}
+| 		as set with 1 rows
+| 		selectdo
+| 		endselect
+| 		get.payee.name()
+| 		get.own.gstin.address()
+| 		insert.data.ciisg800()
+| 		export.data.to.csv()
+| 		suspend(10000)
+| 	endselect
+}
+
+
+|** LST/CST
+function iciisg2405.get.LST.CST.details
+			(
+				domain	tcncmp		i.ncmp,		|Company
+				domain	tccom.bpid	i.ofbp,		|Sold-to Business Partner
+				domain	tcccty		i.txct,		|Tax Country
+			ref	domain	tctax.txnb	lst.fovn,	|LST Number
+			ref	domain	tctax.txnb	cst.fovn,	|CST Number
+			ref 	domain	tctax.txnb	service.fovn,
+			ref 	domain	tctax.txnb	tan.fovn
+			)
+{
+	domain	tctax.txnb		o.fovn
+	domain	tctax.catg.l		o.catg.l
+	
+	lst.fovn = ""
+	cst.fovn = ""
+	service.fovn = ""
+	
+	select	tctax400.fovn:o.fovn,
+		tctax400.catg.l:o.catg.l
+	from	tctax400
+	where	tctax400._index1 = {:i.ofbp,:i.txct}
+	and	(tctax400.catg.l = tctax.catg.l.vat or 
+		tctax400.catg.l = tctax.catg.l.lst or 
+		tctax400.catg.l = tctax.catg.l.cst or 
+		tctax400.catg.l = tctax.catg.l.service or
+		tctax400.catg.l = tctax.catg.l.tan)
+	and	tctax400._compnr = :i.ncmp
+	selectdo
+		on case o.catg.l
+			case tctax.catg.l.vat:
+			case tctax.catg.l.lst:
+| 				var.lst = tctax400.fovn
+				lst.fovn = o.fovn
+				break
+			case tctax.catg.l.cst:
+| 				var.cst = tctax400.fovn
+				cst.fovn = o.fovn
+				break
+			case	tctax.catg.l.service:
+				service.fovn = 	o.fovn
+				break
+			case	tctax.catg.l.tan:
+				tan.fovn = o.fovn
+				break
+		endcase
+	selectempty
+		lst.fovn = ""
+		cst.fovn = ""
+		service.fovn = ""
+	endselect	
+}
+function iciisg2405.get.fiscal.tax.year
+			(
+				domain	tcncmp			i.ncmp,		|Company
+				domain	tfgld.ttyp		i.ityp,		|Transaction Type
+				domain	tfgld.docn		i.idoc,		|Document Number
+			ref 	domain	tfgld.year		o.year,		|Fiscal Year
+			ref	domain	tfgld.prod		o.prod		|Fiscal Period
+			)
+{
+					|#ISGEC001018.sn
+	select 	tfacr200.year:o.year,
+		tfacr200.prod:o.prod
+	from	tfacr200
+	where	tfacr200._index1 = {:i.ityp,:i.idoc}
+	and	tfacr200.docn = 0
+	and     tfacr200._compnr = {:i.ncmp}					|PATCH001008.n
+	as set with 1 rows
+	selectdo
+	selectempty
+		o.year = 0
+		o.prod = 0
+	endselect
+}
+
+function iciisg2405.get.registration.numbers.by.financial.company
+			(
+				domain	tcncmp		i.ncmp,			|Company
+				domain	tctax.seqn	i.rnso.l,		|Registration Sequence Own
+			ref	domain	tctax.txnb.l	o.lst,
+			ref	domain	tctax.txnb.l	o.cst,
+			ref 	domain	tcdsca		our.state.dsca,		|Registration Address State
+			ref 	domain	tcdsca		our.telp,
+			ref 	domain	tcmcs.str100m	our.address		|Our Address
+			)
+{
+	domain	tccom.cadr		o.tctax940.cdf_cadr
+	domain	tcmcs.cste		o.tctax940.stpv
+	
+	select	tctax940.cdf_cadr:o.tctax940.cdf_cadr,
+		tctax940.stpv:o.tctax940.stpv
+	from	tctax940
+	where	tctax940._index1 = {:i.rnso.l}
+	and	tctax940._compnr = :i.ncmp
+	as set with 1 rows
+	selectdo	
+		iciisg2405.get.own.cst.lst(o.tctax940.cdf_cadr,o.tctax940.stpv,o.lst,o.cst)
+		our.address = ""
+		our.telp = ""
+		our.state.dsca = ""
+		select 	tccom130.ccty,
+			tccom130.dsca,
+			tccom130.cste,
+			tccom130.pstc,
+			tccom130.telp:our.telp,
+			tcmcs143.dsca:our.state.dsca
+		from	tccom130,tcmcs143
+		where	tccom130._index1 = {:o.tctax940.cdf_cadr}
+		and	tccom130.cmba refers to tcmcs143
+		and	tccom130._compnr = :i.ncmp
+		and	tcmcs143._compnr = :i.ncmp
+		as set with 1 rows
+		selectdo
+			our.address = strip$(tccom130.dsca)&","& strip$(our.state.dsca) & "-"&strip$(tccom130.pstc)	
+		endselect
+		
+	endselect
+	
+}
+function iciisg2405.get.own.cst.lst
+			(
+				domain	tccom.cadr	i.cdf_cadr,	|Address Code
+				domain	tcmcs.cste	i.stpv,		|State
+			ref	domain	tctax.txnb.l	o.lst,
+			ref	domain	tctax.txnb.l	o.cst
+			)
+{
+	domain	tctax.txnb.l	o.tctax940.regn
+	domain	tctax.catg.l	o.tctax940.catg
+	
+	select	tctax940.regn:o.tctax940.regn,
+		tctax940.catg:o.tctax940.catg
+	from	tctax940
+	where	tctax940.stpv = :i.stpv
+	and	tctax940.cdf_cadr = :i.cdf_cadr
+	and	(tctax940.catg = tctax.catg.l.vat or 
+		tctax940.catg = tctax.catg.l.lst or 
+		tctax940.catg = tctax.catg.l.cst)
+	selectdo
+		on case o.tctax940.catg
+			case tctax.catg.l.vat:
+			case tctax.catg.l.lst:
+				o.lst = o.tctax940.regn
+				break
+			case tctax.catg.l.cst:
+				o.cst = o.tctax940.regn
+				break
+		endcase
+	selectempty
+		o.lst = ""
+		o.cst = ""	
+	endselect
+}
+
+function iciisg2405.get.contact.info
+			(
+				domain	tcncmp		i.ncmp,		|Company
+				domain	tccom.bpid	i.ofbp,		|Business Partner
+			ref 	domain	tcmcs.str80m	o.fuln		|Full Amount
+			)
+{
+	select 	tccom140.fuln:o.fuln
+	from	tccom100,tccom140
+	where	tccom100._index1 = {:i.ofbp}
+	and	tccom100.ccnt refers to tccom140
+	and	tccom100._compnr = :i.ncmp
+	and	tccom140._compnr = :i.ncmp
+	as set with 1 rows
+	selectdo
+	selectempty
+		o.fuln = ""
+	endselect
+	
+}
+function domain tcnama	iciisg2405.get.bp.name
+			(
+				domain	tcncmp		i.ncmp,		|Company
+				domain	tccom.bpid	i.bpid		|Bp
+			)
+{
+	select	tccom100.nama
+	from	tccom100
+	where	tccom100._index1 = {:i.bpid}
+	and	tccom100._compnr = :i.ncmp
+	as set with 1 rows
+	selectdo
+	selectempty
+		tccom100.nama = ""
+	endselect
+	
+	return(tccom100.nama)
+}
+function get.cst.lst.regn(domain tctax.seqn.l	      i.cstr,			|#ISGEC001188.sn
+			   domain tctax.seqn.l	      i.lstr)
+{
+									|#ISGEC01035.sn
+	select	tctax400.fovn:cst.tctax400.fovn
+	from	tctax400
+	where	tctax400._index3	=	{:i.cstr}
+	and	tctax400.catg.l		=	tctax.catg.l.cst
+	selectdo
+	selectempty
+		cst.tctax400.fovn 	= 	""
+	endselect
+	
+	select	tctax400.fovn:lst.tctax400.fovn
+	from	tctax400
+	where	tctax400._index3	=	{:i.lstr}
+	and	tctax400.catg.l		=	tctax.catg.l.lst
+	selectdo
+	selectempty
+		lst.tctax400.fovn 	= 	""
+	endselect
+									|#ISGEC01035.en
+}
+										|#ISGEC001188.en
+function get.own.data()
+{
+	select	tccom130.nama:company.name,
+	 	tccom130.namc,
+		tccom130.namb,
+		tccom130.ccit,
+		tccom130.cste,
+		tccom130.ccty,
+		tccom130.pstc,
+		tccom130.telp,
+		tccom130.tefx,
+		tccom139.dsca
+	from	tccom130, tccom139
+	where	tccom130._index1 = {:own.cadr}
+	and	tccom130.cmbb refers to tccom139 UNREF CLEAR
+	selectdo
+		company.name = trim$(company.name) & " " & trim$(tccom130.namb)
+		own.line1 = trim$(tccom130.namc) & "," & trim$(tccom139.dsca) & "," & trim$(tccom130.pstc) & "," & trim$(tccom130.cste)
+		own.line2 = "Telp : " & trim$(tccom130.telp) & ", Fax : " & trim$(tccom130.tefx)
+		own.st.code = get.statutory.code(tccom130.ccty,tccom130.cste)
+		own.location = tccom139.dsca
+		own.pin = tccom130.pstc
+		own.ph = trim$(tccom130.telp)		
+	selectempty
+		own.line1 = ""
+		own.line2 = ""
+		company.name = ""
+		own.location = ""
+		own.pin = ""
+		own.ph = ""	
+		own.st.code = ""
+	endselect	
+}
+function iciisg2405.get.address.lines
+			(
+				domain	tcncmp			i.ncmp,		|Invoice Company		
+				domain	tccom.cadr		i.cadr,		|Address Code
+			ref 	domain	tcnama			o.nama,		|Nama
+			ref	domain	tcmcs.str100m		o.ln01,
+			ref	domain	tcmcs.str100m		o.ln02,
+			ref	domain	tcmcs.str100m		o.ln03,
+			ref	domain	tcmcs.str100m		o.ln04,
+			ref 	domain	tcmcs.str100m		o.ln05,
+			ref 	domain	tcmcs.str100m		o.ln06,
+			ref 	domain	tctelp			o.telp,
+			ref 	domain	tcccty			o.ccty,	|#SD26052017.n	
+			ref 	domain	tcmcs.cste		o.cste	|#SD26052017.n
+			)
+{
+	select 	tccom130.nama:o.nama,
+		tccom130.ln01:o.ln01,
+		tccom130.ln02:o.ln02,
+		tccom130.ln03:o.ln03,
+		tccom130.ln04:o.ln04,
+		tccom130.ln05:o.ln05,
+		tccom130.ln06:o.ln06,
+		tccom130.telp:o.telp,
+		tccom130.ccty:o.ccty,	|#SD26052017.n
+		tccom130.cste:o.cste	
+	from	tccom130
+	where	tccom130._index1 = {:i.cadr}
+	and	tccom130._compnr = :i.ncmp
+	as set with 1 rows
+	selectdo
+	selectempty
+		o.nama = ""
+		o.ln01 = ""
+		o.ln02 = ""
+		o.ln03 = ""
+		o.ln04 = ""
+		o.ln05 = ""
+		o.ln06 = ""
+		o.telp = ""
+		o.ccty = ""
+		o.cste = ""
+	endselect
+	
+}
+function domain tcmcs.str2 get.statutory.code
+				(
+					domain	tcccty 		i.ccty,
+					domain	tcmcs.cste	i.cste
+				)
+			
+{
+	domain	tcmcs.str2	o.scod
+	
+	select	tcmcs143.cdf_scod
+	from	tcmcs143
+	where	tcmcs143._index1 = {:i.ccty, :i.cste}
+	selectdo
+		get.var(pid, "tcmcs143.cdf_scod", o.scod)
+	selectempty
+		o.scod = ""
+	endselect
+	
+	return(o.scod)
+}
+function iciisg2405.get.advance.retention
+			(
+				domain	tcncmp		i.ncmp,		|Company
+				domain	tfgld.ttyp	i.ttyp,		|Transaction Type				
+				domain	tfgld.docn	i.docn,		|Document
+			ref	domain	tfgld.amnt	adv.amth,	|Advance Amount
+			ref	domain	tfgld.amnt	ret.amth	|Retention Amount
+			)
+{
+	domain	tfgld.ttyp	v.ttyp, v.rect, b.ttyp		|#ISGEC002047.n
+	domain	tfgld.docn	v.ninv, v.recd, b.ninv		|#ISGEC002047.n
+	domain	tcncmp		v.rcom			|#ISGEC002047.n
+	adv.amth = 0
+	ret.amth = 0
+	
+	select	tfacr200.trec,tfacr200.amth,tfacr200.docn,
+		tfacr200.tdoc			|#ISGEC01055.n
+		, tfacr200.lino, tfacr200.docd		|#ISGEC002047.n
+	from	tfacr200
+	where	tfacr200._index1 = {:i.ttyp,:i.docn}
+	and	(tfacr200.trec = tfacr.trec.assignment or tfacr200.trec = tfacr.trec.credit)
+	and	tfacr200.docn <> 0
+	and	tfacr200._compnr = :i.ncmp
+	selectdo
+		on case tfacr200.trec
+		case	tfacr.trec.assignment:
+			if tfacr200.tdoc = "AAR" then			|#ISGEC01155.n
+										|#ISGEC002047.sn
+				select	c_tfacr200.docd
+				from	tfacr200	c_tfacr200
+				where	c_tfacr200._index1	=	{:i.ttyp,:i.docn}
+				and	c_tfacr200.trec		=	tfacr.trec.invoice
+				and	c_tfacr200.docd		=	:tfacr200.docd
+				and	c_tfacr200._compnr 	= 	:i.ncmp
+				selectdo
+					select	a_tfacr200.ttyp:v.ttyp,
+						a_tfacr200.ninv:v.ninv,
+						a_tfacr200.rcom:v.rcom,
+						a_tfacr200.rect:v.rect,
+						a_tfacr200.recd:v.recd
+					from	tfacr200	a_tfacr200
+					where	a_tfacr200.tdoc		=	{:tfacr200.tdoc}
+					and	a_tfacr200.docn		=	:tfacr200.docn
+					and	a_tfacr200.lino		=	:tfacr200.lino
+					and	a_tfacr200.trec		=	tfacr.trec.assignment
+					and	a_tfacr200._compnr	= 	:i.ncmp
+					as	set with 1 rows
+					selectdo
+					selectempty
+						v.ttyp	=	""
+						v.ninv	=	0
+						v.rcom	=	0
+						v.rect	=	""
+						v.recd	=	0
+					endselect
+					if	i.ncmp	=	v.rcom	then
+						select	b_tfacr200.lino
+						from	tfacr200	b_tfacr200
+						where	b_tfacr200._index1	=	{:v.ttyp,:v.ninv}
+						and	b_tfacr200.trec		=	tfacr.trec.advance
+						and	b_tfacr200._compnr	=	:i.ncmp
+						as	set with 1 rows
+						selectdo
+							adv.amth = adv.amth + tfacr200.amth(1)
+						endselect
+					else
+						select	b_tfacr200.ttyp:b.ttyp,
+							b_tfacr200.ninv:b.ninv,
+							b_tfacr200.lino
+						from	tfacr200	b_tfacr200
+						where	b_tfacr200.tdoc		=	:v.rect
+						and	b_tfacr200.docn		=	:v.recd
+						and	b_tfacr200.trec		=	tfacr.trec.assignment
+						and	b_tfacr200._compnr	=	:v.rcom
+						as	set with 1 rows
+						selectdo
+						selectempty
+							b.ttyp	=	""
+							b.ninv	=	0
+						endselect
+						select	d_tfacr200.lino
+						from	tfacr200	d_tfacr200
+						where	d_tfacr200._index1	=	{:b.ttyp,:b.ninv}
+						and	d_tfacr200.trec		=	tfacr.trec.advance
+						and	d_tfacr200._compnr	= 	:v.rcom
+						as	set with 1 rows
+						selectdo
+							adv.amth = adv.amth + tfacr200.amth(1)
+						endselect
+					endif
+				endselect						|#ISGEC002047.en					
+			endif						|#ISGEC01055.n	
+			break
+		case	tfacr.trec.credit:
+			ret.amth = ret.amth + tfacr200.amth(1)
+			break
+		endcase
+	selectempty
+		adv.amth = 0
+		ret.amth = 0
+		
+	endselect	
+}
+
+|**************************insert
+
+function insert.data.ciisg800()
+{
+	str.doc = str$(cisli205.idoc)
+		select	ciisg800.*
+		from	ciisg800 for update
+		where	ciisg800._index1 = {:cisli205.sfcp, :cisli205.ityp, :str.doc,1}
+		as set with 1 rows
+		selectdo
+			if dal.change.object("ciisg800") = 0 then						|RAvi.a.s.29092020
+				dal.set.field("ciisg800.comp",cisli205.sfcp)
+				dal.set.field("ciisg800.tran",cisli205.ityp)
+				dal.set.field("ciisg800.docn",str$(cisli205.idoc))
+				dal.set.field("ciisg800.line",1)
+				dal.set.field("ciisg800.ogst",GSTIN)
+				dal.set.field("ciisg800.taxs",TaxSch)
+				dal.set.field("ciisg800.vers",Version)
+				dal.set.field("ciisg800.irnn",Irn)
+				dal.set.field("ciisg800.catg",Tran_Catg)
+				dal.set.field("ciisg800.regr",Tran_RegRev)
+				dal.set.field("ciisg800.ttyp",Tran_Typ)
+				dal.set.field("ciisg800.etrn",Tran_EcmTrn)
+				dal.set.field("ciisg800.egst",Tran_EcmGstin)
+				dal.set.field("ciisg800.dtyp",Doc_Typ)
+				dal.set.field("ciisg800.ninv",Doc_No)
+				dal.set.field("ciisg800.odoc",Doc_OrgInvNo)
+				dal.set.field("ciisg800.odat",Doc_Dt)
+				dal.set.field("ciisg800.bfgn",BillFrom_Gstin)
+				dal.set.field("ciisg800.bfnm",BillFrom_TrdNm)
+				dal.set.field("ciisg800.bfbn",BillFrom_Bno)
+				dal.set.field("ciisg800.bfbm",BillFrom_Bnm)
+				dal.set.field("ciisg800.bffn",BillFrom_Flno)
+				dal.set.field("ciisg800.bflc",BillFrom_Loc)
+				dal.set.field("ciisg800.bfdt",BillFrom_Dst)
+				dal.set.field("ciisg800.bfpn",BillFrom_Pin)
+				dal.set.field("ciisg800.bfsc",BillFrom_Stcd)
+				if len(BillFrom_Ph) >= 6 and len(BillFrom_Ph) <= 12 then
+					dal.set.field("ciisg800.bfph",BillFrom_Ph)
+				else
+					BillFrom_Ph = ""
+					dal.set.field("ciisg800.bfph",BillFrom_Ph)
+				endif
+				dal.set.field("ciisg800.bfem",BillFrom_Em)
+				dal.set.field("ciisg800.btgn",BillTo_Gstin)
+				dal.set.field("ciisg800.btnm",BillTo_TrdNm)
+				dal.set.field("ciisg800.btbn",BillTo_Bno)
+				dal.set.field("ciisg800.btbm",BillTo_Bnm)
+				dal.set.field("ciisg800.btfn",BillTo_Flno)
+				dal.set.field("ciisg800.btlc",BillTo_Loc)
+				dal.set.field("ciisg800.btdt",BillTo_Dst)
+				dal.set.field("ciisg800.btpn",BillTo_Pin)
+				dal.set.field("ciisg800.btsc",BillTo_Stcd)
+				if len(BillTo_Ph) >= 6 and len(BillTo_Ph) <=13 then
+					dal.set.field("ciisg800.btph",BillTo_Ph)
+				else
+					BillTo_Ph = ""
+					dal.set.field("ciisg800.btph",BillTo_Ph)
+				endif
+				dal.set.field("ciisg800.btem",BillTo_Em)
+				dal.set.field("ciisg800.sfgn",ShipFrom_Gstin)
+				dal.set.field("ciisg800.sfnm",ShipFrom_TrdNm)
+				dal.set.field("ciisg800.sfbn",ShipFrom_Bno)
+				dal.set.field("ciisg800.sfbm",ShipFrom_Bnm)
+				dal.set.field("ciisg800.sffn",ShipFrom_Flno)
+				dal.set.field("ciisg800.sflc",ShipFrom_Loc)
+				dal.set.field("ciisg800.sfdt",ShipFrom_Dst)
+				dal.set.field("ciisg800.sfpn",ShipFrom_Pin)
+				dal.set.field("ciisg800.sfsc",ShipFrom_Stcd)
+				if len(ShipFrom_Ph) >= 6 and len(ShipFrom_Ph) <=13 then
+					dal.set.field("ciisg800.sfph",ShipFrom_Ph)
+				else
+					ShipFrom_Ph = ""
+					dal.set.field("ciisg800.sfph",ShipFrom_Ph)
+				endif
+				dal.set.field("ciisg800.sfem",ShipFrom_Em)
+				dal.set.field("ciisg800.stgn",ShipTo_Gstin)
+				dal.set.field("ciisg800.stnm",ShipTo_TrdNm)
+				dal.set.field("ciisg800.stbn",ShipTo_Bno)
+				dal.set.field("ciisg800.stbm",ShipTo_Bnm)
+				dal.set.field("ciisg800.stfn",ShipTo_Flno)
+				dal.set.field("ciisg800.stlc",ShipTo_Loc)
+				dal.set.field("ciisg800.stdt",ShipTo_Dst)
+				dal.set.field("ciisg800.stpn",ShipTo_Pin)
+				dal.set.field("ciisg800.stsc",ShipTo_Stcd)
+				if len(ShipTo_Ph) >= 6 and len(ShipTo_Ph) <=13 then
+					dal.set.field("ciisg800.stph",ShipTo_Ph)
+				else
+					ShipTo_Ph = ""
+					dal.set.field("ciisg800.stph",ShipTo_Ph)
+				endif
+				dal.set.field("ciisg800.stem",ShipTo_Em)
+				dal.set.field("ciisg800.item",Item_PrdNm)
+				dal.set.field("ciisg800.dsca",Item_PrdDesc)
+				dal.set.field("ciisg800.hsnc",Item_HsnCd)
+				dal.set.field("ciisg800.barc",Item_Barcde)
+				dal.set.field("ciisg800.qnty",Item_Qty)
+				dal.set.field("ciisg800.fqty",Item_FreeQty)
+				dal.set.field("ciisg800.cuni",Item_Unit)
+				dal.set.field("ciisg800.pric",Item_UnitPrice)
+				dal.set.field("ciisg800.amnt",Item_TotAmt)
+				dal.set.field("ciisg800.disc",Item_Discount)
+				dal.set.field("ciisg800.othc",Item_OthChrg)
+				dal.set.field("ciisg800.assv",Item_AssAmt)
+				dal.set.field("ciisg800.cgst",Item_CgstRt)
+				dal.set.field("ciisg800.sgst",Item_SgstRt)
+				dal.set.field("ciisg800.igst",Item_IgstRt)
+				dal.set.field("ciisg800.cess",Item_CesRt)
+				dal.set.field("ciisg800.cnaa",Item_CesNonAdval)
+				dal.set.field("ciisg800.scsr",Item_StateCes)
+				dal.set.field("ciisg800.valu",Item_TotItemVal)
+				dal.set.field("ciisg800.batn",Item_Batch_Nm)
+				dal.set.field("ciisg800.bate",Item_Batch_ExpDt)
+				dal.set.field("ciisg800.ward",Item_Batch_WrDt)
+				dal.set.field("ciisg800.tval",Val_AssVal)
+				dal.set.field("ciisg800.tcgs",Val_CgstVal)
+				dal.set.field("ciisg800.tsgs",Val_SgstVal)
+				dal.set.field("ciisg800.tigs",Val_IgstVal)
+				dal.set.field("ciisg800.tces",Val_CesVal)
+				dal.set.field("ciisg800.tscs",Val_StCesVal)
+				dal.set.field("ciisg800.tsna",Val_CesNonAdVal)
+				dal.set.field("ciisg800.tdis",Val_Disc)
+				dal.set.field("ciisg800.othv",Val_OthChrg)
+				dal.set.field("ciisg800.fivl",Val_TotInvVal)
+				dal.set.field("ciisg800.payn",Pay_Nam)
+				dal.set.field("ciisg800.modp",Pay_Mode)
+				dal.set.field("ciisg800.ifsc",Pay_FinInsBr)
+				dal.set.field("ciisg800.tpay",Pay_PayTerm)
+				dal.set.field("ciisg800.payi",Pay_PayInstr)
+				dal.set.field("ciisg800.cret",Pay_CrTrn)
+				dal.set.field("ciisg800.dird",Pay_DirDr)
+				dal.set.field("ciisg800.cred",Pay_CrDay)
+				dal.set.field("ciisg800.blmt",Pay_BalAmt)
+				dal.set.field("ciisg800.ddop",Pay_PayDueDt)
+				dal.set.field("ciisg800.accd",Pay_AcctDet)
+				dal.set.field("ciisg800.invr",Ref_InvRmk)
+				dal.set.field("ciisg800.ipst",Ref_InvStDt)
+				dal.set.field("ciisg800.iped",Ref_InvEndDt)
+				dal.set.field("ciisg800.prin",Ref_PrecInvNo)
+				dal.set.field("ciisg800.prid",Ref_PrecInvDt)
+				dal.set.field("ciisg800.rean",Ref_RecAdvRef)
+				dal.set.field("ciisg800.lbrn",Ref_TendRef)
+				dal.set.field("ciisg800.cren",Ref_ContrRef)
+				dal.set.field("ciisg800.aore",Ref_ExtRef)
+				dal.set.field("ciisg800.pren",Ref_ProjRef)
+				dal.set.field("ciisg800.vprn",Ref_PORef)
+				dal.set.field("ciisg800.expc",Exp_ExpCat)
+				dal.set.field("ciisg800.expp",Exp_WthPay)
+				dal.set.field("ciisg800.shbn",Exp_ShipBNo)
+				dal.set.field("ciisg800.shbd",Exp_ShipBDt)
+				dal.set.field("ciisg800.port",Exp_Port)
+				dal.set.field("ciisg800.tivf",Exp_InvForCur)
+				dal.set.field("ciisg800.fcur",Exp_ForCur)
+				dal.set.field("ciisg800.ccty",Exp_CntCode)
+				dal.set.field("ciisg800.rpst",ciisg.rpst.free)
+				if dal.save.object("ciisg800") = 0 then
+					commit.transaction()
+				else
+					abort.transaction()
+				endif
+			endif									|RAvi.a.e.29092020
+		selectempty
+			if dal.new.object("ciisg800") = 0 then
+				dal.set.field("ciisg800.comp",cisli205.sfcp)
+				dal.set.field("ciisg800.tran",cisli205.ityp)
+				dal.set.field("ciisg800.docn",str$(cisli205.idoc))
+				dal.set.field("ciisg800.line",1)
+				dal.set.field("ciisg800.ogst",GSTIN)
+				dal.set.field("ciisg800.taxs",TaxSch)
+				dal.set.field("ciisg800.vers",Version)
+				dal.set.field("ciisg800.irnn",Irn)
+				dal.set.field("ciisg800.catg",Tran_Catg)
+				dal.set.field("ciisg800.regr",Tran_RegRev)
+				dal.set.field("ciisg800.ttyp",Tran_Typ)
+				dal.set.field("ciisg800.etrn",Tran_EcmTrn)
+				dal.set.field("ciisg800.egst",Tran_EcmGstin)
+				dal.set.field("ciisg800.dtyp",Doc_Typ)
+				dal.set.field("ciisg800.ninv",Doc_No)
+				dal.set.field("ciisg800.odoc",Doc_OrgInvNo)
+				dal.set.field("ciisg800.odat",Doc_Dt)
+				dal.set.field("ciisg800.bfgn",BillFrom_Gstin)
+				dal.set.field("ciisg800.bfnm",BillFrom_TrdNm)
+				dal.set.field("ciisg800.bfbn",BillFrom_Bno)
+				dal.set.field("ciisg800.bfbm",BillFrom_Bnm)
+				dal.set.field("ciisg800.bffn",BillFrom_Flno)
+				dal.set.field("ciisg800.bflc",BillFrom_Loc)
+				dal.set.field("ciisg800.bfdt",BillFrom_Dst)
+				dal.set.field("ciisg800.bfpn",BillFrom_Pin)
+				dal.set.field("ciisg800.bfsc",BillFrom_Stcd)
+				if len(BillFrom_Ph) >= 6 and len(BillFrom_Ph) <= 12 then
+					dal.set.field("ciisg800.bfph",BillFrom_Ph)
+				else
+					BillFrom_Ph = ""
+					dal.set.field("ciisg800.bfph",BillFrom_Ph)
+				endif
+				dal.set.field("ciisg800.bfem",BillFrom_Em)
+				dal.set.field("ciisg800.btgn",BillTo_Gstin)
+				dal.set.field("ciisg800.btnm",BillTo_TrdNm)
+				dal.set.field("ciisg800.btbn",BillTo_Bno)
+				dal.set.field("ciisg800.btbm",BillTo_Bnm)
+				dal.set.field("ciisg800.btfn",BillTo_Flno)
+				dal.set.field("ciisg800.btlc",BillTo_Loc)
+				dal.set.field("ciisg800.btdt",BillTo_Dst)
+				dal.set.field("ciisg800.btpn",BillTo_Pin)
+				dal.set.field("ciisg800.btsc",BillTo_Stcd)
+				if len(BillTo_Ph) >= 6 and len(BillTo_Ph) <=13 then
+					dal.set.field("ciisg800.btph",BillTo_Ph)
+				else
+					BillTo_Ph = ""
+					dal.set.field("ciisg800.btph",BillTo_Ph)
+				endif
+				dal.set.field("ciisg800.btem",BillTo_Em)
+				dal.set.field("ciisg800.sfgn",ShipFrom_Gstin)
+				dal.set.field("ciisg800.sfnm",ShipFrom_TrdNm)
+				dal.set.field("ciisg800.sfbn",ShipFrom_Bno)
+				dal.set.field("ciisg800.sfbm",ShipFrom_Bnm)
+				dal.set.field("ciisg800.sffn",ShipFrom_Flno)
+				dal.set.field("ciisg800.sflc",ShipFrom_Loc)
+				dal.set.field("ciisg800.sfdt",ShipFrom_Dst)
+				dal.set.field("ciisg800.sfpn",ShipFrom_Pin)
+				dal.set.field("ciisg800.sfsc",ShipFrom_Stcd)
+				if len(ShipFrom_Ph) >= 6 and len(ShipFrom_Ph) <=13 then
+					dal.set.field("ciisg800.sfph",ShipFrom_Ph)
+				else
+					ShipFrom_Ph = ""
+					dal.set.field("ciisg800.sfph",ShipFrom_Ph)
+				endif
+				dal.set.field("ciisg800.sfem",ShipFrom_Em)
+				dal.set.field("ciisg800.stgn",ShipTo_Gstin)
+				dal.set.field("ciisg800.stnm",ShipTo_TrdNm)
+				dal.set.field("ciisg800.stbn",ShipTo_Bno)
+				dal.set.field("ciisg800.stbm",ShipTo_Bnm)
+				dal.set.field("ciisg800.stfn",ShipTo_Flno)
+				dal.set.field("ciisg800.stlc",ShipTo_Loc)
+				dal.set.field("ciisg800.stdt",ShipTo_Dst)
+				dal.set.field("ciisg800.stpn",ShipTo_Pin)
+				dal.set.field("ciisg800.stsc",ShipTo_Stcd)
+				if len(ShipTo_Ph) >= 6 and len(ShipTo_Ph) <=13 then
+					dal.set.field("ciisg800.stph",ShipTo_Ph)
+				else
+					ShipTo_Ph = ""
+					dal.set.field("ciisg800.stph",ShipTo_Ph)
+				endif
+				dal.set.field("ciisg800.stem",ShipTo_Em)
+				dal.set.field("ciisg800.item",Item_PrdNm)
+				dal.set.field("ciisg800.dsca",Item_PrdDesc)
+				dal.set.field("ciisg800.hsnc",Item_HsnCd)
+				dal.set.field("ciisg800.barc",Item_Barcde)
+				dal.set.field("ciisg800.qnty",Item_Qty)
+				dal.set.field("ciisg800.fqty",Item_FreeQty)
+				dal.set.field("ciisg800.cuni",Item_Unit)
+				dal.set.field("ciisg800.pric",Item_UnitPrice)
+				dal.set.field("ciisg800.amnt",Item_TotAmt)
+				dal.set.field("ciisg800.disc",Item_Discount)
+				dal.set.field("ciisg800.othc",Item_OthChrg)
+				dal.set.field("ciisg800.assv",Item_AssAmt)
+				dal.set.field("ciisg800.cgst",Item_CgstRt)
+				dal.set.field("ciisg800.sgst",Item_SgstRt)
+				dal.set.field("ciisg800.igst",Item_IgstRt)
+				dal.set.field("ciisg800.cess",Item_CesRt)
+				dal.set.field("ciisg800.cnaa",Item_CesNonAdval)
+				dal.set.field("ciisg800.scsr",Item_StateCes)
+				dal.set.field("ciisg800.valu",Item_TotItemVal)
+				dal.set.field("ciisg800.batn",Item_Batch_Nm)
+				dal.set.field("ciisg800.bate",Item_Batch_ExpDt)
+				dal.set.field("ciisg800.ward",Item_Batch_WrDt)
+				dal.set.field("ciisg800.tval",Val_AssVal)
+				dal.set.field("ciisg800.tcgs",Val_CgstVal)
+				dal.set.field("ciisg800.tsgs",Val_SgstVal)
+				dal.set.field("ciisg800.tigs",Val_IgstVal)
+				dal.set.field("ciisg800.tces",Val_CesVal)
+				dal.set.field("ciisg800.tscs",Val_StCesVal)
+				dal.set.field("ciisg800.tsna",Val_CesNonAdVal)
+				dal.set.field("ciisg800.tdis",Val_Disc)
+				dal.set.field("ciisg800.othv",Val_OthChrg)
+				dal.set.field("ciisg800.fivl",Val_TotInvVal)
+				dal.set.field("ciisg800.payn",Pay_Nam)
+				dal.set.field("ciisg800.modp",Pay_Mode)
+				dal.set.field("ciisg800.ifsc",Pay_FinInsBr)
+				dal.set.field("ciisg800.tpay",Pay_PayTerm)
+				dal.set.field("ciisg800.payi",Pay_PayInstr)
+				dal.set.field("ciisg800.cret",Pay_CrTrn)
+				dal.set.field("ciisg800.dird",Pay_DirDr)
+				dal.set.field("ciisg800.cred",Pay_CrDay)
+				dal.set.field("ciisg800.blmt",Pay_BalAmt)
+				dal.set.field("ciisg800.ddop",Pay_PayDueDt)
+				dal.set.field("ciisg800.accd",Pay_AcctDet)
+				dal.set.field("ciisg800.invr",Ref_InvRmk)
+				dal.set.field("ciisg800.ipst",Ref_InvStDt)
+				dal.set.field("ciisg800.iped",Ref_InvEndDt)
+				dal.set.field("ciisg800.prin",Ref_PrecInvNo)
+				dal.set.field("ciisg800.prid",Ref_PrecInvDt)
+				dal.set.field("ciisg800.rean",Ref_RecAdvRef)
+				dal.set.field("ciisg800.lbrn",Ref_TendRef)
+				dal.set.field("ciisg800.cren",Ref_ContrRef)
+				dal.set.field("ciisg800.aore",Ref_ExtRef)
+				dal.set.field("ciisg800.pren",Ref_ProjRef)
+				dal.set.field("ciisg800.vprn",Ref_PORef)
+				dal.set.field("ciisg800.expc",Exp_ExpCat)
+				dal.set.field("ciisg800.expp",Exp_WthPay)
+				dal.set.field("ciisg800.shbn",Exp_ShipBNo)
+				dal.set.field("ciisg800.shbd",Exp_ShipBDt)
+				dal.set.field("ciisg800.port",Exp_Port)
+				dal.set.field("ciisg800.tivf",Exp_InvForCur)
+				dal.set.field("ciisg800.fcur",Exp_ForCur)
+				dal.set.field("ciisg800.ccty",Exp_CntCode)
+				if dal.save.object("ciisg800") = 0 then
+					commit.transaction()
+				else
+					abort.transaction()
+				endif
+			endif
+		endselect
+}
+function insert.data.ciisg803()
+{
+	domain	tcmcs.str1	isse.in						|RAvi.a.s.24092020
+	isse.in = ""
+	
+	if tdisg832.ityp = tpisg.cont.typ.goods then
+		isse.in = "N"
+	else
+		isse.in = "Y"
+	endif
+										|RAvi.a.e.24092020
+	str.doc = str$(cisli205.idoc)
+		select	ciisg803.*
+		from	ciisg803 for update
+		where	ciisg803._index1 = {:cisli205.sfcp, :cisli205.ityp, :str.doc,:o.srno}
+		as set with 1 rows
+		selectdo
+			if dal.change.object("ciisg803") = 0 then
+				dal.set.field("ciisg803.comp",cisli205.sfcp)
+				dal.set.field("ciisg803.tran",cisli205.ityp)
+				dal.set.field("ciisg803.docn",str$(cisli205.idoc))
+				dal.set.field("ciisg803.line",o.srno)
+				dal.set.field("ciisg803.item",Item_PrdNm)
+				dal.set.field("ciisg803.dsca",Item_PrdDesc)
+				dal.set.field("ciisg803.hsnc",Item_HsnCd)
+				dal.set.field("ciisg803.barc",Item_Barcde)
+				dal.set.field("ciisg803.qnty",Item_Qty)
+				dal.set.field("ciisg803.fqty",Item_FreeQty)
+				dal.set.field("ciisg803.cuni",Item_Unit)
+				dal.set.field("ciisg803.pric",Item_UnitPrice)
+				dal.set.field("ciisg803.amnt",Item_TotAmt)
+				dal.set.field("ciisg803.disc",Item_Discount)
+				dal.set.field("ciisg803.othc",Item_OthChrg)
+				dal.set.field("ciisg803.assv",Item_AssAmt)
+				dal.set.field("ciisg803.cgst",Item_CgstRt)
+				dal.set.field("ciisg803.sgst",Item_SgstRt)
+				dal.set.field("ciisg803.igst",Item_IgstRt)
+				dal.set.field("ciisg803.cess",Item_CesRt)
+				dal.set.field("ciisg803.cnaa",Item_CesNonAdval)
+				dal.set.field("ciisg803.scsr",Item_StateCes)
+				dal.set.field("ciisg803.valu",Item_TotItemVal)
+				dal.set.field("ciisg803.batn",Item_Batch_Nm)
+				dal.set.field("ciisg803.bate",Item_Batch_ExpDt)
+				dal.set.field("ciisg803.ward",Item_Batch_WrDt)
+				dal.set.field("ciisg803.camt",cgst.amount)
+				dal.set.field("ciisg803.samt",sgst.amount)
+				dal.set.field("ciisg803.iamt",igst.amount)
+				dal.set.field("ciisg803.cesa",cess.amount)
+				dal.set.field("ciisg803.cssa",stcess.amount)
+				dal.set.field("ciisg803.isse", isse.in)				|RAvi.a.24092020
+				if dal.save.object("ciisg803") = 0 then
+					commit.transaction()
+				else
+					abort.transaction()
+				endif
+			endif
+		selectempty
+			if dal.new.object("ciisg803") = 0 then
+				dal.set.field("ciisg803.comp",cisli205.sfcp)
+				dal.set.field("ciisg803.tran",cisli205.ityp)
+				dal.set.field("ciisg803.docn",str$(cisli205.idoc))
+				dal.set.field("ciisg803.line",o.srno)
+				dal.set.field("ciisg803.item",Item_PrdNm)
+				dal.set.field("ciisg803.dsca",Item_PrdDesc)
+				dal.set.field("ciisg803.hsnc",Item_HsnCd)
+				dal.set.field("ciisg803.barc",Item_Barcde)
+				dal.set.field("ciisg803.qnty",Item_Qty)
+				dal.set.field("ciisg803.fqty",Item_FreeQty)
+				dal.set.field("ciisg803.cuni",Item_Unit)
+				dal.set.field("ciisg803.pric",Item_UnitPrice)
+				dal.set.field("ciisg803.amnt",Item_TotAmt)
+				dal.set.field("ciisg803.disc",Item_Discount)
+				dal.set.field("ciisg803.othc",Item_OthChrg)
+				dal.set.field("ciisg803.assv",Item_AssAmt)
+				dal.set.field("ciisg803.cgst",Item_CgstRt)
+				dal.set.field("ciisg803.sgst",Item_SgstRt)
+				dal.set.field("ciisg803.igst",Item_IgstRt)
+				dal.set.field("ciisg803.cess",Item_CesRt)
+				dal.set.field("ciisg803.cnaa",Item_CesNonAdval)
+				dal.set.field("ciisg803.scsr",Item_StateCes)
+				dal.set.field("ciisg803.valu",Item_TotItemVal)
+				dal.set.field("ciisg803.batn",Item_Batch_Nm)
+				dal.set.field("ciisg803.bate",Item_Batch_ExpDt)
+				dal.set.field("ciisg803.ward",Item_Batch_WrDt)
+				dal.set.field("ciisg803.ward",Item_Batch_WrDt)
+				dal.set.field("ciisg803.camt",cgst.amount)
+				dal.set.field("ciisg803.samt",sgst.amount)
+				dal.set.field("ciisg803.iamt",igst.amount)
+				dal.set.field("ciisg803.cesa",cess.amount)
+				dal.set.field("ciisg803.cssa",stcess.amount)
+				dal.set.field("ciisg803.isse", isse.in)				|RAvi.a.24092020
+				if dal.save.object("ciisg803") = 0 then
+					commit.transaction()
+				else
+					abort.transaction()
+				endif
+			endif
+		endselect
+}
+
+
+|*******************************Export Data to CSV******************************
+function extern ciisgdll00800.export.data.to.csv(domain	tcncmp		i.sfcp,
+						     domain	tctran		i.ityp,
+						     domain	tcgld.docn	i.idoc)
+{
+	current.date = utc.num()
+
+	outfile = creat.tmp.file$(bse.tmp.dir$())
+	out.fp = open.ascii.file(outfile, "w")
+		create.einvoice.header()
+		create.einvoice.flat.file(i.sfcp,i.ityp,i.idoc)
+		close.out.fp = close.ascii.file(out.fp)
+		if close.out.fp <> 0  then
+			message("Error in closing Input File")
+		endif
+	
+	export.output.to.excel.file()
+	ret = file.rm(outfile)
+	message("CSV Created for E-Invoicing !!")
+}
+
+function create.einvoice.header()
+{
+	header1 = concat$( DEL, "GSTIN",					|1
+				"TaxSch",					|2
+				"Version",					|3
+				"Irn",						|4
+				"Tran_Catg",					|5
+				"Tran_RegRev",					|6
+				"Tran_Typ",					|7
+				"Tran_EcmTrn",					|8
+				"Tran_EcmGstin",				|9
+				"Doc_Typ",					|10
+				"Doc_No",					|11
+				"Doc_OrgInvNo",					|12
+				"Doc_Dt",					|13
+				"BillFrom_Gstin",				|14
+				"BillFrom_TrdNm",				|15
+				"BillFrom_Bno",					|16
+				"BillFrom_Bnm",					|17
+				"BillFrom_Flno",				|18
+				"BillFrom_Loc",					|19
+				"BillFrom_Dst",					|20
+				"BillFrom_Pin",					|21
+				"BillFrom_Stcd",				|22
+				"BillFrom_Ph",					|23
+				"BillFrom_Em",					|24
+				"BillTo_Gstin",					|25
+				"BillTo_TrdNm",					|26
+				"BillTo_Bno",					|27
+				"BillTo_Bnm",					|28
+				"BillTo_Flno",					|29
+				"BillTo_Loc",					|30
+				"BillTo_Dst",					|31
+				"BillTo_Pin",					|32
+				"BillTo_Stcd",					|33
+				"BillTo_Ph",					|34
+				"BillTo_Em",					|35
+				"ShipFrom_Gstin",				|36
+				"ShipFrom_TrdNm",				|37
+				"ShipFrom_Bno",					|38
+				"ShipFrom_Bnm",					|39
+				"ShipFrom_Flno",				|40
+				"ShipFrom_Loc",					|41
+				"ShipFrom_Dst",					|42
+				"ShipFrom_Pin",					|43
+				"ShipFrom_Stcd",				|44
+				"ShipFrom_Ph",					|45
+				"ShipFrom_Em",					|46
+				"ShipTo_Gstin",					|47
+				"ShipTo_TrdNm",					|48
+				"ShipTo_Bno",					|49
+				"ShipTo_Bnm",					|50
+				"ShipTo_Flno",					|51
+				"ShipTo_Loc",					|52
+				"ShipTo_Dst",					|53
+				"ShipTo_Pin",					|54
+				"ShipTo_Stcd",					|55
+				"ShipTo_Ph",					|56
+				"ShipTo_Em",					|57
+				"Item_PrdNm",					|58
+				"Item_PrdDesc",					|59
+				"Item_HsnCd",					|60
+				"Item_Barcde",					|61
+				"Item_Qty",					|62
+				"Item_FreeQty",					|63
+				"Item_Unit",					|64
+				"Item_UnitPrice",				|65
+				"Item_TotAmt",					|66
+				"Item_Discount",				|67
+				"Item_OthChrg",					|68
+				"Item_AssAmt",					|69
+				"Item_CgstRt",					|70
+				"Item_SgstRt",					|71
+				"Item_IgstRt",					|72
+				"Item_CesRt",					|73
+				"Item_CesNonAdval",				|74
+				"Item_StateCes",				|75
+				"Item_TotItemVal",				|76
+				"Item_Batch_Nm",				|77
+				"Item_Batch_ExpDt",				|78
+				"Item_Batch_WrDt",				|79
+				"Val_AssVal",					|80
+				"Val_CgstVal",					|81
+				"Val_SgstVal",					|82
+				"Val_IgstVal",					|83
+				"Val_CesVal",					|84
+				"Val_StCesVal",					|85
+				"Val_CesNonAdVal",				|86
+				"Val_Disc",					|87
+				"Val_OthChrg",					|88
+				"Val_TotInvVal",				|89
+				"Pay_Nam",					|90
+				"Pay_Mode",					|91
+				"Pay_FinInsBr",					|92
+				"Pay_PayTerm",					|93
+				"Pay_PayInstr",					|94
+				"Pay_CrTrn",					|95
+				"Pay_DirDr",					|96
+				"Pay_CrDay",					|97
+				"Pay_BalAmt",					|98
+				"Pay_PayDueDt",					|99
+				"Pay_AcctDet",					|100
+				"Ref_InvRmk",					|101
+				"Ref_InvStDt",					|102
+				"Ref_InvEndDt",					|103
+				"Ref_PrecInvNo",				|104
+				"Ref_PrecInvDt",				|105
+				"Ref_RecAdvRef",				|106
+				"Ref_TendRef",					|107
+				"Ref_ContrRef",					|108
+				"Ref_ExtRef",					|109
+				"Ref_ProjRef",					|110
+				"Ref_PORef",					|111
+				"Exp_ExpCat",					|112
+				"Exp_WthPay",					|113
+				"Exp_ShipBNo",					|114
+				"Exp_ShipBDt",					|115
+				"Exp_Port",					|116
+				"Exp_InvForCur",				|117
+				"Exp_ForCur",					|118
+				"Exp_CntCode",					|119
+				"GetQRImg",					|120
+				"GetSignedInvoice",				|121
+				"CDKEY",					|122
+				"EFUSERNAME",					|123
+				"EFPASSWORD",					|124
+				"EINVUSERNAME",					|125
+				"EINVPASSWORD"					|126
+				)
+	ret = seq.puts(header1, out.fp)
+}
+
+function create.einvoice.flat.file(domain	tcncmp		i.sfcp,
+				     domain	tctran		i.ityp,
+				     domain	tcgld.docn	i.idoc)
+{
+	domain	tcamnt	v.fobh
+	domain	tcamnt	leacdbamt
+	domain	tcamnt	leaccramt
+	domain	tcamnt	balance
+	domain	tcamnt	total.bal
+	
+	long 	curr.comp
+	
+	curr.comp = get.compnr()
+	str.doc = str$(i.idoc)
+	total.bal = 0
+	select	ciisg800.*
+	from	ciisg800
+	where	ciisg800._index1 = {:i.sfcp, :i.ityp, :str.doc}
+	selectdo
+		final.str  = concat$( DEL,	trim$(str$(ciisg800.ogst)),					|1
+						trim$(str$(ciisg800.taxs)),					|2
+						trim$(str$(ciisg800.vers)),					|3
+						trim$(str$(ciisg800.irnn)),					|4
+						trim$(str$(ciisg800.catg)),					|5
+						trim$(str$(ciisg800.regr)),					|6
+						trim$(str$(ciisg800.ttyp)),					|7
+						trim$(str$(ciisg800.etrn)),					|8
+						trim$(str$(ciisg800.egst)),					|9
+						trim$(str$(ciisg800.dtyp)),					|10
+| 						trim$(str$(ciisg800.tran&str$(ciisg800.docn))),		|11
+						trim$(str$(ciisg800.ninv)),					|11
+						trim$(str$(ciisg800.odoc)),					|12
+						trim$(str$(sprintf$("%u(%04Y-%02m-%02d)",ciisg800.odat))),	|13
+						trim$(str$(ciisg800.bfgn)),					|14
+						trim$(str$(ciisg800.bfnm)),					|15
+						trim$(str$(ciisg800.bfbn)),					|16
+						trim$(str$(ciisg800.bfbm)),					|17
+						trim$(str$(ciisg800.bffn)),					|18
+						trim$(str$(ciisg800.bflc)),					|19
+						trim$(str$(ciisg800.bfdt)),					|20
+						trim$(str$(ciisg800.bfpn)),					|21
+						trim$(str$(ciisg800.bfsc)),					|22
+						trim$(str$(ciisg800.bfph)),					|23
+						trim$(str$(ciisg800.bfem)),					|24
+						trim$(str$(ciisg800.btgn)),					|25
+						trim$(str$(ciisg800.btnm)),					|26
+						trim$(str$(ciisg800.btbn)),					|27
+						trim$(str$(ciisg800.btbm)),					|28
+						trim$(str$(ciisg800.btfn)),					|29
+						trim$(str$(ciisg800.btlc)),					|30
+						trim$(str$(ciisg800.btdt)),					|31
+						trim$(str$(ciisg800.btpn)),					|32
+						trim$(str$(ciisg800.btsc)),					|33
+						trim$(str$(ciisg800.btph)),					|34
+						trim$(str$(ciisg800.btem)),					|35
+						trim$(str$(ciisg800.sfgn)),					|36
+						trim$(str$(ciisg800.sfnm)),					|37
+						trim$(str$(ciisg800.sfbn)),					|38
+						trim$(str$(ciisg800.sfbm)),					|39
+						trim$(str$(ciisg800.sffn)),					|40
+						trim$(str$(ciisg800.sflc)),					|41
+						trim$(str$(ciisg800.sfdt)),					|42
+						trim$(str$(ciisg800.sfpn)),					|43
+						trim$(str$(ciisg800.sfsc)),					|44
+						trim$(str$(ciisg800.sfph)),					|45
+						trim$(str$(ciisg800.sfem)),					|46
+						trim$(str$(ciisg800.stgn)),					|47
+						trim$(str$(ciisg800.stnm)),					|48
+						trim$(str$(ciisg800.stbn)),					|49
+						trim$(str$(ciisg800.stbm)),					|50
+						trim$(str$(ciisg800.stfn)),					|51
+						trim$(str$(ciisg800.stlc)),						|52
+						trim$(str$(ciisg800.stdt)),					|53
+						trim$(str$(ciisg800.stpn)),		|54
+						trim$(str$(ciisg800.stsc)),		|55
+						trim$(str$(ciisg800.stph)),		|56
+						trim$(str$(ciisg800.stem)),		|57
+						trim$(str$(ciisg800.item)),		|58
+						trim$(str$(ciisg800.dsca)),		|59
+						trim$(str$(ciisg800.hsnc)),		|60
+						trim$(str$(ciisg800.barc)),			|61
+						trim$(str$(ciisg800.qnty)),		|62
+						trim$(str$(ciisg800.fqty)),			|63
+						trim$(str$(ciisg800.cuni)),		|64
+						trim$(str$(ciisg800.pric)),		|65
+						trim$(str$(ciisg800.amnt)),		|66
+						trim$(str$(ciisg800.disc)),		|67
+						trim$(str$(ciisg800.othc)),			|68
+						trim$(str$(ciisg800.assv)),			|69
+						trim$(str$(ciisg800.cgst)),			|70
+						trim$(str$(ciisg800.sgst)),			|71
+						trim$(str$(ciisg800.igst)),			|72
+						trim$(str$(ciisg800.cess)),			|73
+						trim$(str$(ciisg800.cnaa)),			|74
+						trim$(str$(ciisg800.scsr)),			|75
+						trim$(str$(ciisg800.valu)),			|76
+						trim$(str$(ciisg800.batn)),			|77
+						trim$(str$(ciisg800.bate)),			|78
+						trim$(str$(ciisg800.ward)),			|79
+						trim$(str$(ciisg800.tval)),			|80
+						trim$(str$(ciisg800.tcgs)),			|81
+						trim$(str$(ciisg800.tsgs)),			|82
+						trim$(str$(ciisg800.tigs)),			|83
+						trim$(str$(ciisg800.tces)),			|84
+						trim$(str$(ciisg800.tscs)),			|85
+						trim$(str$(ciisg800.tsna)),			|86
+						trim$(str$(ciisg800.tdis)),			|87
+						trim$(str$(ciisg800.othv)),			|88
+						trim$(str$(ciisg800.fivl)),			|89
+						trim$(str$(ciisg800.payn)),			|90
+						trim$(str$(ciisg800.modp)),			|91
+						trim$(str$(ciisg800.ifsc)),			|92
+						trim$(str$(ciisg800.tpay)),			|93
+						trim$(str$(ciisg800.payi)),			|94
+						trim$(str$(ciisg800.cret)),			|95
+						trim$(str$(ciisg800.dird)),			|96
+						trim$(str$(ciisg800.cred)),			|97
+						trim$(str$(ciisg800.blmt)),			|98
+						trim$(str$(ciisg800.ddop)),			|99
+						trim$(str$(ciisg800.accd)),			|100
+						trim$(str$(ciisg800.invr)),			|101
+						trim$(str$(ciisg800.ipst)),			|102
+						trim$(str$(ciisg800.iped)),			|103
+						trim$(str$(ciisg800.prin)),			|104
+						trim$(str$(ciisg800.prid)),			|105
+						trim$(str$(ciisg800.rean)),			|106
+						trim$(str$(ciisg800.lbrn)),			|107
+						trim$(str$(ciisg800.cren)),			|108
+						trim$(str$(ciisg800.aore)),			|109
+						trim$(str$(ciisg800.pren)),			|110
+						trim$(str$(ciisg800.vprn)),			|111
+						trim$(str$(ciisg800.expc)),			|112
+						trim$(str$(ciisg800.expp)),			|113
+						trim$(str$(ciisg800.shbn)),			|114
+						trim$(str$(ciisg800.shbd)),			|115
+						trim$(str$(ciisg800.port)),			|116
+						trim$(str$(ciisg800.tivf)),			|117
+						trim$(str$(ciisg800.fcur)),			|118
+						trim$(str$(ciisg800.ccty)),			|119
+						trim$(str$("")),				|120
+						trim$(str$("")),				|121
+						trim$(str$("")),				|122
+						trim$(str$("")),				|123
+						trim$(str$("")),				|124
+						trim$(str$("")),				|125
+						trim$(str$(""))				|126
+						)
+						
+		write.record.to.file()
+	endselect
+}
+
+function write.record.to.file()
+{
+	long ret
+	
+	ret = seq.puts(final.str, out.fp)
+}
+
+function extern domain tcmcs.long close.ascii.file(long file.fp)
+{
+	domain	tcmcs.long	close.file.fp
+
+	close.file.fp =seq.close(file.fp)
+	if close.file.fp <> 0 then
+		message("Error In Closing File")
+		|* Error In Closing File
+		return(-1)
+	endif
+	return(0)
+}
+
+function export.output.to.excel.file()
+{
+	domain	tcmcs.str20	date.time.stamp
+	long 	dummy.ret, i
+	long	temp.file.size
+	long	file.present
+	
+	string	o.file.name(100), o.file.name1(100)
+	
+	date.time.stamp = sprintf$("%u(%04Y%02m%02d)_%U(%02h%02m%02s)", current.date , current.date)
+	
+	filename = str$(ciisg800.comp) & chr$(95) & str$(ciisg800.tran)& chr$(95) & str$(ciisg800.docn)
+
+	o.file.name = "\\192.9.200.44\Integration\E-Invoicing\OUT\" & filename
+	
+	
+	if  tc.is.thin.client() then
+		file.mv(outfile,o.file.name & ".csv")
+	else
+		dummy.ret = server2client(outfile,o.file.name & ".csv",true)
+		if dummy.ret = 0 then
+			file.present = seq.fstat.local(o.file.name & ".csv", temp.file.size)
+			if file.present < 0 then
+				for i = 1 to 10
+					file.present = seq.fstat.local(o.file.name & ".csv", temp.file.size)
+					if file.present >= 0 then
+						break
+					else
+					endif
+				endfor
+			endif
+		endif	
+	endif
+
+}
+
+function domain tcmcs.long open.ascii.file(domain tcmcs.str100  file.name,
+					   domain tcmcs.str1    open.mode)
+{
+	domain	tcmcs.long	fp
+
+	fp = seq.open(file.name, open.mode)
+
+	if fp < 1 then
+		message("Error In Opening File")
+		|* Error In Opening File
+		return(-1)
+	endif
+	return(fp)
+}
+function get.name(domain tcncmp i.company)	
+{
+	select tcemm170.desc
+	from   tcemm170
+	where  tcemm170._index1 = {:i.company}
+	selectdo
+		ncmp.name = tcemm170.desc
+	selectempty
+		ncmp.name = ""
+	endselect	
+
+
+}
+|********************sanjeev
+function ciisgdll00800.check.e.invoicing.data(domain	tcncmp		i.sfcp,
+					     domain	tctran		i.ityp,
+					     domain	tcgld.docn	i.idoc)
+{
+	str.doc = str$(i.idoc)
+	select	ciisg801.*
+	from	ciisg801
+	where	ciisg801._index1 = {:i.sfcp, :i.ityp, :str.doc}
+	and	ciisg801.irnn <> ""
+	as set with 1 rows
+	selectdo
+	selectempty
+		get.e_invoicing.data(i.sfcp,i.ityp,i.idoc)
+		select	ciisg801.*						
+		from	ciisg801
+		where   ciisg801._index1 = {:i.sfcp, :i.ityp, :str.doc}
+		and	ciisg801.irnn <> ""
+		selectdo
+		selectempty
+			message("e-Invoice not generated yet for %s-%s",i.ityp,str$(i.idoc))
+		endselect
+	endselect								
+}
+
+function get.e_invoicing.data(domain	tcncmp		i.sfcp,
+			     domain	tctran		i.ityp,
+			     domain	tcgld.docn	i.idoc)
+{
+	domain	tcbool	ret.bool
+	string	pic.path(1000)
+	
+	server.tmp.file = creat.tmp.file$( bse.tmp.dir$() )
+	f.ser.inp.path = "\\192.9.200.44\Integration\E-Invoicing\IN\"& "Response_"&
+			  str$(i.sfcp) & chr$(95) &  str$(i.ityp) & chr$(95) &  str$(i.idoc) & ".csv"
+	if client2server(f.ser.inp.path, server.tmp.file, false, false, true) = 0 then
+
+		server_file_ptr = seq.open(server.tmp.file, "r")		
+		if server_file_ptr then
+			mess("tigenstring", 0, "Update in Progress . . .")
+			update.e_invoicing.data(i.sfcp,i.ityp,i.idoc)
+			seq.close(server_file_ptr)
+		else
+			mess("tigenstring", 1, "ERROR : File Cannot be Opened")
+		endif
+	else
+		mess("tigenstring", 1, "ERROR : Copy Failed")		
+	endif
+	seq.unlink(server.tmp.file)
+	
+	pic.path = "\\192.168.200.3\GenEInvoice\ResponseEInvoice\"& "Response_"&str$(i.sfcp) & chr$(95) &  str$(i.ityp) & chr$(95) &  str$(i.idoc) &  ".png"
+	
+}
+
+function update.e_invoicing.data(domain	tcncmp		i.sfcp,
+			     domain	tctran		i.ityp,
+			     domain	tcgld.docn	i.idoc)
+{
+	long	size
+	domain	tcbool	header.text
+
+	header.text = true
+	while(not seq.eof(server_file_ptr))
+		mess("tigenstring", 0, "Update in Progress . . .")		
+		init.all.variables()
+		ret.num = seq.gets(tmp.record, 2048, server_file_ptr)
+		if ret.num = 0 then
+			ret.num = string.scan(tmp.record, SCANS, FIELDS)
+			if not header.text then
+				insert.data(i.sfcp,i.ityp,i.idoc)
+			endif
+			header.text = false
+		endif
+	endwhile
+}
+
+function insert.data(domain	tcncmp		i.sfcp,
+		     domain	tctran		i.ityp,
+		     domain	tcgld.docn	i.idoc)
+{
+	string	error.msg(1000)
+	domain	tcgld.docn	idoc
+	domain	tcgld.ttyp	ityp
+| 	domain	tcncmp		curr.comp
+	
+	idoc = val(res.docn(4;8))
+	ityp = res.docn(1;3)
+| 	curr.comp = get.compnr()
+	str.doc = str$(idoc)
+	select	ciisg801.*
+	from	ciisg801 for update
+	where	ciisg801._index1 = {:i.sfcp,:ityp,:str.doc}
+	selectdo
+	selectempty
+		ciisg801.comp = i.sfcp
+		ciisg801.tran = ityp
+		ciisg801.docn = str$(idoc)
+		ciisg801.ogst = res.gstin
+		ciisg801.irnn = res.irn
+		ciisg801.dtyp = res.doct
+		ciisg801.ninv = res.docn
+		ciisg801.odat = lval(res.docd)
+		ciisg801.errm = res.errmes
+		ciisg801.stat = lval(res.status)
+		ciisg801.errc = lval(res.errcode)
+		ciisg801.ackn = res.ack
+		ciisg801.ackd = lval(res.ackd)
+		ciisg801.qrst = lval(res.signqr)
+		ciisg801.irns = irn.stat
+		ciisg801.sinv = lval(res.singi)
+		db.update(tciisg801, db.retry,e)
+| 		commit.transaction()
+	endselect
+	select	ciisg800.*
+	from	ciisg800 for update
+	where	ciisg800._index1 = {:i.sfcp, :i.ityp, :str.doc}
+	and	ciisg800.irnn = ""
+	selectdo
+		ciisg800.irnn = res.irn
+		db.update(tciisg800,db.retry,e)
+	endselect
+	commit.transaction()
+		
+
+}
+
+function init.all.variables()
+{
+	res.errmes = "" 
+	res.status = ""
+	res.gstin = ""
+	res.docn = ""
+	res.docd = ""
+	res.doct = ""
+	res.irn = ""
+	res.errcode = ""
+	res.ack = ""
+	res.ackd = ""
+	res.singi = ""
+	res.signqr = ""
+	irn.stat = ""
+}	
+function iciisg2405.get.installment.line
+			(
+				domain	tcncmp		i.slcp,		|Company
+				domain	tfgld.ttyp	i.ityp,		|Transaction Type
+				domain	tfgld.docn	i.idoc,		|Document Number
+				domain	tcyesno		i.remb		|Rembursement
+			)
+{
+
+	domain	tcamnt		o.rval
+	domain	tcamnt		excise_remb
+	domain	tcamnt		vat_remb
+	domain	tcamnt		service_remb
+	domain	tcamnt		cst_remb
+	domain	tcamnt		freight_remb
+	
+	domain	tfgld.docn		ir.number
+	
+
+	o.excise1 = 0.0
+	o.vat1 = 0.0
+	o.service1 = 0.0
+	o.cst1 = 0.0
+	o.freight1 =0.0
+	
+	
+	select	tpisg039.rval,
+		tpisg039.rtyp,
+		tpisg039.ninc,
+		tdisg832.item,
+									|#ISGEC001056.sn
+		tdisg832.tobi,
+		tdisg832.reas,
+		tdisg832.code,
+		tdisg832.rcno,
+		tdisg832.rcln,
+		tdisg832.cvat,
+		tdisg832.pcun,
+		tdisg832.pqty,
+		tdisg832.sasa.l,
+		tdisg832.gdsc,
+		tdisg832.bivl,
+		tdisg832.ityp,						|RAvi.a.24092020
+		tdisg831.ashp,
+		tdisg831.dcno, 
+		tdisg831.dcdt,
+		tpisg039.cprj,
+		tpisg039.ofbp,
+		tpisg039.ninc,
+		tpisg039.nins,
+									|#ISGEC001056.en
+		tpisg039.edrn,						|#ISGEC01110.n
+		tcibd001.dsca,
+		tpisg039.remb,
+		tppdm740.copr,
+| 		tpisg031.dsca,						|#ISGEC001056.o
+		tpisg039.edcs,
+		tpisg039.sltx,
+		tpisg039.csvt,
+		tpisg039.othr,
+		tpisg039.ityp,		|#ISGEC01035.n
+		tpisg039.idoc		|#ISGEC01035.n
+| 	from	tpisg039,tdisg832,tcibd001,tppdm740,tpisg031		|#ISGEC001056.o
+	from	tpisg039,tdisg832,tcibd001,tppdm740,
+		tdisg831
+| 	where	tpisg039._index3 = {:i.ityp,:i.idoc,:i.cprj,:i.ofbp,:i.nins}
+	where	tpisg039._index3 = {:i.ityp,:i.idoc}|,:i.cprj,:i.ofbp,:i.nins}
+	and	tpisg039.remb = :i.remb
+	and	tpisg039._compnr = :i.slcp
+	and	tpisg039.cmbb refers to tdisg832
+	and	tpisg039.edrn refers to tdisg831
+	and	tdisg832.tobi = tcyesno.yes
+	and	tdisg832.item refers to tcibd001
+	and	tpisg039.cmba refers to tppdm740
+	and	tdisg832._compnr = :i.slcp
+	and	tppdm740._compnr = :i.slcp
+	and	tcibd001._compnr = :i.slcp
+	selectdo
+		if tdisg832.bivl > 0 then
+		if i.remb = tcyesno.no then
+			o.rval = o.rval + tpisg039.rval
+		else
+			|Rembursement Type Description
+			select	tpisg030.dsca
+			from	tpisg030
+			where	tpisg030._index1 = {:tpisg039.rtyp}
+			and	tpisg030._compnr = :i.slcp
+			selectdo
+			selectempty
+				tpisg030.dsca = ""
+			endselect 
+
+		endif
+		
+| 		actual.shipment = (tdisg831.ashp = tcyesno.yes) ? true:false
+							|#ISGEC001056.sn
+		if tpisg039.ninc <> 0 then
+			select tpisg031.dsca
+			from	tpisg031
+			where	tpisg031._index1 = {:tpisg039.cprj,:tpisg039.ofbp,:tpisg039.ninc}
+			and	tpisg031._compnr = :i.slcp
+			as set with 1 rows
+			selectdo
+			selectempty
+				tpisg031.dsca = ""
+			endselect
+		else 
+			if tdisg832.tobi =tcyesno.no then
+				select whisg311.desc:tpisg031.dsca
+				from	whisg311
+				where	whisg311._index1 = {:tdisg832.reas}
+				and	whisg311._compnr = :i.slcp
+				as set with 1 rows
+				selectdo
+				selectempty
+					tpisg031.dsca = ""
+				endselect
+			endif
+		endif
+							|#ISGEC001056.en	
+			
+
+		get.ed.cess.cst()
+	
+					|#ISGEC017006.sn
+		
+		assv.val = tdisg832.sasa.l
+		bill.val = tdisg832.bivl
+		goods.qnty = tdisg832.pqty
+		unit = tdisg832.pcun
+				
+		if i.remb = tcyesno.yes then
+			select	tpisg131.type, tpisg131.cvat,
+				tpisg131.code
+			from	tpisg131
+			where	tpisg131._index1 = {
+						:tpisg039.edrn, 
+						:tpisg039.cprj,
+						:tpisg039.ofbp,
+						:tpisg039.nins
+						}
+			selectdo
+			selectempty
+				tpisg131.cvat = ""
+				tpisg131.code = ""
+			endselect
+			
+			tdisg832.gdsc = tpisg030.dsca
+			bill.val = tpisg039.rval
+			assv.val = tpisg039.rval
+			goods.qnty = 0.00
+			unit = ""
+			tdisg832.code = tpisg131.code
+			tdisg832.cvat = tpisg131.cvat
+		endif
+		
+		select	ciisg802.*							|RAvi.a.03102020
+		from	ciisg802
+		where	ciisg802._index1 = {:unit}
+		selectdo
+		selectempty
+			
+		endselect
+		
+		get.tax.data()
+		
+		if goods.qnty <> 0.00 then
+			rate = bill.val / goods.qnty
+		else
+			rate = bill.val
+		endif
+					|#ISGEC017006.en
+					
+| 		if 	report.code1 = "rciisg240503000"  or 
+| 			report.code1 = "rciisg240505000"  or 
+| 			report.code1 = "rciisg240506000"  or 
+| 			report.code1 = "rciisg240501100"  or 				|#ISGEC01110.n
+| 			report.code1 = "rciisg240501100"  or 			
+| 			report.code1 = "rciisg240504000" then
+| 			
+| 			brp.ready(brp.report.1)
+| 			ciisg001.edcs = 0.0
+| 			ciisg001.sltx = 0.0
+| 			ciisg001.csvt = 0.0
+| 			ciisg001.othr = 0.0
+| 												
+| 		endif
+| 		
+| 		if 	report.code2 = "rciisg240503000" or 
+| 		 	report.code2 = "rciisg240503010" or 
+| 			report.code2 = "rciisg240505000" or 
+| 			report.code2 = "rciisg240506000" or
+| 			report.code1 = "rciisg240501101"  or 				|#ISGEC01110.n
+| 			report.code2 = "rciisg24050400c" or	|#ISGEC01035.n
+| 			report.code2 = "rciisg240501100" or	|#ISGEC01035.n
+| 			report.code2 = "rciisg240503020" or	|#ISGEC01035.n	
+| 			report.code2 = "rciisg240504000" then
+| 			
+| 			brp.ready(brp.report.2)
+| 			ciisg001.edcs = 0.0
+| 			ciisg001.sltx = 0.0
+| 			ciisg001.csvt = 0.0
+| 			ciisg001.othr = 0.0
+| 		endif
+		
+						|#ISGEC01035.sn
+| 		if report.code1 = "rciisg24050200c" then					
+| 			brp.ready(brp.report.1)
+| 		endif
+												
+| 		if report.code2 = "rciisg24050200c" then					
+| 			brp.ready(brp.report.2)
+| 		endif	
+						|#ISGEC01035.en
+						
+| 		if brp.report.5 > 0 then	|#ISGEC01035.sn
+| 			brp.ready(brp.report.5)
+| 		endif	
+| 		if brp.report.6 > 0  and i.remb = tcyesno.no then	|#ISGEC01035.sn
+| 		if brp.report.6 > 0   then	|#ISGEC01035.sn
+			tot.gst.amnt = tot.gst.amnt + cgst.amnt + sgst.amnt + igst.amnt
+			tot.tcs.amnt = tot.tcs.amnt + tcs.amnt					|TCS logic added on 08-03-2020 by TV0001
+			tot.assv.val = tot.assv.val + assv.val
+			o.srno = o.srno + 1
+| 			tot.amnt = tot.amnt + bill.val + cgst.amnt + sgst.amnt + igst.amnt
+			tot.amnt = tot.amnt + bill.val + cgst.amnt + sgst.amnt + igst.amnt + tcs.amnt	|TCS logic added on 08-03-2020 by TV0001
+| 			brp.ready(brp.report.6)
+
+			Item_PrdNm ="         "& trim$(tdisg832.gdsc)
+			Item_PrdDesc = trim$(tdisg832.gdsc)
+			Item_HsnCd = tdisg832.code
+			Item_Barcde = ""
+			Item_Qty = goods.qnty
+			Item_Qty = round(Item_Qty, 3, 1)
+			Item_FreeQty = 0
+			Item_Unit = ciisg802.guni|unit
+			Item_UnitPrice = rate
+			Item_UnitPrice = round(Item_UnitPrice, 3, 1)
+			Item_TotAmt = goods.qnty*rate
+			Item_TotAmt = round(Item_TotAmt, 2, 1)
+			Item_Discount = 0.00
+			Item_OthChrg = 0.00
+			Item_AssAmt = Item_TotAmt-Item_Discount+Item_OthChrg
+| 			Item_AssAmt = round(Item_AssAmt, 0, 1)
+			Item_CgstRt = cgst.rate
+			Item_SgstRt = sgst.rate
+			Item_IgstRt = igst.rate
+			Item_CesRt = cess.rate
+			Item_CesNonAdval = 0.00
+			Item_StateCes = 0.00
+| 			Item_TotItemVal = Item_AssAmt + (Item_AssAmt*cgst.rate/100) + (Item_AssAmt*sgst.rate/100) + (Item_AssAmt*igst.rate/100)	|RAvi.com
+			Item_Batch_Nm = ""
+			Item_Batch_ExpDt = 0
+			Item_Batch_WrDt = 0
+			cgst.amount = Item_AssAmt * cgst.rate/100						|RAvi.a.s.29092020
+			cgst.amount = round(cgst.amount, 2, 1)
+			sgst.amount = Item_AssAmt * sgst.rate/100
+			sgst.amount = round(sgst.amount, 2, 1)
+			igst.amount = Item_AssAmt * igst.rate/100
+			igst.amount = round(igst.amount, 2, 1)
+			cess.amount = Item_AssAmt * cess.rate/100
+			cess.amount = round(cess.amount, 2, 1)
+			stcess.amount = Item_AssAmt * Item_StateCes/100	
+			stcess.amount = round(stcess.amount, 2, 1)
+			Item_TotItemVal = Item_AssAmt + cgst.amount + sgst.amount + igst.amount
+			Item_TotItemVal = round(Item_TotItemVal, 2, 1)
+															|RAvi.a.e.29092020
+
+			|**********************************************Tax Amount Calculation******************
+			
+			
+			insert.data.ciisg803()
+| 			if frmt.f = "004" then				|#ISGEC016021.sn
+| 				brp.ready(brp.report.8)				
+| 			endif						|#ISGEC016021.en
+			
+| 		endif	
+					|#ISGEC01035.en	
+		else
+| 			message("@ Billing Amount should not be negative in invoice " & tpisg039.ityp &" " & str$(tpisg039.idoc))
+			if tdisg832.bivl < 0 then							|GH422CR753.a.s
+				if i.remb = tcyesno.no then
+					o.rval = o.rval + tpisg039.rval
+				else
+						|Rembursement Type Description
+					select	tpisg030.dsca
+					from	tpisg030
+					where	tpisg030._index1 = {:tpisg039.rtyp}
+					and	tpisg030._compnr = :i.slcp
+					selectdo
+					selectempty
+						tpisg030.dsca = ""
+					endselect 
+
+				endif
+			
+				if tpisg039.ninc <> 0 then
+					select tpisg031.dsca
+					from	tpisg031
+					where	tpisg031._index1 = {:tpisg039.cprj,:tpisg039.ofbp,:tpisg039.ninc}
+					and	tpisg031._compnr = :i.slcp
+					as set with 1 rows
+					selectdo
+					selectempty
+						tpisg031.dsca = ""
+					endselect
+				else 
+					if tdisg832.tobi =tcyesno.no then
+						select whisg311.desc:tpisg031.dsca
+						from	whisg311
+						where	whisg311._index1 = {:tdisg832.reas}
+						and	whisg311._compnr = :i.slcp
+						as set with 1 rows
+						selectdo
+						selectempty
+							tpisg031.dsca = ""
+						endselect
+					endif
+				endif
+								
+				
+
+				get.ed.cess.cst()
+		
+					
+			
+				assv.val = tdisg832.sasa.l
+				bill.val = tdisg832.bivl
+				goods.qnty = tdisg832.pqty
+				unit = tdisg832.pcun
+						
+				if i.remb = tcyesno.yes then
+					select	tpisg131.type, tpisg131.cvat,
+						tpisg131.code
+					from	tpisg131
+					where	tpisg131._index1 = {
+								:tpisg039.edrn, 
+								:tpisg039.cprj,
+								:tpisg039.ofbp,
+								:tpisg039.nins
+								}
+					selectdo
+					selectempty
+						tpisg131.cvat = ""
+						tpisg131.code = ""
+					endselect
+					
+					tdisg832.gdsc = tpisg030.dsca
+					bill.val = tpisg039.rval
+					assv.val = tpisg039.rval
+					goods.qnty = 0.00
+					unit = ""
+					tdisg832.code = tpisg131.code
+					tdisg832.cvat = tpisg131.cvat
+				endif
+				
+				select	ciisg802.*						
+				from	ciisg802
+				where	ciisg802._index1 = {:unit}
+				selectdo
+				selectempty
+					
+				endselect
+				
+				get.tax.data()
+				
+				if goods.qnty <> 0.00 then
+					rate = bill.val / goods.qnty
+				else
+					rate = bill.val
+				endif
+				
+				tot.gst.amnt = abs(tot.gst.amnt) + abs(cgst.amnt) + abs(sgst.amnt) + abs(igst.amnt)
+				tot.tcs.amnt = abs(tot.tcs.amnt) + abs(tcs.amnt)			
+				tot.assv.val = abs(tot.assv.val) + abs(assv.val)
+				o.srno = o.srno + 1
+				tot.amnt = abs(tot.amnt) + abs(bill.val) + abs(cgst.amnt) + abs(sgst.amnt) + abs(igst.amnt) + abs(tcs.amnt)
+
+				Item_PrdNm ="         "& trim$(tdisg832.gdsc)
+				Item_PrdDesc = trim$(tdisg832.gdsc)
+				Item_HsnCd = tdisg832.code
+				Item_Barcde = ""
+				Item_Qty = abs(goods.qnty)
+				Item_Qty = round(abs(Item_Qty), 3, 1)
+				Item_FreeQty = 0
+				Item_Unit = ciisg802.guni|unit
+				Item_UnitPrice = rate
+				Item_UnitPrice = round(abs(Item_UnitPrice), 3, 1)
+				Item_TotAmt = goods.qnty*rate
+				Item_TotAmt = round(abs(Item_TotAmt), 2, 1)
+				Item_Discount = 0.00
+				Item_OthChrg = 0.00
+				Item_AssAmt = abs(Item_TotAmt) - abs(Item_Discount) + abs(Item_OthChrg)
+				Item_CgstRt = abs(cgst.rate)
+				Item_SgstRt = abs(sgst.rate)
+				Item_IgstRt = abs(igst.rate)
+				Item_CesRt = abs(cess.rate)
+				Item_CesNonAdval = 0.00
+				Item_StateCes = 0.00
+				Item_Batch_Nm = ""
+				Item_Batch_ExpDt = 0
+				Item_Batch_WrDt = 0
+				cgst.amount = Item_AssAmt * cgst.rate/100					
+				cgst.amount = round(cgst.amount, 2, 1)
+				sgst.amount = Item_AssAmt * sgst.rate/100
+				sgst.amount = round(sgst.amount, 2, 1)
+				igst.amount = Item_AssAmt * igst.rate/100
+				igst.amount = round(igst.amount, 2, 1)
+				cess.amount = Item_AssAmt * cess.rate/100
+				cess.amount = round(cess.amount, 2, 1)
+				stcess.amount = Item_AssAmt * Item_StateCes/100	
+				stcess.amount = round(stcess.amount, 2, 1)
+				Item_TotItemVal = Item_AssAmt + cgst.amount + sgst.amount + igst.amount
+				Item_TotItemVal = round(Item_TotItemVal, 2, 1)
+				Doc_Typ = "CRN"
+				Doc_OrgInvNo = tdisg831.otyp & str$(tdisg831.odoc)
+				insert.data.ciisg803()
+			endif											|GH422CR753.a.e
+		endif
+	endselect
+	
+	
+}
+function get.ed.cess.cst()
+{
+	select	ciisg000.*
+	from	ciisg000
+	where	ciisg000._index1 = {0}
+	and	ciisg000._compnr = :cisli235.slcp
+	as set with 1 rows
+	selectdo
+	endselect
+			
+	if 	ciisg000.exii = tpisg039.rtyp then
+		o.excise1 = o.excise1 + tpisg039.rval
+	else if (ciisg000.hcex = tpisg039.rtyp) then
+		o.vat1 = o.vat1 + tpisg039.rval
+	else if ciisg000.scex = tpisg039.rtyp then
+		o.service1 = o.service1 + tpisg039.rval
+	else if ciisg000.csti = tpisg039.rtyp then
+		o.cst1 = o.cst1 + tpisg039.rval
+	else if ciisg000.frgt = tpisg039.rtyp then
+		o.freight1 = o.freight1 + tpisg039.rval
+	endif
+	endif
+	endif
+	endif
+	endif	
+}
+function get.tax.data()
+{
+	domain	tcamnt		line.tax.amount.array(1, 1)	based
+	domain	tcamnt		line.base.amount.array(1, 1)	based
+	domain	tccvat		line.tax.code.array(1, 1)	based
+	domain	tctax.indt.l	o.line.indirect.tax.array(1, 1)	based
+	domain	tctax.indt.l	i.duty.type.array(1, 1)		based
+	domain	tcyesno		expensed.tax(1, 1)		based
+	domain	tcmcs.s250m	o.comb.output.set(1)		based
+	domain	tcpvat		o.tax.rates(1,1)		based
+	domain	tcamnt		i.duties.array(1,1)		based
+	domain tctax.seqn 	o.maximum.sequence.number
+	domain tcamnt 		o.claimable.tax.amount
+	domain tcamnt 		o.non.claimable.tax.amount
+	domain tcamnt 		o.total.tax.amount
+	domain tcamnt 		o.sales.tax
+	domain tcmcs.s250m 	o.error.msg mb
+	domain	tcamnt		tmp.rate
+	
+	domain	tctax.indt.l	o.indt.l
+	
+	tcs.amnt = 0.00			|TCS logic added on 08-03-2020 by TV0001
+	cgst.amnt = 0.00
+	sgst.amnt = 0.00
+	igst.amnt = 0.00
+	
+	tcs.rate = 0.00			|TCS logic added on 08-03-2020 by TV0001
+	cgst.rate = 0.00
+	sgst.rate = 0.00
+	igst.rate = 0.00
+	
+	select	tppin020.ccty
+	from	tppin020
+	where	tppin020._index1 = {:tpisg039.cprj, :tpisg039.ofbp, :tpisg039.nins}
+	selectdo
+	selectempty
+		tppin020.ccty = ""
+	endselect
+		
+	select 	tppdm740.rtyp, tppdm740.ccur
+	from	tppdm740
+	where	tppdm740._index1 = {:tpisg039.cprj, :tpisg039.ofbp}
+	as set with 1 rows
+	selectdo
+	selectempty
+		tppdm740.rtyp = ""
+		tppdm740.ccur = ""
+	endselect
+	
+	tctax.dll9141.determine.aggregate.tax.amounts.per.line( 
+					tppin020.ccty,				| domain tcccty i.tax.country, 
+					tdisg832.cvat,				| domain tccvat i.aggregate.tax.code, 
+					utc.num(),				| domain tcdate i.tax.date, 
+					assv.val,				| domain tcamnt i.order.line.price, 
+					assv.val,				| domain tcamnt i.customs.value, 
+					assv.val,				| domain tcamnt i.market.retail.price, 
+					0.00,					| domain tcamnt i.retail.sales.price, 
+					0.00,					| domain tcamnt i.tariff.price, 
+					tppdm740.ccur,				| domain tcccur i.price.currency, 
+					utc.num(),				| domain tcdate i.currency.rate.date, 
+					tppdm740.rtyp,				| domain tcrtyp i.currency.exchange.rate.type, 
+					assv.val,				| domain tcpric i.asv.excise, 
+					assv.val,				| domain tcpric i.asv.vat, 
+					assv.val,				| domain tcpric i.asv.service.tax, 
+					assv.val,				| domain tcpric i.asv.gst, |#ISGEC017006.n
+					utc.num(),				| domain tcdate i.ship.or.receive.date, 
+					tcyesno.no,				| domain tcyesno i.as.is.sales, 
+					tcyesno.no,				| domain tcyesno i.yesno.flag, 
+					i.duty.type.array,			| ref domain tctax.indt.l i.duty.type.array(,), 
+					i.duties.array,				| ref domain tcamnt i.duties.array(,), 
+					o.tax.rates,				| ref domain tcpvat o.tax.rates(,), 
+					o.maximum.sequence.number,		| ref domain tctax.seqn o.maximum.sequence.number, 
+					line.base.amount.array,			| ref domain tcamnt o.line.base.amount.array(,), 
+					line.tax.amount.array,			| ref domain tcamnt o.line.tax.amount.array(,), 
+					line.tax.code.array,			| ref domain tccvat o.line.tax.code.array(,) fixed, 
+					o.line.indirect.tax.array,		| ref domain tctax.indt.l o.line.indirect.tax.array(,), 
+					expensed.tax,				| ref domain tcyesno o.expensed.tax(,), 
+					o.claimable.tax.amount,			| ref domain tcamnt o.claimable.tax.amount, 
+					o.non.claimable.tax.amount,		| ref domain tcamnt o.non.claimable.tax.amount, 
+					o.total.tax.amount,			| ref domain tcamnt o.total.tax.amount, 
+					o.sales.tax,				| ref domain tcamnt o.sales.tax, 
+					o.comb.output.set,			| ref domain tcmcs.s250m o.comb.output.set() fixed mb, 
+					o.error.msg)
+					
+	select	tctax941.cvat,tctax941.layr,tctax941.seqn
+	from	tctax941
+	where	tctax941._index1 = {:tppin020.ccty, :tdisg832.cvat}
+	and	tctax941.amor = tctax.amor.l.not.appl
+	selectdo
+		if not tcmcs.dll0036.get.indirect.tax.l(	tppin020.ccty, 
+								tctax941.cvat,
+								o.indt.l) then	|* Indirect Tax Type	
+			
+		endif
+		select	tcmcs036.ttcs.l						|TCS logic added on 08-03-2020 by TV0001
+		from	tcmcs036
+		where	tcmcs036._index1 = {:tppin020.ccty,:tctax941.cvat}
+		and	tcmcs036.ttcs.l = 1
+		selectdo
+			tcs.rate = tcs.rate + o.tax.rates(tctax941.layr,tctax941.seqn)
+			tcs.amnt = tcs.amnt + line.tax.amount.array(tctax941.layr,tctax941.seqn)
+			tcs.amnt = round(tcs.amnt, 2, 1)		
+		endselect							|TCS logic added on 08-03-2020 by TV0001
+		
+		on case o.indt.l
+		case	tctax.indt.l.cgst:
+			cgst.rate = cgst.rate + o.tax.rates(tctax941.layr,tctax941.seqn)
+			cgst.amnt = cgst.amnt + line.tax.amount.array(tctax941.layr,tctax941.seqn)
+| 			cgst.amnt = round(cgst.amnt, 0, 1)			|#ISGEC002027.o
+			cgst.amnt = round(cgst.amnt, 2, 1)			|#ISGEC002027.n
+			
+			break
+			
+		case	tctax.indt.l.sgst:
+		case	tctax.indt.l.utgst:
+			sgst.rate = sgst.rate + o.tax.rates(tctax941.layr,tctax941.seqn)
+			sgst.amnt = sgst.amnt + line.tax.amount.array(tctax941.layr,tctax941.seqn)
+| 			sgst.amnt = round(sgst.amnt, 0, 1)			|#ISGEC002027.o
+			sgst.amnt = round(sgst.amnt, 2, 1)			|#ISGEC002027.n
+			
+			break	
+			
+		case	tctax.indt.l.igst:
+			igst.rate = igst.rate + o.tax.rates(tctax941.layr,tctax941.seqn)
+			igst.amnt = igst.amnt + line.tax.amount.array(tctax941.layr,tctax941.seqn)
+| 			igst.amnt = round(igst.amnt, 0, 1)			|#ISGEC002027.0
+			igst.amnt = round(igst.amnt, 2, 1)			|#ISGEC002027.n
+			break	
+		endcase
+	endselect
+}
+
+
+|**********sanjeev
+
+function get.bp.pin(domain	tccom.cadr	addr.to,
+		ref	domain	tcpstc	o.pstc)								|RAvi.a.s.29092020
+{
+	select	tccom130.pstc:o.pstc
+	from	tccom130
+	where	tccom130._index1 = {:addr.to}
+	as set with 1 rows
+	selectdo
+	selectempty
+		o.pstc = ""
+	endselect
+}
+										|RAvi.a.e.29092020

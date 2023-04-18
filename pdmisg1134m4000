@@ -1,0 +1,362 @@
+|******************************************************************************
+|* dmisg1134m400  0  VRC B61U a7 isg 
+|* Receive Vendor Document
+|* Installation user             
+|* 2015-02-02
+|******************************************************************************
+|* Main table dmisg134 Receive Vendor Document, Form Type 1
+|******************************************************************************
+|* ISGEC004004, IT0047, Dharmendra, Dt. 30-01-2015, B61U a7 isg     
+|******************************************************************************
+|* ISGECMOD003, IT0386, Saurabh Dubey, 15 December 2017, VRC B61U a7 isg
+|* Modifications for Auto Allocation of Vendor Documents - Post Order
+|*
+|* ISGEC0166,IT0479,Anadi Shankar,21-06-2018,VRC B61U a7 isg
+|* Insertion Of Data On Table "tpisg229" and "tpisg230".
+|*
+|* GH255CR358, Adarsh Pal, 03-02-2020, VRC B61U a7 isg
+|* Additional logic to display Element Code and Description
+|****************************** declaration section ***************************
+declaration:
+
+  table   tdmisg134 | Receive Vendor Document
+  table   ttcmcs050
+  table   ttpmsl000
+  table   ttcmcs052
+  table   ttdpur401
+  table	  ttppdm090					|#GH255CR358.n
+	table	ttpisg230
+	table	ttpisg229
+	table	ttdisg002
+	table	ttpisg235
+  
+  extern	domain	tcpono	revision.no
+  extern	domain	whinh.shpm	old.receipt
+  extern	domain	dmdoc.revv	old.revision, new.revision
+  extern	domain	tcorno	order.no.post
+  extern	domain	tppdm.cspa	elem.code		|#GH255CR358.sn
+  extern	domain	tppdm.dscl	elem.dsca		|#GH255CR358.en
+   extern	string	o.error.message(200)	|#ISGECMOD003.n
+
+	domain	tcdate		var.trdt			|#Anadi.sn 31-05-2018 
+	domain	tcmcs.str50	var.bohd
+	domain	tcmcs.long	v.dsno,v.count
+	domain	tcwght		v.wght
+	domain	tcmcs.str100	var.indv			|#Anadi.en 31-05-2018 
+	domain	tfgld.user	user
+	long srno
+	
+	domain	tcqsl1		var.qnty					|#Anadi.n 31-07-2018
+	domain	tcmcs.long	var.sern
+
+|****************************** program section ********************************
+before.program:
+	order.no.post = ""
+	query.extend.where("dmisg134.orno <> " & quoted.string(order.no.post))
+
+	read.parameters()
+
+|****************************** choice section **********************************
+choice.process.3:
+on.choice:
+	copy_receipt()
+
+					|#ISGECMOD003.sn
+choice.forward.receipt:
+on.choice:
+	o.error.message = dmisgdll0100.forward.receipt.to.departments(	dmisg134.rcno,	|* String Returned as this Function Was Also Called  
+									dmisg134.revn)	|* from Ouside ERP Ln
+	if o.error.message = "0|Process Completed...." then
+		insert.tpisg229.data()							|#ISGEC0166.n
+	endif					
+			
+	message("%s", o.error.message(3;(len(o.error.message) - 2)))	|* For Trimming Prefixed Character(s)				
+					|#ISGECMOD003.en
+|****************************** field section **********************************
+field.dmisg134.rcno:
+before.zoom:
+	tcmcs050.nrgr = tpmsl000.rcno	
+
+field.tcmcs052.dsca:
+before.display:
+	select	tcmcs052.dsca
+	from	tcmcs052
+	where	tcmcs052._index1 = {:dmisg134.cprj}
+	selectdo
+	selectempty
+		tcmcs052.dsca = ""
+	endselect
+	
+field.dmisg134.orno:
+when.field.changes:
+	if dmisg134.pono <> 0 then
+		get.po.details()
+	endif	
+	
+field.dmisg134.pono:
+before.zoom:
+	tdpur401.orno = dmisg134.orno
+	
+when.field.changes:
+	get.po.details()
+	
+field.elem.code:								|#GH255CR358.sn
+before.display:
+	select	tdpur401.cspa
+	from	tdpur401
+	where	tdpur401._index1 = {:dmisg134.orno,:dmisg134.pono}
+	as set with 1 rows
+	selectdo
+		elem.code = tdpur401.cspa
+	selectempty
+		elem.code = ""
+	endselect
+	
+field.elem.dsca:
+before.display:
+	select	tppdm090.desc
+	from	tppdm090
+	where	tppdm090._index1 = {:elem.code}
+	selectdo
+		elem.dsca = tppdm090.desc
+	selectempty
+		elem.dsca = ""
+	endselect								|#GH255CR358.en
+	
+	
+|****************************** function section **********************************
+functions:
+
+function read.parameters()
+{
+	tcmcs.dll0095.read.parm("tpmsl000")
+}
+
+function copy_receipt()
+{
+	long i
+	if dmisg134.stat = dmisg.receipt.issued then
+		old.receipt = dmisg134.rcno
+		old.revision = dmisg134.revn
+		
+		revision.no = val(dmisg134.revn)
+		revision.no = revision.no + 1
+		new.revision = "0" & str$(revision.no)
+		
+		dmisg134.rcno = dmisg134.rcno
+		dmisg134.revn = new.revision
+		dmisg134.cprj = dmisg134.cprj
+		dmisg134.item = dmisg134.item
+		dmisg134.bpid = dmisg134.bpid
+		dmisg134.nama = dmisg134.nama
+		dmisg134.stat = dmisg.receipt.submitted
+		dmisg134.user = logname$
+		dmisg134.date = utc.num()
+		dmisg134.suer = ""
+		dmisg134.sdat = 0
+		dmisg134.appr = ""
+		dmisg134.adat = 0
+		dmisg134.orno = dmisg134.orno
+		dmisg134.pono = dmisg134.pono
+		dmisg134.trno = ""
+		dmisg134.eunt = dmisg134.eunt
+		
+		for i = 1 to 7
+			dmisg134.sent(i) = tcyesno.no
+			dmisg134.rece(i) = tcyesno.no
+			dmisg134.subm(i) = tcyesno.no
+		endfor
+
+		db.insert(tdmisg134, db.retry)
+		
+		select	dmisg134.stat
+		from	dmisg134 for update
+		where	dmisg134._index1 = {:old.receipt, :old.revision}
+		selectdo
+			dmisg134.stat = dmisg.receipt.superseded
+			db.update(tdmisg134, db.retry)
+		endselect
+		
+		commit.transaction()
+		
+		dmisg134.rcno = dmisg134.rcno
+		dmisg134.revn = new.revision
+		execute(find.data)
+	endif
+
+}
+
+function get.po.details()
+{
+	select	tdpur401.cprj, tdpur401.item, tdpur401.otbp
+	from	tdpur401
+	where	tdpur401._index1 = {:dmisg134.orno, :dmisg134.pono}
+	selectdo
+		dmisg134.cprj = tdpur401.cprj
+		dmisg134.item = tdpur401.item
+		dmisg134.bpid = tdpur401.otbp
+	endselect
+	
+}
+
+function insert.tpisg229.data()										|#ISGEC0166.sn
+{
+
+			
+	var.trdt = utc.num()
+	var.bohd = "CT_POSTORDERDRGSUBMIT"
+	var.indv = dmisg134.rcno &"_"& str$(dmisg134.revn)
+	srno = 1
+	
+	get.project.element()
+	
+	
+	user = logname$
+	if user(1;1) = "0" then
+		user = str$(lval(user))
+	endif
+	
+	select tpisg229.*
+	from	tpisg229
+	where	tpisg229._index3 = {:var.bohd,:var.indv,:srno}
+	selectdo
+	selectempty
+		tpisg229.trdt = var.trdt
+		tpisg229.bohd = var.bohd
+		tpisg229.indv = var.indv
+		tpisg229.proj = dmisg134.cprj
+		tpisg229.elem = tdpur401.cspa
+		
+		tpisg229.srno = 1
+		tpisg229.user = toupper$(user)
+
+		db.insert(ttpisg229,db.skip.dupl,e)
+		
+		if e= 0  then
+			commit.transaction()
+		else
+			abort.transaction()
+		endif
+		
+	endselect
+	
+	select	count(tdisg002.docn):v.count,
+		sum(tdisg002.wght):v.wght,tdisg002.docn
+	from	tdisg002 
+	where	tdisg002._index1 = {:dmisg134.orno,:dmisg134.pono}
+	group by tdisg002.docn
+	selectdo
+	endselect
+	
+	select tpisg230.*
+	from	tpisg230 
+	where	tpisg230._index1 =  {:var.trdt,:var.bohd,:var.indv,:srno}
+	selectdo
+	selectempty
+		tpisg230.trdt = var.trdt
+		tpisg230.bohd = var.bohd
+		tpisg230.indv = var.indv
+		tpisg230.srno = srno
+		
+		tpisg230.dsno = get.last.serial.num()
+		tpisg230.proj = tdpur401.cprj
+		tpisg230.elem = tdpur401.cspa
+		tpisg230.dwno = get.docn()
+		tpisg230.wght = v.wght
+		tpisg230.pitc = v.count
+		
+		db.insert(ttpisg230,db.skip.dupl,e)
+		if e = 0 then
+			commit.transaction()
+		else
+			abort.transaction()
+		endif
+	endselect
+	
+	select	tdisg002.quom,
+		sum(tdisg002.qnty):var.qnty
+	from	tdisg002 
+	where	tdisg002._index1 = {:dmisg134.orno,:dmisg134.pono}
+	group by tdisg002.quom
+	selectdo
+		select	tpisg235.*
+		from	tpisg235
+		where	tpisg235._index1 = {:var.trdt,:var.bohd,:var.indv,:srno}
+		selectdo
+		selectempty
+			tpisg235.trdt = var.trdt
+			tpisg235.bohd = var.bohd
+			tpisg235.indv = var.indv
+			tpisg235.srno = srno
+			tpisg235.sern = get.last.unit.serial.number()
+			tpisg235.cuni = tdisg002.quom
+			tpisg235.qnty = var.qnty
+			
+			db.insert(ttpisg235,db.skip.dupl,e)
+			
+			if e = 0 then
+				commit.transaction()
+			else
+				abort.transaction()
+			endif
+		endselect
+		
+	endselect
+	
+	
+}
+
+
+function domain tcmcs.long get.last.unit.serial.number()
+{
+
+	select	tpisg235.sern
+	from	tpisg235
+	order by tpisg235.sern desc
+	as set with 1 rows
+	selectdo
+		var.sern = tpisg235.sern + 1
+	selectempty
+		var.sern = 0
+	endselect
+	
+	return(var.sern)
+}
+
+function get.project.element()
+{
+	select	tdpur401.cspa
+	from	tdpur401	
+	where	tdpur401._index1= {:dmisg134.orno, :dmisg134.pono}
+	selectdo
+	selectempty
+		tdpur401.cspa = ""
+	endselect
+
+}
+
+function domain tcmcs.long get.last.serial.num()
+{
+	select	tpisg230.dsno:v.dsno
+	from	tpisg230
+	order by tpisg230.dsno desc
+	as set with 1 rows
+	selectdo
+		v.dsno = v.dsno + 1
+	selectempty
+		v.dsno = 1
+	endselect
+
+	return(v.dsno)
+}
+
+function domain dmdoc.docid get.docn()
+{
+	select	tdisg002.docn
+	from	tdisg002 
+	where	tdisg002._index1 = {:dmisg134.orno, :dmisg134.pono}
+	selectdo
+	endselect
+	
+	return(tdisg002.docn)
+}														|#ISGEC0166.en

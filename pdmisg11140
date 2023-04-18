@@ -1,0 +1,348 @@
+|******************************************************************************
+|* dmisg1114  0  VRC B61U a7 isg 
+|* DCR
+|* Installation user             
+|* 2015-01-13
+|******************************************************************************
+|* Main table dmisg114 DCR, Form Type 1
+|******************************************************************************
+|* ISGEC004003, IT0047, Dharmendra, Dt. 13-01-2015, B61U a7 isg        
+|*****************************************************************************
+|* PATCH002030, IT0376, Mani sharma , Dt . 14-04-2015 , VRC B61U a7 isg  
+|* Email Alert on submit for approval
+|*
+|* ISGEC015056, Shilpa Janardanan, 4-Sep-2015, VRC B61U a7 isg
+|* Zoom session for Approver changed
+|*
+|* ISGECMOD021, Atul Ojha, 30/03/2018, VRC B61U a7 isg
+|* Modifications in Zoom Conditions
+|****************************** declaration section ***************************
+declaration:
+
+  table   tdmisg114 | DCR
+  table   tdmisg115
+  table   ttpmsl000
+  table   ttcmcs050
+  table   ttpptc100
+  table   tdmisg101
+  table   tdmisg001
+  table   ttccom001
+  table   tbpmdm001
+  table   tdmisg016
+  table   ttcemm030
+  
+  extern	domain	tfgld.user	o.emno, i.emno
+  extern	domain tcemm.grid	division
+  extern	domain	tcccty		grouped	
+  extern	domain	tcnama		nama
+  extern	domain	tcemno		dcr.user
+  
+  domain	tcmcs.str100	approver.remarks(1)
+  string	query.string(100), query.string1(500), dcrn.seri(3)
+  #include <bic_cmf>
+  #include <bic_text>
+|****************************** program section ********************************
+before.program:
+| 	o.emno = logname$
+	read.parameters()
+| 	query.string = "dmisg114.crea = :o.emno"
+| 	query.extend.where(query.string)
+	
+|****************************** choice section **********************************
+choice.process:
+before.choice:
+	if not check.conditions() then
+		choice.again()
+	endif	
+	
+on.choice:
+	send.for.approval()
+	if send.email.alert() then
+		message("Sending Email Failed")
+	endif
+|****************************** field section **********************************
+field.dmisg114.dcrn:
+before.zoom:
+	tcmcs050.nrgr = tpmsl000.dcnr
+
+field.dmisg114.cspa:
+before.zoom:
+	tpptc100.cprj = dmisg114.cprj
+	
+field.dmisg114.cprj:
+before.zoom:
+	dcrn.seri = dmisg114.dcrn(1;3)
+	select	dmisg016.eunt
+	from	dmisg016
+	where	dmisg016.seri = :dcrn.seri
+	selectdo
+		select	tcemm030.fcmp
+		from	tcemm030
+		where	tcemm030._index1 = {:dmisg016.eunt}
+		selectdo
+		selectempty
+		endselect
+	selectempty
+	endselect
+		
+	query.extend.where.in.zoom("tppdm600._index7 = {" & str$(tcemm030.fcmp) & "}")	
+
+
+field.dmisg114.user:	
+before.zoom:
+	division = ""
+	grouped = ""
+	query.string1= ""
+	
+	select 	tccom001.emno:i.emno
+	from	tccom001
+	where	tccom001._index4 = {:logname$}
+	as set with 1 rows
+	selectdo
+	selectempty
+	endselect
+	
+	select 	dmisg101.*
+	from	dmisg101
+	where	dmisg101._index2 = {:tccom001.emno, dmisg.cact.requestor}
+	as set with 1 rows
+	selectdo
+		division = dmisg101.eunt
+		grouped = dmisg101.grup
+	endselect
+	
+	if not isspace(grouped) then
+| 		query.string1 = "tccom001.emno in(select dmisg101.emno from dmisg101 where dmisg101._index1 = {" & quoted.string(division)	|#ISGECMOD021.so
+| 		query.string1 = strip$(query.string1) & " , " & quoted.string(grouped) & "}" 							|#ISGECMOD021.eo
+		
+		query.string1 = "dmisg101.emno in (select tccom001.emno from tccom001)"										|#ISGECMOD021.n	
+| 		query.string1 = strip$(query.string1) & " and dmisg101.eunt = " & quoted.string(division)
+		query.string1 = strip$(query.string1) & " and dmisg101.grup = " & quoted.string(grouped)
+		query.string1 = strip$(query.string1) & " and dmisg101.cact = dmisg.cact.approver"
+		query.string1 = strip$(query.string1) & " and dmisg101.dcrr = tcyesno.yes" 	
+		query.extend.where.in.zoom(query.string1)
+	else
+| 		query.string1 = "tccom001.emno in(select dmisg101.emno from dmisg101 where dmisg101._index1 = {" & quoted.string(division) & "}"	|#ISGECMOD021.o
+		
+		query.string1 = "dmisg101.emno in (select tccom001.emno from tccom001)"										|#ISGECMOD021.n
+| 		query.string1 = strip$(query.string1) & " and dmisg101.eunt = " & quoted.string(division)
+		query.string1 = strip$(query.string1) & " and dmisg101.cact = dmisg.cact.approver"
+		query.string1 = strip$(query.string1) & " and dmisg101.dcrr = tcyesno.yes" 
+		query.extend.where.in.zoom(query.string1)
+	endif
+	
+field.nama:
+before.display:
+	dcr.user = trim$(dmisg114.user)
+	select	tccom001.nama:nama
+	from	tccom001
+	where	tccom001._index4 = {:dcr.user}
+	selectdo
+	selectempty
+		nama = ""
+	endselect
+	
+functions:
+
+function read.parameters()
+{
+	tcmcs.dll0095.read.parm("tpmsl000")
+}
+
+function send.for.approval()
+{
+	
+	select 	dmisg114.sudt, dmisg114.stat
+	from	dmisg114 for update
+	where	dmisg114._index1 = {:dmisg114.dcrn}
+	selectdo
+		dmisg114.sudt = utc.num()
+		dmisg114.stat = dmisg.dcr.approval
+		dmisg114.proc = tcyesno.yes
+		dmisg114.rejc = tcyesno.no
+		db.update(tdmisg114, db.retry, e)
+		
+		select 	dmisg115.*
+		from	dmisg115
+		where	dmisg115._index1 = {:dmisg114.dcrn}
+		selectdo
+			select 	dmisg001.wfst
+			from	dmisg001 for update
+			where	dmisg001._index1 = {:dmisg115.docd, :dmisg115.revn}
+			selectdo
+				dmisg001.wfst = dmisg.wfst.underdcr
+				db.update(tdmisg001, db.retry, e)
+			endselect
+		endselect
+		
+		commit.transaction()
+	endselect
+	message("DCR send for approval")
+
+}
+
+function boolean check.conditions()
+{
+
+	if dmisg114.proc = tcyesno.yes then
+		message("DCR already send for approval")
+		return(false)
+	endif
+	
+	if isspace(dmisg114.reqs) then
+		message("Request priority can't be blank.")
+		return(false)
+	endif
+	
+	if isspace(dmisg114.dsca) then
+		message("DCR description can't be blank.")
+		return(false)
+	endif
+	
+	if dmisg114.apdt = 0 then
+		message("Approval Required date must fill.")
+		return(false)
+	endif
+	
+	if isspace(dmisg114.comp) then
+		message("Component Status can't be blank.")
+		return(false)
+	endif
+	
+	if isspace(dmisg114.user) then
+		message("DCR Approver can't be blank.")
+		return(false)
+	endif
+	
+	select	dmisg115.*
+	from	dmisg115
+	where	dmisg115._index1 = {:dmisg114.dcrn}
+	as set with 1 rows
+	selectdo
+	selectempty
+		message("No DCR Lines present.")
+		return(false)
+	endselect
+	
+	select	dmisg115.*
+	from	dmisg115
+	where	dmisg115._index1 = {:dmisg114.dcrn}
+	and	dmisg115.catg = ""
+	as set with 1 rows
+	selectdo
+		message("DCR category can't be blank in DCR Lines.")
+		return(false)
+	endselect
+	
+	return(true)
+}
+
+function long send.email.alert()							|PATCH002030.sn	
+{
+	string tmp.file(200),line(500)
+	long   fp,srno
+	domain	tclogn	user.id
+	long    message.ID
+        long    to.ID
+        long    attachment.ID
+        long    ret
+
+        domain ttcmf.prov service       
+                        |Infor ERP Enterprise eMessage Connector service for 
+                        |transporting messages
+        long stat       |Variable to hold return values
+        long mid        |CMF message id
+	
+	tmp.file = creat.tmp.file$(bse.tmp.dir$())
+	fp = seq.open(tmp.file,"w+")
+	if fp <=0 then
+		message("Temp file can not be created")
+		return(1)
+	endif
+	
+	user.id = logname$
+	
+	select 	bpmdm001.mail,tccom001.nama 
+	from 	tccom001,bpmdm001
+	where 	tccom001._index4 = {:user.id}
+	and	tccom001.emno refers to bpmdm001
+	as set with 1 rows
+	selectdo
+	selectempty
+		bpmdm001.mail = ""
+	endselect
+	
+	if isspace(bpmdm001.mail) then
+		message("Email ID for DCR Approver " & tccom001.nama & " Not maintained")
+		return(1)
+	endif		
+	
+	line = ""
+	if not isspace(dmisg114.user)  then
+| 		ret = text.to.buf("dmisg115.remk", language$, 1, approver.remarks)
+		line = strip$(line) & "Your DCR No. " & dmisg114.dcrn & " with Document No. "&dmisg115.docd & "and Revision No." &dmisg115.revn &" has been submitted"
+		line = strip$(line) & " for approval with the following remarks -" & strip$(shiftl$(dmisg115.remk)) & " by " & tccom001.nama & "."
+	endif
+	
+	seq.write(line,len(line),fp)
+	ret = seq.close(fp)
+	
+	
+	|******* Email Header
+        message.ID = cmf.create()
+	
+	if not isspace(dmisg114.user)  then
+		line = "Regarding Submission of DCR No. " & dmisg114.dcrn & "."
+	endif
+        ret = cmf.setClass(message.ID, "CMF.NOTE.EMAIL")
+        ret = cmf.setSubject(message.ID,line)
+	
+	|******** from ID
+	to.ID = cmf.createRecipient(message.ID, ttcmf.role.from)  
+	ret = cmf.setRecipientName(to.ID,tccom001.nama)
+        ret = cmf.setRecipientAddress(to.ID, bpmdm001.mail)	
+	ret = cmf.setRecipientType(to.ID, "SMTP")
+ 
+	|******** to ID
+	select 	bpmdm001.mail,tccom001.nama 
+	from 	tccom001,bpmdm001
+	where 	tccom001._index4 = {:dmisg114.user}
+	and	tccom001.emno refers to bpmdm001
+	selectdo
+		to.ID = cmf.createRecipient(message.ID, ttcmf.role.to)  
+		ret = cmf.setRecipientName(to.ID,tccom001.nama)
+		ret = cmf.setRecipientAddress(to.ID, bpmdm001.mail)	
+		ret = cmf.setRecipientResponsibility(to.ID, "TRUE")		
+		ret = cmf.setRecipientType(to.ID, "SMTP")
+	selectempty
+		message("Email ID for Approver "& dmisg114.user &" not Maintained" )
+		return(1)
+	endselect
+	
+	|********* Mail Body
+	attachment.ID = cmf.createAttachment(message.ID)
+	ret = cmf.setAttachmentBody(attachment.ID,ttyeno.yes)
+	ret = cmf.setAttachmentMIME(attachment.ID,"text/plain")                       
+	ret = cmf.setAttachmentFileName(attachment.ID,tmp.file,"abc.txt")
+
+
+	|*********  Send mail
+        if message.ID <>0 then
+                stat = cmf.startService("SMTP",2)
+                if stat<>0 then
+                        message("Message could not be sent "&
+                                "(Infor ERP Enterprise eMessage Connector"&
+                                " service did not start)")
+                        return(1)
+                endif
+                stat = cmf.send(message.ID,"SMTP")
+                if stat<>0 then
+                        message("Message could not be sent "& "(Infor ERP Enterprise eMessage Connector "&
+                                "service refused message)")
+                        cmf.stopService("SMTP",2)
+                        return(1)
+                endif
+                stat = cmf.stopService("SMTP",2)
+        endif
+	return(0)
+}											|PATCH002030.en
