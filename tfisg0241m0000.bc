@@ -1,0 +1,3711 @@
+|******************************************************************************
+|* tfisg0241m000  0  VRC B61U a7 isg 
+|* Update Cash Flow
+|* Merino1                       
+|* 2016-01-15
+|******************************************************************************
+|* Main table tfisg041 Cash Flow Data, Form Type 4
+|******************************************************************************
+|* ID ISG01010, Shilpa Janardanan, 1-7-2016, VRC B61U a7 isg  
+|*
+|* ID ISGEC01046, Ritu Shrivastava, 02-09-2016, VRC B61U a7 isg
+|* To select single comapny instaed to providing in range.
+|*
+|* ID ISGEC016022, Manish Manchanda, 2016-09-14
+|* Modifications for issues
+|*
+|* ID ISGEC01037, Gokul Chaurasia, 20-02-2017
+|* Modifications
+|*
+|* ISGEC017002, Manish Manchanda, 2017-03-02
+|* Modifications - Redo of logic
+|*
+|* ID ISGEC01084, Priya Jindal, 18/8/2018
+|* Check for 700 company
+|* 
+|* "bharti",chnages against the name.
+|* 
+|* "GH238CR530_000", Modification in Accounts Cashflow.
+|* Paras Kukreti, 2019-12-16
+|*
+|* "GH251CR545_000", Only Automated record should be delete from table(tfisg041)
+|* Paras Kukreti, 2019-01-22
+|* 
+|* "GH265CR554_000", Company No. range required in session "Update Cash flow 
+|* data", 
+|* Paras Kukreti, 2020-02-11
+|* 
+|* "GH281CR579_000", Changes in  Cash flow data, 
+|* Paras Kukreti, 2020-02-28
+|*
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttfisg041 | Cash Flow Data
+	table	ttfgld005
+	table	ttfgld106
+	table	ttfisg039
+| 	table	ttfisg040
+	table	ttfacp251
+	table	ttfacp200
+	table	ttfacr200
+	table	ttcemm170
+	table	ttdpur400
+	table	ttfcmg101
+	table	ttfcmg401
+	table	ttfcmg204
+	table	ttfisg039
+	table	ttfisg000
+	table	ttfgld112
+	table	ttfgld015
+	table	ttfgld018
+	table	ttfgld011
+	table	ttfgld008
+	table	ttfisg043			|#ISGEC017002.n
+	table	ttfcmg112			|#ISGEC017002.n
+	table	ttfisg044			|#ISGEC017002.n
+	table	ttfcmg110			|#ISGEC017002.n
+	
+
+	extern  domain  tfgld.year		year
+	extern  domain  tfgld.prod		prno.f,prno.t
+	extern  domain  tfgld.date		dcdt.f,dcdt.t
+	extern  domain  tfacp.base		selection.by
+	extern  domain  tccprj			v.cprj
+	extern  domain  tcncmp			curr.comp, ncmp.f|, ncmp.t
+	extern  domain  tcncmp			ncmp.t, ncmp.f1			|#GH265CR554_000.sn	
+	
+|*********************************** Global Variables *************************************************	
+	extern	domain	tcsess		i.session.code
+	extern	domain	tfgld.btno	i.batch.number
+	extern	domain	tfgld.ttyp	i.transaction.type,i.trans.type, v.rtyp
+	extern	domain	tfgld.docn	i.document,i.document.no, v.rdoc
+	extern	domain	tfgld.year	i.fiscal.year
+	extern	domain	tfgld.prod	i.fiscal.period
+	extern	domain	tccom.bpid	i.customer
+	extern	domain	tfgld.lino	i.lino
+	extern	domain	tfgld.schn	i.schedule
+	extern	domain	tfgld.sern	i.sequence
+	extern	domain	tcncmp		i.ncmp
+	extern	domain	tfcmg.tadv	i.tadv							
+	extern	domain	tfgld.lino	i.lino, t.srno
+	extern	long			i.table						
+		long			ret_val
+	extern	domain	tfcmg.dbdv	x.tadv
+	extern	domain	tfcmg.tran		i.tfcmg204.tran
+	extern	domain	tfgld.ttyp		i.ttyp
+	extern	domain	tfgld.docn		i.docn
+	extern	domain	tfgld.amnt		i.amnt
+	extern	domain	tfgld.date		i.docd	,fin.date
+	extern	domain	tfmode			i.mode
+| 	extern domain	tfcmg.tran		v.tran
+	extern domain	tfcash.type		v.tran,g.tadv
+	extern	domain	tfcmg.tadv		v.tadv
+	extern domain	tfcmg.dbdv		v.dbdv
+	domain	tccprj				o.cprj	
+	domain	tfcash.reasons			o.reason
+| 	domain	tcpono			g.tadv
+	domain	tcdate			rdat.f,rdat.t
+	domain	tcmcs.str30		result
+	long	yearno, monthno,month_dayno
+	long	yearno1 ,monthno1,month_dayno1
+	domain tfcash.flow	o.ctyp		|test.n
+	extern domain	tccprj		project
+	domain	tcbool	once.transaction					|#ISGEC016022.n
+	domain	tcpono	v.srno, new.srno					|#ISGEC016022.n
+	domain	tcbool		found				|#ISGEC016022.n
+	domain	tcncmp	temp.comp
+	domain	tfgld.dbcr	io.dbcr, ic.dbcr
+	domain	tfcmg.tcsh	ic.tcsh				|#ISGEC016022.n
+	domain	tfgld.lino	r.olin, o.tfgld106.olin
+	domain	tcbool		catg.once.done			|#ISGEC017002.n
+	#include<bic_dam>
+	#include "itfisgdll0041"
+|****************************** program section ********************************
+before.program:
+| 	domain tccotp		i.cotp
+| 	select	tfisg039.reas, tfisg039.ctyp
+| 	from	tfisg039
+| 	where	tfisg039._index1 = 7
+| 	and	tfisg039.cotp =  "   "
+| 	and	tfisg039.dglf <= "3110611     "
+| 	and	tfisg039.dglt >= "3110611     "
+| 	and	tfisg039.cglf <= "5622110     "
+| 	and	tfisg039.cglt >= "5622110     "
+| 	selectdo
+| 	selectempty
+| 		o.reason = tfcash.reasons.user.input
+| 	endselect	
+
+	curr.comp = get.compnr()	
+| 	if	curr.comp	<>	200	then	|ISGEC01084.o
+	if	(curr.comp<>200)	 and  (curr.comp<>700) then	|ISGEC01084.n
+| 		message("Please open the session in Company 200 .")		|ISGEC01084.o
+		message("Please open the session in Company 200 or 700 .")		|ISGEC01084.n
+		exit()
+	endif
+	tcmcs.dll0095.read.parm("tfisg000")
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** field section **********************************
+field.selection.by:
+when.field.changes:
+	if selection.by = tfacp.base.date then
+		year = 0
+		prno.f = 0
+		prno.t = 99
+		disable.fields("year","prno.f","prno.t")
+		enable.fields("dcdt.f","dcdt.t")
+	else
+		dcdt.f = 0
+		dcdt.t = date.num()
+		enable.fields("year","prno.f","prno.t")
+		disable.fields("dcdt.f","dcdt.t")
+	endif
+		
+field.prno.f:
+before.zoom:
+	tfgld005.ptyp = tfgld.ptyp.financial
+	tfgld005.year = year
+when.field.changes:
+	prno.t = prno.f
+check.input:
+	select	tfgld005.stdt
+	from	tfgld005
+	where	tfgld005._index1	=	{tfgld.ptyp.financial,:year,:prno.f}
+	as	set with 1 rows
+	selectdo
+	selectempty
+		tfgld005.stdt	=	0
+	endselect
+	
+	fin.date	=	date.to.num(2014,04,01)
+	if	tfgld005.stdt	<	fin.date	then
+		message("Start date cannot be prior to 01/04/2014.")
+		set.input.error("",e)
+	endif
+	
+field.prno.t:
+before.zoom:
+	tfgld005.ptyp = tfgld.ptyp.financial
+	tfgld005.year = year
+check.input:
+	select	tfgld005.stdt
+	from	tfgld005
+	where	tfgld005._index1	=	{tfgld.ptyp.financial,:year,:prno.f}
+	as	set with 1 rows
+	selectdo
+	selectempty
+		tfgld005.stdt	=	0
+	endselect
+	
+	fin.date	=	date.to.num(2014,04,01)
+	if	tfgld005.stdt	<	fin.date	then
+		message("Start date cannot be prior to 01/04/2014.")
+		set.input.error("",e)
+	endif
+
+field.dcdt.f:
+when.field.changes:
+	dcdt.t = dcdt.f
+
+check.input:
+| 	fin.date = date.to.num  (2016,04,01)				|#ISGEC016022.o
+	fin.date = date.to.num  (2016,12,01)				|#ISGEC016022.n
+	if dcdt.f < fin.date then
+| 		set.input.error("tfisg0241.001",e)			|#ISGEC017002.o
+	endif
+									|#ISGEC016022.sn
+field.dcdt.t:
+check.input:
+	fin.date	=	date.to.num(2016,12,01)	
+	if dcdt.t < fin.date then
+| 		set.input.error("tfisg0241.001",e)			|#ISGEC017002.o
+	endif
+									|#ISGEC016022.en
+field.ncmp.f:
+| when.field.changes:							|#ISGEC01046.o
+| 	ncmp.t = ncmp.f							|#ISGEC01046.o
+when.field.changes:								|#GH265CR554_000.n
+	ncmp.t = ncmp.f1							|#GH265CR554_000.n
+check.input:
+| 	if ncmp.f = 0 then							|#GH265CR554_000.n
+	if ncmp.f1 = 0 then
+		set.input.error("tfisg0241.002",e)
+	endif
+	
+field.ncmp.f1:									|#GH281CR579_000.sn
+when.field.changes:						
+	ncmp.t = ncmp.f1							|#GH281CR579_000.en
+	
+| before.zoom:
+| 	query.extend.where.in.zoom("ttaad100.comp in (200,400)")
+|*********** choice section **************
+choice.update.cash.flow:
+before.choice:
+	check.all.input()
+
+on.choice:
+	delete.tfisg041()				|bharti.n
+| 	update.cash.flow()						|#ISGEC017002.o
+| 	redo.update.cash.flow()						|#ISGEC017002.n		|#GH265CR554_000.o
+	for ncmp.f = ncmp.f1 to ncmp.t						|#GH265CR554_000.sn
+		select	ttaad100.comp
+		from	ttaad100
+		where	ttaad100._index1 = :ncmp.f
+		and	ttaad100._compnr = 0
+		as set with 1 rows
+		selectdo
+			redo.update.cash.flow()	
+		endselect
+	endfor									|#GH265CR554_000.en
+	message("Process Completed Successfully")			|#ISGEC017002.n
+	
+|********************************** function section *********************************
+functions:
+
+| function  extern  update.cash.flow()
+function   update.cash.flow()
+{
+	get.date()
+	select	tcemm170.fcua, tcemm170.comp
+	from	tcemm170
+| 	where	tcemm170._index1 = {:curr.comp}
+| 	where	tcemm170._index1 inrange {:ncmp.f} and {:ncmp.t}		|#ISGEC01046.o
+	where	tcemm170._index1 = {:ncmp.f} 					|#ISGEC01046.n
+	selectdo
+		switch.to.company(tcemm170.comp)
+| 	endselect
+	
+| 	if selection.by = tfacp.base.date then
+| 		select_on_date_basis()
+| 	else	
+| 		select_on_period_basis()
+| 	endif	
+| 		get.date()
+		
+		get.records()
+	endselect
+	switch.to.company(curr.comp)
+}
+
+function get.date()
+{
+	if dcdt.f =0   then
+		yearno  =1970
+		monthno = 01
+		month_dayno = 01
+		set.fmin(rdat.f,"tcdate")
+	else	
+		num.to.date(dcdt.f, yearno, monthno, month_dayno)
+		rdat.f = date.to.utc  (yearno,monthno,month_dayno, 00, 00,00)
+		result = sprintf$("UTC: %u(%02d/%02m/%04Y) %U(%02h%x%02m%x%025 %a)", rdat.f,rdat.f) 
+	endif
+	num.to.date(dcdt.t, yearno1, monthno1, month_dayno1)
+	rdat.t = date.to.utc  (yearno1,monthno1,month_dayno1, 23,59,59)
+	result = sprintf$("UTC: %u(%02d/%02m/%04Y) %U(%02h%x%02m%x%025 %a)", rdat.t, rdat.t) 
+
+	
+}
+function get.records()
+{
+	initailise.variables()
+	If not Getdatafromtfcmg101() then		
+		dal.set.error.message("@ No data found in tfcmg101")
+	endif
+	
+	initailise.variables()
+	switch.to.company(tcemm170.comp)
+	if not Getdatafromtfcmg401() then			|#Direct Debit Records
+		dal.set.error.message("@ No data found in tfcmg401")
+	endif
+	
+| 	initailise.variables()
+
+| 	if not Getdatafromtfcmg204() then			|# Bank Transaction records
+| 		dal.set.error.message("@ No data found in tfcmg204")
+| 	endif
+
+	initailise.variables()
+	switch.to.company(tcemm170.comp)		|test.n
+	if not Getdatafromtfgld106() then
+		dal.set.error.message("@ No data found in tfgld106")
+	endif
+	
+	initailise.variables()
+	switch.to.company(tcemm170.comp)
+	if not GetJVdatafromtfgld106() then
+		dal.set.error.message("@ No data found for JV in tfgld106")
+	endif
+
+	message("Process Completed Successfully")
+
+
+}
+
+
+function boolean Getdatafromtfcmg101()
+{
+	select tfcmg101.btno, tfcmg101.ifbp, tfcmg101.comp,
+		tfcmg101.tadv, tfcmg101.ttyp, tfcmg101.ninv,
+		tfcmg101.schn, tfcmg101.srno, tfcmg101.ptyp,
+		tfcmg101.pdoc
+	from   tfcmg101
+| 	where  tfcmg101.rdat inrange {:dcdt.f} and {:dcdt.t}
+	where  tfcmg101.rdat inrange {:rdat.f} and {:rdat.t}
+	and	tfcmg101.ttyp	not in	("AAP","AAR","PDA")		|#ISGEC016022.n
+| 	and	tfcmg101.btno	=	216942			|MM
+	selectdo
+		switch.to.company(tcemm170.comp)
+		i.batch.number = tfcmg101.btno
+		i.customer     = tfcmg101.ifbp
+		i.ncmp	       = tfcmg101.comp
+		i.tadv	       = tfcmg101.tadv
+		i.trans.type   = tfcmg101.ttyp
+		i.document     = tfcmg101.ninv
+		i.schedule     = tfcmg101.schn
+		i.sequence     = tfcmg101.srno
+		i.transaction.type = tfcmg101.ptyp
+		i.document.no =	tfcmg101.pdoc
+		
+		v.tadv = tfcmg101.tadv
+		
+		i.mode = tfmode.advice.paym
+		dal.start.business.method("tfisg041","InsertDataFrom.tfcmg101",ret_val,
+			i.batch.number,i.customer,i.ncmp,
+			i.tadv,i.trans.type,i.document,
+			i.schedule,i.sequence,i.transaction.type,i.document.no,i.mode,0,0,
+			curr.comp)
+
+	selectempty
+		i.batch.number = 0
+		i.customer     = ""
+		i.ncmp	       = 0
+		i.tadv	       = empty
+		i.trans.type   = ""
+		i.document     = 0
+		i.schedule     = 0
+		i.sequence     = 0
+		i.transaction.type = ""
+		i.document.no = 0
+		
+		return(false)
+	endselect
+	
+	return(true)
+}
+
+function boolean Getdatafromtfcmg401()
+{	
+	select tfcmg401.btno, tfcmg401.itbp, tfcmg401.comp,
+		tfcmg401.tadv, tfcmg401.ttyp, tfcmg401.ninv,
+		tfcmg401.schn, tfcmg401.srno
+	from   tfcmg401
+| 	where  tfcmg401.rdat inrange  :dcdt.f and :dcdt.t	
+
+	where  tfcmg401.rdat inrange {:rdat.f} and {:rdat.t}
+	and	tfcmg401.ttyp	not in	("AAP","AAR","PDA")		|#ISGEC016022.n
+| 	and	tfcmg401.btno = 9250
+| 	and	tfcmg401.ttyp ="B10"
+| 	and	tfcmg401.ninv = 36009698
+	selectdo
+		switch.to.company(tcemm170.comp)
+		i.batch.number = tfcmg401.btno
+		i.customer     = tfcmg401.itbp
+		i.ncmp	       = tfcmg401.comp
+		x.tadv	       = tfcmg401.tadv
+		i.trans.type   = tfcmg401.ttyp
+		i.document     = tfcmg401.ninv
+		i.schedule     = tfcmg401.schn
+		i.sequence     = tfcmg401.srno
+
+| 		if etol(x.tadv) = 5 then
+| 			v.dbdv = 9
+| 		else if etol(x.tadv) = 6 then
+| 			v.dbdv = 10
+| 		     else 
+| 			v.dbdv = etol(x.tadv)	
+| 		     endif
+| 		endif
+			
+		i.mode = tfmode.advice.rec
+		dal.start.business.method("tfisg041","InsertDataFrom.tfcmg401",ret_val,
+			i.batch.number,
+			i.customer,
+			i.ncmp,
+			x.tadv,
+			i.trans.type,
+			i.document,
+			i.schedule,
+			i.sequence,
+			i.mode,
+			0,
+			0,
+			curr.comp)
+	selectempty
+		i.batch.number = 0
+		i.customer     = ""
+		i.ncmp	       = 0
+		x.tadv	       = empty		
+		i.trans.type   = ""
+		i.document     = 0
+		i.schedule     = 0
+		i.sequence     = 0
+
+		return(false)
+	endselect
+	
+	return(true)
+
+}
+
+function boolean Getdatafromtfcmg204()
+{
+	select tfcmg204.btno, tfcmg204.bpid, tfcmg204.comp, tfcmg204.tran,
+		tfcmg204.tinv, tfcmg204.ninv, tfcmg204.schn, tfcmg204.ttyp, 
+		tfcmg204.docn, tfcmg204.lino, tfcmg204.amnt, tfcmg204.docd,
+		tfcmg204.fyer, tfcmg204.fprd,tfcmg204.ccur
+	from   tfcmg204
+	where  tfcmg204.docd inrange  :dcdt.f and :dcdt.t
+	selectdo
+		switch.to.company(tcemm170.comp)
+		i.batch.number = tfcmg204.btno
+		i.customer     = tfcmg204.bpid
+		i.ncmp	       = tfcmg204.comp
+		i.tfcmg204.tran = tfcmg204.tran
+		i.trans.type	= tfcmg204.tinv
+		i.document	= tfcmg204.ninv
+		i.schedule	= tfcmg204.schn
+		i.ttyp		= tfcmg204.ttyp
+		i.docn		= tfcmg204.docn
+		i.lino		= tfcmg204.lino
+		i.amnt		= tfcmg204.amnt
+		i.docd		= tfcmg204.docd
+		i.fiscal.year	= tfcmg204.fyer
+		i.fiscal.period = tfcmg204.fprd
+| 		get.project(o.cprj,o.reason)
+		performdatainsertion()
+	selectempty
+		i.batch.number  = 0
+		i.customer	= ""
+		i.ncmp		= 0
+		i.tfcmg204.tran	= empty
+		i.trans.type	= ""
+		i.document	= 0
+		i.schedule	= 0
+		i.ttyp		= ""
+		i.docn		= 0
+		i.lino		= 0
+		i.amnt		= 0
+		i.docd		= 0
+		i.fiscal.year	= 0
+		i.fiscal.period = 0
+		
+		return(false)
+	endselect
+	
+	return(true)
+
+}
+
+function performdatainsertion()
+{
+	domain	tccprj	o.cprj
+	domain	tfcash.reasons	o.reason
+| 	v.tran = tfcmg204.tran
+		
+	i.trans.type = i.ttyp
+	i.document = i.docn
+	i.schedule = i.lino
+	i.sequence = 0
+	i.mode = tfmode.direct.paym
+| 	dal.start.business.method("tfisg041","InsertIntotfisg041.1",ret_val,
+| 		i.batch.number,		|Batch
+| 		i.fiscal.year,		|Year
+| 		i.trans.type,		|Trasactions
+| 		i.document,		|Document
+| 		i.schedule,		|Line
+| 		i.sequence,		|Sequence
+| 		i.fiscal.period,	|Period	
+| 		i.customer,		|Business Partner,
+| 		tfcmg204.ccur,		|Currency
+| 		i.amnt,			|Amount
+| 		tfgld106.amth(1),			|Amount
+| 		tfcmg204.rate(1),	|Rate
+| 		0,			|Trasactions Date
+| 		i.mode,			|Mode Of Update
+| 		0,
+| 		i.tfcmg204.tran,
+| 		i.ncmp,			|Orginal Company
+| 		tfisg039.ctyp,
+| 		i.batch.number,
+| 		i.ttyp,
+| 		i.docn,
+| 		i.docd,
+| 		i.lino,
+| 		o.cprj,
+| 		"",
+| 		"",
+| 		0,
+| 		"",
+| 		"",
+| 		""
+| 		o.reason)
+| 				
+}
+
+
+function initailise.variables()
+{	
+	i.batch.number	   = 0
+	i.transaction.type = ""
+	i.trans.type	   = ""
+	i.document	   = 0
+	i.document.no	   = 0
+	i.fiscal.year	   = 0
+	i.fiscal.period	   = 0
+	i.customer	   = ""
+	i.lino             = 0
+	i.schedule 	   = 0
+	i.sequence	   = 0
+	i.ncmp		   = 0
+	i.tadv	           = empty
+	i.lino		   = 0
+| 	v.tadv		   = 0
+	ret_val            = 0
+	x.tadv             = empty
+	i.tfcmg204.tran    = empty
+	i.ttyp  	   = ""
+	i.docn		   = 0
+	i.amnt		   = 0
+	i.docd		   = 0
+	i.mode             = empty
+
+}
+
+function get.project(domain	tfgld.ttyp	c.ttyp,
+			domain	tfgld.docn	c.docn,
+			domain	tfgld.ttyp	i.ttyp,
+			domain	tfgld.docn	i.docn,
+		ref domain	tccprj	o.cprj,
+		ref	domain	tfcash.reasons	o.reason)
+{
+	domain	tcncmp	curr.comp1
+	domain	tcorno	v.orno
+	
+	
+	o.cprj		= ""				|#ISGEC016022.n
+	tdpur400.cotp 	= ""				|#ISGEC016022.n
+	o.reason 	= empty				|#ISGEC016022.n
+	curr.comp1 = get.compnr()
+	on case tfgld106.tran
+		
+	case tfcmg.tran.unalloc.paym:	
+	case tfcmg.tran.advance.paym:	
+	case tfcmg.tran.journal:
+	case tfcmg.tran.supplier:	
+	case tfcmg.tran.unalloc.rec:			|#ISGEC016022.sn	
+	case tfcmg.tran.customer:		
+	case tfcmg.tran.advance.rec:			|#ISGEC016022.en
+		select	tfacp251.orno, tfacp251.pono, tfacp251.sqnb
+		from	tfacp251
+		where	tfacp251._index1 = {:curr.comp1,:c.ttyp,:c.docn}
+		as set with 1 rows
+		selectdo
+			select	tdpur401.cprj:o.cprj, tdpur400.cotp
+			from	tdpur401,tdpur400
+			where	tdpur401._index1 = {:tfacp251.orno, :tfacp251.pono, :tfacp251.sqnb}
+			and	tdpur401.orno refers to tdpur400
+			selectdo
+			selectempty
+				tdpur400.cotp = ""	
+			endselect
+		selectempty
+			tdpur400.cotp = ""
+| 			get.from.tfgld106(tfgld.dbcr.debit,i.ttyp,i.docn,o.cprj)
+			select tfacp200.cdf_prno
+			from	tfacp200
+			where	tfacp200._index1 = {:c.ttyp, :c.docn}
+			and	tfacp200.docn = 0
+			as set with 1 rows
+			selectdo
+				get.var(pid, "tfacp200.cdf_prno", v.orno)
+				select	tdpur401.cprj:o.cprj, tdpur400.cotp
+				from	tdpur401,tdpur400
+				where	tdpur401._index1 = {:v.orno}
+				and	tdpur401.orno refers to tdpur400
+				selectdo
+				selectempty
+					tdpur400.cotp = ""	
+				endselect
+			selectempty
+| 				get.from.tfgld106(tfgld.dbcr.debit,c.ttyp,c.docn,o.cprj)
+				get.from.tfgld106(tfgld.dbcr.debit,c.ttyp,c.docn,i.ttyp,i.docn,o.cprj)
+			endselect
+			
+
+		endselect
+		break
+| 	case tfcmg.tran.unalloc.rec:					|#ISGEC016022.so	
+| 	case tfcmg.tran.customer:		
+| 	case tfcmg.tran.advance.rec:					|#ISGEC016022.eo
+| 			get.from.tfgld106(tfgld.dbcr.credit,c.ttyp,c.docn,o.cprj)
+| 			get.from.tfgld106(tfgld.dbcr.credit,c.ttyp,c.docn,i.ttyp,i.docn,o.cprj)	|#ISGEC016022.o
+| 		break										|#ISGEC016022.o
+	endcase
+	get.reason(i.ttyp,i.docn,tdpur400.cotp,o.cprj,o.reason)	
+}
+
+function get.from.tfgld106(domain	tfgld.dbcr	i.dbcr,
+			domain	tfgld.ttyp		i.ttyp,
+			domain	tfgld.docn		i.docn,
+			domain	tfgld.ttyp		i.otyp,
+			domain	tfgld.docn	 	i.odoc,
+		ref	domain		tccprj		o.cprj)
+{
+	select tfgld112.*
+	from	tfgld112
+	where	tfgld112._index1 = {:curr.comp,:i.otyp,:i.odoc}
+	and	tfgld112.typt = :i.ttyp
+	and	tfgld112.doct = :i.docn
+	selectdo
+		select	tfgld106.dim1:o.cprj, tfgld106.leac
+		from	tfgld106
+		where	tfgld106._index1 = {:i.ttyp,:i.docn}
+		and	tfgld106.dbcr = :i.dbcr
+		and	tfgld106.dim1 <> ""
+		and	tfgld106._compnr = :tfgld112.comt
+		selectdo			
+		selectempty
+	| 		o.cprj = "ACCTS"
+			select tfacr200.cdf_cprj
+			from	tfacr200
+			where	tfacr200._index1 = {:i.ttyp,:i.docn}
+			and	tfacr200._compnr = :tfgld112.comt
+			selectdo
+				get.var(pid,"tfacr200.cdf_cprj", o.cprj)
+			selectempty
+				o.cprj = tfisg000.cprj
+			endselect	
+		endselect	
+	selectempty
+									|#ISGEC016022.sn
+		select	tfgld106.dim1:o.cprj, tfgld106.leac
+		from	tfgld106
+| 		where	tfgld106._index1 = {:i.ttyp,:i.docn}					|#20170209.o
+		where	tfgld106._index1 = {:i.ttyp,:i.docn,:i.schedule,:i.sequence}		|#20170209.n
+		and	tfgld106.dim1 <> ""
+		selectdo
+		selectempty
+			select	tfgld106.dim1:o.cprj, tfgld106.leac
+			from	tfgld106
+			where	tfgld106._index1 = {:v.rtyp,:v.rdoc}
+			and	tfgld106.dim1 <> ""
+			and	tfgld106._compnr	=	:temp.comp
+			selectdo
+			selectempty
+									|#ISGEC016022.en
+		o.cprj = tfisg000.cprj
+		endselect						|#ISGEC016022.n
+		endselect						|#ISGEC016022.n
+	endselect
+}
+
+
+
+
+function get.reason(domain	tfgld.ttyp	i.ttyp,
+			domain	tfgld.docn	i.docn,
+			domain 	tccotp		i.cotp,
+			domain	tccprj		i.cprj,
+		ref  domain	tfcash.reasons	o.reason)
+{
+	domain	tccprj	dimn1	
+	domain	tfgld.ttyp	v.typt, v.otyp
+	domain	tfgld.docn	v.odyc, v.odoc
+	domain	tfgld.leac	temp.leac, new.temp.leac
+	
+	dimn1 = i.cprj(1;2)
+	domain	tfgld.leac debit.leac, credit.leac
+									|#ISGEC016022.sn
+	select	tfgld112.typt,
+		tfgld112.doct,
+		tfgld112.comt
+	from	tfgld112
+	where	tfgld112._index1 	= 	{:tcemm170.comp,:i.ttyp,:i.docn,:temp.comp}
+	selectdo								
+	
+		select	tfgld015.rlea
+		from	tfgld015
+		where	tfgld015._index1 	=	{:tcemm170.comp,:tfgld112.comt,:tfgld112.typt}
+		as	set with 1 rows
+		selectdo
+		endselect
+		
+		select 	tfgld106.otyp:v.typt,
+			tfgld106.odoc:v.odyc
+		from	tfgld106
+		where	tfgld106._index1 	= 	{:tfgld112.typt,:tfgld112.doct,:tfgld106.olin}	
+		and	tfgld106.leac		<>	:tfgld015.rlea
+		and	tfgld106._compnr 	= 	:tfgld112.comt	
+		as	set with 1 rows
+		selectdo
+			i.ttyp	=	v.typt
+			i.docn	=	v.odyc
+		endselect
+	selectempty
+		v.typt	=	i.ttyp
+		tfgld112.comt	=	tcemm170.comp	
+		tfgld112.doct	=	i.docn
+	endselect		
+	
+	select	tfgld011.cont
+	from	tfgld011
+	where	tfgld011._index1	=	{:v.typt}
+	as	set with 1 rows
+	selectdo
+	selectempty
+		tfgld011.cont	=	""
+	endselect
+	
+	select	tfgld106.otyp:v.otyp,
+		tfgld106.odoc:v.odoc,
+		tfgld106.dbcr,
+		tfgld106.leac
+	from	tfgld106
+	where	tfgld106._index1 	= 	{:v.typt,:tfgld112.doct}	
+	and	tfgld106._index3	=	{:tfgld011.cont}
+	and	tfgld106._compnr	=	:tfgld112.comt
+	as	set with 1 rows
+	selectdo
+		on	case	tfgld106.dbcr
+		case	tfgld.dbcr.debit:
+			select	tfgld106.leac:temp.leac
+			from	tfgld106
+			where	tfgld106._index1	=	{:v.otyp,:v.odoc}
+			and	tfgld106.dbcr		=	tfgld.dbcr.credit
+			and	tfgld106._compnr	=	:tfgld112.comt
+			as	set with 1 rows
+			selectdo
+			endselect
+			debit.leac	=	tfgld106.leac
+			credit.leac	=	temp.leac
+			break
+		case	tfgld.dbcr.credit:
+			select	tfgld106.leac:temp.leac
+			from	tfgld106
+			where	tfgld106._index1	=	{:v.otyp,:v.odoc}
+			and	tfgld106.dbcr		=	tfgld.dbcr.debit
+			and	tfgld106._compnr	=	:tfgld112.comt
+			as	set with 1 rows
+			selectdo
+			endselect
+			debit.leac	=	temp.leac
+			credit.leac	=	tfgld106.leac
+			break
+		endcase
+	selectempty	
+									|#ISGEC016022.en
+	select	tfgld106.leac,tfgld106.dbcr
+	from	tfgld106
+| 	where	tfgld106._index1 = {:i.ttyp,:i.docn}			|#ISGEC016022.o
+	where	tfgld106._index1 = {:i.ttyp,:i.docn,:tfgld106.olin}	|#ISGEC016022.n
+	and	tfgld106._compnr	=	:tfgld112.comt
+	as	set with 2 rows					|#ISGEC016022.n
+	selectdo
+		if tfgld106.dbcr = tfgld.dbcr.debit then
+			debit.leac = tfgld106.leac
+		else
+			credit.leac = tfgld106.leac
+		endif
+	endselect
+| 	g.tadv = etol(tfgld106.tran)
+	
+	endselect							|#ISGEC016022.n
+	switch.to.company(tcemm170.comp)
+	on case etol(tfgld106.tran)
+		case	1:
+		case	4:
+		case	6:
+			if tfisgdll0041.check.dual.property(g.tadv,i.cotp,debit.leac,credit.leac) then
+				if not  tfisgdll0041.get.reason.tfisg042(g.tadv,dimn1,o.reason) then
+					tfisgdll0041.get.reason.tfisg039(g.tadv,i.cotp,debit.leac,credit.leac,o.reason,o.ctyp)
+					if o.ctyp = empty then	
+						o.ctyp = tfcash.flow.in
+					endif
+				endif	
+			else
+				tfisgdll0041.get.reason.tfisg039(g.tadv,i.cotp,debit.leac,credit.leac,o.reason, o.ctyp)
+				if o.ctyp = empty then
+					o.ctyp = tfcash.flow.in
+				endif
+			endif
+			if	tfgld112.comt	=	tcemm170.comp	then		|#ISGEC016022.n
+				if	io.dbcr = tfgld.dbcr.debit then
+					o.ctyp	=	tfcash.flow.out
+				else
+					o.ctyp	=	tfcash.flow.in					
+				endif
+			else								|#ISGEC016022.sn
+				if	ic.dbcr	=	tfgld.dbcr.debit	then		
+					o.ctyp	=	tfcash.flow.out		
+				else
+					o.ctyp	=	tfcash.flow.in
+				endif			
+			endif							|#ISGEC016022.en
+			
+			break
+		default:
+			tfisgdll0041.get.reason.tfisg039(g.tadv,i.cotp,debit.leac,credit.leac,o.reason,o.ctyp)
+| 			if o.ctyp = empty then					|#ISGEC01037.so
+| 				o.ctyp = tfcash.flow.out
+| 			endif							|#ISGEC01037.eo
+| 			if o.ctyp = empty then					|#ISGEC01037.sn
+				if	tfgld112.comt	=	tcemm170.comp	then		|#ISGEC016022.n
+					if	io.dbcr = tfgld.dbcr.debit then
+	 					o.ctyp	=	tfcash.flow.out
+					else
+	 					o.ctyp	=	tfcash.flow.in					
+					endif
+				else								|#ISGEC016022.sn
+					if	ic.dbcr	=	tfgld.dbcr.debit	then		
+						o.ctyp	=	tfcash.flow.in		
+					else
+						o.ctyp	=	tfcash.flow.out	
+					endif			
+| 					if	tfgld112.comt	=	400	and			|test.so
+| 						tcemm170.comp	=	200	then
+| 						if	ic.dbcr	=	tfgld.dbcr.debit	then		
+| 							o.ctyp	=	tfcash.flow.out	
+| 						else
+| 							o.ctyp	=	tfcash.flow.in	
+| 						endif			
+| 					endif								|test.eo
+| 					if	etol(ic.tcsh)	=	6	then
+| 						if	ic.dbcr	=	tfgld.dbcr.debit	then		
+| 							o.ctyp	=	tfcash.flow.in		
+| 						else
+| 							o.ctyp	=	tfcash.flow.out	
+| 						endif	
+| 					endif
+				endif							|#ISGEC016022.en
+| 			endif							|#ISGEC01037.en
+		endcase
+	switch.to.company(tfgld112.comt)		
+}
+
+function boolean Getdatafromtfgld106()
+{
+	domain	tcncmp	financial.comp|, curr.comp
+	domain	tcncmp		i.target.financial.company
+	domain	tfgld.ttyp	o.related.transaction.type, main.ctyp
+	domain	tfgld.docn	o.related.document, main.cinv
+	domain	tcbool		document.found
+	domain	tfgld.leac	main.leac
+	domain	tfgld.lino	t.schedule
+	domain	tfgld.docn	t.document
+	domain	tfgld.amnt	main.amth
+	domain	tfgld.dbcr	main.dbcr
+	domain	tcbool		new.found
+	
+	financial.comp = 0
+| 	curr.comp = get.compnr()
+	once.transaction	=	false					|#ISGEC016022.n
+	new.found		=	false					|#ISGEC016022.n
+	i.schedule		=	0	
+	v.srno		=	0	
+	select tfgld106.ocmp, tfgld106.obat, tfgld106.otyp,
+		tfgld106.odoc, tfgld106.olin, tfgld106.osrl,
+		tfgld106.fyer, tfgld106.fprd, tfgld106.amnt,
+		tfgld106.bpid, tfgld106.dcdt,tfgld106.tran,tfgld106.ctyp,
+		tfgld106.ccur,tfgld106.rate,tfgld106.cinv, tfgld106.leac, tfgld106.oyer
+		, tfgld106.amth, tfgld106.dbcr, tfgld106.dbcr, tfgld106.tcsh, tfgld106.refr, tfgld011.cont		|#ISGEC016022.n
+	from   tfgld106, tfgld011
+	where  tfgld106.dcdt inrange :dcdt.f and :dcdt.t
+	and    tfgld106.intt = tcyesno.no
+	and	tfgld106.otyp	not in	("AAP","AAR","PDA")		|#ISGEC016022.n
+| 	and    tfgld106.vtyp <> empty				|#ISGEC016022.o
+| 	and	tfgld106.tcsh = 1				|#ISGEC016022.o
+| 	and	tfgld106.tran	<>	empty			|#ISGEC016022.n
+	and	tfgld106.tran	not in	(0,8,9)			|#ISGEC016022.n
+| 	and	tfgld106.tcsh in (1,23)
+| 	and	tfgld106.otyp = "B16"
+| 	and	tfgld106.odoc =  36000050
+	and	tfgld106.leac		<>	"9620150"
+| 	and	tfgld106.obat		=	4986		|mm
+	and	tfgld106.ocmp		=	:ncmp.f
+	and	tfgld011._index1	=	{tfgld106.otyp}
+	and	tfgld011.cont		<>	{tfgld106.leac}
+	order	by tfgld106.obat asc
+	selectdo
+								|#ISGEC016022.sn
+		if	tfgld106.tran	=	tfcmg.tran.customer	and
+			tfgld106.refr(1;3)	=	"TDS"		then
+			continue
+		endif	
+		main.amth	=	tfgld106.amth(1)
+		new.found	=	false
+		on case etol(tfgld106.tran)
+		case 1 :
+		case 4 :
+		case 6 :
+			select	a_tfgld106.leac
+			from	tfgld106	a_tfgld106
+			where	a_tfgld106._index1	=	{:tfgld106.otyp,:tfgld106.odoc}
+			and	a_tfgld106.leac		=	"1550911"
+			and	a_tfgld106.amth(1)	=	:main.amth
+			as	set with 1 rows
+			selectdo
+				new.found	=	true
+			endselect
+		endcase
+		
+		if	new.found	then
+			continue
+		endif
+		if	i.batch.number	<>	tfgld106.obat	then
+			once.transaction	=	false				
+			i.schedule		=	0	
+			v.srno		=	0	
+			new.srno	=	0						|#ISGEC016022.n
+		endif	
+		
+		if	i.schedule	<>	tfgld106.olin	or	
+			i.document		<>	tfgld106.odoc	then
+			once.transaction	=	false
+		endif
+									|#ISGEC016022.en
+
+| 		get.user()
+| 		if tfgld106.tcsh = ltoe(23) then
+| 			if tfgld106.otyp <> "ICV"
+| 				continue()
+| 			endif
+| 		endif
+| 			
+		i.ncmp		= tfgld106.ocmp
+		i.batch.number	= tfgld106.obat
+		i.trans.type	= tfgld106.otyp
+		i.document	= tfgld106.odoc
+		i.fiscal.year	= tfgld106.fyer
+		i.fiscal.period	= tfgld106.fprd
+		i.customer	= tfgld106.bpid	
+		i.schedule	= tfgld106.olin
+		i.docd		= tfgld106.dcdt
+		i.amnt     	= tfgld106.amnt
+		i.sequence      = tfgld106.osrl
+| 		i.acti		= tcyesno.yes
+		v.tran = ltoe(etol(tfgld106.tran))
+| 		v.tadv = etol(tfttrn.journal)
+		i.mode = tfmode.journal
+		main.leac	=	tfgld106.leac
+		
+		main.dbcr	=	tfgld106.dbcr
+		
+		io.dbcr		=	tfgld106.dbcr
+		if	tfgld106.cinv	=	0	then
+			main.ctyp	=	tfgld106.otyp
+			main.cinv	=	tfgld106.odoc
+		else
+			main.ctyp	=	tfgld106.ctyp
+			main.cinv	=	tfgld106.cinv
+		endif
+		
+		on case etol(tfgld106.tran)
+		case 2:
+			g.tadv = ltoe(15)
+			break
+		case 5:
+			g.tadv = ltoe(6)
+			break
+		case 6:
+			g.tadv = ltoe(5)
+			break
+		default:
+			g.tadv =  ltoe(etol(tfgld106.tran))
+		endcase	
+		if isspace(tfgld106.ctyp) then
+			tfgld106.ctyp = tfgld106.otyp
+			
+		endif
+		if 	tfgld106.cinv = 0 then
+			tfgld106.cinv = tfgld106.odoc
+		endif	
+		temp.comp	=	tfgld106.ocmp
+		get.project(tfgld106.ctyp,tfgld106.cinv,tfgld106.otyp,tfgld106.odoc,o.cprj,o.reason)
+											|#ISGEC016022.sn
+		if	isspace(i.customer)	then
+			select	tfgld106.bpid:i.customer
+			from	tfgld106
+			where	tfgld106._index1	=	{:tfgld106.otyp,:tfgld106.odoc,:tfgld106.olin}
+			and	tfgld106.bpid		<>	""
+			selectdo
+			endselect
+		endif
+		
+		if	isspace(o.cprj)	or
+			o.cprj	=	tfisg000.cprj	then
+			select	tfgld106.dim1
+			from	tfgld106
+			where	tfgld106._index1	=	{:tfgld106.ctyp,:tfgld106.cinv}
+			and	tfgld106.dim1		<>	""
+			and	tfgld106._compnr	=	:i.ncmp
+			as	set with 1 rows
+			selectdo
+			selectempty
+				tfgld106.dim1	=	""
+			endselect
+			
+			if not isspace(tfgld106.dim1) then
+				o.cprj	=	tfgld106.dim1
+			endif
+			
+		endif									
+											|#ISGEC016022.en
+		on case etol(tfgld106.tran)
+		case 1 :
+		case 4 :
+		case 6 :
+		case 7 :
+			select	tfacr200.rcom:financial.comp
+			from	tfacr200
+			where	tfacr200._index1 = {:tfgld106.ctyp, :tfgld106.cinv}
+			and	tfacr200.rect = :tfgld106.otyp
+			and	tfacr200.recd = :tfgld106.odoc
+			and	tfacr200._compnr = :tfgld106.ocmp
+			as set with 1 rows
+			selectdo
+			endselect
+			
+			
+			break
+		default:
+			select	tfacp200.pcom:financial.comp
+			from	tfacp200
+			where	tfacp200._index1 = {:tfgld106.ctyp, :tfgld106.cinv}
+			and	tfacp200.payt = :tfgld106.otyp
+			and	tfacp200.payd = :tfgld106.odoc
+			and	tfacp200._compnr = :tfgld106.ocmp
+			as set with 1 rows
+			selectdo
+			endselect
+			break
+		endcase
+		
+		document.found	=	false	
+		tfgld008.atyp	=	empty	
+| 		if get.intercompany.records(curr.comp,
+		if	not	once.transaction	then				|#ISGEC016022.n
+			once.transaction	=	true
+		if get.intercompany.records(tcemm170.comp,
+					i.trans.type,
+					i.document,
+					tfgld106.ctyp,
+					tfgld106.cinv,
+					i.batch.number,
+					i.schedule,
+					i.sequence,
+					i.amnt,
+					i.ncmp,
+					i.customer,
+					i.mode,
+					0,
+					g.tadv,
+					o.cprj,			|Project
+					tcyesno.yes,			|Activity
+					o.reason,
+					tfgld018.user) then
+			document.found	=	true		
+| 			get.payment.record(curr.comp,
+| 			get.payment.record(tcemm170.comp,		|#ISGEC016022.so
+| 					tfgld106.otyp,
+| 					tfgld106.odoc,
+| 					i.batch.number,
+| 					i.sequence,
+| 					tfcmg101.srno,
+| 					i.amnt,
+| 					tfcmg101.comp,
+| 					i.customer,
+| 					tfgld106.otyp,
+| 					tfgld106.odoc,
+| 					i.mode,
+| 					t.srno,
+| 					g.tadv,
+| 					o.cprj,			|#ISGEC016022.n				
+| 	| 					tfisg000.cprj,		|#ISGEC016022.o				
+| 					tcyesno.yes,			
+| 					o.reason,
+| 					tfgld018.user,
+| 					o.ctyp)				|#ISGEC016022.eo
+		else	
+		on case etol(tfgld106.tran)
+		case 1 :
+		case 4 :
+		case 6 :	
+		case 7 :	
+			if	main.dbcr 	= 	tfgld.dbcr.debit then	
+				o.ctyp 		= 	tfcash.flow.out
+			else
+				o.ctyp 		= 	tfcash.flow.in				
+			endif
+			break
+		default:
+			if	tfgld106.dbcr 	= 	tfgld.dbcr.debit then	
+				o.ctyp 		= 	tfcash.flow.in		
+			else
+				o.ctyp 		= 	tfcash.flow.out			
+			endif
+			break
+		endcase	
+			switch.to.company(tcemm170.comp)
+			dal.start.business.method("tfisg041","InsertIntotfisg041.1",ret_val,
+						tcemm170.comp,
+						i.batch.number,		|Batch
+						i.fiscal.year,		|Year
+						tfgld106.ctyp,		|Trasactions
+						tfgld106.cinv,		|Document
+						i.schedule,		|Line
+						i.sequence,		|Sequence
+						i.fiscal.period,	|Period	
+						i.customer,		|Business Partner,
+						tfgld106.ccur,		|Currency
+						i.amnt,			|Amount
+						tfgld106.amth(1),	|Amount
+						tfgld106.rate(1),	|Rate
+						0,			|Trasactions Date
+						i.mode,			|Mode Of Update
+						0,
+	| 					tfgld106.tran,
+						g.tadv,
+						tfgld106.ocmp,			|Orginal Company
+| 						tfisg039.ctyp,
+						o.ctyp,
+						i.batch.number,
+						i.trans.type,
+						i.document,
+						tfgld106.dcdt,
+						i.lino,
+						o.cprj,			|#ISGEC016022.n
+| 						tfisg000.cprj,		|#ISGEC016022.o
+						tcyesno.yes,
+						o.reason,
+						tfgld106.leac,
+						0,
+						"",
+						"",
+						tfgld018.user,
+						"")
+			document.found	=	true	
+			tfgld106.leac	=	main.leac
+			check.parent.accounting.ledger()			|#ISGEC016022.n			
+		endif
+		endif
+| 		if tfgld106.otyp <> "ICV" then
+		if	t.schedule	<>	tfgld106.olin	or	
+			t.document	<>	tfgld106.odoc	then
+
+			select	tfgld112.typt:o.related.transaction.type,
+			tfgld112.doct:o.related.document,
+			tfgld112.comt:i.target.financial.company
+			from	tfgld112
+			where	tfgld112._index1 = {:tcemm170.comp,:i.trans.type,:i.document}
+			selectdo								
+				select	tfgld015.rlea
+				from	tfgld015
+				where	tfgld015._index1 ={:tcemm170.comp,:i.target.financial.company,:i.trans.type}
+				selectdo
+				endselect
+				if	tfgld106.tran	=	tfcmg.tran.customer	then
+					select 	tfgld106.fyer
+					from	tfgld106
+					where	tfgld106._index1 	= {:o.related.transaction.type,:o.related.document,
+										:tfgld106.olin}	
+					and	tfgld106._compnr 	= :i.target.financial.company
+					and	tfgld106.leac		=	:tfgld015.rlea		
+					selectdo
+						document.found	=	true
+					endselect
+				else
+					select 	tfgld106.fyer
+					from	tfgld106
+					where	tfgld106._index1 	= 	{:o.related.transaction.type,:o.related.document,
+										:tfgld106.olin,:tfgld106.osrl}	
+					and	tfgld106._compnr 	= 	:i.target.financial.company
+					and	tfgld106.leac		<>	:tfgld015.rlea		
+					selectdo
+						document.found	=	true
+					endselect
+				endif	
+			endselect
+		endif	
+		t.schedule	=	tfgld106.olin
+		t.document	=	tfgld106.odoc
+		if	main.amth	<>	tfgld106.amth(1)	and
+			tfgld106.tran	<>	tfcmg.tran.customer	then
+			document.found	=	false
+			select	a_tfisg041.amth
+			from	tfisg041	a_tfisg041
+			where	a_tfisg041._index1	=	{:tcemm170.comp,:i.batch.number}
+			and	a_tfisg041.amth		=	:main.amth
+			and	a_tfisg041.comp		<>	:tcemm170.comp
+			and	a_tfisg041.cfam = tfcf.auto.man.cashflow.auto			|#GH281CR579_000.n
+			selectdo
+				document.found	=	true
+			endselect
+			
+		else
+			if	main.amth	<>	tfgld106.amth(1)	then			|#ISGEC016022.sn
+				select	a_tfisg041.amth							
+				from	tfisg041	a_tfisg041
+				where	a_tfisg041._index1	=	{:tcemm170.comp,:i.batch.number}
+				and	a_tfisg041.ttyp		=	:main.ctyp
+				and	a_tfisg041.docn		=	:main.cinv
+				and	a_tfisg041.amth		=	:main.amth
+				and	a_tfisg041.comp		<>	:tcemm170.comp
+				and	a_tfisg041.cfam = tfcf.auto.man.cashflow.auto			|#GH281CR579_000.n
+				selectdo
+					document.found	=	true
+				selectempty
+					document.found	=	false
+					select	a_tfisg041.amth							
+					from	tfisg041	a_tfisg041
+					where	a_tfisg041._index1	=	{:tcemm170.comp,:i.batch.number}
+					and	a_tfisg041.ttyp		=	:main.ctyp
+					and	a_tfisg041.docn		=	:main.cinv
+					and	a_tfisg041.amtf		=	:i.amnt
+					and	a_tfisg041.comp		<>	:tcemm170.comp
+					and	a_tfisg041.cfam = tfcf.auto.man.cashflow.auto			|#GH281CR579_000.n
+					selectdo
+						document.found	=	true
+					endselect
+				endselect		
+			else
+				select	a_tfisg041.amth							
+				from	tfisg041	a_tfisg041
+				where	a_tfisg041._index1	=	{:tcemm170.comp,:i.batch.number}
+				and	a_tfisg041.ttyp		=	:main.ctyp
+				and	a_tfisg041.docn		=	:main.cinv
+				and	a_tfisg041.amth		=	:main.amth
+				and	a_tfisg041.comp		<>	:tcemm170.comp
+				and	a_tfisg041.cfam = tfcf.auto.man.cashflow.auto			|#GH281CR579_000.n
+				selectdo
+					document.found	=	true
+				endselect			
+			endif										|#ISGEC016022.en
+| 			document.found	=	true
+		endif
+		if	not	document.found	then
+| 			if	tfgld106.dbcr = tfgld.dbcr.debit then	
+| 				o.ctyp = tfcash.flow.in		
+| 			else
+| 				o.ctyp = tfcash.flow.out			
+| 			endif
+			on case etol(tfgld106.tran)
+			case 1 :
+			case 4 :
+			case 6 :	
+			case 7 :	
+				if	main.dbcr 	= 	tfgld.dbcr.debit then	
+					o.ctyp 		= 	tfcash.flow.out
+				else
+					o.ctyp 		= 	tfcash.flow.in				
+				endif
+				break
+			default:
+| 				if	tfgld106.dbcr 	= 	tfgld.dbcr.debit then			|#ISGEC016022.o
+				if	io.dbcr 	= 	tfgld.dbcr.debit then			|#ISGEC016022.n
+					o.ctyp 		= 	tfcash.flow.in		
+				else
+					o.ctyp 		= 	tfcash.flow.out			
+				endif
+				if	etol(tfgld106.tcsh)	=	7	then
+					if	io.dbcr 	= 	tfgld.dbcr.debit then			
+						o.ctyp 		= 	tfcash.flow.out		
+					else
+						o.ctyp 		= 	tfcash.flow.in		
+					endif
+				endif
+				break
+			endcase	
+			if	tfgld106.cinv	=	0	then
+				tfgld106.cinv	=	i.document
+				tfgld106.ctyp	=	i.trans.type
+			endif
+			switch.to.company(tcemm170.comp)
+			dal.start.business.method("tfisg041","InsertIntotfisg041.1",ret_val,
+							tcemm170.comp,
+							i.batch.number,		|Batch
+							i.fiscal.year,		|Year
+							tfgld106.ctyp,		|Trasactions
+							tfgld106.cinv,		|Document
+							i.schedule,		|Line
+							i.sequence,		|Sequence
+							i.fiscal.period,	|Period	
+							i.customer,		|Business Partner,
+							tfgld106.ccur,		|Currency
+							i.amnt,			|Amount
+							main.amth,		|Amount
+							tfgld106.rate(1),	|Rate
+							0,			|Trasactions Date
+							i.mode,			|Mode Of Update
+							v.srno + 1,
+		| 					tfgld106.tran,
+							g.tadv,
+							tfgld106.ocmp,			|Orginal Company
+	| 						tfisg039.ctyp,
+							o.ctyp,
+							i.batch.number,
+							i.trans.type,
+							i.document,
+							tfgld106.dcdt,
+							i.lino,
+							o.cprj,			|#ISGEC016022.n
+	| 						tfisg000.cprj,		|#ISGEC016022.o
+							tcyesno.yes,
+							o.reason,
+							tfgld106.leac,
+							0,
+							"",
+							"",
+							tfgld018.user,
+							"")
+| 		endif		|test.n		
+			tfgld106.leac	=	main.leac
+			check.parent.accounting.ledger()			|#ISGEC016022.n
+| 		endif							|#ISGEC016022.n
+		
+		endif							|#ISGEC016022.n
+| 		if	tfgld106.tran	=	tfcmg.tran.customer	then
+		on	case	etol(tfgld106.tran)
+			case	1:
+			case	4:
+			case	6:
+				insert.receipt.bank.records()
+				break
+			endcase
+| 		endif	
+| 		switch.to.company(curr.)	|test.n
+	selectempty
+		i.ncmp		= 0
+		i.batch.number	= 0
+		i.trans.type	= ""
+		i.document	= 0
+		i.fiscal.year	= 0
+		i.fiscal.period	= 0
+		i.customer	= ""
+		i.schedule	= 0
+		i.docd	   	= 0
+		i.amnt     	= 0
+		i.sequence      = 0
+		i.transaction.type = ""
+		i.document.no	= 0
+		
+		return(false)
+	endselect
+	
+	return(true)
+}
+
+function	insert.receipt.bank.records()
+{
+	domain	tfgld.leac	v.new.leac
+	domain	tcbool		v.new.found
+	
+	select	tfgld106.osrl,
+		tfgld106.ccur,
+		tfgld106.amnt,	
+		tfgld106.amth,
+		tfgld106.rate,
+		tfgld106.ocmp,
+		tfgld106.dcdt,
+		tfgld106.leac:v.new.leac
+	from	tfgld106
+	where	tfgld106._index1	=	{:i.trans.type,:i.document,:i.schedule}	
+	and	tfgld106.tran		=	empty
+	and	tfgld106.tcsh		=	tfcmg.tcsh.csts
+	selectdo
+		v.new.found	=	false
+		on	case	etol(tfgld106.tran)
+			case	4:
+			case	6:
+				if	trim$(v.new.leac)	=	"1550911"	or
+					trim$(v.new.leac)	=	"1550915"	then
+					v.new.found	=	true
+				endif
+			break
+		default:
+			v.new.found	=	true
+		endcase
+		if	v.new.found	then
+		get.project(tfgld106.ctyp,tfgld106.cinv,tfgld106.otyp,tfgld106.odoc,o.cprj,o.reason)
+
+		if	isspace(i.customer)	then
+			select	tfgld106.bpid:i.customer
+			from	tfgld106
+			where	tfgld106._index1	=	{:tfgld106.otyp,:tfgld106.odoc,:tfgld106.olin}
+			and	tfgld106.bpid		<>	""
+			selectdo
+			endselect
+		endif
+		
+		if	isspace(o.cprj)	or
+			o.cprj	=	tfisg000.cprj	then
+			select	tfgld106.dim1
+			from	tfgld106
+			where	tfgld106._index1	=	{:tfgld106.ctyp,:tfgld106.cinv}
+			and	tfgld106.dim1		<>	""
+			and	tfgld106._compnr	=	:i.ncmp
+			as	set with 1 rows
+			selectdo
+			selectempty
+				tfgld106.dim1	=	""
+			endselect
+			
+			if not isspace(tfgld106.dim1) then
+				o.cprj	=	tfgld106.dim1
+			endif			
+		endif		
+		if	tfgld106.dbcr 	= 	tfgld.dbcr.debit then	
+			o.ctyp 		= 	tfcash.flow.out
+		else
+			o.ctyp 		= 	tfcash.flow.in				
+		endif
+		
+		get.user(	
+			i.trans.type,
+			i.document,
+			tfgld106.ocmp
+			)
+		
+		dal.start.business.method("tfisg041","InsertIntotfisg041.1",ret_val,
+						tcemm170.comp,
+						i.batch.number,		|Batch
+						tfgld106.oyer,		|Year
+						tfgld106.ctyp,		|Trasactions
+						tfgld106.cinv,		|Document
+						tfgld106.olin,		|Line
+						tfgld106.osrl,		|Sequence
+						i.fiscal.period,	|Period	
+						i.customer,		|Business Partner,
+						tfgld106.ccur,		|Currency
+						tfgld106.amnt,			|Amount
+						tfgld106.amth(1),		|Amount
+						tfgld106.rate(1),	|Rate
+						0,			|Trasactions Date
+						i.mode,			|Mode Of Update
+						v.srno + 1,
+						g.tadv,
+						tfgld106.ocmp,			
+						o.ctyp,
+						i.batch.number,
+						i.trans.type,
+						i.document,
+						tfgld106.dcdt,
+						i.lino,
+						o.cprj,
+						tcyesno.yes,
+						o.reason,
+						tfgld106.leac,
+						0,
+						"",
+						"",
+						tfgld018.user,
+						"")
+		endif				
+	endselect
+}
+
+function  long get.intercompany.records(domain	tcncmp	i.ncmp,
+					domain	tfgld.ttyp	i.ttyp,
+					domain	tfgld.docn	i.docn,
+					domain	tfgld.ttyp	t.ttyp,
+					domain	tfgld.docn	t.docn,
+					domain	tfgld.btno	i.btno,
+					domain	tfgld.schn	i.schn,
+					domain	tcpono		i.srno,
+					domain	tfgld.amnt	i.amnt,
+					domain	tcncmp		i.comp,
+					domain	tccom.bpid	i.ifbp,
+					domain	tfmode		i.mode,
+					domain	tcpono		t.srno,
+					domain	tfcash.type	i.ttrn,
+					domain	tccprj		o.cprj,			|Project
+					domain	tcyesno		i.acti,			|Activity
+					domain	tfcash.reasons	o.reason,
+					domain	tfgld.user	i.user)
+{
+	domain	tcncmp		i.target.financial.company
+	domain	tfgld.ttyp	o.related.transaction.type
+	domain	tfgld.docn	o.related.document
+	domain	tcmcs.str30	o.error.message
+	domain	tfgld.dbcr	v.dbcr, temp.dbcr					|#ISGEC016022.n
+	domain	tcpono		v.olin,temp.srno				|#ISGEC016022.n
+	domain	tfgld.dimx	v.cprj, temp.cprj			|#ISGEC016022.n
+	domain	tcbool		found					|#ISGEC016022.n
+	domain	tccprj	dimn1	
+	domain	tfgld.ttyp	v.typt, v.otyp
+	domain	tfgld.docn	v.odyc, v.odoc
+	domain	tfgld.leac	temp.leac, v.leac, iv.leac
+	domain	tfgld.leac 	debit.leac, credit.leac
+	domain	tfgld.amnt	temp.amth
+	domain	tcbool		plac.found
+	long	i
+	found	=	false						|#ISGEC016022.n
+	v.srno	=	0						|#ISGEC016022.n
+	temp.srno	=	0						|#ISGEC016022.n
+| 	select	tfgld112.cono,tfgld112.comt,tfgld112.typt,tfgld112.doct
+| 	from	tfgld112
+| 	where	tfgld112._index1 = {:i.ncmp,:i.ttyp,:i.docn}
+| 	selectdo
+	temp.cprj	=	o.cprj					|#ISGEC016022.n
+| 	if tfisg.dll1402.intercompany.document.present(			|#ISGEC016022.so
+| 						i.ncmp,
+| 						i.ttyp,
+| 						i.docn,
+| 						i.target.financial.company,
+| 						o.related.transaction.type,
+| 						o.related.document,
+| 						o.error.message) then
+									|#ISGEC016022.eo
+									|#ISGEC016022.sn
+	select	tfgld112.typt:o.related.transaction.type,
+		tfgld112.doct:o.related.document,
+		tfgld112.comt:i.target.financial.company
+	from	tfgld112
+	where	tfgld112._index1 = {	:i.ncmp,
+					:i.ttyp,
+					:i.docn}
+	selectdo								
+									|#ISGEC016022.en						
+		select	tfgld015.rlea
+		from	tfgld015
+		where	tfgld015._index1 ={:i.ncmp,:i.target.financial.company,:i.ttyp}
+		selectdo
+		endselect	
+		select 	tfgld106.fyer,
+			tfgld106.fprd,
+			tfgld106.obat,
+			tfgld106.ctyp,
+			tfgld106.cinv,
+			tfgld106.dcdt,
+			tfgld106.rate,
+			tfgld106.ccur,
+			tfgld106.dbcr:v.dbcr,						|#ISGEC016022.n
+			tfgld106.dim1:v.cprj,						|#ISGEC016022.n
+			tfgld106.olin:v.olin,						|#ISGEC016022.n
+			tfgld106.amnt:i.amnt,						|#ISGEC016022.n
+			tfgld106.amth,							|#ISGEC016022.n
+			tfgld106.tran,							|#ISGEC016022.n
+			tfgld106.tcsh:ic.tcsh,						|#ISGEC016022.n
+			tfgld106.leac:v.leac						|#ISGEC016022.n
+		from	tfgld106
+| 		where	tfgld106._index1 = {:o.related.transaction.type,:o.related.document}			|#ISGEC016022.o
+		where	tfgld106._index1 = {:o.related.transaction.type,:o.related.document,:tfgld106.olin}	|#ISGEC016022.n
+		and	tfgld106._compnr = :i.target.financial.company
+| 		and	tfgld106.leac = :tfgld015.rlea					|#ISGEC016022.o
+| 		and	tfgld106.leac	<>	:tfgld015.rlea				|#ISGEC016022.n
+		selectdo
+			on	case	etol(tfgld106.tran)
+				case	1:
+				case	4:
+				case	6:
+				if	v.leac		=	tfgld015.rlea		then
+					continue
+				endif
+				break
+				default:
+				if	v.leac		<>	tfgld015.rlea		then
+					continue
+				endif
+				break
+			endcase
+| 			if	tfgld106.tran	=	tfcmg.tran.customer	and
+| 				v.leac		=	tfgld015.rlea		then
+| 				continue
+| 			endif
+| 			if	tfgld106.tran	<>	tfcmg.tran.customer	and
+| 				v.leac		<>	tfgld015.rlea		then
+| 				continue
+| 			endif
+			temp.srno	=	temp.srno	+	1
+			found	=	true						|#ISGEC016022.n
+			if t.ttyp = o.related.transaction.type then
+				t.ttyp = i.ttyp
+			endif
+			if t.docn = o.related.document then
+				t.docn = i.docn
+			endif	
+			switch.to.company(i.target.financial.company)
+			temp.comp	=	i.target.financial.company
+			v.rtyp		=	o.related.transaction.type
+			v.rdoc		=	o.related.document
+			ic.dbcr		=	v.dbcr
+			select	m_tfgld106.dbcr:temp.dbcr,					|#ISGEC016022.sn
+				m_tfgld106.leac:iv.leac
+			from	tfgld106	m_tfgld106
+			where	m_tfgld106._index1	=	{:o.related.transaction.type,
+								:o.related.document,
+								:tfgld106.olin}
+			and	m_tfgld106._compnr	=	:i.target.financial.company
+			and	m_tfgld106.leac		<>	:v.leac
+			and	m_tfgld106.amnt		=	:i.amnt
+			selectdo
+			endselect	
+			for	i	=	0	to	4	step 	1	
+				select	tfgld008.plac,
+					tfgld008.subl
+				from	tfgld008
+				where	tfgld008._index1	=	{:iv.leac}
+				and	tfgld008.subl		<=	40
+				as	set with 1 rows
+				selectdo
+					select	a_tfgld008.leac:iv.leac
+					from	tfgld008	a_tfgld008
+					where	a_tfgld008._index1	=	{:tfgld008.plac}
+					and	a_tfgld008.plac		in	("2210100","1530200","1530100")
+					as	set with 1 rows
+					selectdo
+						plac.found	=	true
+						ic.dbcr		=	temp.dbcr
+					endselect
+				endselect
+				
+				if	plac.found	then
+					break
+				endif
+				if	tfgld008.subl	=	40	then
+					break
+				endif
+			endfor
+			
+										|#ISGEC016022.en
+			get.project(tfgld106.ctyp,tfgld106.cinv,i.ttyp,i.docn,o.cprj,o.reason)
+			switch.to.company(tcemm170.comp)
+| 			select 	tfgld106.otyp:v.typt,
+| 				tfgld106.odoc:v.odyc
+| 			from	tfgld106
+| 			where	tfgld106._index1 	= 	{:o.related.transaction.type,:o.related.document,:tfgld106.olin}	
+| 			and	tfgld106.leac		<>	:tfgld015.rlea
+| 			and	tfgld106._compnr 	= 	:i.target.financial.company	
+| 			as	set with 1 rows
+| 			selectdo
+| 			endselect		
+		
+| 			select	tfgld011.cont
+| 			from	tfgld011
+| 			where	tfgld011._index1	=	{:v.typt}
+| 			as	set with 1 rows
+| 			selectdo
+| 			selectempty
+| 				tfgld011.cont	=	""
+| 			endselect
+			
+| 			select	tfgld106.otyp:v.otyp,
+| 				tfgld106.odoc:v.odoc,
+| 				tfgld106.dbcr,
+| 				tfgld106.leac
+| 			from	tfgld106
+| 			where	tfgld106._index1 	= 	{:v.typt,:v.odyc}	
+| 			and	tfgld106._index3	=	{:tfgld011.cont}
+| 			and	tfgld106._compnr	=	:i.target.financial.company
+| 			as	set with 1 rows
+| 			selectdo
+| 				on	case	tfgld106.dbcr
+| 				case	tfgld.dbcr.debit:
+| 					select	tfgld106.leac:temp.leac
+| 					from	tfgld106
+| 					where	tfgld106._index1	=	{:v.otyp,:v.odoc}
+| 					and	tfgld106.dbcr		=	tfgld.dbcr.credit
+| 					and	tfgld106._compnr	=	:i.target.financial.company
+| 					as	set with 1 rows
+| 					selectdo
+| 					endselect
+| 					debit.leac	=	tfgld106.leac
+| 					credit.leac	=	temp.leac
+| 					break
+| 				case	tfgld.dbcr.credit:
+| 					select	tfgld106.leac:temp.leac
+| 					from	tfgld106
+| 					where	tfgld106._index1	=	{:v.otyp,:v.odoc}
+| 					and	tfgld106.dbcr		=	tfgld.dbcr.debit
+| 					and	tfgld106._compnr	=	:i.target.financial.company
+| 					as	set with 1 rows
+| 					selectdo
+| 					endselect
+| 					debit.leac	=	temp.leac
+| 					credit.leac	=	tfgld106.leac
+| 					break
+| 				endcase
+| 			selectempty	
+| 				o.reason	=	tfcash.reasons.user.input
+| 				select	tfgld106.leac,tfgld106.dbcr,tfgld106.tran
+| 				from	tfgld106
+| 				where	tfgld106._index1 = {:i.ttyp,:i.docn,:tfgld106.olin}	|#ISGEC016022.n
+| 				as	set with 2 rows					|#ISGEC016022.n
+| 				selectdo
+| 					if tfgld106.dbcr = tfgld.dbcr.debit then
+| 						debit.leac = tfgld106.leac
+| 					else
+| 						credit.leac = tfgld106.leac
+| 					endif
+| 				endselect
+| 				found	=	false
+| 			endselect	
+| 			dimn1 = o.cprj(1;2)
+| 			on case etol(tfgld106.tran)
+| 				case	1:
+| 				case	4:
+| 				case	6:
+| 					if tfisgdll0041.check.dual.property(g.tadv,tdpur400.cotp,debit.leac,credit.leac) then
+| 						if not  tfisgdll0041.get.reason.tfisg042(g.tadv,dimn1,o.reason) then
+| 							tfisgdll0041.get.reason.tfisg039(g.tadv,tdpur400.cotp,debit.leac,credit.leac,o.reason,o.ctyp)
+| 							if o.ctyp = empty then
+| 								o.ctyp = tfcash.flow.in
+| 							endif	
+| 						endif	
+| 					else
+| 						tfisgdll0041.get.reason.tfisg039(g.tadv,tdpur400.cotp,debit.leac,credit.leac,o.reason, o.ctyp)
+| 						if o.ctyp = empty then
+| 							o.ctyp = tfcash.flow.in
+| 						endif	
+| 					endif	
+| 					break
+| 				default:
+| 					tfisgdll0041.get.reason.tfisg039(g.tadv,tdpur400.cotp,debit.leac,credit.leac,o.reason,o.ctyp)
+| 					if o.ctyp = empty then
+| 						o.ctyp = tfcash.flow.in
+| 					endif
+| 			endcase
+| 			if	not	found	then
+| 				o.reason	=	tfcash.reasons.user.input
+| 				found	=	true
+| 			endif
+			if i.ttyp = "ICV" and isspace(t.ttyp) then
+				t.ttyp = i.ttyp
+				t.docn = i.docn
+				if tfgld106.dbcr = tfgld.dbcr.debit then	
+					o.ctyp = tfcash.flow.out		
+				else
+					o.ctyp = tfcash.flow.in			
+				endif
+				o.reason	=	tfcash.reasons.reason.inter
+			endif
+										|#ISGEC016022.sn
+			if	not	isspace(v.cprj)	then		
+				o.cprj	=	v.cprj
+			else
+				select	tfgld106.dim1:o.cprj
+				from	tfgld106
+				where	tfgld106._index1	=	{:o.related.transaction.type,:o.related.document,:v.olin}
+				and	tfgld106._compnr	= :i.target.financial.company
+				and	tfgld106.dim1		<>	""
+				selectdo
+				selectempty
+					o.cprj	=	temp.cprj
+				endselect	
+			endif
+			if	tfgld008.atyp	<>	empty	then
+				on	case	tfgld008.atyp
+				case	tfgld.atyp.balance:
+					if	v.dbcr	=	tfgld.dbcr.debit then	
+						o.ctyp 	= 	tfcash.flow.out		
+					else
+						o.ctyp 	= 	tfcash.flow.in			
+					endif
+				break
+				case	tfgld.atyp.profitloss:
+					if	v.dbcr	=	tfgld.dbcr.debit then	
+						o.ctyp 	= 	tfcash.flow.in			
+					else
+						o.ctyp 	= 	tfcash.flow.out
+					endif
+				break
+				endcase
+			endif	
+			if	tfgld106.tran	=	tfcmg.tran.customer	then
+				if	v.dbcr	=	tfgld.dbcr.debit	then	
+					o.ctyp 	= 	tfcash.flow.out		
+				else
+					o.ctyp 	= 	tfcash.flow.in			
+				endif
+			endif	
+			if	tfgld106.tran	=	tfcmg.tran.unalloc.rec	and
+				v.leac		=	tfgld015.rlea		then
+				if	v.dbcr	=	tfgld.dbcr.debit then	
+					o.ctyp 	= 	tfcash.flow.in			
+				else
+					o.ctyp 	= 	tfcash.flow.out
+				endif
+			endif	
+										|#ISGEC016022.en
+			
+			switch.to.company(curr.comp)
+| 			get.user(t.ttyp,t.docn,i.target.financial.company)	|#ISGEC016022.o		
+			get.user(o.related.transaction.type,o.related.document,i.target.financial.company)		|#ISGEC016022.n		
+			dal.start.business.method("tfisg041","InsertIntotfisg041.1",ret_val,
+					i.ncmp,
+					i.batch.number,		|Batch
+					i.fiscal.year,		|Year
+					t.ttyp,		|Trasactions
+					t.docn,		|Document
+| 					i.schedule,		|Line			|#ISGEC016022.o
+					v.olin,			|Line			|#ISGEC016022.n
+					i.sequence,		|Sequence
+					i.fiscal.period,	|Period	
+					i.customer,		|Business Partner,
+					tfgld106.ccur,		|Currency
+					i.amnt,			|Amount
+					tfgld106.amth(1),		|Amount
+					tfgld106.rate(1),	|Rate
+					0,			|Trasactions Date
+					i.mode,			|Mode Of Update
+					temp.srno,
+| 					tfgld106.tran,
+| 					v.tran,
+					i.ttrn,
+					i.target.financial.company,			|Orginal Company
+| 					tfisg039.ctyp,
+					o.ctyp,
+					i.batch.number,
+					o.related.transaction.type,
+					o.related.document,
+					tfgld106.dcdt,
+					i.lino,					
+					o.cprj,
+					tcyesno.yes,
+					o.reason,
+					tfgld106.leac,
+					0,
+					"",
+					"",
+| 					i.user)
+					tfgld018.user,
+					"")
+											|#ISGEC016022.sn
+			if	once.transaction	then
+				get.payment.record(tcemm170.comp,
+					tfgld106.otyp,
+					tfgld106.odoc,
+					i.batch.number,
+					i.sequence,
+					0,
+					i.amnt,
+					tfcmg101.comp,
+					i.customer,
+					tfgld106.otyp,
+					tfgld106.odoc,
+					i.mode,
+					t.srno,
+					g.tadv,
+					o.cprj,			|#ISGEC016022.n							
+					tcyesno.yes,			
+					tfcash.reasons.reason.inter,
+					tfgld018.user,
+					o.ctyp)
+			endif
+											|#ISGEC016022.en
+		
+		selectempty
+			select 	tfgld102.otyp,
+				tfgld102.odoc,
+				tfgld102.fyer,
+				tfgld102.fprd,
+				tfgld102.obat,
+				tfgld102.dcdt,
+				tfgld102.rate,
+				tfgld102.ccur
+			from	tfgld102
+			where	tfgld102._index2 = {:tfgld112.comt,:tfgld112.typt,:tfgld112.doct}
+			selectdo
+			endselect
+		endselect
+		switch.to.company(tcemm170.comp)	|test.n
+	selectempty						|#ISGEC016022.sn
+		return(0)
+	endselect	
+	if	not	found	then
+		return(0)
+	endif
+| 								|#ISGEC016022.en
+		return(1)
+| 	endif							|#ISGEC016022.o
+| 	endselect					
+| 	return(0)						|#ISGEC016022.o
+}
+
+function long get.payment.record(domain	tcncmp		i.ncmp,
+					domain	tfgld.ttyp	i.ttyp,
+					domain	tfgld.docn	i.docn,
+					domain	tfgld.btno	i.btno,
+					domain	tfgld.schn	i.schn,
+					domain	tcpono		i.srno,
+					domain	tfgld.amnt	i.amnt,
+					domain	tcncmp		i.comp,
+					domain	tccom.bpid	i.ifbp,
+					domain	tfgld.ttyp	t.ttyp,
+					domain	tfgld.docn	t.docn,
+					domain	tfmode		i.mode,
+					domain	tcpono		t.srno,
+					domain	tfcash.type	i.ttrn,
+					domain	tccprj		o.cprj,			|Project
+					domain	tcyesno		i.acti,			|Activity
+					domain	tfcash.reasons	o.reason,
+					domain	tfgld.user	i.user,
+					domain	tfcash.flow	i.ctyp)
+					
+{
+	domain	tcratc		rate
+	domain	tfgld.year	fyer
+	domain	tfgld.prod	fprd
+	domain	tcccur		ccur
+	domain	tcmcs.long	i					|#ISGEC016022.n
+	domain	tfgld.dimx	v.cprj, temp.cprj			|#ISGEC016022.n
+	domain	tccprj	dimn1	
+	domain	tfgld.leac	debit.leac, credit.leac
+	domain	tfgld.amnt	temp.amth
+	domain	tcbool	found.data
+	temp.cprj	=	o.cprj					|#ISGEC016022.n
+	i	=	0						|#ISGEC016022.n
+	found.data	=	false
+	select 	tfgld106.otyp,
+		tfgld106.odoc,
+		tfgld106.fyer:fyer,
+		tfgld106.fprd:fprd,
+		tfgld106.obat,
+		tfgld106.dcdt,
+		tfgld106.rate,
+		tfgld106.ccur:ccur,
+		tfgld106.dbcr,
+		tfgld106.osrl,
+		tfgld106.dim1:v.cprj						|#ISGEC016022.n
+	from	tfgld106
+| 	where	tfgld106._index1 = {:i.ttyp,:i.docn}				|#ISGEC016022.o
+	where	tfgld106._index1 	= 	{:i.ttyp,:i.docn,:tfgld106.olin}	|#ISGEC016022.n
+	and	tfgld106._compnr	=	:tcemm170.comp
+| 	and	tfgld106.cont		=	tcyesno.yes						|#ISGEC016022.o
+	as	set with 1 rows
+	selectdo
+		select	tfgld106.leac,tfgld106.dbcr,tfgld106.tran
+		from	tfgld106
+		where	tfgld106._index1 = {:tfgld106.otyp,:tfgld106.odoc,:tfgld106.olin}	|#ISGEC016022.n
+		as	set with 2 rows					|#ISGEC016022.n
+		selectdo
+			if tfgld106.dbcr = tfgld.dbcr.debit then
+				debit.leac = tfgld106.leac
+			else
+				credit.leac = tfgld106.leac
+			endif
+		endselect
+		on case etol(tfgld106.tran)
+			case	1:
+			case	4:
+			case	6:
+				if tfisgdll0041.check.dual.property(g.tadv,tdpur400.cotp,debit.leac,credit.leac) then
+					if not  tfisgdll0041.get.reason.tfisg042(g.tadv,dimn1,o.reason) then
+						tfisgdll0041.get.reason.tfisg039(g.tadv,tdpur400.cotp,debit.leac,credit.leac,o.reason,o.ctyp)
+						if o.ctyp = empty then
+							o.ctyp = tfcash.flow.in
+						endif	
+					endif	
+				else
+					tfisgdll0041.get.reason.tfisg039(g.tadv,tdpur400.cotp,debit.leac,credit.leac,o.reason, o.ctyp)
+					if o.ctyp = empty then
+						o.ctyp = tfcash.flow.in
+					endif	
+				endif	
+				break
+			default:
+				tfisgdll0041.get.reason.tfisg039(g.tadv,tdpur400.cotp,debit.leac,credit.leac,o.reason,o.ctyp)
+				if o.ctyp = empty then
+					o.ctyp = tfcash.flow.out
+				endif
+		endcase
+| 		temp.amth	=	tfgld106.amth(1)	
+| 		select	a_tfisg041.btno
+| 		from	tfisg041	a_tfisg041
+| 		where	a_tfisg041._index1	=	{:i.ncmp,:i.btno}
+| 		and	a_tfisg041.comp	=	:i.ncmp
+| 		and	a_tfisg041.year	=	:fyer
+| 		and	a_tfisg041.amnt	=	:temp.amth
+| 		selectdo
+| 			found.data	=	true
+| 		endselect
+| 		if	found.data	then
+| 			continue
+| 		endif
+		for	i	=	1	to	2				|#ISGEC016022.n
+| 		select	max(tfisg041.srno):v.srno
+| 		from	tfisg041
+| 		where	tfisg041.btno	=	{:i.btno}
+| 		selectdo
+| 		selectempty
+| 			v.srno	=	0
+| 		endselect
+		new.srno	=	new.srno	+	1
+		if isspace(tfcmg101.ttyp) then
+			tfcmg101.ttyp = tfcmg101.ptyp
+		endif
+		if tfcmg101.ninv = 0 then
+			tfcmg101.ninv = tfcmg101.pdoc
+		endif
+		
+| 		if tfgld106.dbcr =  tfgld.dbcr.debit then				|#ISGEC016022.o
+		on	case	o.ctyp 	
+			case	tfcash.flow.out:
+			o.ctyp 	= 	tfcash.flow.in		
+			break
+			case	tfcash.flow.in:
+			o.ctyp 	= 	tfcash.flow.out		
+			break
+		endcase
+| 		if	not	isspace(v.cprj)	then				|#ISGEC016022.sn
+| 			o.cprj	=	v.cprj
+| 		else
+| 			select	tfgld106.dim1:o.cprj
+| 			from	tfgld106
+| 			where	tfgld106._index1	=	{:i.ttyp,:i.docn,:tfgld106.olin}
+| 			and	tfgld106.dim1		<>	""
+| 			selectdo
+| 			selectempty
+| 				o.cprj	=	tfisg000.cprj
+| 			endselect		
+| 		endif									|#ISGEC016022.en
+		switch.to.company(curr.comp)	
+		get.user(t.ttyp,t.docn,i.ncmp)
+		dal.start.business.method("tfisg041","InsertIntotfisg041.1",ret_val,
+			i.ncmp,
+			i.btno,		|Batch
+			fyer,		|Year
+			t.ttyp,		|Trasactions
+			t.docn,		|Document
+			i.schn,		|Line
+			i.srno,		|Sequence
+			fprd,		|Period	
+			i.ifbp,		|Business Partner
+			ccur,		|Currency		|#ISGECDV001091.n
+			i.amnt,		|Amount
+			tfgld106.amth(1),	|Amount
+			tfgld106.rate(1),	|Rate			|#ISGECDV001091.n
+			0,			|Trasactions Date
+			i.mode,			|Mode Of Update
+			new.srno,		|SErial No
+			i.ttrn,			|Type of Advice
+			i.ncmp,		|Orginal Company
+| 			tfisg039.ctyp,		|Cash Flow Type
+			o.ctyp,		|Cash Flow Type
+| 			i.ctyp,		|Cash Flow Type
+			tfgld106.obat,
+			tfgld106.otyp,		|Payment Tran. Type
+			tfgld106.odoc,		|Payment Doc.No
+			tfgld106.dcdt,		|Document Date
+			0,
+			tfisg000.cprj,			|Project
+			i.acti,			|Activity
+			tfcash.reasons.reason.inter,
+			tfgld106.leac,
+			0,
+			"",
+			"",
+| 			i.user)     |Reason
+			tfgld018.user,
+			"")     |Reason
+			
+| 			return(DALHOOKERROR)
+| 		endif
+		endfor							|#ISGEC016022.n
+	endselect	
+	return(1)	
+}
+
+function get.user(domain	tfgld.ttyp	i.ttyp,
+		domain		tfgld.docn	i.docn,
+		domain		tcncmp		i.ncmp)
+{
+	select	tfgld018.user
+	from	tfgld018
+| 	where	tfgld018._index1 = {:tfgld106.ctyp, :tfgld106.cinv}
+	where	tfgld018._index1 = {:i.ttyp, :i.docn}
+	and	tfgld018._compnr = :i.ncmp
+	selectdo
+	endselect
+}
+
+function process.jv.records(domain tcncmp		i.comp,
+			     domain tfgld.ttyp		i.otyp,
+			     domain tfgld.docn		i.docn)
+{
+	domain	tccprj	project
+	domain	tcpono	srno
+	domain	tfgld.dbcr	v.dbcr				|#ISGEC016022.n
+	domain	tcpono		t.olin				|#ISGEC016022.n
+	domain	tfgld.leac	t.leac
+	domain	tfgld.amnt	t.amth, debit.amth, credit.amth, debit.amnt, credit.amnt
+	t.olin	=	tfgld106.olin				|#ISGEC016022.n
+	
+	select tfgld112.*
+	from	tfgld112
+	where	tfgld112._index1 = {:i.comp, :i.otyp, :i.docn}
+	selectdo
+		select tfgld015.*
+		from	tfgld015
+		where	tfgld015._index1 = {:i.comp, :tfgld112.comt, :tfgld112.ttyp}
+		selectdo
+			select tfgld106.ocmp, tfgld106.obat, tfgld106.otyp,
+				tfgld106.odoc, tfgld106.olin, tfgld106.osrl,
+				tfgld106.fyer, tfgld106.fprd, tfgld106.amnt,
+				tfgld106.bpid, tfgld106.dcdt, tfgld106.tran, tfgld106.ctyp,
+				tfgld106.ccur,tfgld106.rate,tfgld106.cinv
+				,tfgld106.dbcr:v.dbcr, tfgld106.dim1						|#ISGEC016022.n
+				,tfgld106.ftyp, tfgld106.fdoc							|#ISGEC016022.n
+			from	tfgld106
+| 			where	tfgld106._index3 = {:tfgld015.leac}						|#ISGEC016022.o
+			where	tfgld106._index1	=	{:i.otyp,:i.docn,:t.olin}			|#ISGEC016022.n
+			and	tfgld106._index3	=	{:tfgld015.leac}				|#ISGEC016022.n
+			and	tfgld106.otyp = "ICV"
+			selectdo
+				if not isspace(tfgld106.dim1) then
+					project = tfgld106.dim1
+				else
+					project = tfisg000.cprj
+				endif
+
+				on case etol(tfgld106.tran)
+				case 5:
+					g.tadv = ltoe(6)
+					break
+				case 6:
+					g.tadv = ltoe(5)
+					break
+				default:
+					g.tadv =  ltoe(etol(tfgld106.tran))
+				endcase
+
+				i.ncmp		= tfgld106.ocmp
+				i.batch.number	= tfgld106.obat
+				i.trans.type	= tfgld106.otyp
+				i.document	= tfgld106.odoc
+				i.fiscal.year	= tfgld106.fyer
+				i.fiscal.period	= tfgld106.fprd
+				i.customer	= tfgld106.bpid	
+				i.schedule	= tfgld106.olin
+				i.docd		= tfgld106.dcdt
+				i.amnt     	= tfgld106.amnt
+				i.sequence      = tfgld106.osrl
+				get.user(i.trans.type,i.document,i.ncmp)	|#ISGEC016022.n	
+										|#ISGEC016022.sn
+				select	tfgld106.leac,
+					tfgld008.atyp
+				from	tfgld106, tfgld008
+				where	tfgld106._index1	=	{:i.otyp,:i.docn}			
+				and	tfgld106._index3	<>	{:tfgld015.leac}				
+				and	tfgld106.otyp 		= 	"ICV"
+				and	tfgld008._index1	=	{tfgld106.leac}						
+				as	set with 1 rows
+				selectdo
+				selectempty
+					tfgld008.atyp	=	empty	
+				endselect
+				
+				if	isspace(i.customer)	then
+					select	tfgld106.bpid:i.customer
+					from	tfgld106
+					where	tfgld106._index1	=	{:tfgld106.otyp,:tfgld106.odoc,:tfgld106.olin}
+					and	tfgld106.bpid		<>	""
+					selectdo
+					endselect
+				endif
+				once.transaction	=	false
+				
+										|#ISGEC016022.en
+| 				if get.intercompany.records(tcemm170.comp,
+				if get.intercompany.records(tfgld106.ocmp,
+| 					tfgld106.otyp,
+					tfgld106.ftyp,
+| 					tfgld106.odoc,
+					tfgld106.fdoc,
+					tfgld106.ctyp,
+					tfgld106.cinv,
+					tfgld106.obat,
+					tfgld106.olin,
+					tfgld106.osrl,
+					tfgld106.amnt,
+					tfgld112.comt,
+					tfgld106.bpid,
+					tfmode.journal,
+					0,
+					g.tadv,
+					project,			|Project
+					tcyesno.yes,			|Activity
+					tfcash.reasons.user.input,
+					tfgld018.user) then
+		
+| 					if tfgld106.dbcr = tfgld.dbcr.debit then		|#ISGEC016022.o	|#ISGEC016022.so
+| 					if v.dbcr = tfgld.dbcr.debit then			|#ISGEC016022.n
+						
+| 						tfisg039.ctyp = tfcash.flow.out			|#ISGEC016022.o
+| 						tfisg039.ctyp = tfcash.flow.in			|#ISGEC016022.n
+						
+| 						srno = 1			
+					
+| 						dal.start.business.method("tfisg041","InsertIntotfisg041.1",ret_val,
+| 								tcemm170.comp,
+| 								tfgld106.obat,		|Batch
+| 								tfgld106.fyer,		|Year
+| 								tfgld106.otyp,		|Trasactions
+| 								tfgld106.odoc,		|Document
+| 								tfgld106.olin,		|Line
+| 								tfgld106.osrl,		|Sequence
+| 								tfgld106.fprd,		|Period	
+| 								tfgld106.bpid,		|Business Partner,
+| 								tfgld106.ccur,		|Currency
+| 								tfgld106.amnt,		|Amount
+| 								tfgld106.rate(1),	|Rate
+| 								0,			|Trasactions Date
+| 								tfmode.journal,		|Mode Of Update
+| 								srno,
+| 								g.tadv,
+| 								tfgld106.ocmp,			|Orginal Company
+| 								tfisg039.ctyp,
+| 		| 						o.ctyp,
+| 								tfgld106.obat,
+| 								tfgld106.otyp,
+| 								tfgld106.odoc,
+| 								tfgld106.dcdt,
+| 								i.lino,
+| 								project,
+| 								tcyesno.yes,
+| 								tfcash.reasons.user.input,
+| 								tfgld018.user)
+								
+| 						insert.reversed.record(tfcash.flow.in, srno)	|#ISGEC016022.o
+| 					else
+| 						tfisg039.ctyp = tfcash.flow.in			|#ISGEC016022.o
+| 						tfisg039.ctyp = tfcash.flow.out			|#ISGEC016022.n
+| 						srno = 1				
+| 					
+| 						dal.start.business.method("tfisg041","InsertIntotfisg041.1",ret_val,
+| 								tcemm170.comp,
+| 								tfgld106.obat,		|Batch
+| 								tfgld106.fyer,		|Year
+| 								tfgld106.otyp,		|Trasactions
+| 								tfgld106.odoc,		|Document
+| 								tfgld106.olin,		|Line
+| 								tfgld106.osrl,		|Sequence
+| 								tfgld106.fprd,		|Period	
+| 								tfgld106.bpid,		|Business Partner,
+| 								tfgld106.ccur,		|Currency
+| 								tfgld106.amnt,		|Amount
+| 								tfgld106.rate(1),	|Rate
+| 								0,			|Trasactions Date
+| 								tfmode.journal,		|Mode Of Update
+| 								srno,
+| 								tfgld106.tran,
+| 		| 						g.tadv,
+| 								tfgld106.ocmp,			|Orginal Company
+| 								tfisg039.ctyp,
+| 		| 						o.ctyp,
+| 								tfgld106.obat,
+| 								tfgld106.otyp,
+| 								tfgld106.odoc,
+| 								tfgld106.dcdt,
+| 								i.lino,
+| 								project,
+| 								tcyesno.yes,
+| 								tfcash.reasons.user.input,
+| 								tfgld018.user)
+								
+| 						insert.reversed.record(tfcash.flow.out, srno)	|#ISGEC016022.o
+| 					endif									|#ISGEC016022.eo
+				endif
+			endselect
+
+	
+		endselect
+	endselect
+											|#ISGEC016022.sn
+	t.amth	=	0
+	i.amnt	=	0
+	debit.amth	=	0
+	credit.amth	=	0
+	debit.amnt	=	0
+	credit.amnt	=	0
+	srno		=	0
+	t.leac		=	""
+	found	=	true							|#ISGEC016022.n
+	if	not	found	then	
+	select 	tfgld106.ocmp, tfgld106.obat, tfgld106.otyp,
+		tfgld106.leac, tfgld106.amth, tfgld106.amnt,
+		tfgld106.dbcr
+	from	tfgld106
+	where	tfgld106._index1	=	{:i.otyp,:i.docn}		
+	and	tfgld106.otyp 		= 	"ICV"
+	selectdo
+		select tfgld112.*
+		from	tfgld112
+		where	tfgld112._index1 = {:i.comp, :i.otyp, :i.docn}
+		selectdo
+			select tfgld015.*
+			from	tfgld015
+			where	tfgld015._index1 = {:i.comp, :tfgld112.comt, :tfgld112.ttyp}
+			and	tfgld015.leac		=	:tfgld106.leac
+			selectdo
+				found	=	true
+			endselect
+		endselect
+		if	found	then
+			on	case	tfgld106.dbcr
+			case	tfgld.dbcr.debit:
+				debit.amth	=	debit.amth	+	tfgld106.amth(1)
+				debit.amnt	=	debit.amnt	+	tfgld106.amnt
+				break
+			case	tfgld.dbcr.credit:
+				credit.amth	=	credit.amth	+	tfgld106.amth(1)
+				credit.amnt	=	credit.amnt	+	tfgld106.amnt
+				break
+			endcase
+			found	=	false
+		else
+			if	isspace(t.leac)	then
+				t.leac	=	tfgld106.leac
+			endif
+		endif
+	endselect	
+	if	debit.amth	>	credit.amth	then
+		v.dbcr	=	tfgld.dbcr.debit
+	else
+		v.dbcr	=	tfgld.dbcr.credit
+	endif
+	
+	t.amth	=	abs(debit.amth	-	credit.amth)
+	i.amnt	= 	abs(debit.amnt	-	credit.amnt)
+		select	tfgld106.leac,tfgld106.odoc, tfgld106.olin, tfgld106.osrl,
+			tfgld106.fyer, tfgld106.fprd, tfgld106.amnt,
+			tfgld106.bpid, tfgld106.dcdt, tfgld106.tran, tfgld106.ctyp,
+			tfgld106.ccur,tfgld106.rate,tfgld106.cinv, tfgld106.dim1
+		from	tfgld106
+		where	tfgld106._index1	=	{:i.otyp,:i.docn}			
+		and	tfgld106._index3	=	{:tfgld015.leac}				
+		and	tfgld106.otyp 		= 	"ICV"
+		as	set with 1 rows
+		selectdo
+		endselect
+		
+		select	tfgld008.atyp
+		from	tfgld008
+		where	tfgld008._index1	=	{:t.leac}						
+		selectempty
+			tfgld008.atyp	=	empty	
+		endselect
+
+		found	=	true
+		if not isspace(tfgld106.dim1) then
+			project = tfgld106.dim1
+		else
+			project = tfisg000.cprj
+		endif
+
+		on case etol(tfgld106.tran)
+		case 5:
+			g.tadv = ltoe(6)
+			break
+		case 6:
+			g.tadv = ltoe(5)
+			break
+		default:
+			g.tadv =  ltoe(etol(tfgld106.tran))
+		endcase
+
+		i.ncmp		= tfgld106.ocmp
+		i.batch.number	= tfgld106.obat
+		i.trans.type	= tfgld106.otyp
+		i.document	= tfgld106.odoc
+		i.fiscal.year	= tfgld106.fyer
+		i.fiscal.period	= tfgld106.fprd
+		i.customer	= tfgld106.bpid	
+		i.schedule	= tfgld106.olin
+		i.docd		= tfgld106.dcdt
+		i.sequence      = tfgld106.osrl
+		get.user(i.trans.type,i.document,i.ncmp)	
+		if	isspace(i.customer)	then
+			select	tfgld106.bpid:i.customer
+			from	tfgld106
+			where	tfgld106._index1	=	{:tfgld106.otyp,:tfgld106.odoc,:tfgld106.olin}
+			and	tfgld106.bpid		<>	""
+			selectdo
+			endselect
+		endif
+
+| 		get.reason(tfgld106.otyp,tfgld106.odoc,tdpur400.cotp,o.cprj,o.reason)	
+		if	tfgld008.atyp	<>	empty	then
+			on	case	tfgld008.atyp
+			case	tfgld.atyp.balance:
+				if	v.dbcr	=	tfgld.dbcr.debit then	
+					o.ctyp 	= 	tfcash.flow.out		
+				else
+					o.ctyp 	= 	tfcash.flow.in			
+				endif
+			break
+			case	tfgld.atyp.profitloss:
+				if	v.dbcr	=	tfgld.dbcr.debit then	
+					o.ctyp 	= 	tfcash.flow.in			
+				else
+					o.ctyp 	= 	tfcash.flow.out
+				endif
+			break
+			endcase
+		endif	
+		srno = srno + 1			
+		
+		dal.start.business.method("tfisg041","InsertIntotfisg041.1",ret_val,
+| 				tcemm170.comp,
+				i.ncmp,
+				tfgld106.obat,		|Batch
+				tfgld106.fyer,		|Year
+				tfgld106.otyp,		|Trasactions
+				tfgld106.odoc,		|Document
+				tfgld106.olin,		|Line
+				tfgld106.osrl,		|Sequence
+				tfgld106.fprd,		|Period	
+				tfgld106.bpid,		|Business Partner,
+				tfgld106.ccur,		|Currency
+				i.amnt,			|Amount
+				t.amth,			|Amount
+				tfgld106.rate(1),	|Rate
+				0,			|Trasactions Date
+				tfmode.journal,		|Mode Of Update
+				srno,
+				g.tadv,
+				tfgld106.ocmp,			|Orginal Company
+| 					tfisg039.ctyp,
+					o.ctyp,
+				tfgld106.obat,
+				tfgld106.otyp,
+				tfgld106.odoc,
+				tfgld106.dcdt,
+				i.lino,
+				project,
+				tcyesno.yes,
+				tfcash.reasons.reason.inter,
+				tfgld106.leac,
+				0,
+				"",
+				"",
+				tfgld018.user,
+				"")
+				
+				
+	endif			
+											|#ISGEC016022.en
+}
+
+function insert.reversed.record(domain	 tfcash.flow		i.ctyp,
+				 domain	 tcpono			i.srno)
+{
+	dal.start.business.method("tfisg041","InsertIntotfisg041.1",ret_val,
+								tcemm170.comp,
+								tfgld106.obat,		|Batch
+								tfgld106.fyer,		|Year
+								tfgld106.otyp,		|Trasactions
+								tfgld106.odoc,		|Document
+								tfgld106.olin,		|Line
+								tfgld106.osrl,		|Sequence
+								tfgld106.fprd,		|Period	
+								tfgld106.bpid,		|Business Partner,
+								tfgld106.ccur,		|Currency
+								tfgld106.amnt,		|Amount
+								tfgld106.amth(1),	|Amount
+								tfgld106.rate(1),	|Rate
+								0,			|Trasactions Date
+								tfmode.journal,		|Mode Of Update
+								(i.srno + 1),
+								g.tadv,
+								tfgld106.ocmp,			|Orginal Company
+								i.ctyp,
+		| 						o.ctyp,
+								tfgld106.obat,
+								tfgld106.otyp,
+								tfgld106.odoc,
+								tfgld106.dcdt,
+								i.lino,
+								project,
+								tcyesno.yes,
+								tfcash.reasons.user.input,
+								tfgld106.leac,
+								0,
+								"",
+								"",
+								tfgld018.user,
+								"")
+}
+
+function boolean GetJVdatafromtfgld106()
+{
+	i.document	=	0
+	select tfgld106.ocmp, tfgld106.obat, tfgld106.otyp,
+		tfgld106.odoc, tfgld106.olin, tfgld106.osrl,
+		tfgld106.fyer, tfgld106.fprd, tfgld106.amnt,
+		tfgld106.bpid, tfgld106.dcdt,tfgld106.tran,tfgld106.ctyp,
+		tfgld106.ccur, tfgld106.rate,tfgld106.cinv
+		,tfgld106.obat,tfgld106.oyer					|#ISGEC016022.n
+	from   tfgld106
+	where  tfgld106.dcdt inrange :dcdt.f and :dcdt.t
+	and	tfgld106.otyp = "ICV"
+| 	and	tfgld106.obat	=	4870			|mm
+	selectdo
+		if	i.document	<>	tfgld106.odoc	then
+			found	=	false
+		endif
+		process.jv.records(curr.comp, tfgld106.otyp, tfgld106.odoc)
+	selecteos	
+		return(true)
+	endselect
+	
+	return(false)
+}
+
+function	check.parent.accounting.ledger()			|#ISGEC016022.sn
+{	
+	select	tfgld008.plac
+	from	tfgld008
+	where	tfgld008._index1	=	{:tfgld106.leac}
+	as	set with 1 rows
+	selectdo
+		select	a_tfgld008.leac
+		from	tfgld008	a_tfgld008
+		where	a_tfgld008._index1	=	{:tfgld008.plac}
+		and	a_tfgld008.plac		in	("2210100","1530200","1530100")
+		as	set with 1 rows
+		selectdo
+			on	case	o.ctyp
+				case	tfcash.flow.out:
+					o.ctyp	=	tfcash.flow.in
+				break
+				case	tfcash.flow.in:
+					o.ctyp	=	tfcash.flow.out
+				break
+			endcase
+			dal.start.business.method("tfisg041","InsertIntotfisg041.1",ret_val,
+					tcemm170.comp,
+					i.batch.number,		|Batch
+					i.fiscal.year,		|Year
+					tfgld106.ctyp,		|Trasactions
+					tfgld106.cinv,		|Document
+					i.schedule,		|Line
+					i.sequence,		|Sequence
+					i.fiscal.period,		|Period	
+					i.customer,		|Business Partner,
+					tfgld106.ccur,		|Currency
+					i.amnt,		|Amount
+					tfgld106.amth(1),		|Amount
+					tfgld106.rate(1),	|Rate
+					0,			|Trasactions Date
+					i.mode,		|Mode Of Update
+					v.srno + 1,
+					g.tadv,
+					tfgld106.ocmp,			|Orginal Company
+					o.ctyp,
+	| 						o.ctyp,
+					i.batch.number,
+					i.trans.type,
+					i.document,
+					tfgld106.dcdt,
+					i.lino,
+					o.cprj,
+					tcyesno.yes,
+					o.reason,
+					tfgld106.leac,
+					0,
+					"",
+					"",
+					tfgld018.user,
+					"")
+		endselect			
+	endselect
+}									|#ISGEC016022.en
+
+									|#ISGEC017002.sn
+function	redo.update.cash.flow()
+{
+	domain	tcbool		r.cash, r.bank, r.inte
+	domain	tfgld.btno	r.obat
+	domain	tfgld.docn	r.odoc
+	
+	r.olin	=	0
+	
+	select	tfgld106.otyp,	
+		tfgld106.odoc,	
+		tfgld106.olin,
+		tfgld106.ocmp,
+		tfgld106.obat,
+		tfgld011.catg,
+		tfgld011.appr
+	from	tfgld106, tfgld011
+	where	tfgld106._index10	inrange	{:year, :prno.f}	
+					and	{:year, :prno.t}
+| 	and	tfgld106.ocmp		=	:ncmp.f
+| 	and	tfgld106.obat		=	4986		
+| 	and	tfgld106.obat		=	9			|bharti.n		
+	and	tfgld106._compnr	=	:ncmp.f
+	and	tfgld011._index1	=	{tfgld106.otyp}
+	and	tfgld011.catg		<>	tfgld.catg.opening.bal
+	and	tfgld011._compnr	=	:ncmp.f
+	group	by tfgld106.otyp, tfgld106.odoc, tfgld106.olin, 
+		tfgld106.ocmp, tfgld106.obat, tfgld011.catg, tfgld011.appr
+	order	by tfgld106.obat asc, tfgld106.otyp asc, 
+		tfgld106.odoc asc, tfgld106.olin asc
+	selectdo
+		if	r.obat	<>	tfgld106.obat	then
+			i.lino	=	0
+			r.olin	=	0	
+			catg.once.done	=	false
+		endif
+		if	r.odoc	<>	tfgld106.odoc	then
+			r.olin	=	0	
+			catg.once.done	=	false
+		endif
+		if	(tfgld106.olin	=	r.olin	and	tfgld106.olin	<>	0)	or
+			catg.once.done			then
+				continue
+		endif
+		check.bank.intercompany.cash(
+						tfgld106.otyp,
+						tfgld106.odoc,
+						tfgld106.olin,
+						r.cash,
+						r.bank,
+						r.inte
+							)
+		if	(r.cash	and	r.inte)	or
+			(r.cash)		then
+			insert.other.records()
+		endif
+		if	(r.bank	and	r.inte)	or
+			(r.cash	and	r.bank)	then
+			if	tfgld011.catg	<>	tfgld.catg.cash	and
+				(r.bank	and	r.inte)			then
+				insert.other.records()
+			else
+				select	tfcmg112.stat
+				from	tfcmg112
+				where	tfcmg112._index2	=	{:tfgld106.otyp,
+									:tfgld106.odoc,
+									:tfgld106.olin}
+				and	tfcmg112.stat		=	tfcmg.stap.rejected					
+				as	set with 1 rows
+				selectdo
+				selectempty
+					tfcmg112.stat	=	empty
+				endselect
+				if	((r.bank	and	r.inte)			and
+					tfcmg112.stat	=	tfcmg.stap.rejected)	or
+					(check.bank.costs(
+								tfgld106.otyp,
+								tfgld106.odoc,
+								tfgld106.olin
+							)	)			or
+					(check.journal(
+							tfgld106.otyp,
+							tfgld106.odoc,
+							tfgld106.olin
+							))				then
+					insert.other.records()
+				else
+					insert.all.records()
+				endif
+			endif
+		else
+			if	r.bank	or	
+				(r.inte	and	not(r.cash	and	r.inte))then
+				insert.other.records()
+			endif
+		endif
+		r.obat	=	tfgld106.obat
+		r.odoc	=	tfgld106.odoc
+	endselect
+	update.existing.reason.code()
+}
+
+function	check.bank.intercompany.cash(
+						domain	tfgld.ttyp	r.otyp,
+						domain	tfgld.docn	r.odoc,
+						domain	tfgld.lino	r.olin,
+					ref	domain	tcbool		r.cash,
+					ref	domain	tcbool		r.bank,
+					ref	domain	tcbool		r.inte
+							)
+{
+	
+	r.cash		=	false
+	r.bank		=	false
+	r.inte		=	false
+	
+	if	tfgld011.catg	<>	tfgld.catg.cash	then
+		select	tfgld106.leac,
+			tfisg043.type
+		from	tfgld106, tfisg043
+		where	tfgld106._index1	=		{:r.otyp, :r.odoc}
+		and	tfgld106._compnr	=		:ncmp.f
+		and	tfisg043._index1	=		{tfgld106.leac}
+		selectdo
+			on	case	tfisg043.type
+			case	tfgl.type.bank:
+				r.bank	=	true
+				break
+			case	tfgl.type.intercompany:
+				r.inte	=	true
+				break
+			case	tfgl.type.cash:
+				r.cash	=	true
+				break
+			endcase		
+		endselect
+	else	
+		select	tfgld106.leac,
+			tfisg043.type
+		from	tfgld106, tfisg043
+		where	tfgld106._index1	=		{:r.otyp, :r.odoc, :r.olin}
+		and	tfgld106._compnr	=		:ncmp.f
+		and	tfisg043._index1	=		{tfgld106.leac}
+		selectdo
+			on	case	tfisg043.type
+			case	tfgl.type.bank:
+				r.bank	=	true
+				break
+			case	tfgl.type.intercompany:
+				r.inte	=	true
+				break
+			case	tfgl.type.cash:
+				r.cash	=	true
+				break
+			endcase		
+		endselect
+	endif
+}
+
+function	domain	tcbool	check.bank.costs(
+							domain	tfgld.ttyp	r.otyp,
+							domain	tfgld.docn	r.odoc,
+							domain	tfgld.lino	r.olin
+							)
+{
+	domain	tfcmg.tcsh	s.tcsh
+	domain	tfcmg.tran	s.tran
+
+	select	m_tfgld106.tcsh:s.tcsh,
+		m_tfgld106.tran:s.tran
+	from	tfgld106	m_tfgld106
+	where	m_tfgld106._index1	=	{:r.otyp,:r.odoc,:r.olin}
+	and	m_tfgld106.tcsh		=	tfcmg.tcsh.csts
+	and	m_tfgld106.tran		=	empty
+	and	m_tfgld106._compnr	=	:ncmp.f
+	selectdo
+		return(true)
+	endselect
+	return(false)
+}					
+
+function	domain	tcbool	check.journal(
+						domain	tfgld.ttyp	r.otyp,
+						domain	tfgld.docn	r.odoc,
+						domain	tfgld.lino	r.olin
+						)
+{
+	domain	tfgld.leac	s.leac
+	domain	tfcmg.tcsh	s.tcsh
+	domain	tfcmg.tran	s.tran
+	domain	tfgl.type	s.type
+	domain	tcbool		s.found
+	
+	s.found	=	false
+	
+	select	m_tfgld106.leac:s.leac,
+		m_tfgld106.tcsh:s.tcsh,
+		m_tfgld106.tran:s.tran
+	from	tfgld106	m_tfgld106
+	where	m_tfgld106._index1	=	{:r.otyp,:r.odoc,:r.olin}
+	and	m_tfgld106._compnr	=	:ncmp.f
+	selectdo
+		select	m_tfisg043.type:s.type
+		from	tfisg043	m_tfisg043
+		where	m_tfisg043._index1	=	{:s.leac}
+		as	set with 1 rows
+		selectdo
+		selectempty
+			if	s.tcsh	=	tfcmg.tcsh.jrnl		and
+				s.tran	=	tfcmg.tran.journal	then
+				s.found	=	true
+			endif	
+		endselect
+	endselect
+	return(s.found)
+}
+
+function	insert.other.records()
+{
+	if	tfgld011.catg	<>	tfgld.catg.cash	then
+		select	tfgld106.osrl,	tfgld106.fyer,	tfgld106.fprd, 	tfgld106.tran,	
+			tfgld106.amnt,	tfgld106.bpid,	tfgld106.dcdt,	tfgld106.cinv, 	
+			tfgld106.ctyp,	tfgld106.ccur,	tfgld106.rate,	tfgld106.dbcr,	
+			tfgld106.oyer,	tfgld106.amth,	tfgld106.dbcr,	tfgld106.leac,
+			tfgld106.tcsh,	tfgld106.refr,	tfgld106.ftyp,	tfgld106.fdoc,
+			tfgld106.user,	tfgld106.olin:o.tfgld106.olin
+		from	tfgld106|, tfisg043
+		where	tfgld106._index1	=		{:tfgld106.otyp, 
+								:tfgld106.odoc}
+		and	tfgld106.ocmp		=		:tfgld106.ocmp
+		and	tfgld106.obat		=		:tfgld106.obat
+		and	tfgld106._compnr	=		:ncmp.f
+	| 	and	tfisg043._index1	<>		{tfgld106.leac}
+		selectdo
+			select	tfisg043.type
+			from	tfisg043
+			where	tfisg043._index1	=	{:tfgld106.leac}
+			selectdo
+			selectempty
+				insert.tfisg041()
+			endselect
+		endselect
+		catg.once.done	=	true
+	else
+		select	tfgld106.osrl,	tfgld106.fyer,	tfgld106.fprd, 	tfgld106.tran,	
+			tfgld106.amnt,	tfgld106.bpid,	tfgld106.dcdt,	tfgld106.cinv, 	
+			tfgld106.ctyp,	tfgld106.ccur,	tfgld106.rate,	tfgld106.dbcr,	
+			tfgld106.oyer,	tfgld106.amth,	tfgld106.dbcr,	tfgld106.leac,
+			tfgld106.tcsh,	tfgld106.refr,	tfgld106.ftyp,	tfgld106.fdoc,
+			tfgld106.user,	tfgld106.olin:o.tfgld106.olin
+		from	tfgld106|, tfisg043
+		where	tfgld106._index1	=		{:tfgld106.otyp, 
+								:tfgld106.odoc, 
+								:tfgld106.olin}	
+		and	tfgld106.ocmp		=		:tfgld106.ocmp
+		and	tfgld106.obat		=		:tfgld106.obat
+		and	tfgld106._compnr	=		:ncmp.f
+	| 	and	tfisg043._index1	<>		{tfgld106.leac}
+		selectdo
+			select	tfisg043.type
+			from	tfisg043
+			where	tfisg043._index1	=	{:tfgld106.leac}
+			selectdo
+			selectempty
+				insert.tfisg041()
+			endselect
+		endselect
+		catg.once.done	=	false
+	endif
+}
+
+function	insert.all.records()
+{
+	if	tfgld011.catg	<>	tfgld.catg.cash	then
+		select	tfgld106.osrl,	tfgld106.fyer,	tfgld106.fprd, 	tfgld106.tran,
+			tfgld106.amnt,	tfgld106.bpid,	tfgld106.dcdt,	tfgld106.cinv,	
+			tfgld106.ctyp,	tfgld106.ccur,	tfgld106.rate,	tfgld106.dbcr,	 	
+			tfgld106.oyer,	tfgld106.amth,	tfgld106.dbcr,	tfgld106.leac,
+			tfgld106.tcsh,	tfgld106.refr,	tfgld106.ftyp,	tfgld106.fdoc,
+			tfgld106.user,	tfgld106.olin:o.tfgld106.olin
+		from	tfgld106
+		where	tfgld106._index1	=		{:tfgld106.otyp, 
+								:tfgld106.odoc}
+		and	tfgld106.obat		=		:tfgld106.obat						
+		and	tfgld106.ocmp		=		:tfgld106.ocmp
+		and	tfgld106._compnr	=		:ncmp.f
+		selectdo
+			insert.tfisg041()
+		endselect
+		catg.once.done	=	true
+	else
+		select	tfgld106.osrl,	tfgld106.fyer,	tfgld106.fprd, 	tfgld106.tran,
+			tfgld106.amnt,	tfgld106.bpid,	tfgld106.dcdt,	tfgld106.cinv,	
+			tfgld106.ctyp,	tfgld106.ccur,	tfgld106.rate,	tfgld106.dbcr,	 	
+			tfgld106.oyer,	tfgld106.amth,	tfgld106.dbcr,	tfgld106.leac,
+			tfgld106.tcsh,	tfgld106.refr,	tfgld106.ftyp,	tfgld106.fdoc,
+			tfgld106.user,	tfgld106.olin:o.tfgld106.olin
+		from	tfgld106
+		where	tfgld106._index1	=		{:tfgld106.otyp, 
+								:tfgld106.odoc, 
+								:tfgld106.olin}	
+		and	tfgld106.obat		=		:tfgld106.obat						
+		and	tfgld106.ocmp		=		:tfgld106.ocmp
+		and	tfgld106._compnr	=		:ncmp.f
+		selectdo
+			insert.tfisg041()
+		endselect
+		catg.once.done	=	false
+	endif	
+}
+
+function	insert.tfisg041()
+{
+	domain	tfgld.btno	r.btno
+	domain	tfcmg.cheq	r.cheq
+	domain	tfgld.ttyp	r.typt, r.ctyp
+	domain	tfgld.docn	r.doct, r.cinv
+	domain	tcncmp		r.comt
+	domain	tccprj		o.cprj
+	domain	tfcash.reasons	o.reason
+	domain	tfcash.flow	m.ctyp
+	domain	tcmcs.str50	v.remk
+	
+	tcemm170.comp	=	ncmp.f
+	temp.comp	=	tfgld106.ocmp
+	r.btno	=	0
+	v.remk	=	""
+	r.cheq	=	""
+	tfisg044.reas	=	empty
+	
+	if	tfgld106.dbcr	=	tfgld.dbcr.debit	then
+		m.ctyp		=	tfcash.flow.out
+	else
+		m.ctyp		=	tfcash.flow.in
+	endif
+	if	ncmp.f	<>	tfgld106.ocmp	then
+		select	tfgld106.tedt
+		from	tfgld106
+		where	tfgld106._index1	=	{:tfgld106.ftyp,:tfgld106.fdoc}
+		and	tfgld106._compnr	=	:tfgld106.ocmp
+		as	set with 1 rows
+		selectdo
+		selectempty
+			tfgld106.tedt	=	0
+		endselect
+		select	tfgld112.typt:r.typt,
+			tfgld112.doct:r.doct,
+			tfgld112.comt:r.comt
+		from	tfgld112
+		where	tfgld112._index1 	= 	{:ncmp.f,:tfgld106.otyp,
+							:tfgld106.odoc,:tfgld106.ocmp}
+		selectdo
+		selectempty
+			r.comt	=	tfgld106.ocmp
+		endselect
+		select	tfgld106.ctyp:r.ctyp,
+			tfgld106.cinv:r.cinv
+		from	tfgld106
+		where	tfgld106._index1	=	{:r.typt,:r.doct,:o.tfgld106.olin}
+		and	tfgld106._compnr	=	:r.comt
+		selectdo
+		selectempty
+			r.ctyp	=	""
+			r.cinv	=	0
+		endselect
+		select	tfcmg110.tdoc:r.ctyp,
+			tfcmg110.pdoc:r.cinv,
+			tfcmg110.step
+		from	tfcmg110
+		where	tfcmg110._index6	=	{:r.typt,:r.doct}
+		and	tfcmg110.step		=	tfcmg.step.doc.rejected
+		as	set with 1 rows
+		selectdo
+		selectempty
+			tfcmg110.step	=	empty			
+		endselect
+		get.new.project(
+				r.ctyp,
+				r.cinv,
+				r.comt,
+				o.cprj
+| 				o.reason
+			)
+		get.payment.batch.details(
+					r.typt,
+					r.doct,
+					r.comt,
+					r.btno,
+					r.cheq
+					)
+	else
+		select	tfgld106.tedt
+		from	tfgld106
+		where	tfgld106._index1	=	{:tfgld106.otyp,:tfgld106.odoc,:tfgld106.olin}
+		and	tfgld106._compnr	=	:tfgld106.ocmp
+		as	set with 1 rows
+		selectdo
+		selectempty
+			tfgld106.tedt	=	0
+		endselect
+		r.typt	=	tfgld106.otyp
+		r.doct	=	tfgld106.odoc
+		r.comt	=	tfgld106.ocmp
+		
+		select	tfgld011.ttyp,tfgld011.catg 				|bharti.sn
+		from	tfgld011
+		where	tfgld011._index1 = {:tfgld106.otyp}
+		selectdo
+			if tfgld011.ttyp 	<>	"AUR" then		|#GH238CR530_000.n
+				if tfgld011.catg = tfgld.catg.purchase.cred then	
+					select	tfgld112.cono:r.comt			
+					from	tfgld112
+					where	tfgld112._index1 	= 	{:ncmp.f,:tfgld011.ttyp,:tfgld106.odoc}
+					selectdo
+					endselect
+				else							|bharti.en
+					select	tfgld112.comt:r.comt			
+					from	tfgld112
+					where	tfgld112._index1 	= 	{:ncmp.f,:tfgld106.otyp,:tfgld106.odoc}
+					selectdo
+					endselect
+				endif						|bharti.n
+			endif							|#GH238CR530_000.n
+		endselect
+		
+		select	tfcmg110.tdoc,
+			tfcmg110.pdoc,
+			tfcmg110.step
+		from	tfcmg110
+		where	tfcmg110._index6	=	{:r.typt,:r.doct}
+		and	tfcmg110.step		=	tfcmg.step.doc.rejected
+		as	set with 1 rows
+		selectdo
+			get.new.project(
+					tfcmg110.tdoc,
+					tfcmg110.pdoc,
+					r.comt,
+					o.cprj
+| 					o.reason
+				)
+		selectempty
+			tfcmg110.step	=	empty	
+			get.new.project(
+					tfgld106.ctyp,
+					tfgld106.cinv,
+					r.comt,
+					o.cprj
+| 					o.reason
+				)
+		endselect
+		get.payment.batch.details(
+					r.typt,
+					r.doct,
+					tfgld106.ocmp,
+					r.btno,
+					r.cheq
+					)
+	endif
+	
+	if	o.cprj		=	"ACCTS"	then				
+		get.new.project(				
+				tfgld106.ctyp,
+				tfgld106.cinv,
+				ncmp.f,
+				o.cprj
+| 				|o.reason
+			)					
+			
+| 		get.new.project.1(				|bharti.sn		|bharti.so
+| 				tfgld106.ctyp,
+| 				tfgld106.cinv,
+| 				ncmp.f,
+| 				o.cprj
+| 			)					|bharti.en		|bharti.eo
+	endif
+	if	tfisg044.reas	=	empty	then
+		select	tfisg041.reas:tfisg044.reas
+		from	tfisg041
+		where	tfisg041._index1	=	{:ncmp.f,:tfgld106.obat}
+		and	tfisg041.comp		=	:tfgld106.ocmp
+		and	tfisg041.ptyp		=	:r.ctyp
+		and	tfisg041.pdoc		=	:r.cinv
+		and	tfisg041.lino		=	:tfgld106.olin
+		and	tfisg041.cfam = tfcf.auto.man.cashflow.auto		|#GH281CR579_000.n
+		selectdo
+		selectempty
+			tfisg044.reas	=	empty
+		endselect
+	endif
+	on	case	tfgld106.tran
+		case	tfcmg.tran.reconc.cust:
+			tfisg044.reas	=	tfcash.reasons.rece.reco
+		break
+		case	tfcmg.tran.reconc.suppl:
+			tfisg044.reas	=	tfcash.reasons.paym.reco
+		break
+	endcase
+	if	tfisg044.reas	=	empty	then
+		select	tfisg043.type
+		from	tfisg043
+		where	tfisg043._index1	=	{:tfgld106.leac}
+		and	tfisg043.type		=	tfgl.type.intercompany
+		as	set with 1 rows
+		selectdo
+			tfisg044.reas	=	tfcash.reasons.reason.inter
+		selectempty
+			tfisg044.reas	=	empty
+		endselect
+	endif
+	if	tfisg044.reas	=	empty	then
+		select	tfisg044.reas
+		from	tfisg044
+		where	tfisg044._index1	<=	{:tfgld106.leac}
+		and	tfisg044.dglt		>=	:tfgld106.leac
+		and	tfisg044.ctyp		=	:m.ctyp
+		and	tfisg044.cotp		=	:tdpur400.cotp
+		selectdo
+		selectempty
+			tfisg044.reas	=	tfcash.reasons.user.input
+		endselect
+	endif
+	
+	if	r.btno	=	0	then				
+		select	tfcmg112.tdoc,
+			tfcmg112.pdoc
+		from	tfcmg112
+		where	tfcmg112._index2	=	{:tfgld106.otyp,:tfgld106.odoc,:tfgld106.olin}
+		and	tfcmg112._compnr	=	:tfgld106.ocmp
+		as	set with 1 rows
+		selectdo
+		selectempty
+			tfcmg112.tdoc	=	""
+			tfcmg112.pdoc	=	0
+		endselect
+		get.payment.batch.details(
+						tfcmg112.tdoc,
+						tfcmg112.pdoc,
+						tfgld106.ocmp,
+						r.btno,
+						r.cheq
+					)
+	endif
+				
+	if	ncmp.f		=	tfgld106.ocmp			and
+		tfgld011.appr	=	tfacp.inv.expence		and
+		(tfisg044.reas	=	tfcash.reasons.reason.proj	or
+		tfisg044.reas	=	tfcash.reasons.user.input)	and
+		o.cprj		=	"ACCTS"				then
+		v.remk		=	"Project to be checked."	
+	endif
+	if	(tfisg044.reas	=	tfcash.reasons.paym.reco	or
+		tfisg044.reas	=	tfcash.reasons.reason.inter)	and	
+		tfcmg110.step	<>	tfcmg.step.doc.rejected		then
+		o.cprj		=	"ACCTS"	
+	endif
+	
+	select	tfgld011.ses1
+	from	tfgld011
+	where	tfgld011._index1	=	{:tfgld106.otyp}
+	and	tfgld011.ses1		=	"tfcmg2131s000"
+	and	tfgld011.ses2		=	"tfcmg2106s000"
+	as	set with 1 rows
+	selectdo
+		tfisg044.reas	=	tfcash.reasons.assignment
+		o.cprj		=	"ACCTS"	
+	endselect
+	
+	i.lino	=	i.lino	+	1
+	dal.start.business.method(
+					"tfisg041", "InsertIntotfisg041.1", ret_val,
+					ncmp.f,			| Financial Company
+					tfgld106.obat,		| Batch
+					tfgld106.fyer,		| Year
+					tfgld106.ctyp,		| Trasactions
+					tfgld106.cinv,		| Document
+					o.tfgld106.olin,	| Line
+					i.lino,			| Sequence
+					tfgld106.fprd,		| Period	
+					tfgld106.bpid,		| Business Partner,
+					tfgld106.ccur,		| Currency
+					tfgld106.amnt,		| Amount
+					tfgld106.amth(1),	| Amount
+					tfgld106.rate(1),	| Rate
+					0,			| Trasactions Date
+					tfmode.journal,		| Mode Of Update
+					0,
+					g.tadv,
+					tfgld106.ocmp,		| Orginal Company
+					m.ctyp,
+					r.btno,
+					tfgld106.otyp,
+					tfgld106.odoc,
+					tfgld106.dcdt,
+					o.tfgld106.olin,
+					o.cprj,			
+					tcyesno.yes,
+					tfisg044.reas,
+					tfgld106.leac,
+					tfgld106.tedt,
+					tfgld106.refr,
+					r.cheq,
+					tfgld106.user,
+					v.remk
+					)
+	r.olin	=	tfgld106.olin	
+}
+
+function	get.payment.batch.details(
+						domain	tfgld.ttyp	r.otyp,
+						domain	tfgld.docn	r.odoc,
+						domain	tcncmp		r.ncmp,
+					ref	domain	tfgld.btno	r.btno,
+					ref	domain	tfcmg.cheq	r.cheq
+					)
+{
+	r.btno	=	0
+	r.cheq	=	""
+	select	tfcmg113.btno:r.btno,
+		tfcmg113.cheq:r.cheq
+	from	tfcmg113
+	where	tfcmg113._index2	=	{:r.otyp,:r.odoc}
+	and	tfcmg113._compnr	=	:r.ncmp
+	as	set with 1	rows
+	selectdo
+	endselect
+}
+
+function	get.new.project(
+				domain	tfgld.ttyp	r.ttyp,
+				domain	tfgld.docn	r.docn,
+				domain	tcncmp		r.ncmp,
+			ref	domain	tccprj		o.cprj
+| 			ref	domain	tfcash.reasons	o.reason
+			)
+{
+	domain	tcorno	v.orno
+	
+	o.cprj		=	""				
+	tdpur400.cotp 	=	""				
+	
+	if	get.target.company(r.ncmp)	then
+	else
+		if	get.target.company(ncmp.f)	then
+			r.ncmp	=	ncmp.f
+			r.ttyp	=	tfgld106.ctyp
+			r.docn	=	tfgld106.cinv
+| 		else	
+| 			o.cprj	=	"ACCTS"
+		endif
+	endif
+	
+	if	isspace(o.cprj)	then
+		select	tfacp251.orno, 
+			tfacp251.pono, 
+			tfacp251.sqnb,
+			tfacp251.loco
+		from	tfacp251
+		where	tfacp251._index1	=	{:r.ncmp,:r.ttyp,:r.docn}
+		and	tfacp251._compnr	=	:r.ncmp
+		as 	set with 1 rows
+		selectdo
+		selectempty
+			select	tfacp251.orno, 
+				tfacp251.pono, 
+				tfacp251.sqnb,
+				tfacp251.loco
+			from	tfacp251
+			where	tfacp251._index1	=	{:ncmp.f,:r.ttyp,:r.docn}
+			and	tfacp251._compnr	=	:r.ncmp
+			as 	set with 1 rows
+			selectdo
+			selectempty
+				tfacp251.orno	=	""
+				tfacp251.pono	=	0
+				tfacp251.sqnb	=	0
+				tfacp251.loco	=	ncmp.f
+			endselect
+		endselect
+		select	tdpur401.cprj:o.cprj, 
+			tdpur400.cotp
+		from	tdpur401, tdpur400
+		where	tdpur401._index1	=		{:tfacp251.orno, 
+								:tfacp251.pono, 
+								:tfacp251.sqnb}
+		and	tdpur401.orno		refers to	tdpur400
+		and	tdpur401.cprj		<>		""
+		and	tdpur401._compnr	=		:tfacp251.loco
+		and	tdpur400._compnr	=		:tfacp251.loco
+		as	set with 1 rows
+		selectdo
+		endselect
+	endif
+	
+	if	isspace(o.cprj)	then
+		select	tfacp200.cdf_prno,
+			tfacp200.cdf_cprj:o.cprj
+		from	tfacp200
+		where	tfacp200._index1	=	{:r.ttyp,:r.docn}
+		and	tfacp200.docn		=	0
+		and	tfacp200._compnr	=	:r.ncmp
+		as	set with 1 rows
+		selectdo
+			get.var(pid, "tfacp200.cdf_prno", v.orno)
+			select	tdpur401.cprj:o.cprj, 
+				tdpur400.cotp
+			from	tdpur401, tdpur400
+			where	tdpur401._index1	=		{:v.orno}
+			and	tdpur401.cprj		<>		""
+			and	tdpur401.orno		refers to 	tdpur400
+			and	tdpur401._compnr	=		:r.ncmp
+			and	tdpur400._compnr	=		:r.ncmp
+			selectdo
+			selectempty
+				tdpur400.cotp	=	""
+			endselect
+		selectempty
+		endselect
+	endif
+
+	if	isspace(o.cprj)	then
+| 		if	r.docn	=	0	then				|#GH238CR530_000.o
+		if	r.docn	=	0 or					|#GH238CR530_000.sn
+			tfgld011.ttyp 	=	"AUR" or
+			tfgld011.catg = tfgld.catg.purchase.cred or	
+			tfgld011.catg = tfgld.catg.sales.inv or	
+			tfgld011.catg = tfgld.catg.purchase.inv or	
+			tfgld011.catg = tfgld.catg.sales.cred then		|#GH238CR530_000.en
+			select	tfgld106.dim1:o.cprj
+			from	tfgld106
+			where	tfgld106._index1	=	{:tfgld106.otyp,:tfgld106.odoc,:o.tfgld106.olin}	
+			and	tfgld106.leac		=	:tfgld106.leac
+			and	tfgld106.dim1		<>	""
+			and	tfgld106._compnr	=	:ncmp.f
+			as	set with 1 rows
+			selectdo
+			selectempty
+				select	tfgld106.dim1:o.cprj
+				from	tfgld106
+				where	tfgld106._index1	=	{:tfgld106.otyp,:tfgld106.odoc,:o.tfgld106.olin}	
+				and	tfgld106.dim1		<>	""
+				and	tfgld106._compnr	=	:ncmp.f
+				as	set with 1 rows
+				selectdo
+				selectempty
+					o.cprj		=	"ACCTS"	
+				endselect
+			endselect	
+		else
+			if  r.ttyp= tfgld106.otyp and r.docn = tfgld106.odoc then		|bharti.sn
+			else
+				r.ttyp= tfgld106.otyp	
+				r.docn = tfgld106.odoc
+			endif									|bharti.en
+			
+			if r.ttyp = "AUR" then					|#GH238CR530_000.sn
+				r.ncmp = ncmp.f
+			endif							|#GH238CR530_000.en
+			
+			select	tfgld106.dim1:o.cprj
+			from	tfgld106
+			where	tfgld106._index1	=	{:r.ttyp,:r.docn,:o.tfgld106.olin}	
+			and	tfgld106.leac		=	:tfgld106.leac
+			and	tfgld106.dim1		<>	""
+			and	tfgld106._compnr	=	:r.ncmp
+			as	set with 1 rows
+			selectdo
+			selectempty
+				o.cprj		=	"ACCTS"			|#GH238CR530_000.n
+| 				select	tfgld106.dim1:o.cprj			|#GH238CR530_000.so
+| 				from	tfgld106
+| 				where	tfgld106._index1	=	{:r.ttyp,:r.docn,:o.tfgld106.olin}	
+| 				and	tfgld106.dim1		<>	""
+| 				and	tfgld106._compnr	=	:r.ncmp
+| 				as	set with 1 rows
+| 				selectdo
+| 				selectempty
+| 					select	tfgld106.dim1:o.cprj		
+| 					from	tfgld106
+| 					where	tfgld106._index1	=	{:r.ttyp,:r.docn}	
+| 					and	tfgld106.leac		=	:tfgld106.leac
+| 					and	tfgld106.dim1		<>	""
+| 					and	tfgld106._compnr	=	:r.ncmp
+| 					as	set with 1 rows
+| 					selectdo
+| 					selectempty
+| 						select	tfgld106.dim1:o.cprj
+| 						from	tfgld106
+| 						where	tfgld106._index1	=	{:r.ttyp,:r.docn}	
+| 						and	tfgld106.dim1		<>	""
+| 						and	tfgld106._compnr	=	:r.ncmp
+| 						as	set with 1 rows
+| 						selectdo
+| 						selectempty
+| 							o.cprj		=	"ACCTS"	
+| 						endselect
+| 					endselect
+| 				endselect					|#GH238CR530_000.en
+			endselect
+		endif
+	endif
+	if trim$(o.cprj) = "ACCTS" then						|#GH281CR579_000.sn
+		if tfgld106.bpid(1;3) = "CUS" then
+			select	tfgld106.dim1:o.cprj
+			from	tfgld106
+			where	tfgld106._index1	=	{:r.ttyp,:r.docn}	
+			and	tfgld106.dim1		<>	""
+			and	tfgld106._compnr	=	:r.ncmp
+			as	set with 1 rows
+			selectdo
+			selectempty
+				o.cprj		=	"ACCTS"	
+			endselect
+		endif
+	endif							
+	if trim$(tfgld106.leac) = "6515473" then				
+		o.cprj = "ACCTS"
+	endif									|#GH281CR579_000.en
+}
+
+function	domain	tcbool	get.target.company(domain	tcncmp	t.ncmp)
+{
+	select	a_tfacp200.ifbp
+	from	tfacp200	a_tfacp200
+	where	a_tfacp200._index1	=	{:tfgld106.ctyp,:tfgld106.cinv}
+	and	a_tfacp200.tdoc		=	:tfgld106.otyp
+	and	a_tfacp200.docn		=	:tfgld106.odoc
+	and	a_tfacp200._compnr	=	:t.ncmp
+	as	set with 1 rows
+	selectdo
+		return(true)
+	endselect
+	return(false)
+}
+
+function	update.existing.reason.code()
+{
+	domain	tfgld.ttyp	m.ctyp
+	domain	tfgld.docn	m.cinv
+	domain	tcpono		m.olin
+	domain	tfcash.reasons	m.reas
+	domain	tfgld.btno	m.btno
+	domain	tcncmp		m.ocmp
+	
+	db.retry.point()
+	select	tfisg041.ptyp:m.ctyp,
+		tfisg041.pdoc:m.cinv,
+		tfisg041.lino:m.olin,
+		tfisg041.reas:m.reas,
+		tfisg041.btno:m.btno,
+		tfisg041.comp:m.ocmp
+	from	tfisg041
+	where	tfisg041._index2	inrange	{:ncmp.f,:year,:prno.f}
+					and	{:ncmp.f,:year,:prno.t}
+| 	and	tfisg041.comp		=	:tfgld106.ocmp
+	and	tfisg041.reas		in	(tfcash.reasons.reason.inter, tfcash.reasons.paym.reco)
+	and	tfisg041._compnr	=	:ncmp.f
+	and	tfisg041.cfam = tfcf.auto.man.cashflow.auto			|#GH281CR579_000.n
+	selectdo
+		on	case	m.reas
+			case	tfcash.reasons.reason.inter:
+				select	tfisg041.reas
+				from	tfisg041	for	update
+				where	tfisg041._index1	=	{:ncmp.f,:m.btno}
+				and	tfisg041.comp		=	:m.ocmp
+				and	tfisg041.ptyp		=	:m.ctyp
+				and	tfisg041.pdoc		=	:m.cinv
+				and	tfisg041.lino		=	:m.olin
+				and	tfisg041.reas		=	tfcash.reasons.user.input
+				and	tfisg041._compnr	=	:ncmp.f
+				and	tfisg041.cfam = tfcf.auto.man.cashflow.auto		|#GH281CR579_000.n
+				selectdo
+					tfisg041.reas	=	tfcash.reasons.reason.inter
+					tfisg041.cprj	=	"ACCTS"
+					db.update(ttfisg041, db.retry,e)
+					commit.transaction()
+				endselect
+			break
+			case	tfcash.reasons.paym.reco:
+				select	tfisg041.reas
+				from	tfisg041	for	update
+				where	tfisg041._index1	=	{:ncmp.f,:m.btno}
+				and	tfisg041.comp		=	:m.ocmp
+				and	tfisg041.ptyp		=	:m.ctyp
+				and	tfisg041.pdoc		=	:m.cinv
+				and	tfisg041.lino		=	:m.olin
+				and	tfisg041.reas		<>	tfcash.reasons.paym.reco
+				and	tfisg041._compnr	=	:ncmp.f
+				and	tfisg041.cfam = tfcf.auto.man.cashflow.auto		|#GH281CR579_000.n
+				selectdo
+					tfisg041.reas	=	tfcash.reasons.paym.reco
+					tfisg041.cprj	=	"ACCTS"
+					db.update(ttfisg041, db.retry,e)
+					commit.transaction()
+				endselect
+			break
+		endcase
+	endselect
+}	
+									|#ISGEC017002.en
+									
+									
+function	get.new.project.1(						|bharti.sn
+				domain	tfgld.ttyp	r.ttyp,
+				domain	tfgld.docn	r.docn,
+				domain	tcncmp		r.ncmp,
+			ref	domain	tccprj		o.cprj
+| 			ref	domain	tfcash.reasons	o.reason
+			)
+{
+	domain	tcorno	v.orno
+| 	domain	tfgld.btno	r.btno
+
+	
+	o.cprj		=	""				
+	tdpur400.cotp 	=	""				
+	
+	if	get.target.company(r.ncmp)	then
+	else
+		if	get.target.company(ncmp.f)	then
+			r.ncmp	=	ncmp.f
+			r.ttyp	=	tfgld106.ctyp
+			r.docn	=	tfgld106.cinv
+| 		else	
+| 			o.cprj	=	"ACCTS"
+		endif
+	endif
+	if	isspace(o.cprj)	then
+		select	tfacp251.orno, 
+			tfacp251.pono, 
+			tfacp251.sqnb,
+			tfacp251.loco
+		from	tfacp251
+		where	tfacp251._index1	=	{:r.ncmp,:r.ttyp,:r.docn}
+		and	tfacp251._compnr	=	:r.ncmp
+		as 	set with 1 rows
+		selectdo
+		selectempty
+			select	tfacp251.orno, 
+				tfacp251.pono, 
+				tfacp251.sqnb,
+				tfacp251.loco
+			from	tfacp251
+			where	tfacp251._index1	=	{:ncmp.f,:r.ttyp,:r.docn}
+			and	tfacp251._compnr	=	:r.ncmp
+			as 	set with 1 rows
+			selectdo
+			selectempty
+				tfacp251.orno	=	""
+				tfacp251.pono	=	0
+				tfacp251.sqnb	=	0
+				tfacp251.loco	=	ncmp.f
+			endselect
+		endselect
+		select	tdpur401.cprj:o.cprj, 
+			tdpur400.cotp
+		from	tdpur401, tdpur400
+		where	tdpur401._index1	=		{:tfacp251.orno, 
+								:tfacp251.pono, 
+								:tfacp251.sqnb}
+		and	tdpur401.orno		refers to	tdpur400
+		and	tdpur401.cprj		<>		""
+		and	tdpur401._compnr	=		:tfacp251.loco
+		and	tdpur400._compnr	=		:tfacp251.loco
+		as	set with 1 rows
+		selectdo
+		endselect
+	endif
+	
+	if	isspace(o.cprj)	then
+		select	tfacp200.cdf_prno,
+			tfacp200.cdf_cprj:o.cprj
+		from	tfacp200
+		where	tfacp200._index1	=	{:r.ttyp,:r.docn}
+		and	tfacp200.docn		=	0
+		and	tfacp200._compnr	=	:r.ncmp
+		and	tfacp200.btno		= 	:tfgld106.obat
+		as	set with 1 rows
+		selectdo
+			get.var(pid, "tfacp200.cdf_prno", v.orno)
+			select	tdpur401.cprj:o.cprj, 
+				tdpur400.cotp
+			from	tdpur401, tdpur400
+			where	tdpur401._index1	=		{:v.orno}
+			and	tdpur401.cprj		<>		""
+			and	tdpur401.orno		refers to 	tdpur400
+			and	tdpur401._compnr	=		:r.ncmp
+			and	tdpur400._compnr	=		:r.ncmp
+			selectdo
+			selectempty
+				tdpur400.cotp	=	""
+			endselect
+		selectempty
+		endselect
+	endif
+
+	if	isspace(o.cprj)	then
+		if	r.docn	=	0	then			
+			select	tfgld106.dim1:o.cprj
+			from	tfgld106
+			where	tfgld106._index1	=	{:tfgld106.otyp,:tfgld106.odoc,:o.tfgld106.olin}	
+			and	tfgld106.leac		=	:tfgld106.leac
+			and	tfgld106.dim1		<>	""
+			and	tfgld106.obat 		= 	:tfgld106.obat
+			and	tfgld106._compnr	=	:ncmp.f
+			as	set with 1 rows
+			selectdo
+			selectempty
+				select	tfgld106.dim1:o.cprj
+				from	tfgld106
+				where	tfgld106._index1	=	{:tfgld106.otyp,:tfgld106.odoc,:o.tfgld106.olin}	
+				and	tfgld106.dim1		<>	""
+				and	tfgld106.obat 		= 	:tfgld106.obat
+				and	tfgld106._compnr	=	:ncmp.f
+				as	set with 1 rows
+				selectdo
+				selectempty
+					o.cprj		=	"ACCTS"	
+				endselect
+			endselect	
+		else
+			select	tfgld106.dim1:o.cprj
+			from	tfgld106
+			where	tfgld106._index1	=	{:r.ttyp,:r.docn,:o.tfgld106.olin}	
+			and	tfgld106.leac		=	:tfgld106.leac
+			and	tfgld106.dim1		<>	""
+			and	tfgld106.obat 		= 	:tfgld106.obat
+			and	tfgld106._compnr	=	:r.ncmp
+			as	set with 1 rows
+			selectdo
+			selectempty
+				select	tfgld106.dim1:o.cprj
+				from	tfgld106
+				where	tfgld106._index1	=	{:r.ttyp,:r.docn,:o.tfgld106.olin}	
+				and	tfgld106.dim1		<>	""
+				and	tfgld106.obat 		= 	:tfgld106.obat
+				and	tfgld106._compnr	=	:r.ncmp
+				as	set with 1 rows
+				selectdo
+				selectempty
+					select	tfgld106.dim1:o.cprj
+					from	tfgld106
+					where	tfgld106._index1	=	{:r.ttyp,:r.docn}	
+					and	tfgld106.leac		=	:tfgld106.leac
+					and	tfgld106.dim1		<>	""
+					and	tfgld106.obat 		= 	:tfgld106.obat
+					and	tfgld106._compnr	=	:r.ncmp
+					as	set with 1 rows
+					selectdo
+					selectempty
+						select	tfgld106.dim1:o.cprj
+						from	tfgld106
+						where	tfgld106._index1	=	{:r.ttyp,:r.docn}	
+						and	tfgld106.dim1		<>	""
+						and	tfgld106.obat 		= 	:tfgld106.obat
+						and	tfgld106._compnr	=	:r.ncmp
+						as	set with 1 rows
+						selectdo
+						selectempty
+							o.cprj		=	"ACCTS"	
+						endselect
+					endselect
+				endselect
+			endselect
+		endif
+	endif
+}									|bharti.en
+					
+					
+function delete.tfisg041()					|bharti.sn.25.09.19
+{
+	select	tfisg041.*
+	from	tfisg041	for update
+| 	where	tfisg041._index2 inrange {:ncmp.f,:year,:prno.f} and {:ncmp.f,:year,:prno.t}	|#GH265CR554_000.o
+	where	tfisg041._index2 inrange {:ncmp.f1,:year,:prno.f} and {:ncmp.t,:year,:prno.t}	|#GH265CR554_000.n
+	and	tfisg041.cfam = tfcf.auto.man.cashflow.auto			|#GH251CR545_000.n
+| 	and	tfisg041.btno = 30459	
+	selectdo
+		db.delete(ttfisg041,db.retry,e)
+	endselect
+	commit.transaction()
+}	
+							|bharti.sn.25.09.19					

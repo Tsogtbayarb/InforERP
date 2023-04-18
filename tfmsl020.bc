@@ -1,0 +1,2740 @@
+|******************************************************************************
+|* tfmsl020  0  VRC B61U a7 live
+|* DAL 2 for tfmsl020
+|* tools1
+|* 14-06-10 [09:57]
+|******************************************************************************
+|* Script Type: DAL
+|* Sujeet Kumar,	2014-06-13
+|* UI Script Logic is Cleaned. Now Logic is moved to DAL.
+|*
+|* ID ISGECDV001061, Sujeet Kumar,	2014-09-26
+|* Functional: Mr. Deepak Rawat
+|*
+|* ID PATCH001066,	Sujeet Kumar	2015-05-14
+|* Functional: Bandita Boraha
+|*
+|* IDENT ISGEC015073, Shilpa Janardanan, 17-05-2015
+|* Enhancement in the functionality
+|* Approval of request added
+| **************************************************************************
+| IDENT ISGEC01137, GAURAV GUPTA, 07-11-2015
+|*
+|* ID ISGEC002017, Manish Manchanda, 2016-01-05
+|* modification and commit blocked
+|*
+|* ID ISGEC002026, Manish Manchanda, 2016-01-27
+|* Reject enabled in case cheque rejected after process
+|*
+|* ID ISGEC002046, Manish Manchanda, 2016-05-06
+|* check of return 
+|*
+|* ID ISGECFIN013 , Kuldeep Sharma, 18/06/2016, VRC B61u a7 isg
+|* Filter and Process only recod which are selected on Payment Process
+|*
+|* ID ISGEC016005, Shilpa Janardanan, 14/07/2016, VRC B61U a7 isg
+|* Enabling Payment Method even for retention type
+|*
+|* ID ISGECGST005, IT0386, Saurabh Dubey, 09 June 2017, VRC B61U a7 isg
+|* GST Related Modifications, Functional : Mrs. Veena(Isgec)
+|
+|* ID GSTLIVE01010, Prabhanjan , 10.06.2017
+|	send Email
+|*
+|* ID ISGEC01050, Priya Jindal, 23/2/2018, VRC B61U a7 isg
+|* Addition of conditions for new form command
+|* Fields disable when verified 
+|*
+|* ID:ISGEC0178,Anadi Shankar,13-06-2018,VRC B61U a7 isg
+|* Insertion Of Data On tpisg229.
+|*
+|* ID ISGEC01071, Priya Jindal, 7/7/2018, VRC B61U a7 isg
+|* Changes for approval
+|*
+|* ID ISGEC01090, Priya Jindal, 28/7/2018, VRC B61U a7 isg
+|* Check on user
+|* 
+| * ID GH272CR564_000, Paras Kukreti, 20/2/2020
+| * Update Acknowlwdge field in table tfmsl072
+|* 
+|* GH596CR000, RAvi Kumar, 29-06-2021
+|* 179197- Quick Payment gets hang when BP is not active
+|******************************************************************************
+	table	ttfisg000
+	table	ttfmsl020
+	table	ttdmsl400
+	table	ttcisg001
+	table	ttccom001
+	table	ttdpur400
+	table	ttdpur401
+	table	ttcmcs065
+	table	ttctax941
+	table	ttcmcs036
+	table	ttppdm600
+	table	ttfcmg011
+	table	tbpmdm001
+	table	ttfisg036
+	table	ttfisg035	|ISGEC01090.n
+                 
+	table	ttfmsl070	|#ISGEC015073.n			
+	table	ttfmsl072	|#ISGEC015073.n
+	
+	table	ttccom100	|#pb
+	table	ttcmcs052	|#pb
+	
+	table	ttpisg229	|#ISGEC0178.n
+	table	ttdpur401	|#ISGEC0178.n
+	table	tdmisg140
+	table	ttpisg220
+	table	ttdisg002
+	table	ttpisg230
+#include <bic_dal2>
+
+
+	extern	domain	tcyesno		g.as.is.sales			
+	extern	domain	tcyesno		g.used.goods
+	extern	domain	tcmcs.s250m	comb.output.set(1) based
+	extern	domain	tctax.indt.l	g.duty.type.array(1,1)	based
+	extern	domain	tcamnt		g.duties.array(1,1)	based	
+	extern	domain	tcpvat		g.layer.tax.rate(1,1)	based
+	extern	domain	tcamnt		g.layer.base.amount.array(1, 1)	based
+	extern	domain	tcamnt		g.layer.tax.amount.array(1, 1)	based
+	extern	domain	tccvat		g.layer.tax.code.array(1, 1)	based
+	extern	domain	tctax.indt.l	g.line.indirect.tax.array(1,1) 	based
+	extern	domain	tcyesno		g.expensed.tax(1,1)		based	
+	extern	domain	tcqrd1		amount.for.dll	
+	extern	domain	tcamnt	i.Basic.amount, i.total.tax.amount
+	extern domain  tcbank	i.bank
+	extern domain	tcmcs.long	year,month,day,hh,mn,ss, v.dsno
+	extern domain  tfgld.date	request.date
+	
+	domain	tcdate		tmp.date			|#PATCH001066.n
+							|#ISGECFIN013.sn
+	domain tcmcs.str10m	g.iprq
+	boolean g.set.filter
+	
+	domain	tcdate		var.trdt			|#ISGEC0178.sn
+	domain	tcmcs.str50	var.bohd, var.iref
+	domain	tcmcs.str100	var.indv			
+	domain	tfgld.user	user
+	long srno					|#ISGEC0178.en
+
+	extern domain	tclogn	logn.f				|ISGEC01090.n
+	string	p(1), result(80)						|ISGEC01090.n
+	long 			flag, var.pono, pos1, pos2		|#ISGEC0178.en 
+	domain	tcwght		v.wght, var.perc,v.count1, v.count, count.adct
+	domain	dmdoc.revv	var.revi,v.revn
+					
+					|#ISGECFIN013.sn
+|**********************************Mail**************************************		|#GSTLIVE01010.sn
+		extern	domain	tfgld.date	date.f,date.t
+		extern	domain	ttdsca		sender.name1
+		extern	domain	tcinfo		sender.mail,sender.mail1
+		extern	domain	tcncmp		g.current.comp
+		extern	domain	ttaad.user	g.current.user
+		extern long ret
+		string	int.file1(100),int.file2(100)					
+		domain	tfmsl.ackn	get.status.for.mail			
+	
+|* CMF Variables
+	domain	ttcmf.prov	service
+	domain	ttcmf.role	cmf.role
+	domain	tcmcs.s512m	attachment.file
+	domain	tcmcs.s132m	cmf.err.mesg
+	long	message.ID,fp
+	long	attachment.ID,i1
+	long	err				
+	#include  <bic_cmf>
+	#pragma used dll ottdllcmf						|#GSTLIVE01010.en
+	#pragma used dll ottdllbw
+function extern long before.open.object.set()
+{
+	g.set.filter = false				|#ISGECFIN013.n
+	
+	|Read parameter
+	dal.field.depends.on("tfmsl020.srno",
+				HOOK_IS_APPLICABLE +
+				HOOK_IS_MANDATORY + 
+				HOOK_IS_VALID,"tfmsl020.optn",
+				HOOK_IS_READONLY, "tfmsl020.stat")
+	
+	dal.field.depends.on("tfmsl020.aprc",
+| 				HOOK_UPDATE,"tfmsl020.srno","tfmsl020.aamt",		|#PATCH001066.o
+				HOOK_UPDATE,"tfmsl020.srno",				|#PATCH001066.n
+				HOOK_IS_DERIVED,"tfmsl020.optn")
+	
+	dal.field.depends.on("tfmsl020.aamt",
+				HOOK_UPDATE,	"tfmsl020.aprc",
+						"tfmsl020.orno",
+						"tfmsl020.bamt",
+						"tfmsl020.tamt","tfmsl020.oamt")
+				
+	dal.field.depends.on("tfmsl020.orno",
+					HOOK_IS_APPLICABLE + 
+					HOOK_IS_MANDATORY,"tfmsl020.optn")
+	dal.field.depends.on("tfmsl020.bpid",
+				HOOK_UPDATE,"tfmsl020.orno","tfmsl020.optn")
+	
+	dal.field.depends.on("tfmsl020.fcom",
+				HOOK_UPDATE,"tfmsl020.orno","tfmsl020.optn")
+				
+	dal.field.depends.on("tfmsl020.meth",
+				HOOK_IS_APPLICABLE +
+				HOOK_IS_MANDATORY,"tfmsl020.paym")
+				
+	dal.field.depends.on("tfmsl020.fcom",
+				HOOK_UPDATE,"tfmsl020.orno","tfmsl020.cprj")
+	
+	dal.field.depends.on("tfmsl020.taxi",
+				HOOK_IS_DERIVED,"tfmsl020.optn")
+						
+	dal.field.depends.on("tfmsl020.bamt",
+				HOOK_UPDATE,"tfmsl020.orno","tfmsl020.taxi")
+	
+	dal.field.depends.on("tfmsl020.tamt",
+				HOOK_UPDATE,"tfmsl020.orno","tfmsl020.taxi")
+	
+	dal.field.depends.on("tfmsl020.oamt",
+				HOOK_UPDATE,	"tfmsl020.bamt",
+						"tfmsl020.tamt",
+						"tfmsl020.taxi")
+				
+	dal.field.depends.on("tfmsl020.ccur",
+				HOOK_UPDATE,"tfmsl020.orno","tfmsl020.cprj",
+				HOOK_IS_DERIVED,"tfmsl020.optn")
+
+	
+	dal.field.depends.on("tfmsl020.date",
+				HOOK_IS_APPLICABLE + 
+				HOOK_IS_MANDATORY,"tfmsl020.paym") 
+	dal.field.depends.on("tfmsl020.rqpr",HOOK_IS_VALID,"tfmsl020.adrq")			
+	dal.field.depends.on("tfmsl020.brnc",HOOK_UPDATE,"tfmsl020.aamt")			
+	dal.field.depends.on("tfmsl020.bnam",HOOK_UPDATE,"tfmsl020.brnc")
+	dal.field.depends.on("tfmsl020.bano",HOOK_UPDATE,"tfmsl020.brnc")
+
+| 	dal.field.depends.on("tfmsl020.drcv", HOOK_IS_APPLICABLE,"tfmsl020.docr","tfmsl020.stts")		|#ISGEC015073.n
+| 	dal.field.depends.on("tfmsl020.docr", HOOK_IS_READONLY, "tfmsl020.stts")		|#ISGEC015073.n
+	dal.field.depends.on("tfmsl020.poac", HOOK_IS_DERIVED, "tfmsl020.orno")		|#ISGEC015073.n
+	dal.field.depends.on("tfmsl020.aprc", HOOK_IS_APPLICABLE, "tfmsl020.stts")
+	dal.field.depends.on("tfmsl020.aamt", HOOK_IS_APPLICABLE, "tfmsl020.stts")		|#ISGEC015073.n
+	dal.field.depends.on("tfmsl020.ackn", HOOK_IS_APPLICABLE,"tfmsl020.stat")		|#ISGEC015073.n
+		
+	dal.field.depends.on("tfmsl020.iprq", HOOK_UPDATE,"tfmsl020.sele")		|#ISGECFIN013.n
+					
+	dal.field.depends.on("tfmsl020.igst", HOOK_UPDATE + HOOK_IS_DERIVED, "tfmsl020.igsp","tfmsl020.assv")	|#ISGECGST005.sn
+	dal.field.depends.on("tfmsl020.cgst", HOOK_UPDATE + HOOK_IS_DERIVED, "tfmsl020.cgsp","tfmsl020.assv")
+	dal.field.depends.on("tfmsl020.sgst", HOOK_UPDATE + HOOK_IS_DERIVED, "tfmsl020.sgsp","tfmsl020.assv")
+	dal.field.depends.on("tfmsl020.totl", 
+					HOOK_UPDATE + HOOK_IS_DERIVED, 
+								"tfmsl020.igst",
+								"tfmsl020.cgst",
+								"tfmsl020.sgst",
+								"tfmsl020.assv")
+											|#ISGECGST005.en
+	dal.field.depends.on("tfmsl020.txta", 
+					 HOOK_IS_READONLY, 
+								"tfmsl020.stat")
+	dal.field.depends.on("tfmsl020.reas",HOOK_IS_READONLY + HOOK_IS_MANDATORY,"tfmsl020.ackn")		|ISGEC01050.n	
+	tcmcs.dll0095.read.parm("tfisg000")
+	tmp.date = date.to.utc(2015,5,14,0,0,0)			|#PATCH001066.n
+	
+	return(0)
+}  
+
+function extern boolean method.is.allowed(long method)		|ISGEC01050.sn
+{
+    logn.f = logname$		|ISGEC01090.n
+    on case method
+    case DAL_NEW:
+    case DAL_UPDATE:
+    case DAL_DESTROY:
+	if logn.f = "merino1" then							|ISGEC01090.sn
+		logn.f= "MERINO1"
+	else
+		if logn.f = "merino2" then
+			logn.f = "MERINO2"
+		endif
+	endif	
+	select	tccom001.emno
+	from	tccom001
+	where	tccom001._index4 ={:logn.f}
+	selectdo
+	selectempty
+		tccom001.emno = ""	
+	endselect
+	
+	select	tfisg035.*								
+	from	tfisg035
+	where	tfisg035._index1 = {:tccom001.emno}
+	selectdo
+		if tfisg035.reqs = tcyesno.no and tfisg035.appr = tcyesno.no and tfisg035.sapr = tcyesno.no and
+			tfisg035.sver = tcyesno.no and tfisg035.veri = tcyesno.no and tfisg035.proc = tcyesno.no then
+			return(false)
+		endif
+	selectempty
+		p = logn.f(1;1)			
+		if p = "0" then
+			logn.f = logn.f(2;3)
+			select	tfisg035.*
+			from	tfisg035
+			where	tfisg035._index1 = {:logn.f}
+			selectdo
+				if tfisg035.reqs = tcyesno.no and tfisg035.appr = tcyesno.no and tfisg035.sapr = tcyesno.no and
+					tfisg035.sver = tcyesno.no and tfisg035.veri = tcyesno.no and tfisg035.proc = tcyesno.no then
+					return(false)
+				endif
+			selectempty
+				return(false)
+			endselect		
+		endif
+	endselect							|ISGEC01090.en	
+        break
+    endcase
+    return(true)
+}									|ISGEC01050.en
+
+function extern long after.save.object(long mode)				|#PB.06.Oct.2017
+{
+	
+	on case mode 
+	case dal_new :
+		
+		break
+		
+	case dal_update : 
+		with.old.object.values.do(get.status.mail)
+	if tfmsl020.ackn = tfmsl.ackn.receive or tfmsl020.ackn = tfmsl.ackn.return then		|#GSTLIVE01010.sn
+		send.email() 
+	endif												|#GSTLIVE01010.en
+		break
+		 
+	endcase
+
+| 	update.tfmsl072()							|#GH272CR564_000.n
+	if tfmsl020.stat = ltoe(30) then								|#ISGEC0178.sn
+		update.tpisg229.data()
+	endif												|#ISGEC0179.en
+	
+	return(0)
+}	
+
+ 
+function get.status.mail()
+{
+	get.status.for.mail=tfmsl020.ackn
+}
+		
+function long send.email()							|#GSTLIVE01010.sn
+{
+	long	file.ret1
+	string  file.name1(100),file.name(100),mdir(100),abc(100),d.mdir(100)
+	domain	tcmcs.s132m	mail.subject
+	domain	ttdsca		sender.name
+	domain	ttdsca		recipient.name
+	domain	tcinfo		recipient.mail
+	domain	tcmcs.str6	role.str
+	long	from.ID, to.ID, cc.ID,found 
+	 
+	 
+	domain ttcmf.prov service       
+                        |Infor ERP Enterprise eMessage Connector service for 
+                        |transporting messages
+        long stat       |Variable to hold return values
+        long mid   
+	 
+	 
+	domain	tcmcs.str100m Supplier
+	domain	tcmcs.str100m project
+	domain	tcmcs.str100m tot.amnt 
+	
+	select	bpmdm001.mail
+	from	bpmdm001
+	where	bpmdm001._index1={:tfmsl020.rqpr}
+	as set with 1 rows
+	selectdo
+		
+	selectempty
+		bpmdm001.mail=""
+	endselect
+	
+	select	tccom001.nama
+	from	tccom001
+	where	tccom001._index1={:tfmsl020.rqpr}
+	as set with 1 rows
+	selectdo
+	selectempty
+		tccom001.nama=""
+	endselect
+	
+	Supplier=""
+	project=""
+	
+	select	tccom100.nama
+	from	tccom100
+	where	tccom100._index1={:tfmsl020.bpid}
+	as set with 1 rows
+	selectdo
+		Supplier = strip$(shiftl$(tfmsl020.bpid)) & " - "& strip$(shiftl$(tccom100.nama))
+	selectempty
+		Supplier=""
+		tccom100.nama=""
+	endselect
+	
+	
+	select	tcmcs052.dsca
+	from	tcmcs052
+	where	tcmcs052._index1={:tfmsl020.cprj}
+	as set with 1 rows
+	selectdo
+		project = strip$(shiftl$(tfmsl020.cprj)) & " - "& strip$(shiftl$(tcmcs052.dsca))
+	selectempty
+		project=""
+		tcmcs052.dsca=""
+	endselect
+| 	enum.descr$("tfgst.sub.typ",tfgst520.tstp)
+	
+	tot.amnt =""
+	mail.subject = "Payment Request Number " & tfmsl020.adrq & " has been " & enum.descr$("tfmsl.ackn",tfmsl020.ackn) &"."
+
+	message.ID = cmf.create()
+	ret = cmf.setClass(message.ID,"CMF.NOTE")
+	ret = cmf.setSubject(message.ID,mail.subject)
+	ret = cmf.setPriority(message.ID, ttcmf.prio.high)
+	ret = cmf.setSensitivity(message.ID, ttcmf.sens.confidential)
+	
+	|* Set Sender
+	
+	cmf.role = ttcmf.role.from
+	ret = cmf.convertroletostring(cmf.role, role.str)
+
+	tt.user(g.current.user,sender.name)
+		
+	sender.name =  "Account Department"
+	sender.mail1 = "accountspayment@isgec.co.in" 
+		
+	from.ID = cmf.createRecipient(message.ID, ttcmf.role.from)
+	ret = cmf.setRecipientName(from.ID, sender.name)
+	ret = cmf.setRecipientAddress(from.ID,sender.mail1)
+	ret = cmf.setRecipientType(from.ID, "SMTP")
+
+	|* Set To Recipient 
+	
+	
+| 	recipient.mail = "RahulG@kapoorindustries.com"
+| 	recipient.name = "Rahul"
+
+	recipient.mail = trim$(bpmdm001.mail)
+	recipient.name = trim$(tccom001.nama)
+
+| 	recipient.mail = "prabhanjanbharti@merinoservices.com"
+| 	recipient.name = "Prabhanjan Bharti"
+		
+	cmf.role = ttcmf.role.to
+	ret = cmf.convertroletostring(cmf.role, role.str)
+	
+	to.ID = cmf.createRecipient(message.ID, ttcmf.role.to)
+	ret = cmf.setRecipientName(to.ID, recipient.name)
+	ret = cmf.setRecipientAddress(to.ID, recipient.mail)
+	ret = cmf.setRecipientType(to.ID, "SMTP")
+	ret = cmf.setRecipientResponsibility(to.ID, "TRUE")
+		
+|	Body
+	abc = bse.tmp.dir$()
+	file.name1 = strip$(abc) &"/Body Text"&".txt"
+	
+	file.ret1 = seq.open(file.name1 , "w+")
+	if file.ret1 <=0 then
+|                 message("Error in creating file %d",fp)		 
+		dal.set.error.message("Error in creating file")
+		return(DALHOOKERROR)
+        else
+	
+		tot.amnt = strip$(shiftl$(str$(tfmsl020.ccur))) & " "& strip$(shiftl$(str$(tfmsl020.totl)))
+		
+		file.ret1 = seq.open(file.name1,"w+")
+
+		seq.puts("Dear Sir," & chr$(13),file.ret1)
+		seq.puts("" & chr$(13),file.ret1)
+		seq.puts("Payment Request Number " & strip$(shiftl$(tfmsl020.adrq)) &" has been " & enum.descr$("tfmsl.ackn",tfmsl020.ackn) &".",file.ret1)
+		seq.puts("" & chr$(13),file.ret1)
+		seq.puts("Project Code & Description " & strip$(shiftl$(project)) &",",file.ret1)
+		seq.puts("" & chr$(13),file.ret1)
+		seq.puts("Supplier Code & Name " & strip$(shiftl$(Supplier)) &", ",file.ret1)
+		seq.puts("" & chr$(13),file.ret1)
+		seq.puts("Payment Amount " & strip$(shiftl$(tot.amnt)) &".",file.ret1)
+		seq.puts("" & chr$(13),file.ret1)
+		seq.puts("Thanking you," & chr$(13),file.ret1)		
+		seq.puts(strip$(shiftl$("Account Department")),file.ret1)		
+		
+	endif
+
+		
+	seq.close(file.ret1)
+	
+	attachment.ID = cmf.createAttachment(message.ID)
+	ret = cmf.setAttachmentBody(attachment.ID,ttyeno.yes)
+	ret = cmf.setAttachmentMIME(attachment.ID,"text/plain")
+	ret = cmf.setAttachmentFileName(attachment.ID,file.name1)
+|*********  Send mail
+        if message.ID <>0 then
+                stat = cmf.startService("SMTP",2)
+                if stat<>0 then
+                        dal.set.error.message("@ Message could not be sent "&
+                                "(Infor ERP Enterprise eMessage Connector"&
+                                " service did not start)")
+                        return(1)
+                endif
+                stat = cmf.send(message.ID,"SMTP")
+                if stat<>0 then
+                        dal.set.error.message("@ Message could not be sent "& "(Infor ERP Enterprise eMessage Connector "&
+                                "service refused message)")
+                        cmf.stopService("SMTP",2)
+                        return(1)
+                endif
+                stat = cmf.stopService("SMTP",2)
+		
+		  if stat<>0 then 
+		  return(DALHOOKERROR)
+			show.dal.messages(MSG.ALL)
+		  endif
+		
+        endif
+	return(0)
+
+	
+}									
+
+
+
+
+										|#GSTLIVE01010.sn
+function extern long before.save.object(long type)
+{
+	domain	tcamnt	diff.amnt
+	on case type
+	case DAL_NEW :
+		
+| 		if not requester_check() then
+| 			dal.set.error.message("@You are not Allowed for Advance Request")
+| 			return(DALHOOKERROR)
+| 		endif
+		|Generate First Free Number
+		if  tcmcs.dll0050.check.and.generate.order.number(
+				3, tfmsl020.adrq, tfisg000.nrgr, 
+				9, tfmsl020.adrq) then
+			return(DALHOOKERROR)
+		endif	
+		insert_history()				
+		break
+	endcase
+						|#ISGECGST005.sn
+	if tfmsl020.optn = tfoption.advance then
+		diff.amnt = abs(tfmsl020.totl - tfmsl020.aamt)
+						
+		if diff.amnt > 2.00 then	|* Rs. 2 Tolerance for Taxes
+| 			dal.set.error.message("@Tax Included Amount doesn't Matched With Advance Amount...")
+			dal.set.info.message("@Tax Included Amount doesn't Matched With Advance Amount...")		|Added by Sumit Bansal
+| 			return(DALHOOKERROR)
+			show.dal.messages(MSG.INFO)									|Added by Sumit Bansal
+		endif
+	endif	
+					|#ISGECGST005.en
+	return(0)
+}
+
+function extern long before.new.object()
+{
+	tfmsl020.adrq = tfisg000.seri
+	tfmsl020.rqdt = utc.num()
+	tfmsl020.comp = get.compnr()
+	tfmsl020.rqpr = get.employee.code(logname$)
+	tfmsl020.taxi = tcyesno.yes
+	tfmsl020.user = logname$		|#ISGEC015073.n
+	
+	return(0)
+}
+
+| function extern boolean text.manager.is.allowed  ()		|ISGEC01050.sn
+| {
+| 	if tfmsl020.stat = ltoe(10) then
+| 		return(true)
+| 	endif
+| 	
+| 	return(false)
+| }							|ISGEC01050.en
+
+|*****************  Form Command *****************
+|******
+| 	Sent to Finance 		10
+|	Cancel				20
+|	Generate			30
+function extern long sent_finance.is.allowed()
+{
+	if not approver() then
+		dal.set.error.message("@You are not Authorize for Sent To Finance")
+		return(false)
+	endif
+	
+	if	tfmsl020.aamt  = 0 then
+		dal.set.error.message("@Advance Amount cannot be zero.")
+		return(false)
+	endif
+	
+	if form_command_allowed(10) then
+		return(true)
+	endif
+	
+| 	if tfmsl020.stat = ltoe(20) then		|ISGEC01050.sn
+| 		return(true)
+| 	else
+| 		return(false)
+| 	endif						|ISGEC01050.en
+| 	if not document_received() then							|ISGEC01050.so
+| 		dal.set.error.message("@ Document Received must be yes in case of RTGS")
+| 		return(false)
+| 	endif
+| 	if not approver then
+| 		dal.set.error.message("@You are not Authorize for Sent To Finance")
+| 		return(DALHOOKERROR)
+| 	endif										|ISGEC01050.eo
+	
+	
+	return(false)
+}
+
+| function extern long sent_verifier.is.allowed()			|ISGEC01050.sn
+| {
+
+| 	if form_command_allowed(10) then
+| 		return(true)
+| 	endif
+
+| }									|ISGEC01050.en
+
+function extern long cont.cancel.is.allowed()
+{
+	if form_command_allowed(20) then
+		return(true)
+	endif
+	
+	return(false)
+}
+
+function extern boolean sent_verifier.is.allowed()				|ISGEC01050.sn
+{
+	domain	tcemno o.emno
+	if tfmsl020.ackn = tfmsl.ackn.receive then
+		
+		o.emno = get.login.code.wise.employee.code()
+		if tfmsl020.stat = tfmsl.lc.stat.sfin then
+			select	tfisg035.emno
+			from	tfisg035
+			where	tfisg035._index1 = {:o.emno}
+			and	tfisg035.sver = tcyesno.yes
+			selectdo
+				return(true)
+			selectempty
+				return(false)
+			endselect
+		endif	
+	endif
+	return(false)
+}
+
+function extern boolean verified.is.allowed()
+{
+	domain	tcemno o.emno
+	
+	o.emno = get.login.code.wise.employee.code()
+	
+	if tfmsl020.stat = tfmsl.lc.stat.sver then
+		select	tfisg035.emno
+		from	tfisg035
+		where	tfisg035._index1 = {:o.emno}
+		and	tfisg035.veri = tcyesno.yes
+		selectdo
+			if tfmsl020.ackn <> tfmsl.ackn.return then
+				return(true)
+			endif
+		selectempty
+			return(false)
+		endselect
+	endif	
+	return(false)
+}										|ISGEC01050.en
+
+function extern long cont.generate.is.allowed()
+{
+	if not processor() then
+		dal.set.error.message("@You are not Authorize To Process Payment")
+		return(false)
+	endif
+	
+	if form_command_allowed(30) then
+		return(true)
+	endif
+	
+	return(false)
+}
+
+
+	
+function extern boolean form_command_allowed
+			(
+				long 	FORM_COMMAND 
+			)
+{			
+	on case tfmsl020.stat
+		case tfmsl.lc.stat.crea:
+			on case FORM_COMMAND 
+				case	10:
+				case	20:
+				case	30:
+				case	80:
+				case	90:
+					return(false)
+					break
+			endcase
+			break
+		case tfmsl.lc.stat.sfin:
+			on case FORM_COMMAND 
+				case 	10:
+				case 	40:
+				case	80:		|ISGEC01050.n
+				case	90:		|ISGEC01050.n
+				case	30:		|ISGEC01050.n	
+					return(false)
+					break
+			endcase
+			break
+		case tfmsl.lc.stat.proc:
+			on case FORM_COMMAND 
+				case 	20:
+					on case  tfmsl020.paym
+					case	tfpaym.advice:
+						select 	tfcmg101.btno,
+							tfcmg101.ptyp,
+							tfcmg101.pdoc
+						from	tfcmg101
+						where	tfcmg101._index1 = {:tfmsl020.btno}
+						as set with 1 rows
+						selectdo
+						selectempty
+							return(true)
+						endselect
+						
+						
+						select 	tfcmg100.cheq
+						from	tfcmg100
+						where	tfcmg100._index1 = {:tfmsl020.bank,:tfmsl020.meth,:tfmsl020.chqe}
+						and	tfcmg100.chst = tfcmg.chst.rejected
+						as set with 1 rows
+						selectdo
+							return(true)
+						selectempty
+							return(false)
+						endselect
+					
+						break
+					endcase
+				break	
+			endcase
+| 		case tfmsl.lc.stat.canl:
+			return(false)
+			break
+		case	tfmsl.lc.stat.sver:
+			on case FORM_COMMAND
+				case 10:
+				case 40:
+					return(false)
+				break
+			endcase
+		case	tfmsl.lc.stat.veri:
+			on case FORM_COMMAND
+				case 10:
+				case 40:
+					return(false)
+				break
+			endcase
+		case 	tfmsl.lc.stat.sapr:
+			on case FORM_COMMAND 
+				case	10:
+				case	40:
+				case	20:
+				case	30:
+				case	50:
+					return(false)
+					break
+			endcase
+			break
+		
+		case 	tfmsl.lc.stat.rejc:
+			on case FORM_COMMAND 
+				case	10:
+				case	20:
+				case	30:
+					return(false)
+					break
+			endcase
+			break
+		case 	tfmsl.lc.stat.appr:
+			on case FORM_COMMAND 
+				case	40:
+				case	20:		|itest
+				case	30:
+				case	50:
+					return(false)
+					break
+			endcase
+			break
+		endcase
+	on case tfmsl020.ackn					|#ISGEC015073.sn
+		case tfmsl.ackn.receive:
+			on case FORM_COMMAND 
+				case 	20:
+								|#ISGEC002026.sn
+					select 	tfcmg100.cheq
+					from	tfcmg100
+					where	tfcmg100._index1	=	{:tfmsl020.bank,
+										:tfmsl020.meth,
+										:tfmsl020.chqe}
+					and	tfcmg100.chst		=	tfcmg.chst.rejected
+					as set with 1 rows
+					selectdo
+						return(true)
+					endselect			
+								|#ISGEC002026.en
+				return(false)
+					break
+			endcase
+			break	
+		endcase
+						|#ISGEC015073.en
+	return(true)
+}		
+
+|******* Purchase Options [tfmsl020.optn]
+function extern boolean tfmsl020.optn.is.derived()
+{
+	if enable_disable_logistic_fields() then
+		return(true)
+	endif
+	return(false)
+}
+	
+
+|******* Request Date [tfmsl020.rqdt]
+function extern boolean tfmsl020.rqdt.is.derived()
+{
+	return(true)
+}
+
+
+|******* Logistics Company [tfmsl020.comp]
+function extern boolean tfmsl020.comp.is.derived()
+{
+	return(true)
+}
+
+
+|******* Purchase Order [tfmsl020.orno]
+function extern boolean tfmsl020.orno.is.applicable()
+{
+	on case tfmsl020.optn
+		case 	tfoption.site.advance:
+			return(false)
+			break
+	endcase
+	
+	return(true)
+	
+}
+
+function extern boolean tfmsl020.orno.is.mandatory()
+{
+	on case tfmsl020.optn
+		case 	tfoption.site.advance:
+			return(false)
+			break
+		default:
+		
+			if isspace(tfmsl020.orno) then
+				return(true)
+			endif
+	endcase		
+	
+	return(false)
+}
+
+
+function extern boolean tfmsl020.orno.is.valid()
+{
+						|#ISGECFIN013.sn
+	if not dal.is.field.changed("tfmsl020.orno") then
+		return(true)
+	endif
+						|#ISGECFIN013.en
+	select 	tdpur400.orno,
+		tdpur400.otbp				|GH596CR000.a
+	from	tdpur400
+	where	tdpur400._index1 = {:tfmsl020.orno}
+	and	tdpur400._compnr = :tfmsl020.comp
+| 	and	tdpur400.hdst = tdpur.hdst.in.process	|To be discussed with Deepak Rawat
+	as set with 1 rows
+	selectdo
+		select	tccom100.prst,								|GH596CR000.a.s
+			tccom100.endt
+		from	tccom100
+		where	tccom100._index1 = {:tdpur400.otbp}
+		as set with 1 rows
+		selectdo
+			if tccom100.prst = tccom.prst.inactive then
+				dal.set.error.message("@BP is not active")
+				return(DALHOOKERROR)
+			endif
+			
+			if tccom100.endt <> 0 then
+				if tccom100.endt < utc.num() then
+					dal.set.error.message("@BP is expired")
+					return(DALHOOKERROR)
+				endif	
+			endif
+		endselect									|GH596CR000.a.e
+	selectempty
+		dal.set.error.message("@ Enter Valid Purchase Order")
+		return(DALHOOKERROR)
+	endselect
+	
+	return(true)
+}
+
+function extern boolean tfmsl020.orno.is.derived()
+{
+	if enable_disable_logistic_fields() then
+		return(true)
+	endif
+	return(false)	
+			
+}
+
+function extern tfmsl020.ccur.update()
+{
+	on case tfmsl020.optn
+	case 	tfoption.site.advance:
+		select tppdm600.ccur
+		from	tppdm600
+		where	tppdm600._index1 = {:tfmsl020.cprj}
+		as set with  1 rows
+		selectdo
+		endselect
+		
+		tfmsl020.ccur = tppdm600.ccur
+		break
+	default:
+		select 	tdpur400.ccur
+		from	tdpur400
+		where	tdpur400._index1 = {:tfmsl020.orno}
+		as set with 1 rows
+		selectdo
+		endselect
+	
+		tfmsl020.ccur = tdpur400.ccur
+	endcase
+	
+}
+
+function extern boolean tfmsl020.ccur.is.derived()
+{
+	on case tfmsl020.stat
+		case 	tfmsl.lc.stat.crea:
+		case	tfmsl.lc.stat.sfin:
+			on case tfmsl020.optn
+				case 	tfoption.site.advance:
+					return(false)
+				break
+			endcase
+			break	
+		case	tfmsl.lc.stat.proc:
+		case	tfmsl.lc.stat.canl:
+			return(true)
+			break
+	endcase
+	return(true)
+
+
+}
+
+function extern boolean tfmsl020.taxi.is.derived()
+{
+	on case tfmsl020.optn
+		case 	tfoption.site.advance:
+			return(true)
+			break
+	endcase
+		
+		
+	if enable_disable_logistic_fields() then
+		return(true)
+	endif
+	return(false)	
+}
+|******* PO Basic Amount[tfmsl020.bamt]
+
+function extern tfmsl020.bamt.update()
+{
+						|#ISGECDV001061.so
+| 	select tdpur400.oamt
+| 	from	tdpur400
+| 	where	tdpur400._index1 = {:tfmsl020.orno}
+| 	as set with 1 rows
+| 	selectdo
+| 	endselect
+| 	tfmsl020.bamt = tdpur400.oamt 
+						|#ISGECDV001061.eo
+						|#ISGECDV001061.sn	
+	domain	tcamnt		o.oamt
+	domain	tcamnt		o.exc.amnt
+	domain	tcamnt		o.stx.amnt
+	domain	tcamnt		o.basic
+	domain	tcamnt		o.oth1
+	domain	tcamnt		o.oth2
+	domain	tcamnt		o.tfmsl020.aamt
+	domain	tcamnt		old.tfmsl020.aamt
+	domain	tcmcs.str215m	o.tfmsl020.adrq
+	string error.msg(500)
+	
+						
+	on case tfmsl020.optn
+	case 	tfoption.advance:
+	case	tfoption.exchange:
+	case	tfoption.account:
+		o.oamt = 0
+		o.basic = 0
+		o.exc.amnt = 0
+		o.stx.amnt = 0
+		o.oth1 = 0
+		o.oth2 = 0
+		o.tfmsl020.aamt = 0
+		o.tfmsl020.adrq = ""
+		
+		tfmsldll0020.purchase_order_amount(tfmsl020.orno,o.basic,o.oamt,o.exc.amnt,o.stx.amnt,o.oth1,o.oth2)
+	endcase
+
+	tfmsl020.bamt = o.basic + o.oth1 + o.oth2
+	
+						|#ISGECDV001061.en	
+}
+
+function extern tfmsl020.oamt.update()
+{
+	tfmsl020.oamt = tfmsl020.bamt + tfmsl020.tamt
+}
+
+function extern tfmsl020.tamt.update()
+{
+						|#ISGECDV001061.sn	
+	domain	tcamnt		o.oamt
+	domain	tcamnt		o.basic
+	domain	tcamnt		o.exc.amnt
+	domain	tcamnt		o.stx.amnt
+	domain	tcamnt		o.oth1
+	domain	tcamnt		o.oth2
+	domain	tcamnt		o.tfmsl020.aamt
+	domain	tcamnt		old.tfmsl020.aamt
+	domain	tcmcs.str215m	o.tfmsl020.adrq
+	string error.msg(500)
+						|#ISGECDV001061.en
+	
+				
+	if tfmsl020.taxi = tcyesno.yes then
+						|#ISGECDV001061.so
+	| 		calculate.and.display.tax.amounts()			
+	| 		tfmsl020.tamt = i.total.tax.amount
+						|#ISGECDV001061.eo
+						|#ISGECDV001061.sn
+		on case tfmsl020.optn
+		case 	tfoption.advance:
+		case	tfoption.exchange:
+		case	tfoption.account:
+			o.oamt = 0
+			o.exc.amnt = 0
+			o.stx.amnt = 0
+			o.oth1 = 0
+			o.oth2 = 0
+			o.tfmsl020.aamt = 0
+			o.tfmsl020.adrq = ""
+			
+			tfmsldll0020.purchase_order_amount(tfmsl020.orno,o.basic,o.oamt,o.exc.amnt,o.stx.amnt,o.oth1,o.oth2)
+		endcase
+
+		tfmsl020.tamt = o.exc.amnt + o.stx.amnt	
+						|#ISGECDV001061.en	
+	else
+		tfmsl020.tamt = 0
+	endif
+}
+|******* Serial Number [tfmsl020.srno]
+function extern boolean tfmsl020.srno.is.mandatory()
+{
+	if tfmsl020.srno = 0 then
+		return(true)
+	endif
+	
+	return(false)
+}
+
+function extern boolean tfmsl020.srno.is.valid()
+{
+	domain	tcpono		o.vrsn
+	domain	tcdisc		o.perc
+	domain	tcorno		o.adrq
+						|#ISGECFIN013.sn
+	if not dal.is.field.changed("tfmsl020.srno") then
+		return(true)
+	endif
+						|#ISGECFIN013.en
+						|#PATCH001066.sn
+	
+	domain	tcperc		used.perc
+	tmp.date = date.to.utc(2015,5,14,0,0,0)
+	
+						|#PATCH001066.en
+	o.vrsn = tfmsldll0020.get.last.approved.version(tfmsl020.orno)	
+	
+	on case tfmsl020.optn
+		case 	tfoption.advance:
+								|#PATCH001066.so
+		
+| 			if order.serial.number.already.used(tfmsl020.orno,tfmsl020.srno,o.adrq) then
+| 	| 				dal.set.error.message("@ Already used with other Request:o.adrq")
+| 				dal.set.error.message("tdmsl120.001")
+| 				return(DALHOOKERROR)
+| 			endif
+								|#PATCH001066.eo
+			if not check.serial.number.in.tcisg001(tfmsl020.orno,
+					o.vrsn,tfmsl020.srno,ltoe(1),o.perc) then
+				dal.set.error.message("@ Enter Valid Serail Number")
+				return(DALHOOKERROR)
+			endif					
+								|#PATCH001066.sn
+			
+								
+			if order.serial.number.already.used.1(tfmsl020.orno,tfmsl020.srno,
+							tmp.date,o.adrq) then
+				dal.set.error.message("Old record exists!!! Logic Implemented for New Sequence")
+				return(DALHOOKERROR)
+			endif
+			used.perc = 0
+			used.perc = order.serial.number.used.percentage(tfmsl020.orno,tfmsl020.srno,tmp.date)
+			
+			if   (o.perc - used.perc) <= 0 then
+				dal.set.error.message("@ All Advance Percentages are utilized")
+				return(DALHOOKERROR)
+			endif
+								|#PATCH001066.en
+			
+			
+			break
+		case 	tfoption.retention:
+			if order.serial.number.already.used(tfmsl020.orno,tfmsl020.srno,o.adrq) then
+				dal.set.error.message("@ Already used with other Request:o.adrq")
+				return(DALHOOKERROR)
+			endif
+			
+			if not check.serial.number.in.tcisg001(tfmsl020.orno,
+					o.vrsn,tfmsl020.srno,ltoe(3),o.perc) then
+				dal.set.error.message("@ Enter Valid Serail Number")
+				return(DALHOOKERROR)
+			endif
+		break	
+	endcase
+	
+	return(true)
+}
+
+function extern boolean tfmsl020.srno.is.applicable()
+{
+	on case tfmsl020.optn
+		case 	tfoption.advance:
+		case 	tfoption.retention:
+			return(true)
+		break
+	endcase
+	
+	return(false)	
+}
+
+
+function extern boolean tfmsl020.srno.is.readonly()
+{
+	if enable_disable_logistic_fields() then
+		return(true)
+	endif
+	return(false)
+
+| 	
+}
+
+|****** Project [tfmsl020.cprj]
+
+function extern boolean tfmsl020.cprj.is.mandatory()
+{
+| 	on case tfmsl020.optn
+| 		case	tfoption.site.advance:
+| 			if isspace(tfmsl020.cprj) then
+| 				return(true)
+| 			endif
+| 			break
+| 	endcase
+	return(true)
+| 	return(false)
+}
+
+function extern boolean tfmsl020.cprj.is.valid()
+{
+	domain	tccprj		o.cprj
+						|#ISGECFIN013.sn
+	if not dal.is.field.changed("tfmsl020.cprj") then
+		return(true)
+	endif
+						|#ISGECFIN013.en
+	select 	tppdm600.cprj
+	from	tppdm600
+	where	tppdm600._index1 = {:tfmsl020.cprj}
+	and	tppdm600._compnr = :tfmsl020.comp
+	as set with 1 rows
+	selectdo
+	selectempty
+		dal.set.error.message("@ Enter Valid Project")
+		return(DALHOOKERROR)
+	endselect
+	
+	if not isspace(tfmsl020.orno) then
+		select tdpur401.cprj:o.cprj
+		from	tdpur401
+		where	tdpur401._index5 = {:tfmsl020.cprj,:tfmsl020.orno}
+		as set with 1 rows
+		selectdo
+		selectempty
+			dal.set.error.message("@ Project Code Must be Belong to Purchase Order")
+			return(DALHOOKERROR)
+		endselect
+	endif
+	
+	return(true)
+}
+
+function extern boolean tfmsl020.cprj.is.derived()
+{
+	if enable_disable_logistic_fields() then
+		return(true)
+	endif
+	return(false)	
+			
+}
+
+|******* Request Person [tfmsl020.rqpr]
+function extern boolean tfmsl020.rqpr.is.valid()
+{
+						|#ISGECFIN013.sn
+	if not dal.is.field.changed("tfmsl020.rqpr") then
+		return(true)
+	endif
+						|#ISGECFIN013.en
+	if not check.employee.code(tfmsl020.rqpr) then
+		dal.set.error.message("@ Enter Valid Request Person Code")
+		return(DALHOOKERROR)
+	endif
+	
+	if tfmsl020.stat = tfmsl.lc.stat.crea then
+		if not requester_check() then
+			dal.set.error.message("@You are not Allowed for Advance Request")
+			return(DALHOOKERROR)
+		endif
+	endif	
+	return(true)
+}
+
+function extern boolean tfmsl020.rqpr.is.derived()
+{
+	if enable_disable_logistic_fields() then
+		return(true)
+	endif
+	return(false)	
+			
+}
+
+|****** Business Partner [tfmsl020.bpid]
+function extern void tfmsl020.bpid.update()
+{
+	on case tfmsl020.optn
+		case 	tfoption.site.advance:
+			tcmcs.dll0095.read.parm("tfisg000")
+			tfmsl020.bpid = tfisg000.bpid
+			break
+		default:
+			
+		select 	tdpur400.otbp
+		from	tdpur400
+		where	tdpur400._index1 = {:tfmsl020.orno}
+		and	tdpur400._compnr = :tfmsl020.comp
+		as set with 1 rows
+		selectdo
+		endselect
+		
+		tfmsl020.bpid = tdpur400.otbp
+	endcase
+	
+}
+
+function extern boolean tfmsl020.bpid.is.derived()
+{
+	return(true)
+}
+
+function extern boolean tfmsl020.bpid.is.valid()			|GH596CR000.a.s
+{
+	select	tccom100.prst,
+		tccom100.endt
+	from	tccom100
+	where	tccom100._index1 = {:tfmsl020.bpid}
+	as set with 1 rows
+	selectdo
+		if tccom100.prst = tccom.prst.inactive then
+			dal.set.error.message("@BP is not active")
+			return(DALHOOKERROR)
+		endif
+		
+		if tccom100.endt <> 0 then
+			if tccom100.endt < utc.num() then
+				dal.set.error.message("@BP is expired")
+				return(DALHOOKERROR)
+			endif	
+		endif			
+	endselect
+	return(true)
+}									|GH596CR000.a.e
+							
+|****** Advance Percentage
+
+function extern boolean tfmsl020.aprc.is.valid()
+{
+						|#ISGECFIN013.sn
+	if not dal.is.field.changed("tfmsl020.aprc") then
+		return(true)
+	endif
+						|#ISGECFIN013.en
+	domain	tcpono		o.vers
+	domain	tcdisc		o.perc
+	domain	tcperc		used.perc				|#PATCH001066.n
+	o.vers = tfmsldll0020.get.last.approved.version(tfmsl020.orno)
+	
+	on case tfmsl020.optn
+		case 	tfoption.advance:
+			if check.serial.number.in.tcisg001(tfmsl020.orno,o.vers,tfmsl020.srno,ltoe(1),o.perc) then
+				used.perc = order.serial.number.used.percentage(tfmsl020.orno,tfmsl020.srno,tmp.date)	|#PATCH001066.n
+				if (tfmsl020.aprc + used.perc) > o.perc	 then
+					dal.set.error.message("@Advance Percentage is More than Actual")
+					return(DALHOOKERROR)
+				endif
+			else
+				return(DALHOOKERROR)
+			endif
+		break
+	endcase
+	return(true)	
+}
+
+function extern tfmsl020.aprc.update()
+{
+	domain	tcpono		o.vers
+	domain	tcdisc		o.perc
+	domain	tcperc		used.perc				|#PATCH001066.n
+	o.vers = tfmsldll0020.get.last.approved.version(tfmsl020.orno)
+	
+	on case tfmsl020.optn
+		case 	tfoption.advance:
+			if check.serial.number.in.tcisg001(tfmsl020.orno,o.vers,tfmsl020.srno,ltoe(1),o.perc) then
+				used.perc = order.serial.number.used.percentage(tfmsl020.orno,tfmsl020.srno,tmp.date)	|#PATCH001066.n
+| 				tfmsl020.aprc = o.perc							|#PATCH001066.o
+				tfmsl020.aprc = o.perc	- used.perc					|#PATCH001066.n
+			endif
+		break
+	endcase
+		
+}
+
+function extern boolean tfmsl020.aprc.is.derived()
+{
+	on case tfmsl020.optn
+		case 	tfoption.site.advance:
+			return(true)
+			break
+	endcase
+		
+		
+	on case tfmsl020.stat
+		case	tfmsl.lc.stat.proc:
+		case	tfmsl.lc.stat.canl:
+			return(true)
+			break
+	endcase
+	
+	return(false)
+			
+}
+
+|****** Advance Amount [tfmsl020.aamt]
+function extern tfmsl020.aamt.update()
+{
+	tfmsl020.aamt = tfmsl020.oamt * (tfmsl020.aprc/100)
+}
+
+function extern boolean tfmsl020.aamt.is.derived()
+{
+	on case tfmsl020.stat
+		case	tfmsl.lc.stat.proc:
+		case	tfmsl.lc.stat.canl:
+			return(true)
+		break
+						|#PATCH001066.sn
+		case	tfmsl.lc.stat.crea:
+		case	tfmsl.lc.stat.sfin:
+			on case tfmsl020.optn
+				case 	tfoption.advance:
+					return(true)
+				break
+			endcase
+		break
+						|#PATCH001066.en
+	endcase
+	
+	return(false)
+}
+
+function extern boolean tfmsl020.aamt.is.valid()
+{
+						|#ISGECFIN013.sn
+	if not dal.is.field.changed("tfmsl020.aamt") then
+		return(true)
+	endif
+						|#ISGECFIN013.en
+
+					|#ISGECDV001061.sn
+	domain	tcamnt		o.oamt
+	domain	tcamnt		o.exc.amnt
+	domain	tcamnt		o.stx.amnt
+	domain	tcamnt		o.oth1
+	domain	tcamnt		o.oth2
+	domain	tcamnt		o.tfmsl020.aamt
+	domain	tcamnt		old.tfmsl020.aamt
+	domain	tcmcs.str215m	o.tfmsl020.adrq
+	string error.msg(500)
+	
+					|#ISGECDV001061.en
+
+	if	tfmsl020.optn = tfoption.site.advance then
+		
+		utc.to.date(tfmsl020.rqdt,year,month,day,hh,mn,ss)
+		
+		request.date = date.to.num(year,month,day)
+		
+		select	tfisg036.*
+		from	tfisg036
+		where	tfisg036._index1 = {:tfmsl020.cprj,:tfmsl020.rqpr}
+		and	tfisg036.type = tfisg.type.normal
+		and	tfisg036.datf <= :request.date
+		and	tfisg036.datt >= :request.date
+		selectdo
+			if	tfmsl020.aamt > tfisg036.tran then
+				dal.set.error.message("@Advance Amount cannot exceed Transaction Amount %d",tfisg036.tran)
+				return(false)	|#ISGECFIN013.n
+| 				return(DALHOOKERROR)	|#ISGECFIN013.o
+			endif
+		endselect
+	endif	
+	
+| 								|#ISGEC002046.sn
+| 	on	case	tfmsl020.ackn
+| 	case	tfmsl.ackn.na:
+| 	case	tfmsl.ackn.receive:
+| 								|#ISGEC002046.en
+						|#ISGECDV001061.sn
+						
+			
+		with.object.set.do(get.old.value,tfmsl020.adrq,old.tfmsl020.aamt)
+		on case tfmsl020.optn
+		case 	tfoption.advance:
+		case	tfoption.exchange:
+		case	tfoption.account:
+			o.oamt = 0
+			o.exc.amnt = 0
+			o.stx.amnt = 0
+			o.oth1 = 0
+			o.oth2 = 0
+			o.tfmsl020.aamt = 0
+			o.tfmsl020.adrq = ""
+			
+			
+			if  tfmsl020.aamt > tfmsl020.oamt  then
+				dal.set.error.message("@Advance Amount is Greater Than Purchase Order Amount")
+				return(false)	|#ISGECFIN013.n
+| 				return(DALHOOKERROR)	|#ISGECFIN013.o
+			endif
+			
+			check.order.is.linked.with.other.request(tfmsl020.orno,o.tfmsl020.aamt,o.tfmsl020.adrq)
+											|#ISGEC002046.sn
+			on	case	tfmsl020.ackn
+			case	tfmsl.ackn.na:
+			case	tfmsl.ackn.receive:
+											|#ISGEC002046.en
+				if   (o.tfmsl020.aamt - old.tfmsl020.aamt + tfmsl020.aamt) > tfmsl020.oamt then
+						
+					dal.set.error.message("tfmsl020.0010",tfmsl020.orno,( o.tfmsl020.aamt - old.tfmsl020.aamt  ),o.tfmsl020.adrq)
+				return(false)	|#ISGECFIN013.n
+| 				return(DALHOOKERROR)	|#ISGECFIN013.o
+				endif
+													|#ISGEC002046.sn
+				break
+			endcase
+												|#ISGEC002046.en
+			break
+		endcase		
+									|#ISGECDV001061.en						
+| 										|#ISGEC002046.sn
+| 		break
+| 	endcase
+| 										|#ISGEC002046.en
+	return(true)
+}
+
+function get.old.value
+			(
+				domain	tcorno		i.adrq,
+			ref	domain	tcamnt		o.aamt
+			)
+{
+	select 	tfmsl020.aamt:o.aamt
+	from	tfmsl020
+	where	tfmsl020._index1 = {:i.adrq}
+	as set with 1 rows
+	selectdo
+	selectempty
+		o.aamt = 0
+	endselect
+	
+}
+
+|***** Financial Company[tfmsl020.fcom]
+
+function extern tfmsl020.fcom.update()
+{
+
+	on case tfmsl020.optn
+		case 	tfoption.site.advance:
+			select 	tppdm600.ncmp
+			from	tppdm600
+			where	tppdm600._index1 = {:tfmsl020.cprj}
+			as set with 1 rows
+			selectdo
+			endselect
+			
+			tfmsl020.fcom = tppdm600.ncmp
+			break
+		break
+		
+	default:
+		select 	tcmcs065.comp
+		from	tcmcs065,tdpur400
+		where	tdpur400._index1 = {:tfmsl020.orno}
+		and	tdpur400.cofc refers to tcmcs065
+		as set with 1 rows
+		selectdo
+		selectempty
+			tcmcs065.comp = 0
+		endselect
+		
+		tfmsl020.fcom = tcmcs065.comp
+	endcase	
+	
+}
+
+function extern boolean tfmsl020.fcom.is.derived()
+{
+	return(true)
+}
+
+|***** Payment Document Number [tfmsl020.ttyp)
+function extern boolean tfmsl020.ttyp.is.derived()
+{
+	return(true)
+}
+
+function extern boolean tfmsl020.docn.is.derived()
+{
+	return(true)
+}
+
+function extern boolean tfmsl020.lino.is.derived()
+{
+	return(true)
+}
+
+|****** Cheque Date [tfmsl020.chdt]
+function extern boolean tfmsl020.chdt.is.derived()
+{
+	return(true)
+}
+
+|***** Cheque Number [tfmsl020.chqe]
+function extern boolean tfmsl020.chqe.is.derived()
+{
+	return(true)
+}
+
+
+|**** Payment Through [tfmsl020.paym]
+function extern boolean tfmsl020.paym.is.derived()
+{
+	on case tfmsl020.optn
+		case 	tfoption.retention:
+			return(true)
+			break
+		default:
+			
+			on case tfmsl020.stat
+				case 	tfmsl.lc.stat.crea:
+				case	tfmsl.lc.stat.proc:
+				case	tfmsl.lc.stat.canl:
+					return(true)
+					break
+			endcase
+	endcase			
+	return(false)	
+		
+}
+
+|**** Payment Method [tfmsl020.meth]
+
+function extern boolean tfmsl020.meth.is.applicable()
+{
+
+	on case tfmsl020.optn
+	case 	tfoption.retention:
+| 		return(false)			|#ISGEC016005.o
+| 		break				|#ISGEC016005.o
+	default:	
+		on case tfmsl020.stat
+			case 	tfmsl.lc.stat.sfin:
+			case 	tfmsl.lc.stat.proc:
+				on case tfmsl020.paym
+					case 	tfpaym.advice:
+						return(true)
+						break
+				endcase
+				break
+		endcase
+	endcase			
+	return(false)
+}
+
+function extern boolean tfmsl020.meth.is.mandatory()
+{
+	on case tfmsl020.optn
+		case 	tfoption.retention:
+			return(false)
+			break
+		default:	
+			on case tfmsl020.ackn
+				case tfmsl.ackn.return:
+				return(false)
+				break
+								|#ISGEC002026.sn
+				case tfmsl.ackn.receive:
+				return(false)
+				break
+								|#ISGEC002026.en
+			default:
+				on case tfmsl020.stat
+					case 	tfmsl.lc.stat.sfin:
+						on case tfmsl020.paym
+						case	tfpaym.advice:
+							if not g.set.filter then	|#ISGECFIN013.n
+							return(true)
+							endif				|#ISGECFIN013.n
+								break
+						endcase			
+					break
+				endcase
+			endcase
+	endcase	
+	return(false)	
+}
+
+|***** Payment Bank [tfmsl020.bank]
+function extern boolean tfmsl020.bank.is.derived()
+{
+	on case tfmsl020.optn
+		case 	tfoption.retention:
+			return(true)
+			break
+		default:
+			on case tfmsl020.stat
+				case 	tfmsl.lc.stat.crea:
+				case	tfmsl.lc.stat.proc:
+				case	tfmsl.lc.stat.canl:
+					return(true)
+					break
+								
+			endcase
+	endcase						
+	return(false)
+}
+
+function extern boolean tfmsl020.bank.is.mandatory()
+{
+	on case tfmsl020.optn
+		case 	tfoption.retention:
+			return(false)
+			break
+		default:
+			on case tfmsl020.ackn
+				case tfmsl.ackn.return:
+				return(false)
+				break
+								|#ISGEC002026.sn
+				case tfmsl.ackn.receive:
+				return(false)
+				break
+								|#ISGEC002026.en
+			default:
+				on case tfmsl020.stat
+				case 	tfmsl.lc.stat.sfin:
+						if not g.set.filter then |#ISGECFIN013.n
+						return(true)
+						endif		|#ISGECFIN013.n
+						break
+				endcase
+			endcase
+	endcase			
+	return(false)
+}
+
+|***** Payment Date [tfmsl020.date]
+function extern boolean tfmsl020.date.is.applicable()
+{
+	on case tfmsl020.optn
+		case 	tfoption.retention:
+			return(false)
+			break
+		default:
+			on case tfmsl020.stat
+				case	tfmsl.lc.stat.sfin:
+					on case tfmsl020.paym
+						case	tfpaym.batch:
+							return(true)
+							break
+					endcase
+					break
+						
+			endcase
+	endcase				
+	return(false)
+}
+
+function extern boolean tfmsl020.date.is.mandatory()
+{
+	on case tfmsl020.optn
+		case 	tfoption.retention:
+			return(false)
+			break
+		default:
+			on case tfmsl020.stat
+				case	tfmsl.lc.stat.sfin:
+					on case tfmsl020.paym
+						case	tfpaym.batch:
+							return(true)
+							break
+					endcase
+					break
+						
+			endcase
+	endcase				
+	return(false)		
+}
+
+function extern tfmsl020.brnc.update()
+{
+	select	bpmdm001.cdf_bank:i.bank
+	from	bpmdm001
+	where	bpmdm001._index1 = {:tfmsl020.rqpr}
+	selectdo
+		tfmsl020.brnc = i.bank
+	selectempty
+		i.bank = ""
+	endselect	
+}
+
+function extern tfmsl020.bnam.update()
+{
+	select	tfcmg011.desc
+	from	tfcmg011
+	where	tfcmg011._index1 = {:tfmsl020.brnc}
+	selectdo
+		tfmsl020.bnam = tfcmg011.desc
+	endselect	
+}
+
+function extern tfmsl020.bano.update()
+{
+	select	bpmdm001.bano
+	from	bpmdm001
+	where	bpmdm001._index1 = {:tfmsl020.rqpr}
+	selectdo
+		tfmsl020.bano = bpmdm001.bano
+	selectempty
+		tfmsl020.bano = ""
+	endselect
+}
+
+|**** Batch [tfmsl020.btno]
+function extern boolean tfmsl020.btno.is.derived()
+{
+	return(true)
+}
+						|#ISGECFIN013.sn
+function extern boolean tfmsl020.docr.is.derived()
+{
+	if tfmsl020.stat <> tfmsl.lc.stat.crea then
+		return(true)
+	endif
+	return(false)
+}
+function extern boolean tfmsl020.sele.is.derived()
+{
+	if not g.set.filter then
+		return(true)
+	endif
+	return(false)
+}
+function extern tfmsl020.iprq.update()
+{
+	if not isspace(g.iprq) then
+		tfmsl020.iprq = g.iprq
+	endif
+}
+						|#ISGECFIN013.en
+|* tfmsl020.cgst CGST Amount		|#ISGECGST005.sn
+
+function extern boolean tfmsl020.cgst.is.derived()
+{
+	return(true)
+}
+
+function extern void tfmsl020.cgst.update()
+{
+	tfmsl020.cgst = (tfmsl020.cgsp * tfmsl020.assv) / 100
+}
+
+|* tfmsl020.sgst  SGST Amount
+
+function extern boolean tfmsl020.sgst.is.derived()
+{
+	return(true)
+}
+
+function extern void tfmsl020.sgst.update()
+{
+	tfmsl020.sgst = (tfmsl020.sgsp * tfmsl020.assv) / 100
+}
+						
+|* tfmsl020.igst IGST Amount
+
+function extern boolean tfmsl020.igst.is.derived()
+{
+	return(true)
+}
+
+function extern void tfmsl020.igst.update()
+{
+	tfmsl020.igst = (tfmsl020.igsp * tfmsl020.assv) / 100
+}
+
+|* tfmsl020.totl Total Amount
+
+function extern boolean tfmsl020.totl.is.derived()
+{
+	return(true)
+}
+
+function extern void tfmsl020.totl.update()
+{
+	tfmsl020.totl = tfmsl020.assv + tfmsl020.cgst + tfmsl020.sgst + tfmsl020.igst
+}
+
+|* tfmsl020.cgsp
+
+function extern boolean tfmsl020.cgsp.is.derived()
+{
+	if enable_disable_logistic_fields() then
+		return(true)
+	endif
+	
+	return(false)	
+}
+
+|* tfmsl020.sgsp
+
+function extern boolean tfmsl020.sgsp.is.derived()
+{
+	if enable_disable_logistic_fields() then
+		return(true)
+	endif
+	
+	return(false)	
+}
+
+|* tfmsl020.igsp
+
+function extern boolean tfmsl020.igsp.is.derived()
+{
+	if enable_disable_logistic_fields() then
+		return(true)
+	endif
+	
+	return(false)	
+}
+
+|* tfmsl020.assv
+
+function extern boolean tfmsl020.assv.is.derived()
+{
+	if enable_disable_logistic_fields() then
+		return(true)
+	endif
+	
+	return(false)	
+}
+
+|* tfmsl020.isup
+
+function extern boolean tfmsl020.isup.is.derived()
+{
+	if enable_disable_logistic_fields() then
+		return(true)
+	endif
+	
+	return(false)	
+}
+
+|* tfmsl020.idat
+
+function extern boolean tfmsl020.idat.is.derived()
+{
+	if enable_disable_logistic_fields() then
+		return(true)
+	endif
+	
+	return(false)	
+}
+
+		|#ISGECGST005.en
+
+|******* User Defiend Functions **************
+
+function boolean check.serial.number.in.tcisg001
+				(
+					domain	tcorno		i.orno,		|Purchase Order
+					domain	tcpono		i.vrsn,		|Version	
+					domain	tcpono		i.srno,		|Serial Number	
+					domain	tcisg.catg	i.catg,		|Category		
+				ref 	domain	tcdisc		o.perc		|Percentage	
+				)
+{
+	select 	tcisg001.perc:o.perc
+	from	tcisg001
+	where	tcisg001._index1 = {:i.orno,:i.vrsn,:i.srno}
+	and	tcisg001.catg = :i.catg
+	as set with 1 rows
+	selectdo
+	selectempty	
+		return(false)
+	endselect	
+	
+	return(true)
+}
+
+
+function domain tcemno	get.employee.code
+			(
+				domain	tfgld.user		i.user
+			)
+{
+	select 	tccom001.emno
+	from	tccom001
+	where	tccom001._index4 = {:i.user}
+	as set with 1 rows
+	selectdo
+	selectempty
+		tccom001.emno = ""
+	endselect
+	
+	return(tccom001.emno)
+}
+function boolean check.employee.code
+			(
+				domain	tcemno		i.emno
+			)
+{
+	select 	tccom001.emno
+	from	tccom001
+	where	tccom001._index1 = {:i.emno}
+	as set with 1 rows
+	selectdo
+	selectempty
+		return(false)
+	endselect
+	
+	return(true)
+}
+
+
+function boolean order.serial.number.already.used
+			(
+				domain	tcorno		i.orno,		|Order Number
+				domain	tcpono		i.srno,		|Serail Number
+			ref 	domain	tcorno		o.adrq	
+			)
+{
+	select 	tfmsl020.adrq:o.adrq
+	from 	tfmsl020
+	where 	tfmsl020._index2 = {:i.orno}
+	and 	tfmsl020.srno = :i.srno
+| 	as set with 1 rows
+	selectdo
+		if o.adrq = tfmsl020.adrq then
+		else
+			
+		return(true)
+		endif
+	endselect
+	
+	return(false)
+}
+
+							|#PATCH001066.sn
+function boolean order.serial.number.already.used.1
+			(
+				domain	tcorno		i.orno,		|Order Number
+				domain	tcpono		i.srno,		|Serial Number
+				domain	tcdate		i.rqdt,		|Logic Implemented Date
+			ref 	domain	tcorno		o.adrq		|Request Number
+			)
+{
+	select 	tfmsl020.adrq:o.adrq
+	from	tfmsl020
+	where	tfmsl020._index2 = {:i.orno}
+	and	tfmsl020.srno = :i.srno
+	and	tfmsl020.rqdt < :i.rqdt
+	selectdo
+		if o.adrq = tfmsl020.adrq then
+		else
+			return(true)
+		endif
+	endselect
+	return(false)
+}
+
+function domain tcperc order.serial.number.used.percentage
+			(
+				domain	tcorno		i.orno,		|Order Number
+				domain	tcpono		i.srno,		|Serial Number
+				domain	tcdate		i.rqdt		|Logic Implemented Date
+			)
+
+{
+	domain	tcperc		tot.aprc
+	domain	tcperc		o.aprc
+	domain	tcorno		o.adrq
+	tot.aprc = 0
+	
+	select 	tfmsl020.aprc:o.aprc,
+		tfmsl020.adrq:o.adrq
+	from	tfmsl020
+	where	tfmsl020._index2 = {:i.orno}
+	and	tfmsl020.srno = :i.srno
+	and	tfmsl020.rqdt >= :i.rqdt
+	selectdo
+		if o.adrq = tfmsl020.adrq then
+		else
+			tot.aprc = tot.aprc + o.aprc
+		endif
+	endselect
+	
+	return(tot.aprc)
+	
+}
+							|#PATCH001066.en
+
+function boolean enable_disable_logistic_fields()
+{
+	on case tfmsl020.stat
+		case 	tfmsl.lc.stat.sfin:
+		case	tfmsl.lc.stat.canl:
+		case 	tfmsl.lc.stat.proc:
+		case 	tfmsl.lc.stat.sapr:		|#ISGEC015073.n
+		case	tfmsl.lc.stat.appr:
+			return(true)
+			break
+	endcase
+	return(false)	
+}
+
+
+
+
+function void calculate.and.display.tax.amounts()						|EMB501007.sn
+{
+	domain tcamnt  claimable.tax.amount
+	domain tcamnt  non.claimable.tax.amount
+	domain tcamnt  total.tax.amount
+	domain tcmcs.s250m dummy.error.msg
+	domain tctax.seqn dummy.max.sequence
+	domain tcamnt  sales.tax
+	
+	i.total.tax.amount = 0.00
+	select	tdpur400.orno,tdpur400.ratt,tdpur400.ccur,
+		tdpur401.ccty,tdpur401.cvat,tdpur401.odat,
+		tdpur401.fase.l,tdpur401.ptpe,tdpur401.tase.l,
+		tdpur401.tasv.l,tdpur401.tass.l,tdpur401.tasg.l, tdpur401.qoor,
+		tdpur401.pric,tdpur401.qidl,tdpur401.oamt
+	from	tdpur400,tdpur401
+	where	tdpur400._index1 = {:tfmsl020.orno}
+	and	tdpur400.orno refers to tdpur401
+	selectdo
+		tctax.dll9141.determine.aggregate.tax.amounts.per.line(
+			tdpur401.ccty,			|Tax Country I
+			tdpur401.cvat,			|Tax Code I
+			tdpur401.odat,			|Tax Date I
+			tdpur401.oamt,  		|order.line.price I
+			tdpur401.tasv.l,		|customs.value I
+			tdpur401.tasv.l, 		|Market retail price I
+			tdpur401.tasv.l, 		|Retail sales price I
+			tdpur401.tasv.l, 		|
+			tdpur400.ccur,  			|Currency I
+			tdpur401.odat, 			|* Order Date
+			tdpur400.ratt, 			|Exchange Rate Type I
+			tdpur401.tasv.l,  		|* I
+			tdpur401.tasv.l,   		|* I
+			tdpur401.tasv.l, 		|* I
+			tdpur401.tasg.l, 		|* I
+			tdpur401.odat, 			|* I
+			
+			g.as.is.sales, 			|* I
+			g.used.goods,   		|* I
+			g.duty.type.array, 		|* I
+			g.duties.array,   		|* I
+			
+			g.layer.tax.rate,		|* O
+			dummy.max.sequence, 		|* O
+			g.layer.base.amount.array, 	|* O
+			g.layer.tax.amount.array, 	|* O
+			g.layer.tax.code.array,  	|* O
+			g.line.indirect.tax.array, 	|* O
+			g.expensed.tax,  		|* O
+			claimable.tax.amount,  		|* O
+			non.claimable.tax.amount, 	|* O
+			total.tax.amount, 		|* O
+			sales.tax,   			|* O 
+			comb.output.set,  		|* O
+			dummy.error.msg)  		|* O
+			
+		select 	tctax941.*				
+		from 	tctax941
+		where	tctax941._index1={:tdpur401.ccty,:tdpur401.cvat}
+		and     tctax941.type = 20
+		order by tctax941._index1
+		selectdo
+			select	tcmcs036.indt.l
+			from	tcmcs036
+			where	tcmcs036._index1 = {:tdpur401.ccty,:tctax941.cvat}
+			selectdo
+				i.total.tax.amount = i.total.tax.amount + g.layer.tax.amount.array(tctax941.layr,
+												tctax941.seqn)	
+			endselect
+		endselect
+	endselect
+}	
+											|EMB501007.en
+function extern domain tcemno get.login.code.wise.employee.code()
+{
+	domain	tcemno		o.emno
+	domain 	tfgld.user	curr.user
+	
+	curr.user = logname$
+	
+	select tccom001.emno:o.emno
+	from	tccom001
+	where	tccom001._index4 = {:curr.user}
+	as set with 1 rows
+	selectdo
+	selectempty
+		o.emno = ""
+	endselect
+	
+	return(o.emno)
+
+}
+
+
+function extern boolean requester_check()
+{
+	domain	tcemno		o.emno
+	
+	o.emno = get.login.code.wise.employee.code()
+
+	select	tfisg035.emno
+	from	tfisg035
+| 	where	tfisg035._index1 = {:tfmsl020.rqpr}
+	where	tfisg035._index1 = {:o.emno}
+	and	tfisg035.reqs = tcyesno.yes
+	selectdo
+		return(true)
+	selectempty
+		return(false)
+	endselect
+	
+	return(true)
+}
+
+function extern boolean approver()
+{
+	domain	tcemno		o.emno
+	
+	o.emno = get.login.code.wise.employee.code()
+	
+	select	tfisg035.emno
+	from	tfisg035
+| 	where	tfisg035._index1 = {:tfmsl020.rqpr}
+	where	tfisg035._index1 = {:o.emno}
+	and	tfisg035.appr = tcyesno.yes
+	selectdo
+		return(true)
+	selectempty
+		return(false)
+	endselect
+	return(true)
+}
+
+function extern boolean processor()
+{
+| 	domain	tcemno	i.logn
+	
+| 	i.logn = toupper$(logname$)
+
+	domain	tcemno		o.emno
+	
+	o.emno = get.login.code.wise.employee.code()
+	
+	select	tfisg035.emno
+	from	tfisg035
+| 	where	tfisg035._index1 = {:tfmsl020.rqpr}
+| 	where	tfisg035._index1 = {:i.logn}
+	where	tfisg035._index1 = {:o.emno}
+	and	tfisg035.proc = tcyesno.yes
+	selectdo
+		return(true)
+	selectempty
+		return(false)
+	endselect
+	
+	
+	return(true)
+}
+
+
+
+function check.order.is.linked.with.other.request
+			(
+				domain	tcorno		i.orno,
+			ref 	domain	tcamnt		total.aamt,
+			ref 	domain	tcmcs.str215m	total.request
+			)
+{
+	domain	tcorno	o.adrq
+	domain	tcamnt	o.aamt
+	
+	select 	tfmsl020.adrq:o.adrq,
+		tfmsl020.aamt:o.aamt
+	from	tfmsl020
+	where	tfmsl020._index2 = {:i.orno}
+	and	(tfmsl020.optn = tfoption.exchange or 
+		tfmsl020.optn = tfoption.account  or
+		tfmsl020.optn = tfoption.advance)
+	selectdo
+		total.aamt = total.aamt + o.aamt
+		total.request = total.request & "," & o.adrq
+	endselect
+	
+}
+
+| function extern boolean tfmsl020.drcv.is.applicable()		|#ISGEC015073.sn		|ISGEC01050.so
+| {
+| 	if (tfmsl020.docr = tcyesno.yes) then
+| 		if (tfmsl020.stat = tfmsl.lc.stat.sfin) then
+| 			return(false)
+| 		else
+| 			return(true)
+| 		endif	
+| 	endif
+	
+	
+| 	return(false)
+| }												|ISGEC01050.eo
+
+
+function extern boolean sent_approval.is.allowed()
+{
+	domain	tcemno		o.emno
+	
+	if not form_command_allowed(40) then
+		return(false)
+	endif
+	
+	o.emno = get.login.code.wise.employee.code()
+	
+	select	tfisg035.emno
+	from	tfisg035
+	where	tfisg035._index1 = {:o.emno}
+	and	tfisg035.sapr = tcyesno.yes
+	selectdo
+| 		if tfmsl020.docr = tcyesno.yes then
+			return(true)
+| 		else
+| 			return(False)
+| 		endif
+	selectempty
+		return(false)
+	endselect
+
+	
+	return(false)	
+}								
+ 
+function extern boolean approve.is.allowed()
+{
+	
+		if (tfmsl020.sapr = tcyesno.yes) then
+			return(true)
+		endif
+		
+	return(false)
+}
+function extern long after.get.object(long dir)
+{
+	domain	tcmcs.str20	calling.prog
+	domain	tcorno	adrq
+	domain	tcemno	o.tccom001.emno
+	long	doc.req,i
+	
+	doc.req = 0
+	get.var(pid,"prog.name$",calling.prog)
+	if calling.prog = "tfmsl0520m100" then
+		
+		if isspace(o.tccom001.emno) then
+			o.tccom001.emno = get.login.code.wise.employee.code()
+		endif
+| 		if (strip$(tfmsl020.user) = logname$) and (tfmsl020.stat = ltoe(50))  then
+| 		if (tfmsl020.stat = ltoe(50))  then						|ISGEC01050.so
+| 			if tfmsl020.docr  = tcyesno.yes then
+| 				doc.req =  1
+| 			else
+| 				doc.req = 2
+| 			endif	
+| 			select tfmsl070.minv, tfmsl070.maxv
+| 			from	tfmsl070
+| 			where	tfmsl070._index1 = {:doc.req,:o.tccom001.emno}
+| 			selectdo
+| 			selectempty
+| 				return(DALHOOKERROR)	
+| 			endselect
+| 		else
+| 			return(DALHOOKERROR)
+| 		endif										`|ISGEC01050.eo
+		
+| 		if (tfmsl020.aamt >= tfmsl070.minv) and (tfmsl020.aamt <= tfmsl070.maxv) and ((tfmsl020.stts <> tfmsl.stat.verf) |itest.sn
+| 			and (tfmsl020.stts <> tfmsl.stat.appr)) then
+| 		else
+| 			return(DALHOOKERROR)
+| 		endif										|itest.en
+
+		select tfmsl070.minv, tfmsl070.maxv		|ISGEC01071.sn
+		from	tfmsl070
+		where	tfmsl070.emno = :o.tccom001.emno
+		selectdo
+		selectempty
+			return(DALHOOKERROR)	
+		endselect	
+		
+		if (tfmsl020.aamt >= tfmsl070.minv) and (tfmsl020.aamt <= tfmsl070.maxv) and ((tfmsl020.stts <> tfmsl.stat.verf)
+			and (tfmsl020.stts <> tfmsl.stat.appr) and (tfmsl020.stat=tfmsl.lc.stat.sapr or tfmsl020.stat=tfmsl.lc.stat.rejc))then
+		else
+			return(DALHOOKERROR)
+		endif					|ISGEC01071.en
+
+
+	else if calling.prog = "tfmsl0520m200" then
+| 		if (tfmsl020.drcv = tcyesno.no) or (tfmsl020.stts = tfmsl.stat.verf)  then			|ISGEC01050.so
+| 			return(DALHOOKERROR)
+| 		endif												|ISGEC01050.eo
+	endif	
+	endif	
+						|#ISGECFIN013.sn
+	if g.set.filter then
+		if tfmsl020.stat <> tfmsl.lc.stat.sfin then
+			return(DALHOOKERROR)
+		endif	
+		if isspace(tfmsl020.orno) then
+			return(DALHOOKERROR)
+		endif
+| 		select tfisg185.orno from tfisg185
+| 		where tfisg185._index1 = {:g.iprq}
+| 		and tfisg185.orno = :tfmsl020.orno
+| 		and	tfisg185.sele = tcyesno.yes
+| 		as set with 1 rows
+| 		selectdo
+| 		selectempty
+| 			i = i + 1
+| 			return(DALHOOKERROR)
+| 		endselect
+	endif
+						|#ISGECFIN013.en
+	return(0)
+}
+
+							
+function extern boolean tfmsl020.poac.is.derived()		
+{
+	domain	tcorno	orno
+	
+	select	tfmsl020.orno:orno
+	from	tfmsl020
+	where	tfmsl020.orno = :tfmsl020.orno
+	and	tfmsl020.poac = tcyesno.yes
+	selectdo
+		tfmsl020.poac  = tcyesno.yes
+		return(true)
+	selectempty	
+| 		tfmsl020.poac =  tcyesno.no
+		return(false)
+	endselect
+	
+	return(false)
+}
+
+
+| function extern boolean verify.is.allowed()			|ISGEC01050.so
+| {
+| 	if tfmsl020.drcv = tcyesno.yes then
+| 		return(true)
+| 	endif
+| 	return(false)
+| }								|ISGEC01050.eo
+
+| 								|ISGEC01137.SN
+
+function extern boolean tfmsl020.mpym.is.readonly()
+{
+	on case tfmsl020.stat
+	case	tfmsl.lc.stat.crea:
+	case	tfmsl.lc.stat.rejc:
+		return(false)
+	endcase
+	return(true)
+}
+
+
+function extern boolean tfmsl020.bcrg.is.readonly()
+{
+	on case tfmsl020.stat
+	case	tfmsl.lc.stat.crea:
+	case	tfmsl.lc.stat.rejc:
+		return(false)
+	endcase
+	return(true)
+}
+								|ISGEC01137.EN
+function extern long insert_history()
+{
+	tfmsl072.adrq = tfmsl020.adrq
+	tfmsl072.hdat = utc.num()
+	tfmsl072.rqdt = utc.num()
+	tfmsl072.comp = get.compnr()
+	tfmsl072.rqpr = tfmsl020.rqpr
+	tfmsl072.taxi = tcyesno.yes
+	tfmsl072.user = logname$
+	tfmsl072.orno =  tfmsl020.orno
+	tfmsl072.stat = tfmsl020.stat
+	tfmsl072.ccur = tfmsl020.ccur
+	tfmsl072.txta = tfmsl020.txta
+	tfmsl072.optn = tfmsl020.optn
+	tfmsl072.bpid = tfmsl020.bpid
+	tfmsl072.cprj = tfmsl020.cprj
+	tfmsl072.puro = tfmsl020.puro
+	tfmsl072.srno = tfmsl020.srno
+	tfmsl072.taxi = tfmsl020.taxi
+	tfmsl072.bamt = tfmsl020.bamt
+	tfmsl072.tamt = tfmsl020.tamt
+	tfmsl072.oamt = tfmsl020.oamt
+	tfmsl072.aprc = tfmsl020.aprc
+	tfmsl072.aamt = tfmsl020.aamt
+	tfmsl072.fcom = tfmsl020.fcom
+	tfmsl072.paym = tfmsl020.paym
+	tfmsl072.bank = tfmsl020.bank
+	tfmsl072.meth = tfmsl020.meth
+	tfmsl072.user = tfmsl020.user
+	tfmsl072.stts = tfmsl020.stts
+	tfmsl072.ackn = tfmsl020.ackn			|ISGEC01050.n
+| 	tfmsl072.docr = tfmsl020.docr			|ISGEC01050.so
+| 	tfmsl072.drcv = tfmsl020.drcv			|ISGEC01050.eo
+	tfmsl072.poac = tfmsl020.poac
+	db.insert(ttfmsl072, db.retry,e)
+| 	commit.transaction()					|#ISGEC002017.o
+	return(0)
+}
+| function extern boolean tfmsl020.ackn.is.applicable()			|gg.so
+| {
+| 	on case tfmsl020.stat
+| 	case 	tfmsl.lc.stat.sfin:
+| 	case 	tfmsl.lc.stat.canl:
+| 		return(true)
+| 		break
+| 	endcase
+| 	
+| 	return(false)
+| 	
+| }
+									|gg.eo
+									|gg.sn
+function extern boolean tfmsl020.ackn.is.derived()
+{
+	on case tfmsl020.stat
+| 	case 	tfmsl.lc.stat.sfin:			|ISGEC01050.o
+| 	case 	tfmsl.lc.stat.canl:			|ISGEC01050.o
+| 	case 	tfmsl.lc.stat.crea:
+	case 	tfmsl.lc.stat.proc:			|ISGEC01050.n
+		return(true)
+		break
+	endcase
+	
+	return(false)
+	
+}
+									|gg.en
+| function  boolean document_received()				|ISGEC01050.so
+| {
+| 	on case tfmsl020.mpym 
+| 	case	tfisg.mpym.rtgs :
+| 		on case tfmsl020.drcv 
+| 		case tcyesno.yes:
+| 			return(true)
+| 		endcase
+| 	endcase
+| 	return(false)
+| 		
+| }								|ISGEC01050.eo
+
+| 								|#ISGEC015073.en
+								|#ISGECFIN013.sn
+function extern long set.purchase.order(domain tcmcs.str10m i.iprq)
+{
+	g.iprq = i.iprq
+	g.set.filter = true
+	return(0)
+}
+								|#ISGECFIN013.sn
+function extern boolean tfmsl020.txta.is.readonly()  |ISGEC01050.sn
+{
+	if tfmsl020.stat = tfmsl.lc.stat.crea then
+		return(false)
+	endif
+	return(true)
+    
+}
+
+function extern boolean tfmsl020.reas.is.readonly()
+{
+	if tfmsl020.ackn = tfmsl.ackn.return then
+		return(false)
+	endif
+	
+	return(true)
+}	
+
+function extern boolean tfmsl020.rea1.is.readonly()
+{
+	if tfmsl020.ackn = tfmsl.ackn.return then
+		return(false)
+	endif
+	
+	return(true)
+}	
+
+function extern boolean tfmsl020.rea2.is.readonly()
+{
+	if tfmsl020.ackn = tfmsl.ackn.return then
+		return(false)
+	endif
+	
+	return(true)
+}	
+
+function extern boolean tfmsl020.rea3.is.readonly()
+{
+	if tfmsl020.ackn = tfmsl.ackn.return then
+		return(false)
+	endif
+	
+	return(true)
+}
+
+function extern boolean tfmsl020.rea4.is.readonly()
+{
+	if tfmsl020.ackn = tfmsl.ackn.return then
+		return(false)
+	endif
+	
+	return(true)
+}	
+
+function extern boolean tfmsl020.reas.is.mandatory()
+{
+	if tfmsl020.ackn = tfmsl.ackn.return then
+		return(true)
+	endif
+	return(false)
+}							|ISGEC01050.en
+
+
+
+function update.tpisg229.data()										|#ISGEC0178.sn
+{
+ 	
+	get.project.element() 	
+	user = logname$
+	if user(1;1) = "0" then
+		user = str$(lval(user))
+	endif
+	
+	
+	var.indv = tfmsl020.adrq
+	
+	select	tfmsl020.chdt
+	from	tfmsl020
+	where	tfmsl020.orno = :tfmsl020.orno
+	and	tfmsl020.optn = 3
+	order by tfmsl020.chdt 
+	as set with 1 rows
+	selectdo
+		var.trdt = tfmsl020.chdt
+		var.bohd = "CT_FIRSTADVANCEREALEASE"
+		srno = 1
+		
+		insert.data()
+		
+	selectempty
+		tfmsl020.chdt = 0
+	endselect
+	
+	select	count(tfmsl020.chdt):flag
+	from	tfmsl020
+	where	tfmsl020.orno = :tfmsl020.orno
+	and	tfmsl020.optn = 3
+	selectdo
+	selectempty
+		tfmsl020.chdt = 0
+	endselect
+	
+	if flag > 1 then
+		
+		select	tfmsl020.chdt
+		from	tfmsl020
+		where	tfmsl020.orno = :tfmsl020.orno
+		and	tfmsl020.optn = 3
+		order by tfmsl020.chdt  desc
+		as set with 1 rows
+		selectdo
+			
+			var.trdt = tfmsl020.chdt
+			var.bohd = "CT_INTADVANCEREALEASE"
+			srno = 1
+			
+			insert.data()
+		selectempty
+			tfmsl020.chdt = 0
+		endselect
+		
+	endif
+
+
+}
+
+function get.project.element()
+{
+	select	tdpur401.cspa,tdpur401.cprj, tdpur401.pono
+	from	tdpur401	
+	where	tdpur401._index1= {:tfmsl020.orno}
+	selectdo
+	selectempty
+		tdpur401.cprj = ""
+		tdpur401.cspa = ""
+	endselect
+
+}																			
+
+function insert.data()
+{
+	
+	select tpisg229.*
+	from	tpisg229
+	where	tpisg229._index1 = {:var.trdt,:var.bohd,:var.indv,:srno}
+	selectdo
+	selectempty
+		tpisg229.trdt = var.trdt
+		tpisg229.bohd = var.bohd
+		tpisg229.indv = var.indv
+		tpisg229.proj = tdpur401.cprj
+		tpisg229.elem = tdpur401.cspa
+		
+		tpisg229.srno = 1
+		tpisg229.user = user
+
+		db.insert(ttpisg229,db.skip.dupl,e)
+		
+		if e= 0  then
+			commit.transaction()
+		else
+			abort.transaction()
+		endif
+		
+	endselect
+
+
+}
+
+
+													|#ISGEC0178.en
+function update.tfmsl072()							|#GH272CR564_000.sn
+{
+	select	tfmsl072.hdat, tfmsl072.ackn
+	from	tfmsl072 for update
+	where	tfmsl072._index1 = {:tfmsl020.adrq}
+	order by tfmsl072.hdat desc
+	as set with 1 rows
+	selectdo
+		tfmsl072.ackn = tfmsl020.ackn
+| 		db.update(ttfmsl072,db.skip.dupl,e)
+		db.update(ttfmsl072,db.retry)
+		commit.transaction()
+	endselect
+}										|#GH272CR564_000.en

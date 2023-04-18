@@ -1,0 +1,361 @@
+|******************************************************************************
+|* tfisg0412m000  0  VRC B61U a7 isg 
+|* Print Diviosn-wise Cashflow Summary
+|* Adarsh Pal                    
+|* 2019-12-03
+|******************************************************************************
+|* Main table tfisg012 Monthly Cashflow Summary, Form Type 4
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+		table   ttfisg012		|Monthly Cashflow Summary
+		table   ttfisg011
+		table   ttcemm030
+
+	extern	domain	tfgld.year	year
+	extern	domain	tcemm.grid 	eunt
+	extern	domain	tcmcs.str100m	dsca
+	extern	domain	tcamnt		jan.bal,jan.bal.net,
+					feb.bal,feb.bal.net,
+					mar.bal,mar.bal.net,
+					apr.bal,apr.bal.net,
+					may.bal,may.bal.net,
+					jun.bal,jun.bal.net,
+					jul.bal,jul.bal.net,
+					aug.bal,aug.bal.net,
+					sep.bal,sep.bal.net,
+					oct.bal,oct.bal.net,
+					nov.bal,nov.bal.net,
+					dec.bal,dec.bal.net,
+					opening.bal,opening.bal.net,
+					month.tot,month.tot.net
+		domain	tfisg.htype	htyp
+		domain	tpisg.month	mnth			
+		domain	tcamnt		amnt
+		domain	tcemm.grid 	hold.eunt
+		domain	tccity		hold.hcod
+
+|****************************** program section ********************************
+
+|****************************** group section **********************************
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+choice.cont.process:
+on.choice:
+   execute(print.data)
+
+choice.print.data:
+on.choice:
+   if rprt_open() then
+       read.main.table()
+       rprt_close()
+   else
+       choice.again()
+   endif
+
+|****************************** field section *********************************
+
+|****************************** function section ******************************
+functions:
+
+function read.main.table()
+{
+	hold.eunt = ""
+	hold.hcod = ""
+
+	initialize.varaibles()
+	select	tfisg012.year,tfisg012.eunt,tfisg012.hcod
+	from	tfisg012
+	where	tfisg012._index1 inrange {:year-1} and {:year}
+	group by tfisg012.year,tfisg012.eunt,tfisg012.hcod
+	order by tfisg012.eunt,tfisg012.hcod
+	selectdo
+		get.division.desc()
+		if tfisg012.eunt <> hold.eunt then
+			initialize.varaibles.2()
+			eunt = tfisg012.eunt
+		else
+			eunt = ""
+		endif			
+		if tfisg012.eunt = hold.eunt and tfisg012.hcod = hold.hcod then
+			continue
+		endif
+		get.opening.balance(tfisg012.eunt,tfisg012.hcod,opening.bal)
+		select	tfisg012.year,tfisg012.eunt,tfisg012.hcod
+		from	tfisg012 
+		where	tfisg012.eunt = :tfisg012.eunt
+		and	tfisg012.hcod = :tfisg012.hcod
+		group by tfisg012.year,tfisg012.eunt,tfisg012.hcod
+		selectdo
+			if tfisg012.year = year then
+				get.cashflow.amount.for.current.year()
+			else if tfisg012.year = year-1 then	
+				get.cashflow.amount.for.previous.year()
+			endif
+			endif
+		endselect
+		month.tot = jan.bal+feb.bal+mar.bal+apr.bal+may.bal+jun.bal
+				+jul.bal+aug.bal+sep.bal+oct.bal+nov.bal+dec.bal
+		if htyp = tfisg.htype.inflow then
+				month.tot.net = month.tot.net + month.tot
+		else
+			month.tot.net = month.tot.net - month.tot
+		endif
+		rprt_send()
+		initialize.varaibles()
+		hold.eunt = tfisg012.eunt
+		hold.hcod = tfisg012.hcod
+	endselect
+}
+
+function initialize.varaibles()
+{
+	jan.bal = 0.0
+	feb.bal = 0.0
+	mar.bal = 0.0
+	apr.bal = 0.0
+	may.bal = 0.0
+	jun.bal = 0.0
+	jul.bal = 0.0
+	aug.bal = 0.0
+	sep.bal = 0.0
+	oct.bal = 0.0
+	nov.bal = 0.0
+	dec.bal = 0.0
+	mnth = empty			
+	amnt = 0.0
+	month.tot = 0.0
+}
+
+function initialize.varaibles.2()
+{
+	jan.bal.net = 0.0
+	feb.bal.net = 0.0
+	mar.bal.net = 0.0
+	apr.bal.net = 0.0
+	may.bal.net = 0.0
+	jun.bal.net = 0.0
+	jul.bal.net = 0.0
+	aug.bal.net = 0.0
+	sep.bal.net = 0.0
+	oct.bal.net = 0.0
+	nov.bal.net = 0.0
+	dec.bal.net = 0.0
+	opening.bal.net = 0.0
+	month.tot.net = 0.0
+}
+
+function get.cashflow.amount.for.current.year()
+{
+	select	a_tfisg012.mnth:mnth,a_tfisg012.amnt:amnt
+	from	tfisg012 a_tfisg012
+	where	a_tfisg012._index1 = {:tfisg012.year}
+	and	a_tfisg012.mnth in (1,2,3)
+	and	a_tfisg012.eunt = :tfisg012.eunt
+	and	a_tfisg012.hcod = :tfisg012.hcod
+	selectdo
+		get.summary.head.desc.and.type(tfisg012.hcod,dsca,htyp)
+		on case etol(mnth)
+		case 1:
+			jan.bal = amnt
+			if htyp = tfisg.htype.inflow then
+				jan.bal.net = jan.bal.net + amnt
+				opening.bal.net = opening.bal.net + opening.bal
+			else
+				jan.bal.net = jan.bal.net - amnt
+				opening.bal.net = opening.bal.net - opening.bal
+			endif
+			break
+		case 2:
+			feb.bal = amnt
+			if htyp = tfisg.htype.inflow then
+				feb.bal.net = feb.bal.net + amnt
+				opening.bal.net = opening.bal.net + opening.bal
+			else
+				feb.bal.net = feb.bal.net - amnt
+				opening.bal.net = opening.bal.net - opening.bal
+			endif
+			break
+		case 3:
+			mar.bal = amnt
+			if htyp = tfisg.htype.inflow then
+				mar.bal.net = mar.bal.net + amnt
+				opening.bal.net = opening.bal.net + opening.bal
+			else
+				mar.bal.net = mar.bal.net - amnt
+				opening.bal.net = opening.bal.net - opening.bal
+			endif
+			break
+		endcase
+	endselect
+}
+
+function get.cashflow.amount.for.previous.year()
+{
+	select	a_tfisg012.mnth:mnth,a_tfisg012.amnt:amnt
+	from	tfisg012 a_tfisg012
+	where	a_tfisg012._index1 = {:tfisg012.year}
+	and	a_tfisg012.mnth not in (1,2,3)
+	and	a_tfisg012.eunt = :tfisg012.eunt
+	and	a_tfisg012.hcod = :tfisg012.hcod
+	selectdo
+		get.summary.head.desc.and.type(tfisg012.hcod,dsca,htyp)
+		on case etol(mnth)
+		case 4:
+			apr.bal = amnt
+			if htyp = tfisg.htype.inflow then
+				apr.bal.net = apr.bal.net + amnt
+				opening.bal.net = opening.bal.net + opening.bal
+			else
+				apr.bal.net = apr.bal.net - amnt
+				opening.bal.net = opening.bal.net - opening.bal
+			endif
+			break
+		case 5:
+			may.bal = amnt
+			if htyp = tfisg.htype.inflow then
+				may.bal.net = may.bal.net + amnt
+				opening.bal.net = opening.bal.net + opening.bal
+			else
+				may.bal.net = may.bal.net - amnt
+				opening.bal.net = opening.bal.net - opening.bal
+			endif
+			break
+		case 6:
+			jun.bal = amnt
+			if htyp = tfisg.htype.inflow then
+				jun.bal.net = jun.bal.net + amnt
+				opening.bal.net = opening.bal.net + opening.bal
+			else
+				jun.bal.net = jun.bal.net - amnt
+				opening.bal.net = opening.bal.net - opening.bal
+			endif
+			break
+		case 7:
+			jul.bal = amnt
+			if htyp = tfisg.htype.inflow then
+				jul.bal.net = jul.bal.net + amnt
+				opening.bal.net = opening.bal.net + opening.bal
+			else
+				jul.bal.net = jul.bal.net - amnt
+				opening.bal.net = opening.bal.net - opening.bal
+			endif
+			break
+		case 8:
+			aug.bal = amnt
+			if htyp = tfisg.htype.inflow then
+				aug.bal.net = aug.bal.net + amnt
+				opening.bal.net = opening.bal.net + opening.bal
+			else
+				aug.bal.net = aug.bal.net - amnt
+				opening.bal.net = opening.bal.net - opening.bal
+			endif
+			break
+		case 9:
+			sep.bal = amnt
+			if htyp = tfisg.htype.inflow then
+				sep.bal.net = sep.bal.net + amnt
+				opening.bal.net = opening.bal.net + opening.bal
+			else
+				sep.bal.net = sep.bal.net - amnt
+				opening.bal.net = opening.bal.net - opening.bal
+			endif
+			break
+		case 10:
+			oct.bal = amnt
+			if htyp = tfisg.htype.inflow then
+				oct.bal.net = oct.bal.net + amnt
+				opening.bal.net = opening.bal.net + opening.bal
+			else
+				oct.bal.net = oct.bal.net - amnt
+				opening.bal.net = opening.bal.net - opening.bal
+			endif
+			break
+		case 11:
+			nov.bal = amnt
+			if htyp = tfisg.htype.inflow then
+				nov.bal.net = nov.bal.net + amnt
+				opening.bal.net = opening.bal.net + opening.bal
+			else
+				nov.bal.net = nov.bal.net - amnt
+				opening.bal.net = opening.bal.net - opening.bal
+			endif
+			break
+		case 12:
+			dec.bal = amnt
+			if htyp = tfisg.htype.inflow then
+				dec.bal.net = dec.bal.net + amnt
+				opening.bal.net = opening.bal.net + opening.bal
+			else
+				dec.bal.net = dec.bal.net - amnt
+				opening.bal.net = opening.bal.net - opening.bal
+			endif
+			break
+		endcase
+	endselect
+}
+
+function get.opening.balance(		domain	tcemm.grid	i.eunt,
+					domain	tccity		i.hcod,
+				ref	domain	tcamnt		o.obal	)
+{
+	domain	tcamnt	o.obal.1,o.obal.2
+	
+	o.obal.1 = 0.0
+	o.obal.2 = 0.0
+
+	select	sum(tfisg012.amnt):o.obal.1
+	from	tfisg012
+	where	tfisg012._index1 = {:year-1}
+	and	tfisg012.mnth in(1,2,3)
+	and	tfisg012.eunt = :i.eunt	
+	and	tfisg012.hcod = :i.hcod	
+	selectdo
+	selectempty
+		o.obal.1 = 0.0
+	endselect
+	
+	select	sum(tfisg012.amnt):o.obal.2
+	from	tfisg012
+	where	tfisg012._index1 <= {:year-2}	
+	and	tfisg012.eunt = :i.eunt	
+	and	tfisg012.hcod = :i.hcod	
+	selectdo
+	selectempty
+		o.obal.2 = 0.0
+	endselect
+	
+	o.obal = o.obal.1 + o.obal.2
+}
+
+function get.summary.head.desc.and.type(		domain	tccity		i.hcod,
+						ref	domain	tcmcs.str100m	o.dsca,
+						ref	domain	tfisg.htype	o.htyp	)
+{
+	select	tfisg011.dsca,tfisg011.htyp
+	from	tfisg011
+	where	tfisg011._index1 = {:i.hcod}
+	selectdo
+		o.dsca = tfisg011.dsca
+		o.htyp = tfisg011.htyp
+	selectempty
+		o.dsca = ""
+		o.htyp = empty
+	endselect
+}
+
+function get.division.desc()
+{
+	select	tcemm030.dsca
+	from	tcemm030
+	where	tcemm030._index1 = {:tfisg012.eunt}
+	selectdo
+	selectempty
+		tcemm030.dsca = ""
+	endselect
+}

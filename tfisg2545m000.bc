@@ -1,0 +1,123 @@
+|******************************************************************************
+|* tfisg2545m000  0  VRC B61U a7 isg 
+|* Receipt Details
+|* Merino1                       
+|* 2015-12-23
+|******************************************************************************
+|* Main table tfacp245 Receipts, Form Type 1
+|******************************************************************************
+|*
+|* ID ISGEC016003, Manish Manchanda, 2016-07-15
+|* Modificatiosn - Further Points for PTR process automation after GO live   
+|*
+|* ID: GH339CR630, RAvi Kumar, 10-06-2020
+|* Display Purchase Approval Memo from Purchase Order Invoice Processing                                                                               
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttfacp245 | Receipts
+	table	ttdpur401 | Purchase Order Lines
+	table	ttdpur406 | Purchase Actual Receipts
+	table	ttcibd001 | Items-General
+	table	twhinh312	|GH339CR630.a
+	table	ttcemm030	|GH339CR630.a
+
+	extern	domain	tcmcs.str10	i.rtyp
+	
+	domain	tfgld.docn	i.docn
+	domain	whinh.pksp	i.shpm
+	domain	tcncmp		curr.comp	|GH339CR630.a
+	
+	#pragma used dll ottstpapihand 		|GH339CR630.a
+|****************************** program section ********************************
+before.program:
+	curr.comp = get.compnr()		|GH339CR630.a
+	import("v.docn",i.docn)
+	if	i.docn	<>	0	then
+		i.shpm	=	str$(i.docn)
+		query.extension = "tfacp245._index1 = '"&i.shpm&"'"
+	endif
+
+before.display.object:
+	
+	select	tdpur401.item,
+		tcibd001.dsca
+	from	tdpur401, tcibd001
+	where	tdpur401._index1	=		{:tfacp245.orno,:tfacp245.pono,:tfacp245.sqnb}
+	and	tdpur401._compnr	=		200					|#ISGEC016003.n
+	and	tdpur401.item		refers to	tcibd001	UNREF CLEAR
+	and	tcibd001._compnr	=		200					|#ISGEC016003.n
+	selectdo
+	selectempty
+		tdpur401.item	=	""
+	endselect
+	
+	select	tdpur406.damt
+	from	tdpur406
+	where	tdpur406._index2	=	{:tfacp245.rcno,:tfacp245.rseq}
+	and	tdpur406._compnr	=	200					|#ISGEC016003.n
+	selectdo
+	selectempty
+		tdpur406.damt	=	0
+	endselect
+
+	i.rtyp	=	"Material"
+   
+choice.print.data:							|GH339CR630.a.s
+after.choice:
+	print.report()
+	
+|****************************** group section **********************************
+functions:
+function print.report()
+{
+	long	ret_val
+	string	i.erro(1000)
+	
+	i.erro = ""
+	select	tcemm030.lcmp
+	from	tcemm030
+	where	tcemm030.fcmp = :curr.comp
+	as set with 1 rows
+	selectdo
+		switch.to.company(tcemm030.lcmp)
+	endselect
+	
+	select	whinh312.rcno
+	from	whinh312
+	where	whinh312._index1 = {:tfacp245.rcno,:tfacp245.rseq}
+	as set with 1 rows
+	selectdo
+		ret_val	= stpapi.find("whisg3410m100", i.erro)
+		if	ret_val	=	1	then
+			stpapi.put.field("whisg3410m100", "rcno.f", whinh312.rcno)
+			stpapi.set.report("whisg3410m100", "rwhisg34100113d", "P", i.erro)
+			stpapi.put.field("whisg3410m100", "spool.preview", "1")
+			stpapi.print.report("whisg3410m100", i.erro)
+		endif
+		stpapi.end.session("whisg3410m100")
+	selectempty
+		select	tdpur406.rcno
+		from	tdpur406
+		where	tdpur406._index2 = {:tfacp245.rcno, :tfacp245.rseq}
+		as set with 1 rows
+		selectdo
+			ret_val	= stpapi.find("whisg3410m100", i.erro)
+			if	ret_val	=	1	then
+				stpapi.put.field("tdisg4406m100", "rcno.f", tdpur406.rcno)
+				stpapi.set.report("tdisg4406m100", "rtdisg40600105", "P", i.erro)
+				stpapi.put.field("tdisg4406m100", "spool.preview", "1")
+				stpapi.print.report("tdisg4406m100", i.erro)
+			endif
+			stpapi.end.session("tdisg4406m100")
+		endselect
+	endselect
+	
+	if not isspace(i.erro) then
+		message(i.erro)
+	endif
+	switch.to.company(curr.comp)
+}
+											|GH339CR630.a.e
+
+

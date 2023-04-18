@@ -1,0 +1,2664 @@
+|******************************************************************************
+|* tfisg1420m000  0  VRC B61U a7 isg 
+|* Print transaction data
+|* merino1                       
+|* 2017-11-25
+|******************************************************************************
+|* Form Type 4
+|******************************************************************************
+|* ID ISGEC01047, Mudit Sharma, 25/11/2017,  VRC B61U a7 isg
+|* New Development
+|*
+|* ID: ISGEC018003, Arun Chauhan, 07-06-2018, VRC B61U a7 isg
+|* TDS Correction
+|* 
+|* ID:ISGEC01093,Manav Singh,03-08-2018,VRC B61U a7 isg
+|* Changes user field tfgld106.user to tfgld018.user
+|*
+|* ID:ISGEC01111,Manav Singh,03-08-2018,VRC B61U a7 isg
+|* In Case of NonFinalized amount on TDS Deducted is picking from 107
+|****************************** declaration section ****************************
+declaration:
+#pragma used dll ottdllbw 
+#include<bic_desktop>
+
+	table ttfgld106
+	table ttfgld102
+	table ttfisg120
+	table ttfacp200
+	table ttfacp203
+	table ttcmcs032
+	table ttccom001
+	table ttfgld011
+	table ttcemm170
+	table tttaad100
+	table ttfgld107	
+	table ttfgld018							|#ISGEC018003
+
+	extern	domain	tfgld.year	year
+	extern	domain	tcncmp		comp.f,comp.t
+	extern	domain	tfgld.prod	fprd.f,fprd.t
+	extern	domain	tcyesno		non.final
+	extern	domain	tfgld.date	chk.leac						|#ISGEC01052.sn
+	extern	domain	tfgld.ttyp	chk.otyp, old.ttyp
+	extern	domain	tfgld.date	chk.dcdt, old.docn					|#ISGEC01052.en
+
+	string	line(1500), server.file(100), file.name(100)
+	long	ret2, stat.fp, flag, temp1, temp2, flag10
+	extern	domain tccom.bpid	old.bpid				|ISGEC018003  29-03-2019
+
+|****************************** Report Fields ********************************
+
+	extern domain	tccom.bpid	bpcode
+	extern domain	tcnama		bpnama
+	extern domain	tctax.txcg	section
+	extern domain	tcncmp		curr.comp,comp1
+	extern domain	tcmcs.str30	deduce.amnt
+	extern domain	tcmcs.str10	pan1,comp.noncomp
+	extern domain	tcmcs.str15	finalized.nonfinalized,tran1,tran2
+	extern domain	tcamnt		amnt1, amnt2, amnt5, amnt6, amnt9
+	extern domain	tfgld.user	user1
+	extern domain	tfgld.refc	refr1
+	extern domain	tfgld.date	date1,date2
+	extern domain	tfgld.leac	leac1
+	extern domain	tfacp.tpay 	tpay1				|#ISGEC018003.n
+	extern domain	tcamnt		total.sum,total.diff,final.total,non.final.total,amth1,
+					non.cr.amnt.107,non.db.amnt.107,total.102,o.non.final.total.db.cr   	
+	extern domain	tcamnt		total.td,tds.sum,db.amnt,cr.amnt,non.db.amnt,non.cr.amnt,amth2,
+					o.non.final.total.db.cr.107,total.107,total.106	
+	extern domain	tcpono		header5.generate,counter		|#ISGEC018003.n
+	
+
+|****************************** field section ********************************
+
+field.comp.f:
+when.field.changes:
+	comp.t = comp.f
+
+field.fprd.f:
+when.field.changes:
+	fprd.t = fprd.f
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.print:
+on.choice:
+	generate.file()
+
+|****************************** field section *********************************
+
+
+|****************************** function section ******************************
+
+functions:
+function  generate.file()
+{
+	server.file = bse.dir$() & str$(utc.num()) & ".xls"
+	
+	file.name = "c:\temp\" & str$(utc.num())    & ".xls"
+	
+	stat.fp = seq.open(server.file, "w+")
+	
+	process.file()
+	
+	message("Please refer to file %s in C:", file.name)
+	
+	seq.close(stat.fp)
+	ret2 = server2client(server.file,file.name,1)
+	ret2 = app_start(file.name,"c:","","","")
+
+}
+function process.file()
+{
+	generate.header1()
+	generate.header2()
+	generate.header3()
+	generate.header4()
+	if non.final = tcyesno.no then
+		print.finalised()
+	else
+		print.finalised.non.finalised()
+	endif
+}
+
+function generate.header1()
+{
+if stat.fp >0 then
+	
+	line =concat$("	", 
+		sprintf$(""),
+		sprintf$(""),
+		sprintf$(""),
+		sprintf$(""),
+		sprintf$(""),
+		sprintf$(""),
+		sprintf$(""),
+		sprintf$(""),
+		sprintf$(""),
+		sprintf$(""),
+		sprintf$("Fiscal Year- %d",year),
+		sprintf$(""),
+		sprintf$(""),
+		sprintf$(""),
+		sprintf$(""),
+		sprintf$(""),
+		sprintf$(""),
+		sprintf$(""),
+		sprintf$(""))
+						
+	line = strip$(shiftl$(line))
+	seq.puts(line, stat.fp)
+endif	
+}
+function generate.header2()
+{
+if stat.fp >0 then
+	
+	line =concat$("	", 
+		sprintf$(""),
+		sprintf$(""),
+		sprintf$(""),
+		sprintf$(""),
+		sprintf$(""),
+		sprintf$(""),
+		sprintf$(""),
+		sprintf$(""),
+		sprintf$(""),
+		sprintf$(""),
+		sprintf$("Company From- %d To- %d",comp.f,comp.t),
+		sprintf$(""),
+		sprintf$(""),
+		sprintf$(""),
+		sprintf$(""),
+		sprintf$(""),
+		sprintf$(""),
+		sprintf$(""),
+		sprintf$(""),
+		sprintf$(""))
+
+	line = strip$(shiftl$(line))
+	seq.puts(line, stat.fp)
+endif	
+}
+function generate.header3()
+{
+if stat.fp >0 then
+	
+	line =concat$("	", 
+		sprintf$(""),
+		sprintf$(""),
+		sprintf$(""),
+		sprintf$(""),
+		sprintf$(""),
+		sprintf$(""),
+		sprintf$(""),
+		sprintf$(""),
+		sprintf$(""),
+		sprintf$(""),
+		sprintf$("Period From- %d To- %d",fprd.f,fprd.t),
+		sprintf$(""),
+		sprintf$(""),
+		sprintf$(""),
+		sprintf$(""),
+		sprintf$(""),
+		sprintf$(""),
+		sprintf$(""),
+		sprintf$(""),
+		sprintf$(""),
+		sprintf$(""))
+						
+	line = strip$(shiftl$(line))
+	seq.puts(line, stat.fp)
+endif	
+}
+function generate.header4()
+{
+if stat.fp >0 then
+	
+	line =concat$("	", 
+		sprintf$("BP Code"),						|1
+		sprintf$("Name And Address of Party"),				|2 
+		sprintf$("Section"),						|3
+		sprintf$("Company/Non Company"),				|4
+		sprintf$("Company Code"),					|5
+		sprintf$("Amount Paid/Credited"),				|6
+		sprintf$("Date on which Amount Paid/Credited"),		|7
+		sprintf$("Rate of TDS%"),					|8
+		sprintf$("Amount of TDS Deducted"),				|9
+		sprintf$("Interest"),						|10
+		sprintf$("Total Amount Deducted"),				|11
+		sprintf$("Entered by"),					|12
+		sprintf$("Transaction Type/Document No."),			|13
+		sprintf$("Document Date."),					|14
+		sprintf$("Purchase Invoice Transaction Type/Document No."),	|15
+		sprintf$("Document Date"),					|16
+		sprintf$("PAN No."),						|17
+		sprintf$("Transaction Ref"),					|18
+		sprintf$("Finalized/Non-Finalized"))				|19
+	line = strip$(shiftl$(line))
+	seq.puts(line, stat.fp)
+endif	
+}
+
+function generate.header5()
+{
+if stat.fp >0 then
+	
+	line =concat$("	", 
+		sprintf$("Ledger Code - %s",tfisg120.leac))
+	line = strip$(shiftl$(line))
+	seq.puts(line, stat.fp)
+endif
+}
+
+function generate.header6()				|#ISGEC018003.sn						
+{
+if stat.fp >0 then
+	
+	line =concat$(" ", 
+| 		sprintf$(" Total of GL(%s) as per report balance = %s",trim$(tfisg120.leac),str$(total.td))& chr$(13),
+		sprintf$(" Total of GL(%s) as per report balance = %s",trim$(leac1),str$(total.td))& chr$(13),
+		sprintf$("Total of finalized transaction for the period as per GL = %s",str$(final.total))& chr$(13),  
+		sprintf$("Total of non-finalized transaction for the period as per GL = %s",str$(non.final.total))& chr$(13),
+		sprintf$("Total = %s",str$(total.sum))& chr$(13), 
+		sprintf$("Difference = %s",str$(total.diff))& chr$(13))
+	line = strip$(shiftl$(line))
+	seq.puts(line, stat.fp)
+endif	
+total.td = 0.00
+final.total = 0.00
+non.final.total = 0.00
+total.sum = 0.00
+total.diff = 0.00
+counter = 0
+total.102 = 0
+total.107 = 0
+total.106 = 0
+}							|#ISGEC018003.en
+
+function print.finalised()
+{
+
+	
+	select	tcemm170.comp
+	from	tcemm170
+	where	tcemm170._index1 inrange {:comp.f} and {:comp.t}
+	selectdo						
+	switch.to.company(tcemm170.comp)
+	select	tfisg120.leac,tfisg120.sect
+	from	tfisg120
+	where	tfisg120._compnr = :tcemm170.comp
+	selectdo
+		old.ttyp = ""
+		old.docn = 0
+		flag = 0
+		old.bpid = ""			|ISGEC018003      29-03-2019
+		select	tfgld106.bpid:bpcode,tfgld106.otyp,
+			tfgld106.odoc,tfgld106.olin,tfgld106.dcdt,
+			tfgld106.dbcr,tfgld106.amth(1):amnt1,tfgld106.user:user1,
+			tfgld106.refr:refr1,tfgld106.ctyp,tfgld106.cinv,
+			tfgld106.ccty,tfgld106.cvat,tfgld106.leac,
+			tfgld106.dim3
+		from	tfgld106
+		where	tfgld106._index4 = {:tfisg120.leac,:year}
+		and	tfgld106.fprd inrange :fprd.f and :fprd.t
+		and	tfgld106.amth(1) <> 0			|#To Skip Document with Amount Zero as discussed with Monisha Mam
+		and 	tfgld106.otyp <> "OPB"
+| 		group by tfgld106.otyp,tfgld106.odoc		|14-04-2018 #To skip Multiple TDS Documents Lines and make them single
+| 		and	tfgld106.odoc = 39018683	
+| 		and	tfgld106.otyp in ( "JVN","SDN")	
+| 		and	tfgld106.otyp = "B15"
+		order by tfgld106.bpid		|ISGEC018003.n          11-04-2019
+		selectdo
+			select	tfgld018.user:user1			|ISGEC01093.sn
+			from	tfgld018
+			where	tfgld018._index1 = {:tfgld106.otyp,:tfgld106.odoc}
+			selectdo
+			endselect					|ISGEC01093.en
+			flag10 = 0
+													|new1.sn
+			select	tfacp200.tpay
+			from	tfacp200
+			where	tfacp200._index1 = {:tfgld106.otyp,:tfgld106.odoc}
+			and	tfacp200.docn <> 0
+			and	tfacp200.tpay = tfacp.tpay.assignment
+			and	tfacp200.prod inrange :fprd.f and :fprd.t
+			selectdo
+				flag10 = 1
+			endselect
+| 			if old.ttyp  = tfgld106.otyp and old.docn = tfgld106.odoc and flag10 = 1   then			|ISGEC018003      29-03-2019
+			if old.ttyp  = tfgld106.otyp and old.docn = tfgld106.odoc and flag10 = 1 and old.bpid = bpcode then	|ISGEC018003      29-03-2019	
+				continue
+			else
+				old.ttyp  = tfgld106.otyp
+				old.docn = tfgld106.odoc
+				old.bpid = bpcode			|ISGEC018003      29-03-2019
+			endif												|14-04-2018.en
+| 			endselect
+
+			select	tfacp200.tpay
+			from	tfacp200
+			where	tfacp200.tdoc = :tfgld106.otyp
+			and	tfacp200.docn = :tfgld106.odoc
+			as set with 1 rows
+			selectdo
+			endselect
+			if tfacp200.tpay = tfacp.tpay.assignment	then			|#To skip Assignment Doc in period range
+				
+				select	tfacp200.ttyp,tfacp200.ninv					|#ISGEC01052.so
+				from	tfacp200
+				where	tfacp200.tdoc = :tfgld106.otyp
+				and	tfacp200.docn = :tfgld106.odoc
+| 				and	tfacp200.tpay = 1
+				and	tfacp200.prod inrange	:fprd.f and :fprd.t
+				selectdo
+					select	tfacp200.ttyp,tfacp200.ninv
+					from	tfacp200
+					where	tfacp200._index1 = {:tfacp200.ttyp,:tfacp200.ninv}
+					and	tfacp200.tpay = 1
+					and	tfacp200.prod inrange	:fprd.f and :fprd.t
+					selectdo
+						select	tfacp203.ttyp,tfacp203.txcg
+						from	tfacp203
+						where	tfacp203._index1 = {:tfacp200.ttyp,:tfacp200.ninv}
+						and	tfacp203.amth(1) <> 0
+						and	tfacp203.txcg(1;3) = "TDS"
+						selectdo
+| 							if tfacp203.txcg(1;3) = "TDS"	then
+								temp1 = 1
+| 							else
+| 								temp1 = 0
+| 							endif
+						selectempty
+							temp1 = 0
+						endselect
+					selectempty
+						temp1 = 0
+					endselect
+				selectempty
+					temp1 = 0
+				endselect
+				
+				select	tfacp200.ttyp,tfacp200.ninv
+				from	tfacp200
+				where	tfacp200.tdoc = :tfgld106.otyp
+				and	tfacp200.docn = :tfgld106.odoc
+| 				and	tfacp200.tpay = 9
+				and	tfacp200.prod inrange	:fprd.f and :fprd.t
+				selectdo
+					select	tfacp200.ttyp,tfacp200.ninv
+					from	tfacp200
+					where	tfacp200._index1 = {:tfacp200.ttyp,:tfacp200.ninv}
+					and	tfacp200.tpay = 9
+					and	tfacp200.prod inrange	:fprd.f and :fprd.t
+					selectdo
+						select	tfacp203.ttyp, tfacp203.txcg
+						from	tfacp203
+						where	tfacp203._index1 = {:tfacp200.ttyp,:tfacp200.ninv}
+						and	tfacp203.amth(1) <> 0
+						and 	tfacp203.txcg(1;3) = "TDS"
+						selectdo
+| 							if tfacp203.txcg(1;3) = "TDS"	then
+								temp2 = 1
+| 								continue
+| 							else
+| 								temp2 = 0
+| 							endif
+						selectempty
+							temp2 = 0
+						endselect
+					selectempty
+						temp2 = 0
+					endselect
+				selectempty
+					temp2 = 0
+				endselect								|#ISGEC01052.eo
+| 				select	tfgld106.leac:chk.leac, tfgld106.dcdt:chk.dcdt,			|#ISGEC01052.sn
+| 					tfgld106.otyp:chk.otyp
+| 				from	tfgld106
+| 				where	tfgld106._index4 = {:tfgld106.leac, :year}
+| 				and	tfgld106.fprd inrange :fprd.f and :fprd.t
+| 				and	tfgld106.dcdt = :tfgld106.dcdt
+| 				and	tfgld106.otyp = "AAP"
+| 				selectdo
+| 					temp1 = 1
+| 				selectempty
+| 					temp1 = 0
+| 				endselect								|#ISGEC01052.en
+				
+				if temp1 = 1 	or temp2 = 1	then
+					continue
+				endif
+			endif
+													|new1.en
+			select	tfgld011.catg
+			from	tfgld011
+			where	tfgld011._index1 = {:tfgld106.otyp}
+			selectdo
+			endselect
+			
+			select	tccom001.nama
+			from	tccom001
+			where	tccom001._index1 = {:user1}
+			selectdo
+			endselect
+			
+			curr.comp = get.compnr()
+			select	tccom100.nama:bpnama
+			from	tccom100
+			where	tccom100._index1 = {:bpcode}
+			selectdo
+			endselect
+			
+			select	tcmcs036.txcg:section
+			from	tcmcs036
+			where	tcmcs036._index1 = {:tfgld106.ccty,:tfgld106.cvat}
+			selectdo
+			endselect
+			
+			select	tctax400.fovn:pan1
+			from	tctax400
+			where	tctax400._index1 = {:bpcode}
+			and	tctax400.catg.l = tctax.catg.l.pan
+			selectdo
+			endselect
+			
+			get.voucher.finalized()
+			
+| 			deduce.amnt = str$(abs(val(deduce.amnt)))
+			
+			
+			select	tfacp200.ttyp
+			from	tfacp200
+			where	tfacp200._index1 = {:tfgld106.otyp,:tfgld106.odoc}
+			and	tfacp200.docn <> 0
+			and	tfacp200.tpay = tfacp.tpay.assignment
+			and	tfacp200.prod inrange :fprd.f and :fprd.t
+			as set with 1 rows
+			selectdo
+				select	sum(tfacp203.amth(1)):amnt9
+				from	tfacp203
+				where	tfacp203._index1 = {:tfgld106.otyp,:tfgld106.odoc}
+				and	tfacp203.leac = :tfgld106.leac
+				and 	tfacp203.ifbp = :bpcode					|ISGEC018003      29-03-2019
+				selectdo
+				selectempty
+	| 				amnt9 = val(deduce.amnt)
+	| 				select	sum(tfgld106.amth(1)):amnt9
+					select	tfgld106.amth,tfgld106.dbcr
+					from	tfgld106
+					where	tfgld106._index1 = {:tfgld106.otyp,:tfgld106.odoc}
+					and	tfgld106.leac = :tfgld106.leac
+					selectdo
+						if 	tfgld106.dbcr = ltoe(1) then
+							amnt9 = amnt9 + tfgld106.amth(1)
+						else if tfgld106.dbcr = ltoe(2)	then
+							amnt9 = amnt9 - tfgld106.amth(1)
+						endif
+						endif
+					selectempty
+						amnt9 = val(deduce.amnt)
+					endselect
+				endselect
+				amnt9 = abs(amnt9)
+				
+				deduce.amnt = str$(amnt9)
+				
+				select	tfgld011.catg
+				from	tfgld011
+				where	tfgld011._index1 = {:tfgld106.otyp}
+				and	tfgld011.catg <> tfgld.catg.purchase.inv			|test1.o
+				as set with 1 rows
+				selectdo
+					if tfgld011.catg <> ltoe(1)	then
+						if (tfacp200.tpay = ltoe(1) or tfacp200.tpay = ltoe(9)) and tfgld106.dbcr = ltoe(1)  then
+							deduce.amnt = "+"& str$(amnt9)
+						else if (tfacp200.tpay = ltoe(1) or tfacp200.tpay = ltoe(9)) and tfgld106.dbcr = ltoe(2)  then
+							deduce.amnt = "-"& str$(amnt9)
+						else if tfacp200.tpay = ltoe(4) and tfgld106.dbcr = ltoe(1) then
+							deduce.amnt = "+"& str$(amnt9)
+						else if tfacp200.tpay = ltoe(4) and tfgld106.dbcr = ltoe(2) then
+							deduce.amnt = "-"& str$(amnt9)
+						else if tfgld106.dbcr = ltoe(2)	then
+							deduce.amnt = "-"& str$(amnt9)
+						else if tfgld106.dbcr = ltoe(1)	then
+							deduce.amnt = "+"& str$(amnt9)
+						endif
+						endif
+						endif
+						endif
+						endif
+						endif
+					else
+						if tfgld106.dbcr = ltoe(2)	then
+							deduce.amnt = "-"&str$(amnt9)
+						else
+							deduce.amnt = "+"&str$(amnt9)
+						endif
+					endif
+				endselect
+			selectempty
+				
+			endselect
+			
+| 			get.assignment()				|new.n	|#ISGEC018003.0
+			get.assignment.finalized()				|#ISGEC018003.n
+			
+			if isspace(section)	then
+				section = tfisg120.sect
+			endif
+			if isspace(bpcode) and tfgld011.catg = ltoe(1)	then
+				section = tfisg120.sect
+				bpcode = tfgld106.dim3
+				select	tfisg121.desc:bpnama,
+					tfisg121.pann:pan1
+				from	tfisg121
+				where	tfisg121._index1 = {:tfgld106.dim3}
+				selectdo
+				selectempty
+					bpnama = ""
+				endselect
+			endif
+			if not isspace(pan1)	then
+				if pan1(4;1) = "P"	then
+					comp.noncomp = "NC"
+				else
+					comp.noncomp = "C"
+				endif
+			endif
+			
+			select	tcmcs032.pvat
+			from	tcmcs032
+			where	tcmcs032._index1 = {:tfgld106.ccty,:tfgld106.cvat}
+			selectdo
+			endselect
+			finalized.nonfinalized = "Finalized"
+			if flag = 0	then
+				generate.header5()
+				flag = 1
+			endif
+
+			if  (deduce.amnt <> "0") then
+				generate.header6.data()			|#ISGEC018003.n
+				write.data()
+				counter = 1
+			
+			endif
+			initialize()
+		endselect
+		if counter = 1 then
+			leac1 = tfisg120.leac |Priya.n
+			get.stnd.data(						|#ISGEC018003.sn					
+					tfisg120.leac,
+					final.total,
+					non.final.total,
+					total.sum,
+					total.diff
+					)
+			generate.header6()					|#ISGEC018003.en
+		endif
+	endselect
+	endselect
+}
+
+function generate.header6.data()					|#ISGEC018003.sn			
+{
+	tds.sum = val(deduce.amnt)
+	total.td = total.td + tds.sum
+
+}
+
+function total.non.fin.106()
+{
+	tds.sum = val(deduce.amnt)
+	total.106 = total.106 + tds.sum
+}
+
+
+function total.non.fin.102()
+{
+	tds.sum = val(deduce.amnt)
+	total.102 = total.102 + tds.sum
+}
+
+function total.non.fin.107()
+{
+	tds.sum = val(deduce.amnt)
+	total.107 = total.107 + tds.sum
+}
+function get.stnd.data( 	
+				domain	tfgld.leac 	i.leac,
+			ref 	domain	tcamnt 		o.final.total.db.cr,
+			ref	domain	tcamnt		grand.o.non.final.total.db.cr,
+			ref	domain	tcamnt		o.total.amount,
+			ref	domain	tcamnt		o.Difference		
+			)
+{
+	o.Difference = 0.00
+	o.total.amount= 0.00
+	o.final.total.db.cr = 0.00
+	db.amnt = 0.00
+	cr.amnt = 0.00
+	non.db.amnt = 0
+	non.cr.amnt = 0
+	non.db.amnt.107 = 0
+	non.cr.amnt.107 = 0
+	o.non.final.total.db.cr = 0.00
+	grand.o.non.final.total.db.cr = 0.00
+	amth2 = 0.00
+	amnt9 = 0.00
+	amth1 = 0.00
+| 	o.final.total.db.cr = total.106
+| 	o.non.final.total.db.cr = total.102 + total.107
+| 	o.total.amount = total.106 + o.non.final.total.db.cr 
+| 	o.Difference = total.td - o.total.amount
+	
+	select	tfgld106.dbcr,tfgld106.amth(1):amth1
+	from	tfgld106
+	where	tfgld106._index4 = {:tfisg120.leac,:year}
+	and	tfgld106.fprd inrange :fprd.f and :fprd.t
+	and	tfgld106.amth(1) <> 0	
+	and 	tfgld106.otyp <> "OPB"
+	selectdo 
+		on case etol(tfgld106.dbcr)
+			case 1:
+				db.amnt = db.amnt + amth1
+				break
+			case 2:
+				cr.amnt = cr.amnt + amth1
+				break
+		endcase
+	endselect
+	o.final.total.db.cr = db.amnt - abs(cr.amnt)
+	
+
+	
+	
+	select	tfgld102.dbcr,tfgld102.amth(1):amth2
+	from	tfgld102
+	where	tfgld102.leac = :tfisg120.leac
+	and	tfgld102.cono = :tcemm170.comp
+	and	tfgld102.fyer = :year
+	and	tfgld102.fprd inrange :fprd.f and :fprd.t
+	and	tfgld102.amth(1) <> 0
+	and 	tfgld102.ttyp <> "OPB"
+	selectdo 
+		on case etol(tfgld102.dbcr)
+			case 1:
+				non.db.amnt = non.db.amnt + amth2
+				break
+			case 2:
+				non.cr.amnt = non.cr.amnt + amth2
+				break
+		endcase
+	endselect
+	o.non.final.total.db.cr = non.db.amnt - abs(non.cr.amnt)
+	
+	select	tfgld107.ttyp,tfgld107.docn,
+		tfgld107.vamh(1):amnt9
+	from	tfgld107
+	where	tfgld107._index1 = {:tcemm170.comp}
+	and	tfgld107.vlac = :tfisg120.leac
+	and 	tfgld107.ktax = 4
+	and	tfgld107.year = :year
+	and	tfgld107.vamh(1) <>  0
+	and 	tfgld107.ttyp <> "OPB"
+	selectdo	
+
+	select	tfgld018.*
+	from	tfgld018
+	where	tfgld018._index1  = {:tfgld107.ttyp, :tfgld107.docn}
+	and	tfgld018.stat <> tfgld.dstt.deleted
+	and 	tfgld018.vprd inrange :fprd.f and :fprd.t
+	and 	tfgld018.ttyp <> "OPB"
+	selectdo
+		select	tfacp200.*						|#ISGEC01111.sn
+		from	tfacp200
+		where	tfacp200._index1  = {:tfgld107.ttyp,:tfgld107.docn}
+		and	tfacp200.prod inrange :fprd.f and :fprd.t
+		and	tfacp200.docn = 0
+		and	tfacp200.tdoc = "   "
+		as set with 1 rows
+		selectdo
+			if (tfacp200.tpay = ltoe(1) or tfacp200.tpay = ltoe(9)) then
+				non.cr.amnt.107 = non.cr.amnt.107 + abs(amnt9) * -1	
+			else if tfacp200.tpay = ltoe(4) then
+				non.db.amnt.107 = non.db.amnt.107 + abs(amnt9)
+			endif
+			endif	
+		selectempty
+			 non.db.amnt.107 = non.db.amnt.107 +  abs(amnt9)
+		endselect
+	endselect	
+endselect
+		o.non.final.total.db.cr.107 = non.db.amnt.107 - abs(non.cr.amnt.107)
+ 		grand.o.non.final.total.db.cr = o.non.final.total.db.cr + o.non.final.total.db.cr.107
+		o.total.amount = o.final.total.db.cr + grand.o.non.final.total.db.cr 
+		o.Difference = total.td - o.total.amount
+}	
+
+function print.finalised.non.finalised()
+{
+	total.102 = 0
+	total.107 = 0
+	total.106 = 0
+	
+	select	tcemm170.comp
+	from	tcemm170
+	where	tcemm170._index1 inrange {:comp.f} and {:comp.t}
+	selectdo
+	switch.to.company(tcemm170.comp)								|#ISGEC01052.n
+	select	tfisg120.leac,tfisg120.sect
+	from	tfisg120
+	where	tfisg120._compnr = :tcemm170.comp							|#ISGEC01052.n
+	selectdo
+		header5.generate = 0
+		old.ttyp = ""
+		old.docn = 0
+		flag = 0
+		old.bpid = ""			|ISGEC018003      29-03-2019
+		select	tfgld102.bpid:bpcode,tfgld102.ttyp,
+			tfgld102.docn,tfgld102.olin,tfgld102.dcdt,
+			tfgld102.dbcr,tfgld102.amth(1):amnt1,tfgld102.user:user1,
+			tfgld102.refr:refr1,tfgld102.ctyp,tfgld102.cdoc,tfgld102.ccty,
+			tfgld102.cvat,tfgld102.cono,tfgld102.year,tfgld102.btno,
+			tfgld102.dim3,tfgld102.leac,tfgld102.tcom
+		from	tfgld102
+		where	tfgld102.leac = :tfisg120.leac
+| 		and	tfgld102.cono = :tcemm170.comp
+		and	tfgld102.tcom = :tcemm170.comp						|03-05-2018.n
+		and	tfgld102.fyer = :year
+		and	tfgld102.fprd inrange :fprd.f and :fprd.t
+		and	tfgld102.amth(1) <> 0
+		and 	tfgld102.ttyp <> "OPB"
+| 		group by tfgld102.ttyp,tfgld102.docn		|14-04-2018 #To skip Multiple TDS Documents Lines and make them single
+| 		and	tfgld102.docn = 40000040 			|bharti.n
+| 		and	tfgld102.ttyp = "PGN"	  			|bharti.n
+| 		and	(tfgld102.docn = 39001247 or tfgld102.docn = 39001243)
+		order by tfgld102.bpid	
+		selectdo
+			flag10 = 0
+			
+			select	tfacp200.tpay
+			from	tfacp200
+			where	tfacp200._index1 = {:tfgld102.ttyp,:tfgld102.docn}
+			and	tfacp200.docn <> 0
+			and	tfacp200.tpay = tfacp.tpay.assignment
+			and	tfacp200.prod inrange :fprd.f and :fprd.t
+			selectdo
+				flag10 = 1
+			endselect
+			
+| 				if old.ttyp  = tfgld102.ttyp and old.docn = tfgld102.docn and flag10 = 1 then	|14-04-2018.sn	|ISGEC018003      29-03-2019
+				if old.ttyp  = tfgld102.ttyp and old.docn = tfgld102.docn and flag10 = 1 and old.bpid = bpcode  then	|14-04-2018.sn |ISGEC018003      29-03-2019
+					continue
+				else
+					old.ttyp  = tfgld102.ttyp
+					old.docn  = tfgld102.docn
+					old.bpid  = bpcode				|ISGEC018003      29-03-2019
+
+				endif												|14-04-2018.en
+| 			endselect
+			
+			select	tfacp200.tpay
+			from	tfacp200
+			where	tfacp200.tdoc = :tfgld102.ttyp
+			and	tfacp200.docn = :tfgld102.docn
+			as set with 1 rows
+			selectdo
+			endselect
+			
+			if tfacp200.tpay = tfacp.tpay.assignment	then
+				select	tfacp200.ttyp,tfacp200.ninv					|#ISGEC01052.so
+				from	tfacp200
+				where	tfacp200.tdoc = :tfgld102.ttyp
+				and	tfacp200.docn = :tfgld102.docn
+| 				and	tfacp200.tpay = 1
+				and	tfacp200.prod inrange	:fprd.f and :fprd.t
+				selectdo
+					select	tfacp200.ttyp,tfacp200.ninv
+					from	tfacp200
+					where	tfacp200._index1 = {:tfacp200.ttyp,:tfacp200.ninv}
+					and	tfacp200.tpay = 1
+					and	tfacp200.prod inrange	:fprd.f and :fprd.t
+					selectdo
+						select	tfacp203.ttyp
+						from	tfacp203
+						where	tfacp203._index1 = {:tfacp200.ttyp,:tfacp200.ninv}
+						and 	tfacp203.txcg(1;3) = "TDS"
+						and	tfacp203.amth(1) <> 0
+						selectdo
+| 							if tfacp203.txcg(1;3) = "TDS"	then
+								temp1 = 1
+| 							else
+| 								temp1 = 0
+| 							endif
+						selectempty
+							temp1 = 0
+						endselect
+					selectempty
+						temp1 = 0
+					endselect
+				selectempty
+					temp1 = 0
+				endselect
+				
+				select	tfacp200.ttyp,tfacp200.ninv
+				from	tfacp200
+				where	tfacp200.tdoc = :tfgld102.ttyp
+				and	tfacp200.docn = :tfgld102.docn
+| 				and	tfacp200.tpay = 9
+				and	tfacp200.prod inrange	:fprd.f and :fprd.t
+				selectdo
+					select	tfacp200.ttyp,tfacp200.ninv
+					from	tfacp200
+					where	tfacp200._index1 = {:tfacp200.ttyp,:tfacp200.ninv}
+					and	tfacp200.tpay = 9
+					and	tfacp200.prod inrange	:fprd.f and :fprd.t
+					selectdo
+						select	tfacp203.ttyp
+						from	tfacp203
+						where	tfacp203._index1 = {:tfacp200.ttyp,:tfacp200.ninv}
+						and 	tfacp203.txcg(1;3) = "TDS"
+						and	tfacp203.amth(1) <> 0
+						selectdo
+| 							if tfacp203.txcg(1;3) = "TDS"	then
+								temp2 = 1
+| 							else
+| 								temp2 = 0
+| 							endif
+						selectempty
+							temp2 = 0
+						endselect
+					selectempty
+						temp2 = 0
+					endselect
+				selectempty
+					temp2 = 0
+				endselect
+				
+				if temp1 = 1 	or temp2 = 1	then
+					continue
+				endif
+			endif
+			
+			select	tfgld011.catg
+			from	tfgld011
+			where	tfgld011._index1 = {:tfgld102.ttyp}
+			selectdo
+			endselect
+			
+			select	tccom001.nama
+			from	tccom001
+			where	tccom001._index1 = {:user1}
+			selectdo
+			endselect
+			
+			curr.comp = get.compnr()
+			select	tccom100.nama:bpnama
+			from	tccom100
+			where	tccom100._index1 = {:bpcode}
+			selectdo
+			endselect
+			
+			select	tcmcs036.txcg:section
+			from	tcmcs036
+			where	tcmcs036._index1 = {:tfgld102.ccty,:tfgld102.cvat}
+			selectdo
+			endselect
+			
+			select	tctax400.fovn:pan1
+			from	tctax400
+			where	tctax400._index1 = {:bpcode}
+			and	tctax400.catg.l = tctax.catg.l.pan
+			selectdo
+			endselect
+			
+			get.voucher.non.finalized()
+			
+			deduce.amnt = str$(deduce.amnt)
+			
+			select	tfacp200.ttyp
+			from	tfacp200
+			where	tfacp200._index1 = {:tfgld106.otyp,:tfgld102.docn}
+			and	tfacp200.docn <> 0
+			and	tfacp200.tpay = tfacp.tpay.assignment
+			and	tfacp200.prod inrange :fprd.f and :fprd.t
+			selectdo
+				select	sum(tfacp203.amth(1)):amnt9
+				from	tfacp203
+				where	tfacp203._index1 = {:tfgld102.ttyp,:tfgld102.docn}
+				and	tfacp203.leac = :tfgld102.leac	
+				and 	tfacp203.ifbp = :bpcode					|ISGEC018003      29-03-2019
+				selectdo
+				selectempty
+	| 				amnt9 = val(deduce.amnt)
+| 					select	sum(tfgld102.amth(1)):amnt9
+					select	tfgld102.amth,tfgld102.dbcr
+					from	tfgld102
+	| 				where	tfgld102._index2 = {:tfgld102.cono,:tfgld102.ttyp,:tfgld102.docn}
+					where	tfgld102.ttyp = :tfgld102.ttyp
+					and	tfgld102.docn = :tfgld102.docn
+					and	tfgld102.leac = :tfgld102.leac
+					and	tfgld102.tcom = :tcemm170.comp
+					selectdo
+						if 	tfgld102.dbcr = ltoe(1) then
+							amnt9 = amnt9 + tfgld102.amth(1)
+						else if tfgld102.dbcr = ltoe(2)	then
+							amnt9 = amnt9 - tfgld102.amth(1)
+						endif
+						endif
+					selectempty
+						amnt9 = val(deduce.amnt)
+					endselect
+				endselect
+				amnt9 = abs(amnt9)
+				deduce.amnt = str$(amnt9)				|#To get the sum of PTR TDS Amnt
+				
+				select	tfgld011.catg
+				from	tfgld011
+				where	tfgld011._index1 = {:tfgld102.ttyp}
+				and	tfgld011.catg <> tfgld.catg.purchase.inv
+				as set with 1 rows
+				selectdo
+					if tfgld011.catg <> ltoe(1)	then
+						if (tfacp200.tpay = ltoe(1) or tfacp200.tpay = ltoe(9)) and tfgld102.dbcr = ltoe(1)  then
+							deduce.amnt = "+"& str$(amnt9)
+						else if (tfacp200.tpay = ltoe(1) or tfacp200.tpay = ltoe(9)) and tfgld102.dbcr = ltoe(2)  then
+							deduce.amnt = "-"& str$(amnt9)
+						else if tfacp200.tpay = ltoe(4) and tfgld102.dbcr = ltoe(1) then
+							deduce.amnt = "+"& str$(amnt9)
+						else if tfacp200.tpay = ltoe(4) and tfgld102.dbcr = ltoe(2) then
+							deduce.amnt = "-"& str$(amnt9)
+						else if tfgld106.dbcr = ltoe(2)	then
+							deduce.amnt = "-"& str$(amnt9)
+						else if tfgld106.dbcr = ltoe(1)	then
+							deduce.amnt = "+"& str$(amnt9)
+						endif
+						endif
+						endif
+						endif
+						endif
+						endif
+					else
+						if tfgld102.dbcr = ltoe(2)	then
+							deduce.amnt = "-"&str$(amnt9)
+						else
+							deduce.amnt = "+"&str$(amnt9)
+						endif
+					endif
+				endselect
+			endselect
+			
+| 			get.assignment()			|#ISGEC018003.o				|TO substract Assignment amnt
+			get.assignment.non.finalized()		|#ISGEC018003.n
+			if isspace(section)	then
+				section = tfisg120.sect
+			endif
+			if isspace(bpcode) and tfgld011.catg = ltoe(1)	then
+				section = tfisg120.sect
+				bpcode = tfgld102.dim3
+				select	tfisg121.desc:bpnama,
+					tfisg121.pann:pan1
+				from	tfisg121
+				where	tfisg121._index1 = {:tfgld102.dim3}
+				selectdo
+				selectempty
+					bpnama = ""
+				endselect
+			endif
+			if not isspace(pan1)	then
+				if pan1(4;1) = "P"	then
+					comp.noncomp = "NC"
+				else
+					comp.noncomp = "C"
+				endif
+			endif
+			
+			select	tcmcs032.pvat
+			from	tcmcs032
+			where	tcmcs032._index1 = {:tfgld102.ccty,:tfgld102.cvat}
+			selectdo
+			endselect
+			finalized.nonfinalized = "Non-Finalized"
+			if header5.generate = 0 then
+				generate.header5()
+				header5.generate = 107			|#ISGEC018003.n
+| 				flag = 1
+			endif
+			if (deduce.amnt <> "0")	then
+				generate.header6.data()			|#ISGEC018003.n
+				total.non.fin.102()
+				write.data()
+				counter = 1
+			
+			endif
+			initialize()
+		endselect	
+		print.non.finilized.tax.value.from.tfgld107()		|#ISGEC018003.n
+		old.bpid = ""				|ISGEC018003      29-03-2019
+		select	tfgld106.bpid:bpcode,tfgld106.otyp,
+			tfgld106.odoc,tfgld106.olin,tfgld106.dcdt,
+			tfgld106.dbcr,tfgld106.amth(1):amnt1,tfgld106.user:user1,
+			tfgld106.refr:refr1,tfgld106.ctyp,tfgld106.cinv,tfgld106.ccty,
+			tfgld106.cvat,tfgld106.dim3,tfgld106.leac
+		from	tfgld106
+		where	tfgld106._index4 = {:tfisg120.leac,:year}
+		and	tfgld106.fprd inrange :fprd.f and :fprd.t
+		and	tfgld106.amth(1) <> 0
+		and 	tfgld106.otyp <> "OPB"
+| 		and	tfgld106.odoc = 11011975
+| 		and	tfgld106.otyp = "BIC"
+| 		group by tfgld106.otyp,tfgld106.odoc				|14-04-2018 #To skip Multiple TDS Documents Lines and make them single
+| 		and	(tfgld106.odoc = 38000143 or tfgld106.odoc = 38000073 or tfgld106.odoc = 38000074)
+| 		and	tfgld106.odoc = 38017335
+| 		and	tfgld106.otyp = "PTR"
+		order by tfgld106.bpid	
+			selectdo
+			select	tfgld018.user:user1			||ISGEC01093.sn
+			from	tfgld018
+			where	tfgld018._index1 = {:tfgld106.otyp,:tfgld106.odoc}
+			selectdo
+			endselect					|ISGEC01093.en
+			flag10 = 0
+			select	tfacp200.tpay
+			from	tfacp200
+			where	tfacp200._index1 = {:tfgld106.otyp,:tfgld106.odoc}
+			and	tfacp200.docn <> 0
+			and	tfacp200.tpay = tfacp.tpay.assignment
+			and	tfacp200.prod inrange :fprd.f and :fprd.t
+			selectdo
+				flag10 = 1
+			endselect
+| 				if old.ttyp  = tfgld106.otyp and old.docn = tfgld106.odoc and flag10 = 1 then	|ISGEC018003      29-03-2019			|14-04-2018.sn
+				if old.ttyp  = tfgld106.otyp and old.docn = tfgld106.odoc and flag10 = 1 and old.bpid = bpcode then	|ISGEC018003      29-03-2019	|14-04-2018.sn
+					continue
+				else
+					old.ttyp  = tfgld106.otyp
+					old.docn = tfgld106.odoc
+					old.bpid = bpcode
+				endif												|14-04-2018.en
+| 			endselect
+													|new1.sn
+| 			if tfgld106.otyp = "AAP"	then
+| 				select	tfacp200.prod
+| 				from	tfacp200
+| 				where	tfacp200.tdoc = :tfgld106.otyp
+| 				and	tfacp200.docn = :tfgld106.odoc
+| 				and	tfacp200.prod inrange	:fprd.f and :fprd.t
+| 				selectdo
+| 					temp1 = 1
+| 				endselect
+| 				if temp1 = 1	then
+| 					continue
+| 				endif
+| 			endif
+			select	tfacp200.tpay
+			from	tfacp200
+			where	tfacp200.tdoc = :tfgld106.otyp
+			and	tfacp200.docn = :tfgld106.odoc
+			as set with 1 rows
+			selectdo
+			endselect
+			if tfacp200.tpay = tfacp.tpay.assignment	then
+				select	tfacp200.ttyp,tfacp200.ninv					|#ISGEC01052.so
+				from	tfacp200
+				where	tfacp200.tdoc = :tfgld106.otyp
+				and	tfacp200.docn = :tfgld106.odoc
+| 				and	tfacp200.tpay = 1
+				and	tfacp200.prod inrange	:fprd.f and :fprd.t
+				selectdo
+					select	tfacp200.ttyp,tfacp200.ninv
+					from	tfacp200
+					where	tfacp200._index1 = {:tfacp200.ttyp,:tfacp200.ninv}
+					and	tfacp200.tpay = 1
+					and	tfacp200.prod inrange	:fprd.f and :fprd.t
+					selectdo
+						select	tfacp203.ttyp
+						from	tfacp203
+						where	tfacp203._index1 = {:tfacp200.ttyp,:tfacp200.ninv}
+						and 	tfacp203.txcg(1;3) = "TDS"
+						and	tfacp203.amth(1) <> 0
+						selectdo
+| 							if tfacp203.txcg(1;3) = "TDS"	then
+								temp1 = 1
+| 							else
+| 								temp1 = 0
+| 							endif
+						selectempty
+							temp1 = 0
+						endselect
+					selectempty
+						temp1 = 0
+					endselect
+				selectempty
+					temp1 = 0
+				endselect
+				
+				select	tfacp200.ttyp,tfacp200.ninv
+				from	tfacp200
+				where	tfacp200.tdoc = :tfgld106.otyp
+				and	tfacp200.docn = :tfgld106.odoc
+| 				and	tfacp200.tpay = 9
+				and	tfacp200.prod inrange	:fprd.f and :fprd.t
+				selectdo
+					select	tfacp200.ttyp,tfacp200.ninv
+					from	tfacp200
+					where	tfacp200._index1 = {:tfacp200.ttyp,:tfacp200.ninv}
+					and	tfacp200.tpay = 9
+					and	tfacp200.prod inrange	:fprd.f and :fprd.t
+					selectdo
+						select	tfacp203.ttyp
+						from	tfacp203
+						where	tfacp203._index1 = {:tfacp200.ttyp,:tfacp200.ninv}
+						and 	tfacp203.txcg(1;3) = "TDS"
+						and	tfacp203.amth(1) <> 0
+						selectdo
+| 							if tfacp203.txcg(1;3) = "TDS"	then
+								temp2 = 1
+| 							else
+| 								temp2 = 0
+| 							endif
+						selectempty
+							temp2 = 0
+						endselect
+					selectempty
+						temp2 = 0
+					endselect
+				selectempty
+					temp2 = 0
+				endselect								|#ISGEC01052.eo
+| 				select	tfgld106.leac:chk.leac, tfgld106.dcdt:chk.dcdt,			|#ISGEC01052.sn
+| 					tfgld106.otyp:chk.otyp
+| 				from	tfgld106
+| 				where	tfgld106._index4 = {:tfgld106.leac, :year}
+| 				and	tfgld106.fprd inrange :fprd.f and :fprd.t
+| 				and	tfgld106.dcdt = :tfgld106.dcdt
+| 				and	tfgld106.otyp = "AAP"
+| 				selectdo
+| 					temp1 = 1
+| 				selectempty
+| 					temp1 = 0
+| 				endselect								|#ISGEC01052.en
+				
+				if temp1 = 1 	or temp2 = 1	then
+					continue
+				endif
+			endif
+													|new1.en
+			select	tfgld011.catg
+			from	tfgld011
+			where	tfgld011._index1 = {:tfgld106.otyp}
+			selectdo
+			endselect
+			
+			select	tccom001.nama
+			from	tccom001
+			where	tccom001._index1 = {:user1}
+			selectdo
+			endselect
+			
+			curr.comp = get.compnr()
+			select	tccom100.nama:bpnama
+			from	tccom100
+			where	tccom100._index1 = {:bpcode}
+			selectdo
+			endselect
+			
+			select	tcmcs036.txcg:section
+			from	tcmcs036
+			where	tcmcs036._index1 = {:tfgld106.ccty,:tfgld106.cvat}
+			selectdo
+			endselect
+			
+			select	tctax400.fovn:pan1
+			from	tctax400
+			where	tctax400._index1 = {:bpcode}
+			and	tctax400.catg.l = tctax.catg.l.pan
+			selectdo
+			endselect
+			
+			get.voucher.finalized()
+			
+			deduce.amnt = str$(deduce.amnt)
+			
+			
+		
+			
+			select	tfacp200.ttyp
+			from	tfacp200
+			where	tfacp200._index1 = {:tfgld106.otyp,:tfgld106.odoc}
+			and	tfacp200.docn <> 0
+			and	tfacp200.tpay = tfacp.tpay.assignment
+			and	tfacp200.prod inrange :fprd.f and :fprd.t
+			as set with 1 rows
+			selectdo
+				select	sum(tfacp203.amth(1)):amnt9
+				from	tfacp203
+				where	tfacp203._index1 = {:tfgld106.otyp,:tfgld106.odoc}
+				and	tfacp203.leac = :tfgld106.leac
+				and 	tfacp203.ifbp = :bpcode					|ISGEC018003      29-03-2019
+				selectdo
+				selectempty
+	| 				amnt9 = val(deduce.amnt)
+| 					select	sum(tfgld106.amth(1)):amnt9
+| 					from	tfgld106
+| 					where	tfgld106._index1 = {:tfgld106.otyp,:tfgld106.odoc}
+| 					and	tfgld106.leac = :tfgld106.leac
+| 					selectdo
+| 					selectempty
+| 						amnt9 = val(deduce.amnt)
+| 					endselect
+					select	tfgld106.amth,tfgld106.dbcr
+					from	tfgld106
+					where	tfgld106._index1 = {:tfgld106.otyp,:tfgld106.odoc}
+					and	tfgld106.leac = :tfgld106.leac
+					selectdo
+						if 	tfgld106.dbcr = ltoe(1) then
+							amnt9 = amnt9 + tfgld106.amth(1)
+						else if tfgld106.dbcr = ltoe(2)	then
+							amnt9 = amnt9 - tfgld106.amth(1)
+						endif
+						endif
+					selectempty
+						amnt9 = val(deduce.amnt)
+					endselect
+				endselect
+				deduce.amnt = str$(amnt9)
+				
+				select	tfgld011.catg
+				from	tfgld011
+				where	tfgld011._index1 = {:tfgld106.otyp}
+				and	tfgld011.catg <> tfgld.catg.purchase.inv
+				as set with 1 rows
+				selectdo
+					if tfgld011.catg <> ltoe(1)	then
+						if (tfacp200.tpay = ltoe(1) or tfacp200.tpay = ltoe(9)) and tfgld106.dbcr = ltoe(1)  then
+							deduce.amnt = "+"& str$(amnt9)
+						else if (tfacp200.tpay = ltoe(1) or tfacp200.tpay = ltoe(9)) and tfgld106.dbcr = ltoe(2)  then
+							deduce.amnt = "-"& str$(amnt9)
+						else if tfacp200.tpay = ltoe(4) and tfgld106.dbcr = ltoe(1) then
+							deduce.amnt = "+"& str$(amnt9)
+						else if tfacp200.tpay = ltoe(4) and tfgld106.dbcr = ltoe(2) then
+							deduce.amnt = "-"& str$(amnt9)
+						else if tfgld106.dbcr = ltoe(2)	then
+							deduce.amnt = "-"& str$(amnt9)
+						else if tfgld106.dbcr = ltoe(1)	then
+							deduce.amnt = "+"& str$(amnt9)
+						endif
+						endif
+						endif
+						endif
+						endif
+						endif
+					else
+						if tfgld106.dbcr = ltoe(2)	then
+							deduce.amnt = "-"&str$(amnt9)
+						else
+							deduce.amnt = "+"&str$(amnt9)
+						endif
+					endif
+				endselect
+			endselect	
+| 			get.assignment()				|new.n	|#ISGEC018003.0
+			get.assignment.finalized()				|#ISGEC018003.n
+			
+			if isspace(section)	then
+				section = tfisg120.sect
+			endif
+			if isspace(bpcode) and tfgld011.catg = ltoe(1)	then
+				section = tfisg120.sect
+				bpcode = tfgld106.dim3
+				select	tfisg121.desc:bpnama,
+					tfisg121.pann:pan1
+				from	tfisg121
+				where	tfisg121._index1 = {:tfgld106.dim3}
+				selectdo
+				selectempty
+					bpnama = ""
+				endselect
+			endif
+			if not isspace(pan1)	then
+				if pan1(4;1) = "P"	then
+					comp.noncomp = "NC"
+				else
+					comp.noncomp = "C"
+				endif
+			endif
+			
+			select	tcmcs032.pvat
+			from	tcmcs032
+			where	tcmcs032._index1 = {:tfgld106.ccty,:tfgld106.cvat}
+			selectdo
+			endselect
+			finalized.nonfinalized = "Finalized"
+			if header5.generate = 107 then
+| 				flag = 1
+			else
+				generate.header5()
+				header5.generate = 107
+			endif
+
+			if (deduce.amnt <> "0")	then 
+				generate.header6.data()			|#ISGEC018003.n
+				total.non.fin.106()
+				write.data()
+				counter = 1
+			
+			endif
+			initialize()
+		endselect
+		if counter = 1 then
+			leac1 = tfisg120.leac |Priya.n
+			get.stnd.data(						|#ISGEC018003.sn					
+					tfisg120.leac,
+					final.total,
+					non.final.total,
+					total.sum,
+					total.diff
+					)
+			generate.header6()					|#ISGEC018003.en
+		endif
+		
+	endselect
+	endselect
+}
+
+function initialize()
+{
+amnt1 = 0
+amnt2 = 0
+bpcode = ""
+bpnama = ""
+section = ""
+comp.noncomp = ""
+curr.comp = 0
+tfacp203.taam = 0
+tfgld106.dcdt = 0
+tcmcs032.pvat = 0
+deduce.amnt = ""
+user1 = ""
+tran1 = ""
+tran2 = ""
+date1 = 0
+date2 = 0
+pan1 = ""
+refr1 = ""
+finalized.nonfinalized = ""
+amnt5 = 0
+amnt6 = 0
+amnt9 = 0
+}
+
+function write.data()
+{
+if stat.fp >0 then
+	
+	line =concat$("	", 
+		sprintf$("%s",bpcode),						|1
+		sprintf$("%s",bpnama),						|2 
+		sprintf$("%s",section),					|3
+		sprintf$("%s",comp.noncomp),					|4
+		sprintf$("%d",curr.comp),					|5
+		sprintf$("%d",tfacp203.taam),					|6
+		sprintf$("%D(%02d-%02m-%04Y)",tfgld106.dcdt),			|7
+		sprintf$("%d",tcmcs032.pvat),					|8
+		sprintf$("%s",deduce.amnt),					|9
+		sprintf$(""),							|10
+		sprintf$(""),							|11
+		sprintf$("%s %s",user1,tccom001.nama),				|12
+		sprintf$("%s",tran1),						|13
+		sprintf$("%D(%02d-%02m-%04Y)",date1),				|14
+		sprintf$("%s",tran2),						|15
+		sprintf$("%D(%02d-%02m-%04Y)",date2),				|16
+		sprintf$("%s",pan1),						|17
+		sprintf$("%s",refr1),						|18
+		sprintf$("%s",finalized.nonfinalized))				|19
+	line = strip$(shiftl$(line))
+	seq.puts(line, stat.fp)
+	
+endif
+}
+
+function get.voucher.finalized()
+{
+if not isspace(bpcode) and tfgld011.catg <> ltoe(1)	then
+	select	tfacp203.taam,tfacp203.amth(1):amnt2
+	from	tfacp203
+	where	tfacp203._index1 = {:tfgld106.otyp,:tfgld106.odoc,:tfgld106.olin}
+	and	tfacp203.leac = :tfgld106.leac
+	selectdo
+		select	tfacp200.tpay
+		from	tfacp200
+		where	tfacp200._index1  = {:tfgld106.otyp,:tfgld106.odoc}
+		and 	tfacp200.docn = 0							|#Main Document Document Type
+		selectdo
+			tran1 = tfgld106.otyp&"/"&str$(tfgld106.odoc)
+			date1 = tfgld106.dcdt
+| 			if tfacp200.tpay = ltoe(1) or tfacp200.tpay = ltoe(9)	then
+| 				deduce.amnt = "-"& str$(amnt2)
+			if (tfacp200.tpay = ltoe(1) or tfacp200.tpay = ltoe(9)) and tfgld106.dbcr = ltoe(1)		then
+				deduce.amnt = "+"& str$(amnt2)
+				tran1 = tfgld106.otyp&"/"&str$(tfgld106.odoc)
+				date1 = tfgld106.dcdt
+			else if (tfacp200.tpay = ltoe(1) or tfacp200.tpay = ltoe(9)) and tfgld106.dbcr = ltoe(2)		then
+| 				deduce.amnt = "+"& str$(amnt2)					|#ISGEC01052.o
+				deduce.amnt = "-"& str$(amnt2)					|#ISGEC01052.n
+				tran1 = tfgld106.otyp&"/"&str$(tfgld106.odoc)
+				date1 = tfgld106.dcdt
+			else if tfacp200.tpay = ltoe(4) and tfgld106.dbcr = ltoe(1)	then
+				deduce.amnt = "+"& str$(amnt2)
+			else if tfacp200.tpay = ltoe(4) and tfgld106.dbcr = ltoe(2)	then
+				deduce.amnt = "-"& str$(amnt2)
+			endif
+			endif
+			endif
+			endif
+		selectempty
+			select	tfacp200.tpay
+			from	tfacp200
+			where	tfacp200.tdoc = :tfgld106.otyp
+			and	tfacp200.docn = :tfgld106.odoc
+			selectdo
+				select	tfgld106.ctyp,tfgld106.cinv
+				from	tfgld106
+				where	tfgld106._index1 = {:tfgld106.otyp,:tfgld106.odoc,:tfgld106.olin}
+				selectdo
+					select	tfgld011.catg
+					from	tfgld011
+					where	tfgld011._index1 = {:tfgld106.ctyp}
+					and	tfgld011.catg = tfgld.catg.purchase.inv
+					selectdo
+						tran2 = tfgld106.ctyp&"/"&str$(tfgld106.cinv)
+						select	tfgld106.dcdt:date2
+						from	tfgld106
+						where	tfgld106._index1= {:tfgld106.ctyp,:tfgld106.cinv}
+						selectdo
+						selectempty
+							date2 = 0
+						endselect
+					endselect
+				endselect
+				tran1 = tfgld106.otyp&"/"&str$(tfgld106.odoc)
+				date1 = tfgld106.dcdt
+				if tfacp200.tpay = ltoe(14)	then
+					deduce.amnt = "+"& str$(amnt2)
+				else if	tfacp200.tpay = ltoe(11)	then
+					deduce.amnt = "-"& str$(amnt2)
+				endif
+				endif
+			endselect
+		endselect
+	selectempty
+		amnt2 = 0
+		tfacp203.taam = 0
+		select	tfacp200.tpay
+		from	tfacp200
+		where	tfacp200._index1  = {:tfgld106.otyp,:tfgld106.odoc}
+		and 	tfacp200.docn = 0						|Only Main Doc to be Considered.
+		selectdo
+			if (tfacp200.tpay = ltoe(1) or tfacp200.tpay = ltoe(9)) and tfgld106.dbcr = ltoe(1)		then
+				deduce.amnt = "+"& str$(amnt1)
+				tran1 = tfgld106.otyp&"/"&str$(tfgld106.odoc)
+				date1 = tfgld106.dcdt
+			else if (tfacp200.tpay = ltoe(1) or tfacp200.tpay = ltoe(9)) and tfgld106.dbcr = ltoe(2)		then
+| 				deduce.amnt = "+"& str$(amnt1)					|#ISGEC01052.o
+				deduce.amnt = "-"& str$(amnt1)					|#ISGEC01052.n
+				tran1 = tfgld106.otyp&"/"&str$(tfgld106.odoc)
+				date1 = tfgld106.dcdt
+			else if tfacp200.tpay = ltoe(4) and tfgld106.dbcr = ltoe(1)	then
+				deduce.amnt = "+"& str$(amnt1)
+			else if tfacp200.tpay = ltoe(4) and tfgld106.dbcr = ltoe(2)	then
+				deduce.amnt = "-"& str$(amnt1)
+			endif
+			endif
+			endif
+			endif
+			tran1 = tfgld106.otyp&"/"&str$(tfgld106.odoc)
+			date1 = tfgld106.dcdt
+		selectempty
+			select	tfacp200.tpay
+			from	tfacp200
+			where	tfacp200.payt = :tfgld106.otyp
+			and	tfacp200.payd = :tfgld106.odoc
+			and	tfacp200.payl = :tfgld106.olin
+			selectdo
+				select	tfgld106.ctyp,tfgld106.cinv
+				from	tfgld106
+				where	tfgld106._index1 = {:tfgld106.otyp,:tfgld106.odoc,:tfgld106.olin}
+				selectdo
+					select	tfgld011.catg
+					from	tfgld011
+					where	tfgld011._index1 = {:tfgld106.ctyp}
+					and	tfgld011.catg = tfgld.catg.purchase.inv
+					selectdo
+						tran2 = tfgld106.ctyp&"/"&str$(tfgld106.cinv)
+						select	tfgld106.dcdt:date2
+						from	tfgld106
+						where	tfgld106._index1= {:tfgld106.ctyp,:tfgld106.cinv}
+						selectdo
+						selectempty
+							date2 = 0
+						endselect
+					endselect
+				endselect
+				tran1 = tfgld106.otyp&"/"&str$(tfgld106.odoc)
+				date1 = tfgld106.dcdt
+				if tfacp200.tpay = ltoe(14)	then
+					deduce.amnt = "+"& str$(amnt1)
+				else if	tfacp200.tpay = ltoe(11)	then
+					deduce.amnt = "-"& str$(amnt1)
+				endif
+				endif
+			endselect
+		endselect
+		select	tfacp200.tpay
+		from	tfacp200
+		where	tfacp200.tdoc = :tfgld106.otyp
+		and	tfacp200.docn = :tfgld106.odoc
+		selectdo
+			if tfgld106.dbcr = ltoe(2)	then
+				deduce.amnt = "-"&str$(amnt1)
+			else
+				deduce.amnt = "+"&str$(amnt1)
+			endif
+		selectempty
+			if tfgld106.dbcr = ltoe(2)	then		|ISGEC018003.sn
+				deduce.amnt = "-"&str$(amnt1)
+			else
+				deduce.amnt = "+"&str$(amnt1)
+			endif						||ISGEC018003.en
+		endselect
+							
+		tran1 = tfgld106.otyp&"/"&str$(tfgld106.odoc)
+		date1 = tfgld106.dcdt
+	endselect
+else
+	select	tfacp200.tpay
+	from	tfacp200
+	where	tfacp200._index1  = {:tfgld106.otyp,:tfgld106.odoc}
+	selectdo
+		tran1 = tfgld106.otyp&"/"&str$(tfgld106.odoc)
+		date1 = tfgld106.dcdt
+| 		if tfacp200.tpay = ltoe(1) or tfacp200.tpay = ltoe(9)	then
+| 			deduce.amnt = "-"& str$(amnt2)
+| 			tran1 = tfgld106.otyp&"/"&str$(tfgld106.odoc)
+| 			date1 = tfgld106.dcdt
+		if (tfacp200.tpay = ltoe(1) or tfacp200.tpay = ltoe(9)) and tfgld106.dbcr = ltoe(1)		then
+			deduce.amnt = "+"& str$(amnt2)
+			tran1 = tfgld106.otyp&"/"&str$(tfgld106.odoc)
+			date1 = tfgld106.dcdt
+		else if (tfacp200.tpay = ltoe(1) or tfacp200.tpay = ltoe(9)) and tfgld106.dbcr = ltoe(2)		then
+| 			deduce.amnt = "+"& str$(amnt2)						|#ISGEC01052.o
+			deduce.amnt = "-"& str$(amnt2)						|#ISGEC01052.n
+			tran1 = tfgld106.otyp&"/"&str$(tfgld106.odoc)
+			date1 = tfgld106.dcdt
+		else if tfacp200.tpay = ltoe(4) and tfgld106.dbcr = ltoe(1)	then
+			deduce.amnt = "+"& str$(amnt2)
+		else if tfacp200.tpay = ltoe(4) and tfgld106.dbcr = ltoe(2)	then
+			deduce.amnt = "-"& str$(amnt2)
+		endif
+		endif
+		endif
+		endif
+	selectempty
+		select	tfacp200.tpay
+		from	tfacp200
+		where	tfacp200.tdoc = :tfgld106.otyp
+		and	tfacp200.docn = :tfgld106.odoc
+		selectdo
+			select	tfgld106.ctyp,tfgld106.cinv
+			from	tfgld106
+			where	tfgld106._index1 = {:tfgld106.otyp,:tfgld106.odoc,:tfgld106.olin}
+			selectdo
+				select	tfgld011.catg
+				from	tfgld011
+				where	tfgld011._index1 = {:tfgld106.ctyp}
+				and	tfgld011.catg = tfgld.catg.purchase.inv
+				selectdo
+					tran2 = tfgld106.ctyp&"/"&str$(tfgld106.cinv)
+					select	tfgld106.dcdt:date2
+					from	tfgld106
+					where	tfgld106._index1= {:tfgld106.ctyp,:tfgld106.cinv}
+					selectdo
+					selectempty
+						date2 = 0
+					endselect
+				endselect
+			endselect
+			tran1 = tfgld106.otyp&"/"&str$(tfgld106.odoc)
+			date1 = tfgld106.dcdt
+			if tfacp200.tpay = ltoe(14)	then
+				deduce.amnt = "+"& str$(amnt2)
+				
+			else if	tfacp200.tpay = ltoe(11)	then
+				deduce.amnt = "-"& str$(amnt2)
+			endif
+			endif
+		endselect
+	endselect
+	if tfgld106.dbcr = ltoe(2)	then
+		deduce.amnt = "-"&str$(amnt1)
+	else
+		deduce.amnt = "+"&str$(amnt1)
+	endif
+	tran1 = tfgld106.otyp&"/"&str$(tfgld106.odoc)
+	date1 = tfgld106.dcdt
+endif
+tran2 = tfgld106.ctyp&"/"&str$(tfgld106.cinv)
+select	tfgld106.dcdt:date2
+from	tfgld106
+where	tfgld106._index1= {:tfgld106.ctyp,:tfgld106.cinv}
+selectdo
+selectempty
+	date2 = 0
+endselect
+}
+
+function get.voucher.non.finalized()
+{
+if not isspace(bpcode) and tfgld011.catg <> ltoe(1)	then
+	select	tfacp203.taam,tfacp203.amth(1):amnt2
+	from	tfacp203
+	where	tfacp203._index1 = {:tfgld102.ttyp,:tfgld102.docn,:tfgld102.olin}
+	selectdo
+		select	tfacp200.tpay
+		from	tfacp200
+		where	tfacp200._index1  = {:tfgld102.ttyp,:tfgld102.docn}
+		selectdo
+			tran1 = tfgld102.ttyp&"/"&str$(tfgld102.docn)
+			date1 = tfgld102.dcdt
+| 			if tfacp200.tpay = ltoe(1) or tfacp200.tpay = ltoe(9)	then
+| 				deduce.amnt = "-"& str$(amnt2)
+			if (tfacp200.tpay = ltoe(1) or tfacp200.tpay = ltoe(9)) and tfgld102.dbcr = ltoe(1)		then
+				deduce.amnt = "+"& str$(amnt2)
+			else if (tfacp200.tpay = ltoe(1) or tfacp200.tpay = ltoe(9)) and tfgld102.dbcr = ltoe(2)		then
+| 				deduce.amnt = "+"& str$(amnt2)						|#ISGEC01052.o
+				deduce.amnt = "-"& str$(amnt2)						|#ISGEC01052.n
+			else if tfacp200.tpay = ltoe(4) and tfgld102.dbcr = ltoe(1)	then
+				deduce.amnt = "+"& str$(amnt2)
+			else if tfacp200.tpay = ltoe(4) and tfgld102.dbcr = ltoe(2)	then
+				deduce.amnt = "-"& str$(amnt2)
+			endif
+			endif
+			endif
+			endif
+		selectempty
+			select	tfacp200.tpay
+			from	tfacp200
+			where	tfacp200.tdoc = :tfgld102.ttyp
+			and	tfacp200.docn = :tfgld102.docn
+			selectdo
+				select	tfgld102.ctyp,tfgld102.cdoc
+				from	tfgld102
+				where	tfgld102._index2 = {:curr.comp,:tfgld102.ttyp,:tfgld102.docn,:tfgld102.lino}
+				selectdo
+					select	tfgld011.catg
+					from	tfgld011
+					where	tfgld011._index1 = {:tfgld102.ctyp}
+					and	tfgld011.catg = tfgld.catg.purchase.inv
+					selectdo
+						tran2 = tfgld102.ctyp&"/"&str$(tfgld102.cdoc)
+						select	tfgld102.dcdt:date2
+						from	tfgld102
+						where	tfgld102._index2= {:curr.comp,:tfgld102.ctyp,:tfgld102.cdoc}
+						selectdo
+						selectempty
+							date2 = 0
+						endselect
+					endselect
+				endselect
+				tran1 = tfgld102.ttyp&"/"&str$(tfgld102.docn)
+				date1 = tfgld102.dcdt
+				if tfacp200.tpay = ltoe(14)	then
+					tfacp203.taam = 0
+					deduce.amnt = "+"& str$(amnt2)
+				endif
+			endselect
+		endselect
+	selectempty
+		tfacp203.taam = 0
+		select	tfacp200.tpay
+		from	tfacp200
+		where	tfacp200._index1  = {:tfgld102.ttyp,:tfgld102.docn}
+		and	tfacp200.docn = 0
+		selectdo
+			tran1 = tfgld102.ttyp&"/"&str$(tfgld102.docn)
+			date1 = tfgld102.dcdt
+| 			if tfacp200.tpay = ltoe(1) or tfacp200.tpay = ltoe(9)	then
+| 				deduce.amnt = "-"& str$(amnt1)
+			if (tfacp200.tpay = ltoe(1) or tfacp200.tpay = ltoe(9)) and tfgld102.dbcr = ltoe(1)		then
+				deduce.amnt = "+"& str$(amnt1)
+			else if (tfacp200.tpay = ltoe(1) or tfacp200.tpay = ltoe(9)) and tfgld102.dbcr = ltoe(2)		then
+| 				deduce.amnt = "+"& str$(amnt1)						|#ISGEC01052.o
+				deduce.amnt = "-"& str$(amnt1)						|#ISGEC01052.n
+			else if tfacp200.tpay = ltoe(4) and tfgld102.dbcr = ltoe(1)	then
+				deduce.amnt = "+"& str$(amnt1)
+			else if tfacp200.tpay = ltoe(4) and tfgld102.dbcr = ltoe(2)	then
+				deduce.amnt = "-"& str$(amnt1)
+			endif
+			endif
+			endif
+			endif
+		selectempty
+			select	tfacp200.tpay
+			from	tfacp200
+			where	tfacp200.tdoc = :tfgld102.ttyp
+			and	tfacp200.docn = :tfgld102.docn
+			selectdo
+				select	tfgld102.ctyp,tfgld102.cdoc
+				from	tfgld102
+				where	tfgld102._index2 = {:curr.comp,:tfgld102.ttyp,:tfgld102.docn,:tfgld102.lino}
+				selectdo
+					select	tfgld011.catg
+					from	tfgld011
+					where	tfgld011._index1 = {:tfgld102.ctyp}
+					and	tfgld011.catg = tfgld.catg.purchase.inv
+					selectdo
+						tran2 = tfgld102.ctyp&"/"&str$(tfgld102.cdoc)
+						select	tfgld102.dcdt:date2
+						from	tfgld102
+						where	tfgld102._index2= {:curr.comp,:tfgld102.ctyp,:tfgld102.cdoc}
+						selectdo
+						selectempty
+							date2 = 0
+						endselect
+					endselect
+				endselect
+				tran1 = tfgld102.ttyp&"/"str$(tfgld102.docn)
+				date1 = tfgld102.dcdt
+				
+				if tfacp200.tpay = ltoe(14)	then
+					deduce.amnt = "+"& str$(amnt1)
+				else if	tfacp200.tpay = ltoe(11)	then
+					deduce.amnt = "-"& str$(amnt1)
+				endif
+				endif
+			endselect
+		endselect
+		select	tfacp200.tpay
+		from	tfacp200
+		where	tfacp200.tdoc = :tfgld102.ttyp
+		and	tfacp200.docn = :tfgld102.docn
+		selectdo
+			if tfgld102.dbcr = ltoe(2)	then
+				deduce.amnt = "-"&str$(amnt1)
+			else
+				deduce.amnt = "+"&str$(amnt1)
+			endif
+		endselect
+		tran1 = tfgld102.ttyp&"/"&str$(tfgld102.docn)
+		date1 = tfgld102.dcdt
+	endselect
+else
+	select	tfacp200.tpay
+	from	tfacp200
+	where	tfacp200._index1  = {:tfgld102.ttyp,:tfgld102.docn}
+	selectdo
+		tran1 = tfgld102.ttyp&"/"&str$(tfgld102.docn)
+		date1 = tfgld102.dcdt
+| 		if tfacp200.tpay = ltoe(1) or tfacp200.tpay = ltoe(9)	then
+| 			deduce.amnt = "-"& str$(amnt2)
+		if (tfacp200.tpay = ltoe(1) or tfacp200.tpay = ltoe(9)) and tfgld102.dbcr = ltoe(1)		then
+			deduce.amnt = "+"& str$(amnt2)
+		else if (tfacp200.tpay = ltoe(1) or tfacp200.tpay = ltoe(9)) and tfgld102.dbcr = ltoe(2)		then
+| 			deduce.amnt = "+"& str$(amnt2)						|#ISGEC01052.o
+			deduce.amnt = "-"& str$(amnt2)						|#ISGEC01052.n
+		else if tfacp200.tpay = ltoe(4) and tfgld102.dbcr = ltoe(1)	then
+			deduce.amnt = "+"& str$(amnt2)
+		else if tfacp200.tpay = ltoe(4) and tfgld102.dbcr = ltoe(2)	then
+			deduce.amnt = "-"& str$(amnt2)
+		endif
+		endif
+		endif
+		endif
+	selectempty
+		select	tfacp200.tpay
+		from	tfacp200
+		where	tfacp200.tdoc = :tfgld102.ttyp
+		and	tfacp200.docn = :tfgld102.docn
+		selectdo
+			select	tfgld102.ctyp,tfgld102.cdoc
+			from	tfgld102
+			where	tfgld102._index2 = {:curr.comp,:tfgld102.ttyp,:tfgld102.docn,:tfgld102.lino}
+			selectdo
+				select	tfgld011.catg
+				from	tfgld011
+				where	tfgld011._index1 = {:tfgld102.ctyp}
+				and	tfgld011.catg = tfgld.catg.purchase.inv
+				selectdo
+					tran2 = tfgld102.ctyp&"/"&str$(tfgld102.cdoc)
+					select	tfgld102.dcdt:date2
+					from	tfgld102
+					where	tfgld102._index2= {:curr.comp,:tfgld102.ctyp,:tfgld102.cdoc}
+					selectdo
+					selectempty
+						date2 = 0
+					endselect
+				endselect
+			endselect
+			tran1 = tfgld102.ttyp&"/"&str$(tfgld102.docn)
+			date1 = tfgld102.dcdt
+			if tfacp200.tpay = ltoe(14)	then
+				tfacp203.taam = 0
+				deduce.amnt = "+"& str$(amnt2)
+			endif
+		endselect
+	endselect
+	tfacp203.taam = 0
+	if tfgld102.dbcr = ltoe(2)	then
+		deduce.amnt = "-"&str$(amnt1)
+	else
+		deduce.amnt = "+"&str$(amnt1)
+	endif
+	tran1 = tfgld102.ttyp&"/"&str$(tfgld102.docn)
+	date1 = tfgld102.dcdt
+endif
+tran2 = tfgld102.ctyp&"/"&str$(tfgld102.cdoc)
+select	tfgld102.dcdt:date2
+from	tfgld102
+where	tfgld102._index2= {:curr.comp,:tfgld102.ctyp,:tfgld102.cdoc}
+selectdo
+selectempty
+	date2 = 0
+endselect
+}
+											|New.sn
+function get.assignment.finalized()
+{	
+	select	tfgld011.catg
+	from	tfgld011
+	where	tfgld011._index1 = {:tfgld106.otyp}
+	and	tfgld011.catg = tfgld.catg.purchase.inv
+	as set with 1 rows
+	selectdo
+		deduce.amnt = str$(abs(val(deduce.amnt)))
+											|05-04-2018.sn
+											|#To Handle Multiple TDS in Single PTR
+| 			select	sum(tfacp203.amth(1)):amnt9
+| 			from	tfacp203
+| 			where	tfacp203._index1 = {:tfgld106.otyp,:tfgld106.odoc}
+| 			and	tfacp203.leac = :tfgld106.leac
+| 			selectdo
+| 			selectempty
+| 				select	sum(tfacp203.amth(1)):amnt9
+| 				from	tfacp203
+| 				where	tfacp203._index1 = {:tfgld102.ttyp,:tfgld102.docn}
+| 				and	tfacp203.leac = :tfgld106.leac
+| 				selectdo
+| 				endselect
+| 			endselect
+| 			deduce.amnt = str$(amnt9)
+		if (tfacp200.tpay = ltoe(1) or tfacp200.tpay = ltoe(9)) and tfgld106.dbcr = ltoe(1)		then
+			deduce.amnt = "+"& str$(deduce.amnt)
+		else if (tfacp200.tpay = ltoe(1) or tfacp200.tpay = ltoe(9)) and tfgld106.dbcr = ltoe(2)		then
+			deduce.amnt = "-"& str$(deduce.amnt)
+		else if tfacp200.tpay = ltoe(4) and tfgld106.dbcr = ltoe(1)	then
+			deduce.amnt = "+"& str$(deduce.amnt)
+		else if tfacp200.tpay = ltoe(4) and tfgld106.dbcr = ltoe(2)	then
+			deduce.amnt = "-"& str$(deduce.amnt)
+		endif
+		endif
+		endif
+		endif
+											|05-04-2018.en
+		select	tfacp200.payt,tfacp200.payd,tfacp200.payl|,tfacp200.tpay
+		from	tfacp200
+		where	tfacp200._index1 = {:tfgld106.otyp,:tfgld106.odoc}
+		and	tfacp200.docn <> 0
+		and	tfacp200.tpay = tfacp.tpay.assignment
+		and	tfacp200.prod inrange :fprd.f and :fprd.t
+		group by tfacp200.payt,tfacp200.payd,tfacp200.payl
+		selectdo
+			select	tfgld106.amth(1):amnt5
+			from	tfgld106
+			where	tfgld106._index1 = {:tfacp200.payt,:tfacp200.payd,:tfacp200.payl}
+			and	tfgld106.leac = :tfisg120.leac
+			selectdo
+				if tfacp200.tpay = ltoe(14)	then
+					amnt5 = abs(amnt5)
+				else if	tfacp200.tpay = ltoe(11)	then
+					amnt5 = -1*amnt5 
+				endif
+				endif
+				deduce.amnt = str$(val(deduce.amnt) + amnt5)
+				tran2 = tfgld106.otyp&"/"&str$(tfgld106.odoc)
+				date2 = tfgld106.dcdt
+| 			selectempty							|#ISGEC018003.so
+| 				select	tfgld102.amth(1):amnt5
+| 				from	tfgld102
+| 				where	tfgld102.ttyp = :tfacp200.payt
+| 				and	tfgld102.docn = :tfacp200.payd
+| 				and	tfgld102.lino = :tfacp200.payl
+| 				selectdo
+| 					if tfacp200.tpay = ltoe(14)	then
+| 						amnt5 = abs(amnt5)
+| 					else if	tfacp200.tpay = ltoe(11)	then
+| 						amnt5 = -1*amnt5 
+| 					endif
+| 					endif
+| 					deduce.amnt = str$(val(deduce.amnt) + amnt5)
+| 					tran2 = tfgld102.ctyp&"/"&str$(tfgld102.cdoc)
+| 					date2 = tfgld102.dcdt
+| 				endselect						|#ISGEC018003.eo
+			endselect
+										|#For Taxable Amount to be corrected(ie- deduce TDS taxable Amnt)
+			select	tfisg120.leac:leac1
+			from	tfisg120
+			selectdo
+				select	sum(tfgld106.amth(1)):amnt6
+				from	tfgld106
+				where	tfgld106._index1 = {:tfacp200.payt,:tfacp200.payd,:tfacp200.payl}
+				and	tfgld106.leac = :leac1
+				and	tfgld106.cvat <> ""
+				selectdo
+				endselect
+			endselect
+| 			tfacp203.taam = tfacp203.taam - amnt6			|#ISGEC01111.o
+										
+		endselect
+	endselect
+	if amnt1 <> 0 then
+		tfacp203.taam = (tfacp203.taam * abs(val(deduce.amnt)))/amnt1	|#ISGEC01111.n
+	endif
+
+}
+
+function get.assignment.non.finalized()					|#ISGEC018003.sn
+{	
+	select	tfgld011.catg
+	from	tfgld011
+	where	tfgld011._index1 = {:tfgld102.ttyp}
+	and	tfgld011.catg = tfgld.catg.purchase.inv
+	as set with 1 rows
+	selectdo
+		deduce.amnt = str$(abs(val(deduce.amnt)))
+
+		if (tfacp200.tpay = ltoe(1) or tfacp200.tpay = ltoe(9)) and tfgld102.dbcr = ltoe(1)		then
+			deduce.amnt = "+"& str$(deduce.amnt)
+		else if (tfacp200.tpay = ltoe(1) or tfacp200.tpay = ltoe(9)) and tfgld102.dbcr = ltoe(2)		then
+			deduce.amnt = "-"& str$(deduce.amnt)
+		else if tfacp200.tpay = ltoe(4) and tfgld102.dbcr = ltoe(1)	then
+			deduce.amnt = "+"& str$(deduce.amnt)
+		else if tfacp200.tpay = ltoe(4) and tfgld102.dbcr = ltoe(2)	then
+			deduce.amnt = "-"& str$(deduce.amnt)
+		endif
+		endif
+		endif
+		endif
+											
+		select	tfacp200.payt,tfacp200.payd,tfacp200.payl
+		from	tfacp200
+		where	tfacp200._index1 = {:tfgld106.otyp,:tfgld106.odoc}
+		and	tfacp200.docn <> 0
+		and	tfacp200.tpay = tfacp.tpay.assignment
+		and	tfacp200.prod inrange :fprd.f and :fprd.t
+		group by tfacp200.payt,tfacp200.payd,tfacp200.payl
+		selectdo
+			select	tfgld102.amth(1):amnt5
+			from	tfgld102
+			where	tfgld102.ttyp = :tfacp200.payt
+			and	tfgld102.docn = :tfacp200.payd
+			and	tfgld102.lino = :tfacp200.payl
+			selectdo
+				if tfacp200.tpay = ltoe(14)	then
+					amnt5 = abs(amnt5)
+				else if	tfacp200.tpay = ltoe(11)	then
+					amnt5 = -1*amnt5 
+				endif
+				endif
+				deduce.amnt = str$(val(deduce.amnt) + amnt5)
+				tran2 = tfgld102.ctyp&"/"&str$(tfgld102.cdoc)
+				date2 = tfgld102.dcdt
+			endselect
+										|#For Taxable Amount to be corrected(ie- deduce TDS taxable Amnt)
+			select	tfisg120.leac:leac1
+			from	tfisg120
+			selectdo
+				select	sum(tfgld102.amth(1)):amnt6
+				from	tfgld102
+				where	tfgld102.ttyp = :tfacp200.payt
+				and	tfgld102.docn = :tfacp200.payd
+				and	tfgld102.lino = :tfacp200.payl
+				and	tfgld102.leac = :leac1
+				and	tfgld102.cvat <> ""
+				selectdo
+				endselect
+			endselect
+			tfacp203.taam = tfacp203.taam - amnt6
+										
+		endselect
+	endselect
+}											|#ISGEC018003.en											
+function print.non.finilized.tax.value.from.tfgld107()						|#ISGEC018003.sn
+{
+| 	select	tcemm170.comp
+| 	from	tcemm170
+| 	where	tcemm170._index1 inrange {:comp.f} and {:comp.t}
+| 	selectdo						
+| 	switch.to.company(tcemm170.comp)
+| 	select	tfisg120.leac,tfisg120.sect
+| 	from	tfisg120
+| 	where	tfisg120._compnr = :tcemm170.comp
+| 	selectdo
+| 		old.ttyp = ""
+| 		old.docn = 0
+| 		flag = 0
+		select	tfgld107.*
+		from	tfgld107
+		where	tfgld107._index1 = {:tcemm170.comp}
+		and	tfgld107.vlac = :tfisg120.leac
+		and 	tfgld107.ktax = 4
+		and	tfgld107.year = :year
+		and	tfgld107.vamh(1) <>  0
+		and 	tfgld107.ttyp <> "OPB"
+		selectdo	
+			select	tfacp200.tpay:tpay1,tfacp200.ifbp:bpcode,
+				tfacp200.ninv,tfacp200.tdoc,tfacp200.docn,
+				tfacp200.refr:refr1,tfacp200.prod
+			from	tfacp200
+			where	tfacp200._index1 = {:tfgld107.ttyp,:tfgld107.docn}
+			and	tfacp200.prod inrange :fprd.f and :fprd.t
+			as set with 1 rows
+			selectdo		
+				amnt1 = tfgld107.vamh(1)
+				flag10 = 0
+				select	tfacp200.tpay:tpay1
+				from	tfacp200
+				where	tfacp200._index1 = {:tfgld107.ttyp,:tfgld107.docn}
+				and	tfacp200.docn <> 0
+				and	tfacp200.tpay = tfacp.tpay.assignment
+				and	tfacp200.prod inrange :fprd.f and :fprd.t
+				selectdo
+					flag10 = 1
+				endselect
+				
+				if old.ttyp  = tfgld107.ttyp and old.docn = tfgld107.docn and flag10 = 1	then				
+					continue
+				else
+					old.ttyp  = tfgld107.ttyp
+					old.docn = tfgld107.docn
+				endif	
+				
+				select	tfacp200.tpay:tpay1,tfacp200.ifbp
+				from	tfacp200
+				where	tfacp200.tdoc = :tfgld107.ttyp
+				and	tfacp200.docn = :tfgld107.docn
+				as set with 1 rows
+				selectdo
+				endselect
+				if tpay1 = tfacp.tpay.assignment	then
+
+					select	tfacp200.ttyp,tfacp200.ninv,tfacp200.ifbp					
+					from	tfacp200
+					where	tfacp200.tdoc = :tfgld107.ttyp
+					and	tfacp200.docn = :tfgld107.docn
+						and	tfacp200.tpay = 1
+					and	tfacp200.prod inrange	:fprd.f and :fprd.t
+					selectdo
+						select	tfacp200.ttyp,tfacp200.ninv
+						from	tfacp200
+						where	tfacp200._index1 = {:tfacp200.ttyp,:tfacp200.ninv}
+						and	tfacp200.tpay = 1
+						and	tfacp200.prod inrange	:fprd.f and :fprd.t
+						selectdo
+							select	tfacp203.ttyp,tfacp203.txcg
+							from	tfacp203
+							where	tfacp203._index1 = {:tfacp200.ttyp,:tfacp200.ninv}
+							and	tfacp203.amth(1) <> 0
+							and	tfacp203.txcg(1;3) = "TDS"
+							selectdo
+									temp1 = 1
+							selectempty
+								temp1 = 0
+							endselect
+						selectempty
+							temp1 = 0
+						endselect
+					selectempty
+						temp1 = 0
+					endselect
+					
+					select	tfacp200.ttyp,tfacp200.ninv,tfacp200.ifbp
+					from	tfacp200
+					where	tfacp200.tdoc = :tfgld107.ttyp
+					and	tfacp200.docn = :tfgld107.docn
+					and	tfacp200.prod inrange	:fprd.f and :fprd.t
+					selectdo
+						select	tfacp200.ttyp,tfacp200.ninv
+						from	tfacp200
+						where	tfacp200._index1 = {:tfacp200.ttyp,:tfacp200.ninv}
+						and	tfacp200.tpay = 9
+						and	tfacp200.prod inrange	:fprd.f and :fprd.t
+						selectdo
+							select	tfacp203.ttyp, tfacp203.txcg
+							from	tfacp203
+							where	tfacp203._index1 = {:tfacp200.ttyp,:tfacp200.ninv}
+							and	tfacp203.amth(1) <> 0
+							and 	tfacp203.txcg(1;3) = "TDS"
+							selectdo
+									temp2 = 1			
+							selectempty
+								temp2 = 0
+							endselect
+						selectempty
+							temp2 = 0
+						endselect
+					selectempty
+						temp2 = 0
+					endselect								
+
+					if temp1 = 1 	or temp2 = 1	then
+						continue
+					endif
+				endif
+														
+				select	tfgld011.catg
+				from	tfgld011
+				where	tfgld011._index1 = {:tfgld107.ttyp}
+				selectdo
+				endselect
+				
+				select	tccom001.nama
+				from	tccom001
+				where	tccom001._index1 = {:user1}
+				selectdo
+				endselect
+				
+				curr.comp = get.compnr()
+				select	tccom100.nama:bpnama
+				from	tccom100
+				where	tccom100._index1 = {:bpcode}
+				selectdo
+				endselect
+				
+				select	tcmcs036.txcg:section
+				from	tcmcs036
+				where	tcmcs036._index1 = {:tfgld107.ccty,:tfgld107.cvat}
+				selectdo
+				endselect
+				
+				select	tctax400.fovn:pan1
+				from	tctax400
+				where	tctax400._index1 = {:bpcode}
+				and	tctax400.catg.l = tctax.catg.l.pan
+				selectdo
+				endselect
+				
+				get.voucher.non.finalized.tfgld107()
+				
+				deduce.amnt = str$(deduce.amnt)
+					
+					select	tfacp200.ttyp,tfacp200.tpay
+					from	tfacp200
+					where	tfacp200._index1 = {:tfgld107.ttyp,:tfgld107.docn}
+					and	tfacp200.docn <> 0
+					and	tfacp200.tpay = tfacp.tpay.assignment
+					and	tfacp200.prod inrange :fprd.f and :fprd.t
+					selectdo
+						select	sum(tfacp203.amth(1)):amnt9
+						from	tfacp203
+						where	tfacp203._index1 = {:tfgld107.ttyp,:tfgld107.docn}
+						and	tfacp203.leac = :tfgld107.vlac
+						selectdo
+							
+						selectempty
+							select	tfgld107.vamh
+							from	tfgld107
+							where	tfgld107.ttyp = :tfgld107.ttyp
+							and	tfgld107.docn = :tfgld107.docn
+							and	tfgld107.vlac = :tfgld107.vlac
+							and	tfgld107.cono = :tcemm170.comp
+							selectdo
+								if tfgld107.vamh(1) > 0	 then
+									amnt9 = amnt9 + tfgld107.vamh(1)
+								else if tfgld107.vamh(1) < 0	 then	
+									amnt9 = amnt9 - tfgld107.vamh(1)
+								endif
+								endif
+							selectempty
+								amnt9 = val(deduce.amnt)
+							endselect
+													
+						endselect
+| 						amnt9 = abs(amnt9)							|#ISGEC01111.o
+| 						deduce.amnt = str$(amnt9)				|#To get the sum of PTR TDS Amnt   |#ISGEC01111.o
+							
+						select	tfgld011.catg
+						from	tfgld011
+						where	tfgld011._index1 = {:tfgld107.ttyp}
+						and	tfgld011.catg <> tfgld.catg.purchase.inv
+						as set with 1 rows
+						selectdo
+							if tfgld011.catg <> ltoe(1)	then
+								if (tfacp200.tpay = ltoe(1) or tfacp200.tpay = ltoe(9)) and  tfgld107.vamh(1) > 0	 then
+									deduce.amnt = "+"& str$(amnt9)
+								else if (tfacp200.tpay = ltoe(1) or tfacp200.tpay = ltoe(9)) and  tfgld107.vamh(1) < 0	 then
+									deduce.amnt = "-"& str$(amnt9)
+								else if tfacp200.tpay = ltoe(4) and  tfgld107.vamh(1) > 0	 then
+									deduce.amnt = "+"& str$(amnt9)
+								else if tfacp200.tpay = ltoe(4) and  tfgld107.vamh(1) < 0	 then
+									deduce.amnt = "-"& str$(amnt9)
+								else if  tfgld107.vamh(1) < 0	 then	
+									deduce.amnt = "-"& str$(amnt9)
+								else if  tfgld107.vamh(1) > 0	 then	
+									deduce.amnt = "+"& str$(amnt9)
+								endif
+								endif
+								endif
+								endif
+								endif
+								endif
+							else
+								if  tfgld107.vamh(1) < 0	 then
+									deduce.amnt = "-"&str$(amnt9)
+								else
+									deduce.amnt = "+"&str$(amnt9)
+								endif
+							endif
+						endselect
+					selectempty
+						amnt9 = 0.00
+					endselect
+					select	tfacp200.tpay						|#ISGEC01111.sn
+					from	tfacp200
+					where	tfacp200._index1  = {:tfgld107.ttyp,:tfgld107.docn}
+					and	tfacp200.docn = 0
+					and	tfacp200.tdoc = "   "
+					selectdo
+						if (tfacp200.tpay = ltoe(1) or tfacp200.tpay = ltoe(9)) then
+							deduce.amnt = "-"& str$(amnt9)	
+						else if tfacp200.tpay = ltoe(4) then
+							deduce.amnt = "+"& str$(amnt9)
+						endif
+						endif									
+| 						deduce.amnt = str$(amnt9)
+					endselect							|#ISGEC01111.en	
+					
+					|TO subtract Assignment amnt
+					get.assignment.non.finalized.107()		|#ISGEC018003.n
+					if isspace(section)	then
+						section = tfisg120.sect
+				
+					endif
+				if isspace(bpcode) and tfgld011.catg = ltoe(1)	then
+					section = tfisg120.sect
+					bpcode = tfgld107.dim3
+					select	tfisg121.desc:bpnama,
+						tfisg121.pann:pan1
+					from	tfisg121
+					where	tfisg121._index1 = {:tfgld107.dim3}
+					selectdo
+					selectempty
+						bpnama = ""
+					endselect
+				endif
+				if not isspace(pan1)	then
+					if pan1(4;1) = "P"	then
+						comp.noncomp = "NC"
+					else
+						comp.noncomp = "C"
+					endif
+				endif
+				
+				select	tcmcs032.pvat
+				from	tcmcs032
+				where	tcmcs032._index1 = {:tfgld107.ccty,:tfgld107.cvat}
+				selectdo
+				endselect
+				finalized.nonfinalized = "Non-Finalized"
+				if header5.generate = 107 then
+| 					flag = 1
+				else
+					generate.header5()
+					header5.generate = 107
+				endif
+				if lval(deduce.amnt) <> 0	then 
+					generate.header6.data()			|#ISGEC018003.n
+					total.non.fin.107()
+					write.data()
+					counter = 1
+				
+				endif
+				initialize()
+			endselect     
+			
+		endselect
+| 	endselect
+	
+| 	endselect
+	
+}
+
+function get.voucher.non.finalized.tfgld107()
+{
+if not isspace(bpcode) and tfgld011.catg <> ltoe(1)	then
+	select	tfacp203.taam,tfacp203.amth(1):amnt2
+	from	tfacp203
+	where	tfacp203._index1 = {:tfgld107.ttyp,:tfgld107.docn,:tfgld107.lino}
+	selectdo
+		select	tfacp200.tpay
+		from	tfacp200
+		where	tfacp200._index1  = {:tfgld107.ttyp,:tfgld107.docn}
+		and	tfacp200.docn = 0
+		and	tfacp200.tdoc = "   "
+		selectdo
+			tran1 = tfgld107.ttyp&"/"&str$(tfgld107.docn)
+			date1 = tfgld107.tedt
+			
+			if (tfacp200.tpay = ltoe(1) or tfacp200.tpay = ltoe(9)) then		|#ISGEC01111.sn
+				deduce.amnt = "-"& str$(amnt2)	
+			else if tfacp200.tpay = ltoe(4) then
+				deduce.amnt = "+"& str$(amnt2)
+			endif
+			endif									|#ISGEC01111.en
+		
+		
+| 			if (tfacp200.tpay = ltoe(1) or tfacp200.tpay = ltoe(9)) and  tfgld107.vamh(1) > 0	 then	|#ISGEC01111.so
+| 				deduce.amnt = "+"& str$(amnt2)
+| 			else if (tfacp200.tpay = ltoe(1) or tfacp200.tpay = ltoe(9)) and tfgld107.vamh(1) < 0	 then
+| 				deduce.amnt = "-"& str$(amnt2)						|#ISGEC01052.n
+| 			else if tfacp200.tpay = ltoe(4) and  tfgld107.vamh(1) > 0	 then	
+| 				deduce.amnt = "+"& str$(amnt2)
+| 			else if tfacp200.tpay = ltoe(4) and  tfgld107.vamh(1) > 0	 then
+| 				deduce.amnt = "-"& str$(amnt2)
+| 			endif
+| 			endif
+| 			endif
+| 			endif									|#ISGEC01111.eo
+
+			
+		selectempty
+			select	tfacp200.tpay
+			from	tfacp200
+			where	tfacp200.tdoc = :tfgld107.ttyp
+			and	tfacp200.docn = :tfgld107.docn
+			selectdo
+				select	tfgld107.ivtt,tfgld107.ivdc
+				from	tfgld107
+				where	tfgld107._index1 = {:curr.comp,:tfgld107.ttyp,:tfgld107.docn,:tfgld107.lino}
+				selectdo
+					select	tfgld011.catg
+					from	tfgld011
+					where	tfgld011._index1 = {:tfgld107.ivtt}
+					and	tfgld011.catg = tfgld.catg.purchase.inv
+					selectdo
+						tran2 = tfgld107.ivtt&"/"&str$(tfgld107.ivdc)
+						select	tfgld107.tedt:date2
+						from	tfgld107
+						where	tfgld107._index1= {:curr.comp,:tfgld107.ivtt,:tfgld107.ivdc}
+						selectdo
+						selectempty
+							date2 = 0
+						endselect
+					endselect
+				endselect
+				tran1 = tfgld107.ttyp&"/"&str$(tfgld107.docn)
+				date1 = tfgld107.tedt
+				if tfacp200.tpay = ltoe(14)	then
+					tfacp203.taam = 0
+					deduce.amnt = "+"& str$(amnt2)
+				endif
+			endselect
+		endselect
+	selectempty
+		tfacp203.taam = 0
+		select	tfacp200.tpay
+		from	tfacp200
+		where	tfacp200._index1  = {:tfgld107.ttyp,:tfgld107.docn}
+		and	tfacp200.docn = 0
+		selectdo
+			tran1 = tfgld107.ttyp&"/"&str$(tfgld107.docn)
+			date1 = tfgld107.tedt
+			
+			if (tfacp200.tpay = ltoe(1) or tfacp200.tpay = ltoe(9)) then		|#ISGEC01111.sn
+				deduce.amnt = "-"& str$(amnt2)	
+			else if tfacp200.tpay = ltoe(4) then
+				deduce.amnt = "+"& str$(amnt2)
+			endif
+			endif									|#ISGEC01111.en
+		
+| 			if (tfacp200.tpay = ltoe(1) or tfacp200.tpay = ltoe(9)) and  tfgld107.vamh(1) > 0	 then	|#ISGEC01111.so
+| 				deduce.amnt = "+"& str$(amnt1)
+| 			else if (tfacp200.tpay = ltoe(1) or tfacp200.tpay = ltoe(9)) and tfgld107.vamh(1) < 0	 then
+| 					
+| 				deduce.amnt = "-"& str$(amnt1)						
+| 			else if tfacp200.tpay = ltoe(4) and  tfgld107.vamh(1) > 0	 then
+| 				deduce.amnt = "+"& str$(amnt1)
+| 			else if tfacp200.tpay = ltoe(4) and  tfgld107.vamh(1) < 0	 then
+| 				deduce.amnt = "-"& str$(amnt1)
+| 			endif
+| 			endif
+| 			endif
+| 			endif							|#ISGEC01111.eo
+
+		selectempty
+			select	tfacp200.tpay
+			from	tfacp200
+			where	tfacp200.tdoc = :tfgld107.ttyp
+			and	tfacp200.docn = :tfgld107.docn
+			selectdo
+				select	tfgld107.ivtt,tfgld107.ivdc
+				from	tfgld107
+				where	tfgld107._index1 = {:curr.comp,:tfgld107.ttyp,:tfgld107.docn,:tfgld107.lino}
+				selectdo
+					select	tfgld011.catg
+					from	tfgld011
+					where	tfgld011._index1 = {:tfgld107.ivtt}
+					and	tfgld011.catg = tfgld.catg.purchase.inv
+					selectdo
+						tran2 = tfgld107.ivtt&"/"&str$(tfgld107.ivdc)
+						select	tfgld107.tedt:date2
+						from	tfgld107
+						where	tfgld107._index1 = {:curr.comp,:tfgld107.ivtt,:tfgld107.ivdc}
+						selectdo
+						selectempty
+							date2 = 0
+						endselect
+					endselect
+				endselect
+				tran1 = tfgld107.ttyp&"/"str$(tfgld107.docn)
+				date1 = tfgld107.tedt
+				
+				if tfacp200.tpay = ltoe(14)	then
+					deduce.amnt = "+"& str$(amnt1)
+				else if	tfacp200.tpay = ltoe(11)	then
+					deduce.amnt = "-"& str$(amnt1)
+				endif
+				endif
+			endselect
+		endselect
+| 		select	tfacp200.tpay
+| 		from	tfacp200
+| 		where	tfacp200.tdoc = :tfgld107.ttyp
+| 		and	tfacp200.docn = :tfgld107.docn
+| 		selectdo
+			if  tfgld107.vamh(1) < 0	 then
+				deduce.amnt = "-"&str$(amnt1)
+			else
+				deduce.amnt = "+"&str$(amnt1)
+			endif
+| 		endselect
+		tran1 = tfgld107.ttyp&"/"&str$(tfgld107.docn)
+		date1 = tfgld107.tedt
+	endselect
+else
+	
+	select	tfacp200.tpay
+	from	tfacp200
+	where	tfacp200._index1  = {:tfgld107.ttyp,:tfgld107.docn}
+	selectdo
+		tran1 = tfgld107.ttyp&"/"&str$(tfgld107.docn)
+		date1 = tfgld107.tedt
+		
+		if (tfacp200.tpay = ltoe(1) or tfacp200.tpay = ltoe(9)) then		|#ISGEC01111.sn
+			deduce.amnt = "-"& str$(amnt2)	
+		else if tfacp200.tpay = ltoe(4) then
+			deduce.amnt = "+"& str$(amnt2)
+		endif
+		endif									|#ISGEC01111.en
+		
+		
+| 		if (tfacp200.tpay = ltoe(1) or tfacp200.tpay = ltoe(9)) and  tfgld107.vamh(1) > 0	 then	|#ISGEC01111.so
+| 			deduce.amnt = "+"& str$(amnt2)
+| 		else if (tfacp200.tpay = ltoe(1) or tfacp200.tpay = ltoe(9)) and  tfgld107.vamh(1) < 0	 then
+| 			deduce.amnt = "-"& str$(amnt2)						
+| 		else if tfacp200.tpay = ltoe(4) and  tfgld107.vamh(1) > 0	 then
+| 			deduce.amnt = "+"& str$(amnt2)
+| 		else if tfacp200.tpay = ltoe(4) and  tfgld107.vamh(1) < 0	 then
+| 			deduce.amnt = "-"& str$(amnt2)
+| 		endif
+| 		endif
+| 		endif
+| 		endif								|#ISGEC01111.eo
+
+	selectempty
+		select	tfacp200.tpay
+		from	tfacp200
+		where	tfacp200.tdoc = :tfgld107.ttyp
+		and	tfacp200.docn = :tfgld107.docn
+		selectdo
+			select	tfgld107.ivtt,tfgld107.ivdc
+			from	tfgld107
+			where	tfgld107._index2 = {:curr.comp,:tfgld107.ttyp,:tfgld107.docn,:tfgld107.lino}
+			selectdo
+				select	tfgld011.catg
+				from	tfgld011
+				where	tfgld011._index1 = {:tfgld107.ivtt}
+				and	tfgld011.catg = tfgld.catg.purchase.inv
+				selectdo
+					tran2 = tfgld107.ivtt&"/"&str$(tfgld107.ivdc)
+					select	tfgld107.tedt:date2
+					from	tfgld107
+					where	tfgld107._index1= {:curr.comp,:tfgld107.ivtt,:tfgld107.ivdc}
+					selectdo
+					selectempty
+						date2 = 0
+					endselect
+				endselect
+			endselect
+			tran1 = tfgld107.ttyp&"/"&str$(tfgld107.docn)
+			date1 = tfgld107.tedt
+			if tfacp200.tpay = ltoe(14)	then
+				tfacp203.taam = 0
+				deduce.amnt = "+"& str$(amnt2)
+			endif
+		endselect
+	endselect
+	tfacp203.taam = 0
+	if tfgld107.vamh(1) < 0	then
+		deduce.amnt = "-"&str$(amnt1)
+	else
+		deduce.amnt = "+"&str$(amnt1)
+	endif
+	tran1 = tfgld107.ttyp&"/"&str$(tfgld107.docn)
+	date1 = tfgld107.tedt
+
+endif
+tran2 = tfgld107.ivtt&"/"&str$(tfgld107.ivdc)
+select	tfgld107.tedt:date2
+from	tfgld107
+where	tfgld107._index1= {:curr.comp,:tfgld107.ivtt,:tfgld107.ivdc}
+selectdo
+selectempty
+	date2 = 0
+endselect
+}												|#ISGEC018003.en
+
+function get.assignment.non.finalized.107()
+{
+	select	tfgld011.catg
+	from	tfgld011
+	where	tfgld011._index1 = {:tfgld107.ttyp}
+	and	tfgld011.catg = tfgld.catg.purchase.inv
+	as set with 1 rows
+	selectdo
+| 		deduce.amnt = str$(abs(val(deduce.amnt)))				|#ISGEC01111.o
+		if (tfacp200.tpay = ltoe(1) or tfacp200.tpay = ltoe(9)) then		|#ISGEC01111.sn
+| 			deduce.amnt = "-"& str$(amnt2)					|#ISGEC01111.o
+
+			|# In case of Assignment amnt9 Considered zero so Purchase invoice considerd 		
+			if amnt9 <> 0.00 then			 
+				deduce.amnt = "-"& str$(amnt9)	
+			else
+				deduce.amnt = "-"& str$(amnt2)
+			endif
+			
+		else if tfacp200.tpay = ltoe(4) then
+| 			deduce.amnt = "+"& str$(amnt2)					|#AISGEC01111.o
+			if amnt9 <> 0.00 then
+				deduce.amnt = "+"& str$(amnt9)	
+			else
+				deduce.amnt = "+"& str$(amnt2)
+			endif
+			
+		endif
+		endif									|#ISGEC01111.en
+		
+| 		if (tfacp200.tpay = ltoe(1) or tfacp200.tpay = ltoe(9)) and tfgld107.vamh(1) > 0	then	|#ISGEC01111.so
+| 			deduce.amnt = "+"& str$(deduce.amnt)
+| 		else if (tfacp200.tpay = ltoe(1) or tfacp200.tpay = ltoe(9)) and tfgld107.vamh(1) < 0	then
+| 			deduce.amnt = "-"& str$(deduce.amnt)
+| 		else if tfacp200.tpay = ltoe(4) and tfgld107.vamh(1) > 0	then
+| 			deduce.amnt = "+"& str$(deduce.amnt)
+| 		else if tfacp200.tpay = ltoe(4) and tfgld107.vamh(1) < 0	then
+| 			deduce.amnt = "-"& str$(deduce.amnt)
+| 		endif
+| 		endif
+| 		endif
+| 		endif												|#ISGEC01111.eo
+| 		leac1 = tfisg120.leac						|#ISGEC01111.n									
+		select	tfacp200.payt,tfacp200.payd,tfacp200.payl
+		from	tfacp200
+		where	tfacp200._index1 = {:tfgld107.ttyp,:tfgld107.docn}
+		and	tfacp200.docn <> 0
+		and	tfacp200.tpay = tfacp.tpay.assignment
+		and	tfacp200.prod inrange :fprd.f and :fprd.t
+		group by tfacp200.payt,tfacp200.payd,tfacp200.payl
+		selectdo
+			select	tfgld107.vamh(1):amnt5
+			from	tfgld107
+			where	tfgld107.ttyp = :tfacp200.payt
+			and	tfgld107.docn = :tfacp200.payd
+			and	tfgld107.lino = :tfacp200.payl
+			and	tfgld107.vlac = :tfisg120.leac				|#ISGEC01111.n						
+			selectdo
+				if tfacp200.tpay = ltoe(14)	then
+					amnt5 = abs(amnt5)
+				else if	tfacp200.tpay = ltoe(11)	then
+					amnt5 = -1*amnt5 
+				endif
+				endif
+				deduce.amnt = str$(val(deduce.amnt) + amnt5)
+				tran1 = tfgld107.ttyp&"/"&str$(tfgld107.docn)
+				date2 = tfgld107.tedt
+			endselect
+										|#For Taxable Amount to be corrected(ie- deduce TDS taxable Amnt)
+			select	tfisg120.leac:leac1
+			from	tfisg120
+			selectdo
+				select	sum(tfgld107.vamh(1)):amnt6
+				from	tfgld107
+				where	tfgld107.ttyp = :tfacp200.payt
+				and	tfgld107.docn = :tfacp200.payd
+				and	tfgld107.lino = :tfacp200.payl
+				and	tfgld107.vlac = :leac1
+				and	tfgld107.cvat <> ""
+				selectdo
+				endselect
+			endselect
+| 			tfacp203.taam = tfacp203.taam - amnt6		|#ISGEC01111.o
+		endselect
+	endselect	
+	if 	amnt1 <> 0 then
+		tfacp203.taam = (tfacp203.taam * abs(val(deduce.amnt)))/amnt1	|#ISGEC01111.n
+	endif
+
+
+}

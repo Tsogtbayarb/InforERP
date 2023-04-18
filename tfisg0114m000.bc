@@ -1,0 +1,129 @@
+|******************************************************************************
+|* tfisg0114m000  0  VRC B61U a7 isg 
+|* Monthly Cashflow Data
+|* Ravi Kumar                    
+|* 2019-11-27
+|******************************************************************************
+|* Main table tfisg014 Monthly Cashflow Data, Form Type 1
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttfisg014 | Monthly Cashflow Data
+  table	ttfisg013
+  table	ttpisg087
+  table	ttpisg088
+
+	extern	domain	tcnama	udby.nama, bpid.nama
+	extern	domain	tcpric	tot.iamt, tot.oamt
+	extern	domain	tcmcs.str100	ccod.dsca
+	extern	domain	tccom.bpid	bpid.found, bpid
+	
+|****************************** program section ********************************
+before.program:
+	fattr.total.line = true
+	
+on.display.total.line:
+	select	sum(tfisg014.iamt):tot.iamt,
+		sum(tfisg014.oamt):tot.oamt
+	from	tfisg014
+	where	tfisg014._index1 = {:tfisg014.year, :tfisg014.mnth}
+	selectdo
+	selectempty
+		tot.iamt = 0
+		tot.oamt = 0
+	endselect
+	
+    display.total.fields( "tfisg014.iamt", tot.iamt, 
+                          "tfisg014.oamt", tot.oamt)
+
+|****************************** group section **********************************
+
+field.udby.nama:
+before.display:
+	select	tccom001.nama:udby.nama
+	from	tccom001
+	where	tccom001._index4 = {:tfisg014.udby}
+	as set with 1 rows
+	selectdo
+	selectempty
+		udby.nama = ""
+	endselect
+	
+field.ccod.dsca:
+before.display:
+	select	tpisg087.ccno:ccod.dsca
+	from	tpisg087
+	where	tpisg087._index1 = {:tfisg014.cprj}
+	as set with 1 rows
+	selectdo
+	selectempty
+		ccod.dsca = ""
+	endselect
+	
+field.bpid:
+before.display:
+	bpid = display.bpid(tfisg014.cprj)
+	
+field.bpid.nama:
+before.display:
+	bpid.found = display.bpid(tfisg014.cprj)
+	select	tccom100.nama:bpid.nama
+	from	tccom100
+	where	tccom100._index1 = {:bpid}
+	as set with 1 rows
+	selectdo
+	selectempty
+		bpid.nama = ""
+	endselect
+
+functions:
+function extern freeze()
+{
+	select	tfisg014.frez
+	from	tfisg014 for update
+	where	tfisg014._index1 = {:tfisg014.year, :tfisg014.mnth}
+	and	tfisg014.frez = tcyesno.no
+	selectdo
+		tfisg014.frez = tcyesno.yes
+		db.update(ttfisg014, db.retry)
+		commit.transaction()
+	selectempty
+		message("No Data to Freeze")
+		choice.again()
+	endselect
+	
+	message("Freezed")
+}
+
+function domain	tccom.bpid	display.bpid(domain	tcorno	ccod)
+{
+	domain	tccom.bpid	bpid.dis
+	
+	select	tpisg087.cust
+	from	tpisg087
+	where	tpisg087._index1 = {:ccod}
+	as set with 1 rows
+	selectdo
+	endselect
+	
+	select	tpisg088.cprj
+	from	tpisg088
+	where	tpisg088._index1 = {:ccod}
+	as set with 1 rows
+	selectdo
+		select	tppdm740.ofbp:bpid.dis
+		from	tppdm740
+		where	tppdm740._index1 = {:tpisg088.cprj, :tpisg087.cust}
+		as set with 1 rows
+		selectdo
+		selectempty
+			bpid.dis = ""
+		endselect
+	selectempty
+		bpid.dis = ""
+	endselect
+	
+	return(bpid.dis)
+}

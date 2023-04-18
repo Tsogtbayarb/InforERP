@@ -1,0 +1,110 @@
+|******************************************************************************
+|* tpisg0189m100  0  VRC B61U a7 isg 
+|* Cashflow Budget Lines
+|* Ravi Kumar                    
+|* 2019-11-29
+|******************************************************************************
+|* Main table tpisg089 Contractwise Cashflow Lines, Form Type 1
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttpisg089 | Contractwise Cashflow Lines
+	
+	extern	domain	tcamnt tot.amti, tot.amto, tot.namt, tot.cmti, tot.cmto, tot.cnmt,
+			tot.oami, tot.oamo, tot.oamn
+
+|****************************** program section ********************************
+before.program:
+	fattr.total.line = true
+	
+on.display.total.line:
+	total.cal()
+	outlook_total()
+    display.total.fields( "tpisg089.amti", tot.amti, 
+                          "tpisg089.amto", tot.amto,
+                          "tpisg089.namt", tot.namt,
+                          "tpisg089.cmti", tot.cmti,
+                          "tpisg089.cmto", tot.cmto,
+                          "tpisg089.cnmt", tot.cnmt,
+                          "tpisg089.oami", tot.oami,
+                          "tpisg089.oamo", tot.oamo,
+                          "tpisg089.oamn", tot.oamn)
+
+
+|****************************** group section **********************************
+
+functions:
+function total.cal()
+{
+	select	sum(tpisg089.amti):tot.amti,
+		sum(tpisg089.amto):tot.amto,
+		sum(tpisg089.namt):tot.namt,
+		sum(tpisg089.cmti):tot.cmti,
+		sum(tpisg089.cmto):tot.cmto,
+		sum(tpisg089.cnmt):tot.cnmt
+| 		sum(tpisg089.oami):tot.oami,
+| 		sum(tpisg089.oamo):tot.oamo,
+| 		sum(tpisg089.oamn):tot.oamn
+	from	tpisg089
+	where	tpisg089._index1 = {:tpisg089.ccod, :tpisg089.rvsn}
+	selectdo
+	selectempty
+		tot.amti = 0
+		tot.amto = 0
+		tot.namt = 0
+		tot.cmti = 0
+		tot.cmto = 0
+		tot.cnmt = 0
+| 		tot.oami = 0
+| 		tot.oamo = 0
+| 		tot.oamn = 0
+	endselect
+}
+
+function outlook_total()
+{
+| 	In Out Net Outlook Totals : Total of Actual till previous month + Outlook value of current and future months
+	string		date.result(80)
+	long		mnth.num
+	domain	tfgld.year	year
+	domain	tpisg.month	month
+	domain	tcamnt		out.act.in, out.act.out, out.act.net, out.curr.in, out.curr.out, out.curr.net
+	
+	date.result = sprintf$("%D(%02d/%02m/%04Y)", date.num())
+	year = lval(trim$(date.result(7;4)))
+	mnth.num = lval(trim$(date.result(4;2)))
+	month = ltoe(mnth.num)
+	
+	select	sum(tpisg089.cmti):out.act.in,
+		sum(tpisg089.cmto):out.act.out,
+		sum(tpisg089.cnmt):out.act.net
+	from	tpisg089
+	where	tpisg089._index1 = {:tpisg089.ccod, :tpisg089.rvsn}
+	and	((tpisg089.year < :year) or (tpisg089.year = :year and tpisg089.mnth < :month))
+	selectdo
+	selectempty
+		out.act.in = 0
+		out.act.out = 0
+		out.act.net = 0
+	endselect
+	
+	select	sum(tpisg089.oami):out.curr.in,
+		sum(tpisg089.oamo):out.curr.out,
+		sum(tpisg089.oamn):out.curr.net
+	from	tpisg089
+	where	tpisg089._index1 = {:tpisg089.ccod, :tpisg089.rvsn}
+	and	(tpisg089.year > :year) or (tpisg089.year = :year and tpisg089.mnth >= :month)
+	selectdo
+	selectempty
+		out.curr.in = 0
+		out.curr.out = 0
+		out.curr.net = 0
+	endselect
+	
+	tot.oami = out.act.in + out.curr.in
+	tot.oamo = out.act.out + out.curr.out
+	tot.oamn = out.act.net + out.curr.net
+}
+

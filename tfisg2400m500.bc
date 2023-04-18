@@ -1,0 +1,348 @@
+|******************************************************************************
+|* tfisg2400m500  0  VRC B61U a7 isg 
+|* Print Outstanding Advances - Period & Supplier Wise
+|* Installation user             
+|* 2014-12-08
+|******************************************************************************
+|* Form Type 4
+|******************************************************************************
+|* ID 	ISGECFIN005,	Sujeet Kumar,		2014-12-08
+|* New Report Development
+|* Functional: Mr. Deepak Rawat
+|*
+|* IDENT ISGEC001169, Ritu Sharma, 2015-02-27, VRC B61U a7 isg
+|* Added the filters to make correction in Advance Adjusted field.
+|*
+|* IDENT ISGEC01032, Ritu Sharma, 2015-03-27, VRC B61U a7 isg
+|* Added the filters to make correction in Advance Adjusted field.
+|*
+|* ID ISGEC01046, Manish Manchanda, 2015-06-03
+|* new column added in report
+|* IDENT ISGEC0153,Anadi shankar, 05-10-2018
+|* Modification in DLL.
+|****************************** declaration section ***************************
+declaration:
+	table	ttfacp200
+	table	ttcmcs052
+	table	ttdpur400
+	table	ttdmsl400
+	table	ttfcmg112		|#ISGEC01046.n
+	
+	extern	domain	tccom.bpid	bpid.f
+	extern	domain	tccom.bpid	bpid.t
+	extern	domain	tccprj		cprj.f
+	extern	domain	tccprj		cprj.t
+	extern	domain	tcorno		orno.f
+	extern	domain	tcorno		orno.t
+	extern	domain	tfgld.date	dcdt.f
+	extern	domain	tfgld.date	dcdt.t
+|****************************** Report Variables ********************************
+	extern	domain	tccprj		rep.cprj
+	extern	domain	tcorno		rep.orno
+	extern	domain	tcdsca		rep.cprj.dsca
+	extern	domain	tcmcs.str15	rep.anti.docn
+	extern domain  tfgld.amnt	rep.amnt
+	extern	domain	tfgld.amnt	rep.adv.amnt	
+	extern	domain	tfgld.amnt	rep.bal.amnt	
+	extern	domain	tcmcs.str20	typa.doc		|#ISGEC01046.n
+|****************************** Script Variables *********************************		|#09122014.sn
+		domain	tccom.bpid	v.suno	
+		domain	tcnama		v.snnm	
+		domain	tcemno		v.buyr	
+		domain	tcnama		v.bynm	
+		domain	tcdate		v.odat	
+		domain	tdpur.hdst	v.hdst	
+		domain	tcdate		v.ddta	
+		domain	tccprj		v.cprj	
+		domain	tcdsca		v.pjdc	
+		domain	tcamnt		v.obsc
+		domain	tcamnt		v.oexc
+		domain	tcamnt		v.osrv
+		domain	tcamnt		v.ocst
+		domain	tcamnt		v.ostx
+		domain	tcamnt		v.olct
+		domain	tcamnt		v.ogrs							|#09122014.en
+		domain	tfcmg.bank	bank.f, bank.t						|#ISGEC01046.n
+		domain	tfgld.ttyp	ttyp.t						|#ISGEC01046.n
+		domain	tfgld.docn	ninv.t						|#ISGEC01046.n
+	extern	domain	tfgld.date	document.date
+	extern	domain	tcamnt	v.cgst,							|#ISGEAC0153.sn	
+				v.sgst,
+				v.igst,
+				v.cess							|#ISGEAC0153.en		
+		
+			
+	
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.cont.process:
+on.choice:
+   execute(print.data)
+
+choice.print.data:
+on.choice:
+	if rprt_open() then
+		read.main.table()
+		rprt_close()
+	else
+		choice.again()
+	endif
+
+
+|****************************** field section *********************************
+
+field.bpid.f:
+when.field.changes:
+	bpid.t = bpid.f
+
+field.orno.f:
+when.field.changes:
+	orno.t = orno.f
+
+field.cprj.f:
+when.field.changes:
+	cprj.t = cprj.f
+
+field.dcdt.f:
+when.field.changes:
+	dcdt.t = dcdt.f
+	
+|****************************** function section ******************************
+
+functions:
+
+function read.main.table()
+{
+	select 	
+		tfacp200.ttyp,
+		tfacp200.ninv,
+		tfacp200.tpay,
+		tfacp200.docd,
+		tfacp200.cdf_cprj:rep.cprj,
+		tfacp200.cdf_prno:rep.orno,
+		tfacp200.amth,
+		tfacp200.docn,
+		tfacp200.balh,
+		tfacp200.bahc,
+		tfacp200.ifbp,
+|		tccom100.nama		|#ISGEC01032.o
+		tccom100.nama,		|#ISGEC01032.n
+		tfacp200.line,		|#ISGEC01032.n
+		tfacp200.doca,		|#ISGEC01046.n
+		tfacp200.typa,		|#ISGEC01046.n
+		tfacp200.pada		|#ISGEC01046.n
+	from	tfacp200,tccom100 
+	where	tfacp200._index2 inrange {:bpid.f} and {:bpid.t}
+	and	tfacp200.cdf_cprj inrange :cprj.f and :cprj.t
+	and	tfacp200.cdf_prno inrange :orno.f and :orno.t
+	and	tfacp200.docd inrange :dcdt.f and :dcdt.t
+	and	tfacp200.tpay in (9,11)
+	and	tfacp200.docn = 0
+	and 	(tfacp200.balh(1) <> 0 or 
+		tfacp200.bahc(1) <> 0)
+	and	tfacp200.ifbp refers to tccom100
+	selectdo
+		
+		rep.adv.amnt = 0
+		rep.bal.amnt = 0
+		rep.anti.docn	=	""
+		typa.doc	=	""
+		document.date = 0
+		if tfacp200.balh(1) <> 0 then
+			rep.bal.amnt = tfacp200.balh(1)
+		else
+			if tfacp200.bahc(1) <> 0 then
+				rep.bal.amnt = tfacp200.bahc(1)
+			endif
+		endif		
+						|#ISGEC01046.sn
+		if	rep.bal.amnt	<	0	then	
+			rep.bal.amnt	=	rep.bal.amnt	-	tfacp200.pada
+		else
+			rep.bal.amnt	=	rep.bal.amnt	+	tfacp200.pada
+		endif
+						|#ISGEC01046.en
+		
+| 		select sum(tfacp200.amth(1)):rep.adv.amnt		|#ISGEC01046.so
+| 		from	tfacp200
+| 		where	tfacp200._index1 = {:tfacp200.ttyp,:tfacp200.ninv}
+| 		and	tfacp200.ifbp = :tfacp200.ifbp			|#ISGEC001169.sn	
+|| 		and 	tfacp200.cdf_cprj = :rep.cprj						|#ISGEC01032.so
+|| 		and	tfacp200.docd = :tfacp200.docd		
+|| 		and	tfacp200.cdf_prno = :rep.orno			|#ISGEC001169.en	|#ISGEC01032.eo
+| 		and 	tfacp200.line = :tfacp200.line			|#ISGEC01032.n		
+| 		and	tfacp200.docn <> 0
+| 		selectdo
+| 		endselect					|#ISGEC01046.eo
+		
+| 			rep.anti.docn	=	tfacp200.ttyp & " " & str$(tfacp200.ninv) 	|#ISGEC01046.o
+			if	etol(tfacp200.tpay)	=	11	then
+				typa.doc	=	tfacp200.ttyp & "/" & str$(tfacp200.ninv) |#ISGEC01046.n
+			else
+				rep.anti.docn	=	tfacp200.ttyp & "/" & str$(tfacp200.ninv) |#ISGEC01046.n
+			endif
+			
+										|#ISGEC01046.sn
+			if	etol(tfacp200.tpay)	=	9	then						
+				select	tfcmg112.tdoc,tfcmg112.pdoc
+				from	tfcmg112
+				where	tfcmg112._index2 	=	{:tfacp200.ttyp,:tfacp200.ninv,:tfacp200.line}
+				and	tfcmg112.bpid		=	:tfacp200.ifbp
+				as set with 1 rows
+				selectdo
+				selectempty
+					tfcmg112.tdoc = ""
+					tfcmg112.pdoc = 0
+				endselect
+				select	tfacp200.ttyp:ttyp.t, tfacp200.ninv:ninv.t, tfacp200.docd, tfacp200.docn
+				from	tfacp200
+				where	tfacp200._index1	=	{:tfcmg112.tdoc,:tfcmg112.pdoc}
+				and	tfacp200.tpay		=	tfacp.tpay.advance.ant
+				selectdo
+					typa.doc	=	ttyp.t & "/" & str$(ninv.t)
+					if tfacp200.docn = 0 then
+						document.date = tfacp200.docd
+					endif	
+				endselect
+			else
+				set.min(bank.f,"tfcmg.bank")							
+				set.max(bank.t,"tfcmg.bank")	
+				select	tfcmg112.ctyp, tfcmg112.cdoc
+				from	tfcmg112
+				where	tfcmg112._index1 	inrange {:bank.f,:tfacp200.ttyp,:tfacp200.ninv}
+								and	{:bank.t,:tfacp200.ttyp,:tfacp200.ninv}
+				and	tfcmg112.bpid		=	:tfacp200.ifbp
+				as set with 1 rows
+				selectdo
+				selectempty
+					tfcmg112.ctyp = ""
+					tfcmg112.cdoc = 0
+				endselect				
+				select	tfacp200.ttyp:ttyp.t, tfacp200.ninv:ninv.t
+				from	tfacp200
+				where	tfacp200._index1	=	{:tfcmg112.ctyp,:tfcmg112.cdoc}
+				and	tfacp200.tpay		=	tfacp.tpay.advance
+				selectdo
+					rep.anti.docn = ttyp.t & "/" & str$(ninv.t)
+				endselect
+			endif
+									
+			select	sum(tfacp200.amth(1)):rep.adv.amnt
+			from	tfacp200
+			where	tfacp200._index1	=	{:tfacp200.ttyp,:tfacp200.ninv,:tfacp200.line}
+			and	tfacp200.tpay		=	tfacp.tpay.assignment
+			selectdo
+			selectempty
+				rep.adv.amnt	=	0
+			endselect
+									|#ISGEC01046.en
+		rep.cprj.dsca = ""
+		if not isspace(rep.cprj) then
+			rep.cprj.dsca = get.project.description(rep.cprj)
+		endif
+		
+		tdpur400.odat = 0
+		tdpur400.ddat = 0
+		
+		initailize.variables()
+		
+		if not isspace(rep.orno) then
+			select 	tdpur400.odat,
+				tdpur400.ddat,
+				tdpur400.orno
+			from	tdpur400
+			where	tdpur400._index1 = {:rep.orno}
+			as set with 1 rows
+			selectdo
+			selectempty
+				tdpur400.odat = 0
+				tdpur400.ddat = 0
+			endselect
+			
+			
+			tdisg.dll0002.populate.tax.amounts(v.oexc, v.osrv, v.ocst, v.ostx,			|#ISGEC0153.n
+								v.cgst, v.sgst, v.igst, v.cess)
+			
+			select tdmsl400.vrsn				|#09122014.sn
+			from   tdmsl400
+			where  tdmsl400._index1 = {:rep.orno}
+			order by tdmsl400.vrsn desc
+			as set with 1 rows
+			selectdo
+				tdisg.dll0002.Get_PO_Details(rep.orno, 
+							     tdmsl400.vrsn,
+							     v.suno,
+							     v.snnm,
+							     v.buyr,
+							     v.bynm,
+							     v.odat,
+							     v.hdst,
+							     v.ddta,
+							     v.cprj,
+							     v.pjdc,
+							     v.obsc,
+							     v.oexc,
+							     v.osrv,
+							     v.ocst,
+							     v.ostx,
+							     v.cgst,		|#ISGEC0153.sn
+							     v.sgst,
+							     v.igst,
+							     v.cess,		|#ISGEC0153.en
+							     v.olct,
+							     v.ogrs)
+			endselect
+			
+			rep.amnt = v.obsc				|#09122014.en
+		endif
+		
+		rprt_send()
+	endselect
+}
+
+
+function domain tcdsca get.project.description
+			(
+				domain	tccprj		i.cprj
+			)
+{
+	select 	tcmcs052.dsca
+	from	tcmcs052
+	where	tcmcs052._index1 = {:i.cprj}
+	as set with 1 rows
+	selectdo
+	selectempty
+		tcmcs052.dsca = ""
+	endselect
+	
+	return(tcmcs052.dsca)
+}
+
+function initailize.variables()
+{
+	v.suno = ""
+	v.snnm = ""
+	v.buyr = ""
+	v.bynm = ""
+	v.odat = 0
+	v.hdst = empty
+	v.ddta = 0
+	v.cprj = ""
+	v.pjdc = ""
+	v.obsc = 0
+	v.oexc = 0
+	v.osrv = 0
+	v.ocst = 0
+	v.ostx = 0
+	v.olct = 0
+	v.ogrs = 0
+}

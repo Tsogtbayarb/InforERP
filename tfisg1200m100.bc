@@ -1,0 +1,90 @@
+|******************************************************************************
+|* tfisg1200m100  0  VRC B61U a7 isg 
+|* Utility to update PTR no. in IRN
+|* Ravi Kumar                    
+|* 2021-06-11
+|******************************************************************************
+|* Form Type 4
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+	table	ttfacp100
+	table	ttcemm030
+	table	ttfacp251
+	
+	extern	domain	tfgld.docn	irno.f, irno.t
+	extern	domain	tcncmp	curr_comp
+		domain	tfgld.date	date.from
+		domain	whinh.pksp	str.shpm
+
+|****************************** program section ********************************
+before.program:
+	curr_comp = get.compnr()
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+choice.update.ptr:
+on.choice:
+	update.ptr.value()
+	message("Sucessfully Updated")
+	
+field.irno.f:
+when.field.changes:
+	irno.t = irno.f
+	
+functions:
+function extern update.ptr.value()
+{
+	date.from = date.to.num(2014, 09, 01)
+	str.shpm = ""
+	select	tfacp100.ninv,	
+		tfacp100.stin,
+		tfacp100.ctyp,
+		tfacp100.cinv
+	from	tfacp100 for update
+	where	tfacp100._index1 inrange {:irno.f} and {:irno.t}
+	and	tfacp100.stin = tfacp.stin.open
+	and	tfacp100.invd >= :date.from
+	selectdo
+		str.shpm = str$(tfacp100.ninv)
+		if curr_comp = 200 then
+			select	tcemm030.fcmp
+			from	tcemm030
+			where	tcemm030.lcmp = :curr_comp
+			selectdo
+				select	tfacp251.ityp,
+					tfacp251.idoc
+				from	tfacp251
+				where	tfacp251.shpm = {:str.shpm}
+				and	tfacp251._compnr = :tcemm030.fcmp
+				as set with 1 rows
+				selectdo
+					tfacp100.stin = tfacp.stin.copied
+					tfacp100.ctyp = tfacp251.ityp
+					tfacp100.cinv = tfacp251.idoc
+					db.update(ttfacp100, db.retry)
+					commit.transaction()
+				endselect
+			endselect
+		else
+			
+			select	tfacp251.ityp,
+				tfacp251.idoc
+			from	tfacp251
+			where	tfacp251.shpm = {:str.shpm}
+			as set with 1 rows
+			selectdo
+				tfacp100.stin = tfacp.stin.copied
+				tfacp100.ctyp = tfacp251.ityp
+				tfacp100.cinv = tfacp251.idoc
+				db.update(ttfacp100, db.retry)
+				commit.transaction()
+			endselect
+		endif
+	endselect
+}

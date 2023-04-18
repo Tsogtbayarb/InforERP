@@ -1,0 +1,632 @@
+|******************************************************************************
+|* tfisg407  0  VRC B61U a7 isg 
+|* DAL For tfisg407
+|* merino1
+|* 17-05-12 [17:44]
+|******************************************************************************
+|* Script Type: DAL
+|******************************************************************************
+|* ID : ISGECGST001, IT0386, Saurabh Dubey 12 May 2017, VRC B61U a7 isg 
+|* Functional : Mrs. Veena(Isgec)
+|* Isgec Onsite Deployment
+|*
+|* ID: ISGEC01053, Bharti Garg, 28-02-2018
+|* Added Logic for cgst, sgst, igst amount and rate
+|* Checks and validations for tax rates
+|*
+|* ID : ISGEC01059, Priya Jindal, 11/5/2018
+|* Remove checks for tax codes
+|*
+|* ID: ISGEC01072, Bharti Garg, 08-06-2018
+|* Changes in freezing of tax
+|******************************************************************************
+               
+	table	ttfisg407	|* IR Lines
+	table	ttfisg405
+	table	ttfacp100
+	table	ttctax400		|#ISGEC01072.n
+	table	ttctax940		|#ISGEC01072.n
+	
+	
+	long flag, flag2		|#ISGEC01053
+	domain	tcpvat		srat,crat,irat
+	domain	tcpono		pono, pono1
+	
+	string bp_gstn_no_desc(2),isgec_gstn_no_desc(2)	|#ISGEC01072.n
+		   
+#include <bic_dal2>
+
+
+function extern long before.open.object.set()
+{
+	set.field.dependencies()
+	
+	return(0)
+}
+
+
+function extern long before.save.object(long type)
+{
+	
+	pono = tfisg407.pono										|ISGEC01053.sn
+	
+	select	a_tfisg407.srat:srat,a_tfisg407.crat:crat,a_tfisg407.irat:irat,a_tfisg407.pono:pono1
+	from	tfisg407 a_tfisg407
+	where	a_tfisg407._index1 = {:tfisg407.ninv}
+	and	a_tfisg407.pono <> :pono
+	order by a_tfisg407.pono
+	as set with 1 rows
+	selectdo
+		if srat <> 0  and crat <> 0 and tfisg407.srat = 0 and tfisg407.crat = 0 then
+			dal.set.error.message("@Taxes entered are incorrect in lines")
+			show.dal.messages(MSG.ALL)
+| 			return(DALHOOKERROR)
+| 			tfisg407.irat = 0
+		else
+			if irat <> 0 and tfisg407.irat = 0 then
+				dal.set.error.message("@Taxes entered are incorrect in lines")
+				show.dal.messages(MSG.ALL)
+| 				return(DALHOOKERROR)
+			endif
+		endif	
+		
+	endselect
+	
+	if tfisg407.crat <> tfisg407.srat then						|#ISGEC01072.sn
+		dal.set.error.message("@Mismatch in CGST/SGST Rate")
+		return(DALHOOKERROR)
+	endif										|#ISGEC01072.en
+
+| 	if tfisg407.crat = 0 and tfisg407.srat = 0 and tfisg407.irat = 0 then  |ISGEC01059.so
+| 		dal.set.error.message("@Please enter taxes")
+| 		return(DALHOOKERROR)
+| 	endif											|ISGEC01053.eo
+													|ISGEC01053.en
+	return(0)
+}
+
+
+function extern long before.new.object()
+{
+	domain	tcpono	last.line
+	flag =  0
+	
+	select	tfisg407.pono:last.line
+	from	tfisg407
+	where	tfisg407._index1 = {:tfisg407.ninv}
+	order by tfisg407.pono desc
+	as set with 1 rows
+	selectdo
+	selectempty
+		last.line = 0
+	endselect
+	
+	tfisg407.pono = last.line + 1
+	flag2 = 1
+	return(0)
+}
+
+
+function extern boolean method.is.allowed(long mode)		|#Mani.sn
+{
+	on case mode
+		case DAL_NEW :
+		case DAL_UPDATE :
+		case DAL_DESTROY :
+			if IR.status.is.not.received() then
+				return(false)
+			endif
+		break
+	endcase
+	
+	return(true)
+}
+
+|* tfisg407.code HSN/SAC Code
+
+function extern boolean tfisg407.code.is.mandatory()
+{	
+	return(true)
+}
+
+function extern boolean tfisg407.code.is.valid(long mode)
+{
+	domain	tcisg.item.typ	o.hsn.sac
+	domain	tcmcs.str100	o.err.mess
+	
+	o.err.mess = ""
+	
+	tcisgdll0100.get.item.type.from.goods.service(tfisg407.ityp, o.hsn.sac)	
+	
+	if tcisgdll0100.check.HSN.SAC.code(o.hsn.sac, tfisg407.code, o.err.mess) then
+		dal.set.error.message("@%s", o.err.mess)	|* HSN/SAC Code is not Valid
+		return(false)
+	endif
+	
+	return(true)
+}
+
+| function extern boolean tfisg407.crat.is.valid()			|#ISGEC01053.sn		|#ISGEC01072.so
+| {
+| 	if tfisg407.crat  = tfisg407.srat then
+| 		return (true)
+| 	else
+| 		dal.set.error.message("@ Mismatch in CGST/SGST rate")
+| 	endif								
+| 	return(false)
+| }												|#ISGEC01072.eo
+
+function extern boolean tfisg407.crat.is.mandatory()
+{	
+| 	select	tfisg407.srat
+| 	from	tfisg407
+| 	where	tfisg407._index1 = {:tfisg407.ninv}
+| 	as set with 1 rows 
+| 	selectdo
+| 		if tfisg407.srat = 0	then
+| 			return(false)
+| 		endif
+| 	selectempty
+| 		if tfisg407.srat = 0	then
+| 			return(false)
+| 		endif
+| 	endselect
+| 	
+	if tfisg407.srat = 0  then
+		return(false)
+	endif
+	return(true)
+}
+
+| function extern boolean tfisg407.srat.is.mandatory()
+| {	
+| 	return(true)
+| }
+
+| function extern boolean tfisg407.srat.is.valid()
+| {	
+| 	if tfisg407.srat = tfisg407.crat then
+| 		return(true)
+| 	else
+| 		dal.set.error.message("@ Mismatch in CGST/IGST rate")
+| 	endif
+| 	return(false)
+| }									
+
+| function extern boolean tfisg407.irat.is.applicable()
+| {
+| 	
+| 	domain	tcamnt	srate
+| 	
+| 	select	tfisg407.srat:srate
+| 	from	tfisg407
+| 	where	tfisg407._index1 = {:tfisg407.ninv}
+| 	selectdo
+| 		if flag2 <> 1	then
+| 			if tfisg407.crat = 0	then
+| 				return(true)
+| 			else
+| 				return(false)
+| 			endif
+| 			flag2 = 0
+| 		endif
+| 	selectempty
+| 		if tfisg407.crat = 0	then
+| 			return(true)
+| 		else
+| 			return(false)
+| 		endif
+| 	endselect
+| 	
+| 	check.tax()
+| 	
+| 	if flag = 1 then
+| 			return(true)
+| 	else
+| 		if flag = 0	then
+| 			return(false)
+| 		endif
+| 	endif
+| 	
+| 	if tfisg407.srat = 0 and tfisg407.crat = 0 then
+| 		return(true)
+| 	else
+| 		return(false)
+| 	endif
+| 	
+| 	return(true)
+| }									
+
+function extern boolean tfisg407.srat.is.applicable()				|#ISGEC01059.sn	|OLD		|#ISGEC01072.sn
+{
+	if applied_tax_freeze() then
+		return(true)
+	else	
+		return(false)
+	endif
+}
+function extern boolean tfisg407.crat.is.applicable()				
+{
+	if applied_tax_freeze() then
+		return(true)
+	else	
+		return(false)
+	endif
+}										
+
+function extern boolean tfisg407.irat.is.applicable()	
+{
+	if applied_tax_freeze() then
+		return(false)
+	else	
+		return(true)
+	endif
+}										|#ISGEC01059.en|OLD		|#ISGEC01072.en
+
+
+| function extern boolean tfisg407.irat.is.mandatory()
+| {
+| 	return(true)
+| }
+
+| function extern boolean tfisg407.srat.is.readonly()
+| {	
+| 	check.tax()
+| 	
+| 	
+| 	if flag = 1 then
+| 		return(true)
+| 	endif
+| 	if tfisg407.irat = 0 then 
+| 		return(false)
+| 	endif
+| 	return(true)
+| }
+
+| function extern boolean tfisg407.crat.is.readonly()
+| {	
+| 	check.tax()
+| 	
+| 	if flag = 1 then
+| 		return(true)
+| 	endif
+| 	if tfisg407.irat = 0 then 
+| 		return(false)
+| 	endif
+| 	return(true)
+| }
+
+| function extern boolean tfisg407.srat.is.applicable()						|#ISGEC01053.so
+| {
+| 	domain	tcamnt	srate
+| 	
+| 	select	tfisg407.srat:srate
+| 	from	tfisg407
+| 	where	tfisg407._index1 = {:tfisg407.ninv}
+| 	selectdo
+| 		if flag2 <> 1	then
+| 			if tfisg407.irat = 0	then
+| 				return(true)
+| 			else
+| 				return(false)
+| 			endif
+| 			flag2 = 0
+| 		endif
+| 	selectempty
+| 		if tfisg407.irat = 0	then
+| 			return(true)
+| 		else
+| 			return(false)
+| 		endif
+| 	endselect
+
+| 	check.tax()
+| 	
+| 	if flag = 0 then
+| 		return(true)
+| 	else 
+| 		if flag = 1 then
+| 			return(false)
+| 		endif
+| 	endif
+| 	if tfisg407.irat = 0 then
+| 		return(true)
+| 	else
+| 		return(false)
+| 	endif
+| 	
+| 	return(false)
+| }
+| function extern boolean tfisg407.crat.is.applicable()
+| {
+| 	domain	tcamnt	srate
+| 	
+| 	select	tfisg407.srat:srate
+| 	from	tfisg407
+| 	where	tfisg407._index1 = {:tfisg407.ninv}
+| 	selectdo
+| 		if flag2 <> 1	then
+| 			if tfisg407.irat = 0	then
+| 				return(true)
+| 			else
+| 				return(false)
+| 			endif
+| 			flag2 = 0
+| 		endif
+| 	selectempty
+| 		if tfisg407.irat = 0	then
+| 			return(true)
+| 		else
+| 			return(false)
+| 		endif
+| 	endselect
+| 	
+| 	check.tax()
+| 	
+| 	if flag = 0 then
+| 		return(true)
+| 	else 
+| 		if flag = 1 then
+| 			return(false)
+| 		endif
+| 	endif
+| 	if tfisg407.irat = 0 then
+| 		return(true)
+| 	else
+| 		return(false)
+| 	endif
+| 	
+| 	return(false)
+| }									|#ISGEC01053.en		
+
+function extern boolean tfisg407.idsc.is.mandatory()
+{
+	if not check.if.bill.of.supply() then
+		return(false)
+	endif
+	
+	return(true)
+}
+
+
+function extern boolean tfisg407.unit.is.mandatory()
+{
+	return(true)
+}
+
+
+function extern boolean tfisg407.qnty.is.mandatory()
+{
+	return(true)
+}
+
+
+|* tfisg407.samt	|* SGST
+
+function extern boolean tfisg407.samt.is.derived(long mode)
+{
+	return(true)
+}
+
+function extern void tfisg407.samt.update()
+{
+	tfisg407.samt = (tfisg407.srat * tfisg407.assv)/100
+}
+
+|* tfisg407.camt	|* CGST
+
+function extern boolean tfisg407.camt.is.derived(long mode)
+{
+	return(true)
+}
+
+function extern void tfisg407.camt.update()
+{
+	tfisg407.camt = (tfisg407.crat * tfisg407.assv)/100
+}
+
+|* tfisg407.iamt	|* IGST
+
+function extern boolean tfisg407.iamt.is.derived(long mode)
+{
+	return(true)
+}
+
+function extern void tfisg407.iamt.update()
+{
+	tfisg407.iamt = (tfisg407.irat * tfisg407.assv)/100
+}
+
+|* tfisg407.cmnt	|* Cess
+
+function extern boolean tfisg407.cmnt.is.derived(long mode)
+{
+	return(true)
+}
+
+function extern void tfisg407.cmnt.update()
+{
+	tfisg407.cmnt = (tfisg407.cess * tfisg407.assv)/100
+}
+
+|* tfisg407.tgmt	|* Total GST Amount
+
+function extern boolean tfisg407.tgmt.is.derived(long mode)
+{
+	return(true)
+}
+
+function extern void tfisg407.tgmt.update()
+{
+	tfisg407.tgmt = tfisg407.samt + tfisg407.camt + tfisg407.iamt + 
+			tfisg407.cmnt
+}
+
+|* tfisg407.tval |* Total Value
+
+function extern boolean tfisg407.tval.is.derived(long mode)
+{
+	return(true)
+}
+
+function extern void tfisg407.tval.update()
+{
+| 	tfisg407.tval = tfisg407.tgmt + tfisg407.assv
+	tfisg407.tval = tfisg407.tgmt + tfisg407.assv + tfisg407.tcsa			|RAvi.a.19102020.GH424CR762
+}
+
+
+
+function long IR.status.is.not.received()
+{
+	domain	tfacp.stin	bind.stin
+	
+	select	tfacp100.stin:bind.stin
+	from	tfacp100
+	where	tfacp100._index1 = {:tfisg407.ninv}
+	selectdo
+	selectempty
+		bind.stin = empty
+	endselect
+	
+	if bind.stin  = tfacp.stin.open or bind.stin = empty then
+		return(0)
+	endif
+	
+	return(1)
+}
+
+
+function set.field.dependencies()
+{
+	dal.field.depends.on("tfisg407.samt", 
+				HOOK_IS_DERIVED + HOOK_UPDATE, 
+							"tfisg407.srat", 
+							"tfisg407.assv")
+							
+	dal.field.depends.on("tfisg407.camt", 
+				HOOK_IS_DERIVED + HOOK_UPDATE, 
+							"tfisg407.crat", 
+							"tfisg407.assv")
+	
+	dal.field.depends.on("tfisg407.iamt", 
+				HOOK_IS_DERIVED + HOOK_UPDATE, 
+							"tfisg407.irat", 
+							"tfisg407.assv" )
+							
+	dal.field.depends.on("tfisg407.cmnt", 
+				HOOK_IS_DERIVED + HOOK_UPDATE, 
+							"tfisg407.cess", 
+							"tfisg407.assv" )						
+	
+	dal.field.depends.on("tfisg407.tgmt", 
+				HOOK_IS_DERIVED + HOOK_UPDATE, 
+							"tfisg407.samt",	
+							"tfisg407.camt",	
+							"tfisg407.iamt"	,
+							"tfisg407.cmnt"	)
+								
+	dal.field.depends.on("tfisg407.tval", 
+				HOOK_IS_DERIVED + HOOK_UPDATE, 
+							"tfisg407.tgmt", 
+							"tfisg407.assv",
+							"tfisg407.tcsa")		|RAvi.a.19102020.GH424CR762
+	
+	dal.field.depends.on("tfisg407.irat",					|#ISGEC01053.sn
+					HOOK_IS_APPLICABLE, 
+							"tfisg407.pono",	
+							"tfisg407.crat")	
+	
+	dal.field.depends.on("tfisg407.crat",					
+					HOOK_IS_APPLICABLE, 
+							"tfisg407.pono",
+							"tfisg407.irat")
+	
+	dal.field.depends.on("tfisg407.srat",					
+					HOOK_IS_APPLICABLE, 
+							"tfisg407.pono",	
+							"tfisg407.irat")	|#ISGEC01053.en
+}
+
+
+function long check.if.bill.of.supply() 
+{
+	domain	tfisg.inv.type	bind.inv.type
+	
+	select	tfisg405.invt:bind.inv.type
+	from	tfisg405
+	where	tfisg405._index1 = {:tfisg407.ninv}
+	selectdo
+	selectempty
+		bind.inv.type = tfisg.inv.type.tax.invoice
+	endselect
+		
+	if bind.inv.type = tfisg.inv.type.bill.of.supply then
+		return(1)
+	endif
+	
+	return(0)
+}
+
+function long check.tax()						|#ISGEC01053.sn
+{
+	domain	tcpvat srate,crate
+	long pono
+	flag = 0 
+| 	
+	select	tfisg407.srat:srate, 
+		tfisg407.crat:crate,
+		tfisg407.pono:pono
+	from	tfisg407 
+	where	tfisg407._index1 = :tfisg407.ninv
+	order by tfisg407.pono
+	as set with 1 rows
+	selectdo
+		if srate > 0 and crate > 0 then 
+| 			tfisg407.igst = 0
+			flag = 0
+			
+		else
+			flag = 1
+		endif
+	selectempty
+		flag = 1
+	endselect
+	return(0)
+}									|#ISGEC01053.en
+
+function extern boolean applied_tax_freeze()						|#ISGEC01072.sn
+{
+	select	tfisg405.*
+	from	tfisg405
+	where	tfisg405._index1 = {:tfisg407.ninv}
+	selectdo
+		select	tctax400.fovn
+		from	tctax400
+		where	tctax400._index3 = {:tfisg405.gstn.b}
+		selectdo
+			bp_gstn_no_desc = trim$(tctax400.fovn)
+		selectempty
+			bp_gstn_no_desc= ""
+		endselect
+		
+		select	tctax940.regn
+		from	tctax940
+		where	tctax940._index1 = {:tfisg405.gstn.c}
+		selectdo
+			isgec_gstn_no_desc = trim$(tctax940.regn)
+		selectempty
+			isgec_gstn_no_desc = ""
+		endselect
+	
+		if bp_gstn_no_desc = isgec_gstn_no_desc then
+			return(true)
+		else
+			return(false)
+		endif	
+	endselect
+	
+	return(false)
+	
+}	
+							|#ISGEC01072.en

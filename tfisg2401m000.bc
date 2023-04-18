@@ -1,0 +1,542 @@
+|******************************************************************************
+|* tfisg2401m000  0  VRC B61U a7 isg 
+|* Detail of Supplier wise and   P.O. wise  Payable/Retention A
+|* Ravi Kumar                    
+|* 2020-05-07
+|******************************************************************************
+|* Main table tfacp201 Payment Schedules, Form Type 4
+|******************************************************************************
+|* ID GH368CR666, RAvi Kumar, 14-07-2020
+|* Payable, retention report from Payment Request
+|* 
+|* GH403CR730, RAvi Kumar, 23-09-2020
+|* Modification in Payable Retention report
+|*
+|* GH562CR856, RAvi Kumar, 26-05-2021
+|* Modification in report Detail of Supplier wise and PO wise Payable/Retention Amount for MSME suppliers                                
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttfacp201 | Payment Schedules
+  table	ttfacp251
+  table	ttccom100
+  table	ttdpur401
+  table	ttcmcs052
+  table	ttfgld100
+  table	ttfacp200
+  table	ttcemm030
+  table	ttfisg001		|GH403CR730.a
+  table	ttcisg001		|GH403CR730.a
+  table	ttcmcs045		|GH562CR856.a
+  
+
+   extern  domain  tccom.bpid	bpid.f, bpid.t
+   extern	domain	tfacp.bloc	recn.f,	recn.t
+   extern	domain	tcorno	orno.f, orno.t	
+   extern	domain	tccprj	cprj.f, cprj.t
+   extern	domain	tcmcs.str60	label.format, label.format.2
+   extern	domain	tcncmp	fcom.f, fcom.t								|GH403CR730.a
+   extern	domain	tfgld.date	ptrdocdate.f, ptrdocdate.t					|GH403CR730.a
+	
+	domain	tcncmp	curr_comp
+
+|**********Report Variables*******************************
+	extern	domain	tccom.bpid	rep.bpid
+	extern	domain	tcnama		rep.bpid.nama
+	extern	domain	tcmcs.str15	rep.purbook
+	extern	domain	tfgld.date	rep.docdate, rep.duedate
+	extern	domain	tfgld.btno	rep.btno
+	extern	domain	tcncmp		rep.comp
+	extern	domain	tfacp.isup	rep.isup
+	extern	domain	tcorno		rep.orno
+	extern	domain	tccprj		rep.cprj
+	extern	domain	tcdsca		rep.dsca
+	extern	domain	whinh.pksp	rep.shpm
+	extern	domain	tcdate		rep.irdate	
+	extern	domain	tcccur		rep.ccur
+	extern	domain	tcamnt		rep.final.amnt, rep.nonfinal.amnt
+	extern	domain	tfacp.bloc	rep.bloc
+	extern	domain	tfgld.desc	rep.cloc.dsca
+	extern	domain	tfgld.sess	session.i				|GH368CR666.a
+	extern	domain	tcorno		orno.i					|GH368CR666.a
+	extern	domain	tccreg		creg.f, creg.t				|GH562CR856.a
+	
+	
+	domain	tfgld.docn	ir.no
+
+|****************************** program section ********************************
+before.program:
+	label.format = "Retention Code blank to blank means payable amount"
+	label.format.2 = "PTRs made after from Ist Sep 2014 onwards will appear"
+	curr_comp = get.compnr() 
+	
+	import("prog.name$", session.i)						|GH368CR666.a.s
+	import("tfmsl020.orno", orno.i)
+	
+	if session.i = "tfmsl0520m000" then
+		orno.f = orno.i
+		orno.t = orno.i
+	endif									|GH368CR666.a.e
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.cont.process:
+on.choice:
+   execute(print.data)
+
+choice.print.data:
+on.choice:
+   if rprt_open() then
+       read.main.table()
+       rprt_close()
+   else
+       choice.again()
+   endif
+
+
+|****************************** field section *********************************
+
+field.bpid.f:
+when.field.changes:
+   bpid.t = bpid.f
+
+field.recn.f:
+when.field.changes:
+   recn.t = recn.f
+
+field.orno.f:
+when.field.changes:
+   orno.t = orno.f
+
+field.cprj.f:
+when.field.changes:
+   cprj.t = cprj.f
+   
+field.creg.f:									|GH562CR856.a
+when.field.changes:
+   creg.t = creg.f
+   
+field.fcom.f:									|GH403CR730.a.s
+when.field.changes:
+   fcom.t = fcom.f
+   
+field.ptrdocdate.f:
+when.field.changes:
+   ptrdocdate.t = ptrdocdate.f
+										|GH403CR730.a.e
+
+|****************************** function section ******************************
+
+functions:
+
+function read.main.table()
+{
+	domain	tfacp.bloc	bloc.f,	bloc.t
+	domain	tfgld.date	after.doc.date
+	domain	tfgld.ttyp	ttyp.201.n, ttyp.201.o
+	domain	tfgld.docn	docn.201.n, docn.201.o
+	domain	tfgld.schn	schn.201.n, schn.201.o
+	
+	ttyp.201.n = ""
+	ttyp.201.o = ""
+	docn.201.n = 0
+	docn.201.o = 0
+	schn.201.n = 0
+	schn.201.o = 0
+	
+	if lval(recn.f) = 0 then
+		bloc.f = ""
+| 		|bloc.t = "~~~"
+		if isspace(recn.t) or  trim$(recn.t) = "0" or trim$(recn.t) = "00" or trim$(recn.t) = "000" then
+			bloc.t = ""
+		else
+			bloc.t = recn.t
+		endif
+	else
+		bloc.f = recn.f
+		bloc.t = recn.t
+	endif
+	after.doc.date = date.to.num(2014, 09, 01)
+	
+	if curr_comp = 200 then
+		select	tcemm030.fcmp,
+			tcemm030.lcmp
+		from	tcemm030
+		where	tcemm030.lcmp = :curr_comp
+		and	tcemm030.fcmp inrange :fcom.f and :fcom.t					|GH368CR666.a
+		selectdo
+			switch.to.company(tcemm030.fcmp)
+			select	tfacp201.ttyp,
+				tfacp201.ninv,
+				tfacp201.schn,
+				tfacp201.amnt,
+				tfacp201.paia,
+				tfacp201.ifbp, 
+				tfacp201.icur,
+				tfacp201.docd,
+				tfacp201.payd,
+				tfacp201.bala,
+				tfacp201.cdf_bloc,
+				tccom100.nama,
+				tfacp251.orno,
+				tfacp251.pono,
+				tfacp251.sqnb,
+				tfacp251.icom,
+				tfacp251.shpm,
+				tdpur401.cprj,
+				tdpur401.orno,
+				tdpur401.pono,
+				tdpur401.sqnb,
+				tcmcs052.dsca,
+				tccom120.creg, 
+				tcmcs045.dsca							|GH562CR856.a
+			from	tfacp201, tccom100, tfacp251, tdpur401, tcmcs052, tccom120, tcmcs045	|GH562CR856.a
+	| 		where	tfacp201._index3 inrange {:bpid.f} and {:bpid.t}
+			where	tfacp201.ifbp inrange {:bpid.f} and {:bpid.t}
+			and	tfacp201.cdf_bloc inrange :bloc.f and :bloc.t
+			and	tfacp201.docd >= :after.doc.date					
+			and	tfacp201.docd inrange :ptrdocdate.f and :ptrdocdate.t			|GH368CR666.a
+			and	tfacp251.ityp = tfacp201.ttyp
+			and	tfacp251.idoc = tfacp201.ninv
+			and	tfacp251.orno inrange {:orno.f} and {:orno.t}	
+			and	tdpur401.orno = tfacp251.orno
+			and	tdpur401.pono = tfacp251.pono
+			and	tdpur401.sqnb = tfacp251.sqnb
+			and	tdpur401.cprj inrange :cprj.f and :cprj.t
+			and	tccom120.creg inrange :creg.f and :creg.t			|GH562CR856.a
+			and	tccom120.otbp = tdpur401.otbp					|GH562CR856.a
+			and	tdpur401._compnr = :tcemm030.lcmp
+			and	tdpur401.cprj refers to tcmcs052
+			and	tfacp201.ifbp refers to tccom100
+			and	tccom120.creg refers to tcmcs045				|GH562CR856.a
+	| 		order by tfacp251.icom, tfacp201.ttyp, tfacp201.ninv
+			order by tfacp251.icom, tfacp201._index2
+			selectdo
+				if (tfacp201.amnt - tfacp201.paia - tfacp201.bala) > 0 then
+					intialize()
+					ttyp.201.n = tfacp201.ttyp
+					docn.201.n = tfacp201.ninv
+					schn.201.n = tfacp201.schn
+					
+					if ttyp.201.n = ttyp.201.o and docn.201.n = docn.201.o then|and schn.201.n = schn.201.o then
+	| 					if schn.201.n < schn.201.o or schn.201.n = schn.201.o then
+						if schn.201.n = schn.201.o then
+	| 						schn.201.o = schn.201.o + 1
+							continue
+						endif
+					endif
+					
+					rep.bpid = tfacp201.ifbp
+					rep.bpid.nama = tccom100.nama
+					rep.purbook = tfacp201.ttyp & " " & str$(tfacp201.ninv)
+					rep.docdate = tfacp201.docd
+| 					rep.duedate = tfacp201.payd
+					rep.duedate = get.pay.due.date(tcemm030.lcmp, tcemm030.fcmp, tfacp201.ttyp, tfacp201.ninv, tfacp251.orno)
+					rep.ccur = tfacp201.icur
+					rep.cprj = tdpur401.cprj
+					rep.dsca = tcmcs052.dsca
+					rep.comp = tfacp251.icom
+					rep.orno = tfacp251.orno
+					rep.shpm = tfacp251.shpm
+					
+					ir.no = lval(tfacp251.shpm)
+					select	tfacp100.cdf_oird:rep.irdate
+					from	tfacp100
+					where	tfacp100._index1 = {:ir.no}
+					as set with 1 rows
+					selectdo
+					selectempty
+						rep.irdate = 0
+					endselect
+					
+					select	tfacp200.btno:rep.btno,
+						tfacp200.isup:rep.isup,
+						tfacp200.year
+					from	tfacp200
+					where	tfacp200._index1 = {:tfacp201.ttyp, :tfacp201.ninv}
+					and	tfacp200.tpay = tfacp.tpay.invoice
+					as set with 1 rows
+					selectdo
+					selectempty
+						rep.btno = 0
+						rep.isup = ""
+					endselect
+					
+					select	tfgld100.stat
+					from	tfgld100
+					where	tfgld100._index1 = {:tfacp200.year, :rep.btno}
+					as set with 1 rows
+					selectdo
+						if tfgld100.stat = tfgld.bstt.term then
+							rep.final.amnt = tfacp201.amnt - tfacp201.paia
+							rep.nonfinal.amnt = 0
+						else
+							if tfgld100.stat <> tfgld.bstt.term then
+								rep.nonfinal.amnt = tfacp201.amnt - tfacp201.paia
+								rep.final.amnt = 0
+							endif
+						endif
+					endselect
+	| 				rep.bloc = tfacp201.cdf_bloc
+					get.var(pid, "tfacp201.cdf_bloc", rep.bloc)
+
+					select	tfacp002.desc:rep.cloc.dsca
+					from	tfacp002
+					where	tfacp002._index1 = {:rep.bloc}
+					as set with 1 rows
+					selectdo
+					selectempty
+						rep.cloc.dsca = ""
+					endselect
+					rprt_send()
+				endif
+				ttyp.201.o = ttyp.201.n
+				docn.201.o = docn.201.n
+				schn.201.o = schn.201.n
+			endselect
+		endselect
+	else
+| 		switch.to.company(tcemm030.fcmp)
+		select	tcemm030.fcmp,
+			tcemm030.lcmp
+		from	tcemm030
+		where	tcemm030.lcmp = :curr_comp
+		as set with 1 rows
+		selectdo
+		endselect
+		select	tfacp201.ttyp,
+			tfacp201.ninv,
+			tfacp201.schn,
+			tfacp201.amnt,
+			tfacp201.paia,
+			tfacp201.ifbp, 
+			tfacp201.icur,
+			tfacp201.docd,
+			tfacp201.payd,
+			tfacp201.bala,
+			tfacp201.cdf_bloc,
+			tccom100.nama,
+			tfacp251.orno,
+			tfacp251.pono,
+			tfacp251.sqnb,
+			tfacp251.icom,
+			tfacp251.shpm,
+			tdpur401.cprj,
+			tdpur401.orno,
+			tdpur401.pono,
+			tdpur401.sqnb,
+			tcmcs052.dsca,
+			tccom120.creg, 
+			tcmcs045.dsca								|GH562CR856.a
+		from	tfacp201, tccom100, tfacp251, tdpur401, tcmcs052, tccom120, tcmcs045	|GH562CR856.a
+| 		where	tfacp201._index3 inrange {:bpid.f} and {:bpid.t}
+		where	tfacp201.ifbp inrange {:bpid.f} and {:bpid.t}
+		and	tfacp201.cdf_bloc inrange :bloc.f and :bloc.t
+		and	tfacp201.docd >= :after.doc.date
+		and	tfacp201.docd inrange :ptrdocdate.f and :ptrdocdate.t			|GH368CR666.a
+		and	tfacp251.ityp = tfacp201.ttyp
+		and	tfacp251.idoc = tfacp201.ninv
+		and	tfacp251.orno inrange {:orno.f} and {:orno.t}	
+		and	tdpur401.orno = tfacp251.orno
+		and	tdpur401.pono = tfacp251.pono
+		and	tdpur401.sqnb = tfacp251.sqnb
+		and	tdpur401.cprj inrange :cprj.f and :cprj.t
+		and	tccom120.creg inrange :creg.f and :creg.t			|GH562CR856.a
+		and	tccom120.otbp = tdpur401.otbp					|GH562CR856.a
+| 		and	tdpur401._compnr = :tcemm030.lcmp
+		and	tdpur401.cprj refers to tcmcs052
+		and	tfacp201.ifbp refers to tccom100
+		and	tccom120.creg refers to tcmcs045				|GH562CR856.a
+| 		order by tfacp251.icom, tfacp201.ttyp, tfacp201.ninv
+		order by tfacp251.icom, tfacp201._index2
+		selectdo
+			if (tfacp201.amnt - tfacp201.paia - tfacp201.bala) > 0 then
+				intialize()
+				ttyp.201.n = tfacp201.ttyp
+				docn.201.n = tfacp201.ninv
+				schn.201.n = tfacp201.schn
+				
+				if ttyp.201.n = ttyp.201.o and docn.201.n = docn.201.o then|and schn.201.n = schn.201.o then
+| 					if schn.201.n < schn.201.o or schn.201.n = schn.201.o then
+					if schn.201.n = schn.201.o then
+| 						schn.201.o = schn.201.o + 1
+						continue
+					endif
+				endif
+				
+				rep.bpid = tfacp201.ifbp
+				rep.bpid.nama = tccom100.nama
+				rep.purbook = tfacp201.ttyp & " " & str$(tfacp201.ninv)
+				rep.docdate = tfacp201.docd
+| 				rep.duedate = tfacp201.payd
+				rep.duedate = get.pay.due.date(tcemm030.lcmp, tcemm030.fcmp, tfacp201.ttyp, tfacp201.ninv, tfacp251.orno)
+				rep.ccur = tfacp201.icur
+				rep.cprj = tdpur401.cprj
+				rep.dsca = tcmcs052.dsca
+				rep.comp = tfacp251.icom
+				rep.orno = tfacp251.orno
+				rep.shpm = tfacp251.shpm
+				
+				ir.no = lval(tfacp251.shpm)
+				select	tfacp100.cdf_oird:rep.irdate
+				from	tfacp100
+				where	tfacp100._index1 = {:ir.no}
+				as set with 1 rows
+				selectdo
+				selectempty
+					rep.irdate = 0
+				endselect
+				
+				select	tfacp200.btno:rep.btno,
+					tfacp200.isup:rep.isup,
+					tfacp200.year
+				from	tfacp200
+				where	tfacp200._index1 = {:tfacp201.ttyp, :tfacp201.ninv}
+				and	tfacp200.tpay = tfacp.tpay.invoice
+				as set with 1 rows
+				selectdo
+				selectempty
+					rep.btno = 0
+					rep.isup = ""
+				endselect
+				
+				select	tfgld100.stat
+				from	tfgld100
+				where	tfgld100._index1 = {:tfacp200.year, :rep.btno}
+				as set with 1 rows
+				selectdo
+					if tfgld100.stat = tfgld.bstt.term then
+						rep.final.amnt = tfacp201.amnt - tfacp201.paia
+						rep.nonfinal.amnt = 0
+					else
+						if tfgld100.stat <> tfgld.bstt.term then
+							rep.nonfinal.amnt = tfacp201.amnt - tfacp201.paia
+							rep.final.amnt = 0
+						endif
+					endif
+				endselect
+| 				rep.bloc = tfacp201.cdf_bloc
+				get.var(pid, "tfacp201.cdf_bloc", rep.bloc)
+
+				select	tfacp002.desc:rep.cloc.dsca
+				from	tfacp002
+				where	tfacp002._index1 = {:rep.bloc}
+				as set with 1 rows
+				selectdo
+				selectempty
+					rep.cloc.dsca = ""
+				endselect
+				rprt_send()
+			endif
+			ttyp.201.o = ttyp.201.n
+			docn.201.o = docn.201.n
+			schn.201.o = schn.201.n
+		endselect
+	endif
+}
+
+function intialize()
+{
+	rep.bpid = ""
+	rep.bpid.nama= ""
+	rep.purbook = ""
+	rep.docdate = 0
+	rep.duedate = 0 
+	rep.irdate = 0
+	rep.btno = 0
+	rep.comp = 0
+	rep.isup = ""
+	rep.orno = ""
+	rep.cprj = ""
+	rep.dsca = ""
+	rep.shpm = ""
+	rep.ccur = ""
+	rep.final.amnt = 0
+	rep.nonfinal.amnt = 0
+	rep.bloc = ""
+	rep.cloc.dsca = ""
+}
+
+function domain	tfgld.date get.pay.due.date(	domain	tcncmp		o.log.comp, 
+						domain	tcncmp		o.fin.comp,
+						domain	tfgld.ttyp	i.ttyp, 
+						domain	tfgld.docn 	i.ninv,
+						domain	tcorno		o.orno)
+{
+	domain	tcdate		oird, oird1
+	long	yy2,mm2,dd2,hh2,mm3,ss2, yy,mm,dd
+	domain	tfgld.date	pay.due.date
+	domain	tfgld.docn	ninv.paydate
+	
+| 	select	tfisg001.irno
+| 	from	tfisg001
+| 	where	tfisg001.invt		=	:i.ttyp
+| 	and	tfisg001.pinv		=	:i.ninv
+| 	and	tfisg001.ncmp 		= 	:o.fin.comp		
+| 	selectdo
+| 	endselect
+| 	
+| 	select	tfacp100.*
+| 	from	tfacp100
+| 	where	tfacp100._index1 = {:tfisg001.irno}
+| 	selectdo
+| 		get.var(pid,"tfacp100.cdf_oird",oird)
+| 	endselect
+
+	select	tfacp251.shpm
+	from	tfacp251
+	where	tfacp251._index1 = {:o.fin.comp, :i.ttyp, :i.ninv}
+	as set with 1 rows
+	selectdo
+	endselect
+	
+	ninv.paydate = lval(tfacp251.shpm)
+	
+| 	select	tcemm030.lcmp
+| 	from	tcemm030
+| 	where	tcemm030.fcmp = :o.fin.comp
+| 	as set with 1 rows
+| 	selectdo
+| 	endselect
+
+	select	tfacp100.ninv,
+		tfacp100.cdf_oird
+	from	tfacp100
+	where	tfacp100._index1 = {:ninv.paydate}
+	and	tfacp100._compnr = :o.log.comp
+	as set with 1 rows
+	selectdo
+		get.var(pid,"tfacp100.cdf_oird",oird)
+	endselect								|RAvi.a.e.25092020
+	
+	if oird <> 0 then						
+		utc.to.date(oird,yy2,mm2,dd2,hh2,mm3,ss2)
+		oird1 = date.to.num(yy2,mm2,dd2)
+	else
+		oird1 = 0
+	endif								
+	
+	select	tcisg001.nods
+	from	tcisg001
+	where	tcisg001._index1 	=	{:o.orno}
+	and 	tcisg001.catg		= 	tcisg.catg.running.payment
+	and 	tcisg001._compnr 	=	:o.log.comp
+	selectdo
+	endselect
+
+	if oird <> 0 then				
+		pay.due.date	= 	oird1	+	tcisg001.nods
+		num.to.date(pay.due.date,yy,mm,dd)
+	else
+		pay.due.date = 0
+	endif	
+
+	return(pay.due.date)
+}
+

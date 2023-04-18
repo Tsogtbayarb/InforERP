@@ -1,0 +1,189 @@
+|******************************************************************************
+|* tfisg4405m000  0  VRC B61U a7 isg 
+|* Print IR Extension
+|* Ravi Kumar                    
+|* 2020-05-27
+|******************************************************************************
+|* Main table tfisg405 IR Extension, Form Type 4
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttfisg405 | IR Extension
+  table   ttfacp100 
+  table   ttfisg407 
+  table   ttctax400 
+  table   ttctax940 
+
+   extern	domain	tfgld.docn	ninv.f, ninv.t
+   extern	domain	tccom.bpid	bpid.f, bpid.t
+   extern	domain	tfgld.date	bpid.date.f, bpid.date.t
+   extern	domain	tfgld.date	ir.date.f, ir.date.t
+   extern	domain	tcdate		ir.date.f.u, ir.date.t.u
+   
+   long	stat.fp, ret1
+	extern	string file.name(100), file_name(100), line(5000)
+	
+#include<bic_desktop>
+#include<bic_text>
+
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.cont.process:
+on.choice:
+   execute(print.data)
+
+choice.generate:
+on.choice:
+       generate.data()
+
+
+|****************************** field section *********************************
+
+field.ninv.f:
+when.field.changes:
+   ninv.t = ninv.f
+
+field.bpid.f:
+when.field.changes:
+   bpid.t = bpid.f
+   
+field.bpid.date.f:
+when.field.changes:
+   bpid.date.t = bpid.date.f
+   
+field.ir.date.f:
+when.field.changes:
+   ir.date.t = ir.date.f
+
+|****************************** function section ******************************
+
+functions:
+
+function generate.data()
+{
+	file_name = bse.tmp.dir$() & str$(utc.num()) & ".xls"
+	file.name = "c:\temp\" & str$(utc.num())  & ".xls"			
+	stat.fp = seq.open(file_name, "w+")
+	
+	generate.header()
+	read.main.table()
+	seq.close(stat.fp)
+	
+	ret1 = server2client(file_name,file.name,1)
+	ret1 = app_start(file.name,"d:","","","")
+}
+
+function generate.header()
+{
+	if stat.fp >0 then
+			line =concat$("	", 
+			sprintf$("Document"),			|1
+			sprintf$("Line"),			|2
+			sprintf$("Goods/Services"),		|3
+			sprintf$("HSN/SACCode"),		|4
+			sprintf$("Item Description"),		|5
+			sprintf$("UOM"),			|6
+			sprintf$("Quantity"),			|7
+			sprintf$("Basic Value"),		|8
+			sprintf$("Discount"),			|9
+			sprintf$("Assessable Value"),		|10
+			sprintf$("SGST Rate"),			|11
+			sprintf$("SGST Amount"),		|12
+			sprintf$("CGST Rate"),			|13
+			sprintf$("CGST Amount"),		|14
+			sprintf$("IGST Rate"),			|15
+			sprintf$("IGST Amount"),		|16
+			sprintf$("Cess Rate"),			|17
+			sprintf$("Cess Amount"),		|18
+			sprintf$("Total GST Value"),		|19
+			sprintf$("Total Value"),		|20
+			sprintf$("Reverse Charge Appl"),	|21
+			sprintf$("Supplier GSTIN"),		|22
+			sprintf$("Isgec GSTIN"),		|23
+			sprintf$(""))				|Last
+	
+	
+		line = strip$(shiftl$(line))
+		seq.puts(line, stat.fp)
+	endif
+}
+
+
+function read.main.table()
+{
+	convert.date.to.utc()
+	select	tfacp100.ninv
+	from	tfacp100
+	where	tfacp100._index2 inrange {:bpid.f, :ninv.f} and {:bpid.t, :ninv.t}
+	and	tfacp100.cdf_irdt inrange :ir.date.f.u and :ir.date.t.u
+	and	tfacp100.invd inrange :bpid.date.f and :bpid.date.t
+	selectdo
+		select	tfisg405.*,
+			tfisg407.*,
+			tctax400.fovn,
+			tctax940.regn
+		from	tfisg405, tfisg407, tctax400, tctax940
+		where	tfisg405._index1 = {:tfacp100.ninv}
+		and	tfisg405.ninv = tfisg407.ninv
+		and	tfisg405.gstn.b = tctax400.seqn.l
+		and	tfisg405.gstn.c = tctax940.seqn
+		selectdo
+			print.detail()
+		endselect
+	endselect
+}
+
+function print.detail()
+{	
+	line = concat$("	",
+		sprintf$("%s", str$(tfisg407.ninv)),					|1	Document		
+		sprintf$("%s", str$(tfisg407.pono)),					|2	Line
+		sprintf$("%s", enum.descr$("tpisg.cont.typ", tfisg407.ityp)),		|3	Goods/Services
+		sprintf$("%s", trim$(str$(tfisg407.code))),				|4	HSN/SACCode
+		sprintf$("%s", trim$(tfisg407.idsc)),					|5	Item Description
+		sprintf$("%s", tfisg407.unit),						|6	UOM
+		sprintf$("%f", tfisg407.qnty),						|7	Quantity
+		sprintf$("%f", tfisg407.bval),						|8	Basic Value
+		sprintf$("%f", tfisg407.disc),						|9	Discount
+		sprintf$("%f", tfisg407.assv),						|10	Assessable Value
+		sprintf$("%f", tfisg407.srat),						|11	SGST Rate
+		sprintf$("%f", tfisg407.samt),						|12	SGST Amount
+		sprintf$("%f", tfisg407.crat),						|13	CGST Rate
+		sprintf$("%f", tfisg407.camt),						|14	CGST Amount
+		sprintf$("%f", tfisg407.irat),						|15	IGST Rate
+		sprintf$("%f", tfisg407.iamt),						|16	IGST Amount
+		sprintf$("%f", tfisg407.cess),						|17	Cess Rate
+		sprintf$("%f", tfisg407.cmnt),						|18	Cess Amount
+		sprintf$("%f", tfisg407.tgmt),						|19	Total GST Value
+		sprintf$("%f", tfisg407.tval),						|20	Total Value
+		sprintf$("%f", tfisg407.rcma),						|21	Reverse Charge Appl
+		sprintf$("%s", tctax400.fovn),						|22	Supplier GSTIN
+		sprintf$("%s", tctax940.regn),						|23	Isgec GSTIN
+		sprintf$(""))								|Last
+
+		line = strip$(shiftl$(line))
+		
+		seq.puts(line, stat.fp)
+}
+
+function convert.date.to.utc()
+{
+	long your.time, ret
+	your.time = 107604
+	
+	ret = local.to.utc(ir.date.f, 19080, ir.date.f.u)
+	ret = local.to.utc(ir.date.t, your.time, ir.date.t.u)
+}
+
+						

@@ -1,0 +1,629 @@
+|******************************************************************************
+|* tfisg1413m000  0  VRC B61U a7 isg 
+|* Payment Details Report
+|* merino1                       
+|* 2017-10-27
+|******************************************************************************
+|* Main table tfcmg113 Payment Documents, Form Type 4
+|******************************************************************************
+|* IDENT: MERINO017010, Mudit Sharma, 2017-10-25
+|* New Development
+|* 
+|* GH354CR654, RAvi Kumar, 30-06-2020
+|* Direct Printing of Cheque and Payment Detail report from Cheque Master
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttfcmg113 | Payment Documents
+  table   ttfcmg101
+  table   ttfcmg110
+  table   ttfisg001
+  table   ttfacp200
+  table   ttfacp201
+  table   ttfacp203
+  table   ttfgld016
+  table   ttfgld110
+  table   ttfcmg003
+  table   ttfacp002
+  table   ttcmcs036
+  table   ttfgld107
+  table   ttfgld110
+  table   ttfgld102
+  table   ttfgld106
+
+	extern  domain  tfgld.btno       btno.f,btno1
+	extern  domain  tfgld.docn       ninv.f,bank.docn,bank.docn1,bank.docn2,bank.anticipated.docn,debit.ninv,debit.pay.ninv,temp.ninv
+	extern  domain  tfgld.ttyp       ttyp.f,bank.ttyp,bank.ttyp1,bank.ttyp2,bank.anticipated.ttyp,debit.ttyp,debit.pay.ttyp,temp.ttyp
+   
+
+|********* Report Variables
+	extern domain tcamnt		sum.adv.amth,sum.vamh,diff.vamh,total.vamh,sum.amti,sum.vamh1
+	extern domain tcamnt		rep.retention.bal,sum.bank.anti.amn,debit.amnt
+	extern domain tcamnt		amth.tds,amth.wct,bank.amth2,total.vamh.tds,total.vamh.wct,debit.amnt
+	extern domain tcamnt		normal.amnt,amth1,debit.pay.amnt
+	extern domain	tcmcs.str30m 	bloc1
+	extern domain	tcpono	 	flag1
+	extern domain	tcdate	 	date2,date3
+	extern domain	tcmcs.str30	total.vamh.wct1,total.vamh.tds1,rep.retention1,sum.adv.amth1,sum.bank.anti.am1,bank.amth.2,debit.amnt1,debit.pay.amnt1
+	extern domain	tcmcs.str100	refr1,refr2,refr3
+	extern domain	tfgld.refc	repo.reference
+	string		session.code(13)				|GH354CR654.a
+|****************************** program section ********************************
+before.program:								|GH354CR654.a.s
+	import("prog.name$", session.code)
+	
+	if session.code = "tfcmg2515m000" then
+		import("tfcmg100.pbtn", btno.f)
+		import("tfcmg100.typo", ttyp.f)
+		import("tfcmg100.doco", ninv.f)
+	endif								|GH354CR654.a.e
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.cont.process:
+on.choice:
+   execute(print.data)
+
+choice.print.data:
+before.choice:
+	if btno.f<>0	then
+		select tfcmg101.bank,tfcmg101.ptyp, tfcmg101.pdoc
+		from	tfcmg101
+		where	tfcmg101._index1 = {:btno.f}
+		and	tfcmg101.tadv = tfcmg.tadv.purinv
+		selectdo
+			select	tfcmg110.*
+			from	tfcmg110
+			where	tfcmg110._index1 = {:tfcmg101.bank,:tfcmg101.ptyp,:tfcmg101.pdoc}
+			and	tfcmg110.step = tfcmg.step.doc.paid or tfcmg110.step = tfcmg.step.doc.acc.sent 
+			selectdo
+			selectempty
+				choice.again()
+			endselect
+		selectempty
+			message("Advise not of Purchase type")
+			choice.again()
+		endselect
+	endif
+	if ninv.f<>0	then
+		select tfcmg113.btno:btno1
+		from	tfcmg113
+		where	tfcmg113._index2 = {:ttyp.f,:ninv.f}
+		selectdo
+			select tfcmg101.bank,tfcmg101.ptyp, tfcmg101.pdoc
+			from	tfcmg101
+			where	tfcmg101._index1 = {:btno1}
+			and	tfcmg101.tadv = tfcmg.tadv.purinv
+			selectdo
+				select	tfcmg110.*
+				from	tfcmg110
+				where	tfcmg110._index1 = {:tfcmg101.bank,:tfcmg101.ptyp,:tfcmg101.pdoc}
+				and	tfcmg110.step = tfcmg.step.doc.paid or tfcmg110.step = tfcmg.step.doc.acc.sent 
+				selectdo
+				selectempty
+					choice.again()
+				endselect
+			selectempty
+				choice.again()
+			endselect
+		selectempty
+			message("Document No. not found in Payment Documents.")
+			choice.again()
+		endselect
+	endif
+on.choice:
+   if rprt_open() then
+       read.main.table()
+       rprt_close()
+   else
+       choice.again()
+   endif
+
+
+|****************************** field section *********************************
+
+field.btno.f:
+check.input:
+	if btno.f<>0	then
+	select tfcmg101.*
+	from	tfcmg101
+	where	tfcmg101._index1 = {:btno.f}
+	and	tfcmg101.tadv = tfcmg.tadv.purinv
+	selectdo
+	selectempty
+		message("Payment Batch not of type Purchase Invoice")
+		input.again()
+	endselect
+endif
+
+field.ttyp.f:
+check.input:
+
+field.ninv.f:
+check.input:
+	if btno.f=0	then
+		select tfcmg113.btno:btno1
+		from	tfcmg113
+		where	tfcmg113._index2 = {:ttyp.f,:ninv.f}
+		selectdo
+		selectempty
+			message("Document No. not found in Payment Documents.")
+			input.again()
+		endselect
+	endif
+	select	tfcmg110.*
+	from	tfcmg110
+	where	tfcmg110.tdoc = :ttyp.f
+	and	tfcmg110.pdoc = :ninv.f
+	selectdo
+		if tfcmg110.stpd = tfcmg.stpd.rejected	then
+			message("Document or Payment Advice is rejected.")
+			input.again()
+		endif
+	endselect
+	if btno1<>0	then
+		select tfcmg101.btno
+		from	tfcmg101
+		where	tfcmg101._index1 = {:btno1}
+		and	tfcmg101.tadv = tfcmg.tadv.purinv
+		selectdo
+		selectempty
+			message("Payment Batch against this document is not of type Purchase Invoice")
+			input.again()
+		endselect
+	endif
+
+|****************************** function section ******************************
+
+functions:
+
+function read.main.table()
+{
+	temp.ttyp = ""
+	temp.ninv = 0
+	if btno.f = 0	then
+		btno.f = btno1
+	endif
+	select tfcmg101.comp,tfcmg101.ttyp, tfcmg101.ninv,tfcmg101.btno,tfcmg101.ptbp,tfcmg101.bank
+	from	tfcmg101
+	where	tfcmg101._index1 = {:btno.f}
+	selectdo
+		if temp.ttyp = tfcmg101.ttyp	and temp.ninv = tfcmg101.ninv	then
+			continue
+		else
+			temp.ttyp = tfcmg101.ttyp
+			temp.ninv = tfcmg101.ninv
+		endif
+		initialize.variable()
+		select	tccom100.nama
+		from	tccom100
+		where	tccom100._index1 = {:tfcmg101.ptbp}
+		selectdo
+		endselect
+		
+		select tfcmg113.*
+		from	tfcmg113
+		where	tfcmg113._index1 = {:tfcmg101.btno}
+		selectdo
+		endselect
+		get.date(date2)
+		
+		|---- Normal lines
+		select	tfacp200.isup,tfacp200.ttyp, tfacp200.ninv,tfacp200.amth
+		from	tfacp200
+		where	tfacp200._index1 = {:tfcmg101.ttyp,:tfcmg101.ninv}
+		and	tfacp200.docn = 0
+		and	tfacp200._compnr = :tfcmg101.comp
+		selectdo
+			select	tfisg001.orno,tfisg001.cprj, tfisg001.amnt,tfisg001.irno
+			from	tfisg001
+			where	tfisg001.invt = :tfacp200.ttyp
+			and	tfisg001.pinv = :tfacp200.ninv
+			and	tfisg001.ncmp = :tfcmg101.comp
+			selectdo
+			selectempty
+				tfisg001.amnt = 0
+			endselect
+		endselect
+		
+		select	sum(tfacp203.amth(1)):amth1
+		from	tfacp203
+		where	tfacp203._index1 = {:tfacp200.ttyp,:tfacp200.ninv}
+		and	tfacp203.txtp = tctax.txtp.income.tax
+		and	tfacp203._compnr = :tfcmg101.comp
+		selectdo
+		selectempty
+			amth1 = 0
+		endselect
+		
+		normal.amnt = tfacp200.amth(1) + amth1
+		flag1 = 1
+		rprt_send()
+		
+		|----- Withhelding Lines  (flag1=2,3)
+		select	tfacp203.*
+		from	tfacp203
+		where	tfacp203._index1 = {:tfcmg101.ttyp,:tfcmg101.ninv}
+		and	tfacp203.txtp = tctax.txtp.income.tax
+		and	tfacp203._compnr = :tfcmg101.comp
+		selectdo
+			if tfacp203.txcg(1;3) = "TDS"	then
+				amth.tds = amth.tds + tfacp203.amti
+			endif
+			if tfacp203.txcg(1;3) = "WCT"	then
+				amth.wct = amth.wct + tfacp203.amti
+			endif
+			select	tcmcs036.dsca
+			from	tcmcs036
+			where	tcmcs036._index1 = {:tfacp203.ccty,:tfacp203.cvat}
+			and	tcmcs036._compnr = :tfcmg101.comp
+			selectdo
+			selectempty
+				tcmcs036.dsca = ""
+			endselect
+		selectempty
+			amth.tds = 0
+			amth.wct = 0
+		endselect
+		
+		sum.vamh = 0
+		diff.vamh = 0
+		select	tfacp200.isup,tfacp200.ttyp, tfacp200.ninv,tfacp200.tdoc,tfacp200.docn,tfacp203.*
+		from	tfacp200,tfacp203
+		where	tfacp200._index1 = {:tfcmg101.ttyp,:tfcmg101.ninv}
+		and	tfacp200.tpay = tfacp.tpay.assignment
+		and	tfacp203._index1 = {:tfacp200.ttyp,:tfacp200.ninv}
+		and	tfacp203.txtp = tctax.txtp.income.tax
+		and	tfacp200._compnr = :tfcmg101.comp
+		and	tfacp203._compnr = :tfcmg101.comp
+		and	tfacp203.txcg(1;3) = "WCT"
+		selectdo
+			select	tcmcs036.dsca
+			from	tcmcs036
+			where	tcmcs036._index1 = {:tfacp203.ccty,:tfacp203.cvat}
+			and	tcmcs036._compnr = :tfcmg101.comp
+			selectdo
+			selectempty
+				tcmcs036.dsca = ""
+			endselect
+			select	sum(tfgld110.vamh(1)):diff.vamh
+			from	tfgld110
+			where	tfgld110._index1 = {:tfcmg101.comp,:tfacp200.tdoc,:tfacp200.docn}
+			and	tfgld110.ktax = tcktax.income.tax
+			and	tfgld110._compnr = :tfcmg101.comp
+			selectdo
+			selectempty
+				select	sum(tfgld107.vamh(1)):diff.vamh
+				from	tfgld107
+				where	tfgld107._index1 = {:tfcmg101.comp,:tfacp200.tdoc,:tfacp200.docn}
+				and	tfgld107.ktax = tcktax.income.tax
+				and	tfgld107._compnr = :tfcmg101.comp
+				selectdo
+				endselect
+			endselect
+		endselect
+		total.vamh.wct = amth.wct - diff.vamh
+		if	total.vamh.wct > 0	then
+			total.vamh.wct = -1*total.vamh.wct
+		endif
+		
+		flag1 = 2
+		rprt_send()
+		
+		sum.vamh = 0
+		diff.vamh = 0
+		select	tfacp200.isup,tfacp200.ttyp, tfacp200.ninv,tfacp200.tdoc,tfacp200.docn,tfacp203.*
+		from	tfacp200,tfacp203
+		where	tfacp200._index1 = {:tfcmg101.ttyp,:tfcmg101.ninv}
+		and	tfacp200.tpay = tfacp.tpay.assignment
+		and	tfacp203._index1 = {:tfacp200.ttyp,:tfacp200.ninv}
+		and	tfacp203.txtp = tctax.txtp.income.tax
+| 		and	tfacp200.docn = 0
+		and	tfacp200._compnr = :tfcmg101.comp
+		and	tfacp203._compnr = :tfcmg101.comp
+		and	tfacp203.txcg(1;3) = "TDS"
+		selectdo
+			select	tcmcs036.dsca
+			from	tcmcs036
+			where	tcmcs036._index1 = {:tfacp203.ccty,:tfacp203.cvat}
+			and	tcmcs036._compnr = :tfcmg101.comp
+			selectdo
+			selectempty
+				tcmcs036.dsca = ""
+			endselect
+			
+			select	sum(tfgld110.vamh(1)):diff.vamh
+			from	tfgld110
+			where	tfgld110._index1 = {:tfcmg101.comp,:tfacp200.tdoc,:tfacp200.docn}
+			and	tfgld110.ktax = tcktax.income.tax
+			and	tfgld110._compnr = :tfcmg101.comp
+			selectdo
+			selectempty
+				select	sum(tfgld107.vamh(1)):diff.vamh
+				from	tfgld107
+				where	tfgld107._index1 = {:tfcmg101.comp,:tfacp200.tdoc,:tfacp200.docn}
+				and	tfgld107.ktax = tcktax.income.tax
+				and	tfgld107._compnr = :tfcmg101.comp
+				selectdo
+				endselect
+			endselect
+		endselect
+		total.vamh.tds = amth.tds - diff.vamh
+		if total.vamh.tds>0	then
+			total.vamh.tds = -1*total.vamh.tds
+		endif
+		flag1 = 3
+		rprt_send()
+		
+		
+		|----------Advance Assignment Lines (flag=4)
+		select	tfacp200.isup,tfacp200.ttyp, tfacp200.ninv,tfacp200.tdoc,tfacp200.docn
+		from	tfacp200
+		where	tfacp200._index1 = {:tfcmg101.ttyp,:tfcmg101.ninv}
+		and	tfacp200.tpay = tfacp.tpay.assignment
+		and	tfacp200._compnr = :tfcmg101.comp
+		selectdo
+			select	sum(tfgld106.amth(1)):sum.adv.amth
+			from 	tfgld106
+			where	tfgld106._index1 = {:tfacp200.tdoc,:tfacp200.docn}
+			and	tfgld106.dbcr = tfgld.dbcr.debit
+			and	tfgld106.cont = tcyesno.yes
+			and	tfgld106.ctyp = :tfacp200.ttyp
+			and	tfgld106.cinv = :tfacp200.ninv
+			and	tfgld106._compnr = :tfcmg101.comp
+			selectdo
+			selectempty
+				select	sum(tfgld102.amth(1)):sum.adv.amth
+				from	tfgld102
+				where	tfgld102._index2 = {:tfcmg101.comp,:tfacp200.tdoc,:tfacp200.docn}
+				and	tfgld102.dbcr = tfgld.dbcr.debit
+				and	tfgld102.cont = tcyesno.yes
+				and	tfgld102.ctyp = :tfacp200.ttyp
+				and	tfgld102.cdoc = :tfacp200.ninv
+				and	tfgld102._compnr = :tfcmg101.comp
+				selectdo
+				selectempty
+					sum.adv.amth = 0
+				endselect
+			endselect
+			
+			select	sum(tfgld107.vamh(1)):sum.vamh1
+			from	tfgld107
+			where	tfgld107._index1 = {:tfcmg101.comp,:tfacp200.tdoc,:tfacp200.docn}
+			and	tfgld107.ktax = tcktax.income.tax
+			and	tfgld107._compnr = :tfcmg101.comp
+			selectdo
+			selectempty
+				select	sum(tfgld110.vamh(1)):sum.vamh1
+				from	tfgld110
+				where	tfgld110._index1 = {:tfcmg101.comp,:tfacp200.tdoc,:tfacp200.docn}
+				and	tfgld110.ktax = tcktax.income.tax
+				and	tfgld110._compnr = :tfcmg101.comp
+				selectdo
+| 					sum.vamh1 = sum.vamh1 + tfgld110.vamt
+				selectempty
+					sum.vamh1 = 0
+				endselect
+			endselect
+			sum.adv.amth = sum.adv.amth + sum.vamh1
+			if sum.adv.amth >0	then
+				sum.adv.amth = -1*sum.adv.amth
+			endif
+			flag1 = 4
+			rprt_send()
+		endselect
+		
+		|--------------- Debit Note- Linked with PTR (flag1=8)
+		refr1 = ""
+		repo.reference = ""		|test.n
+		select	tfacp200.tdoc,tfacp200.docn,sum(tfacp200.amth(1)):debit.amnt
+		from	tfacp200
+		where	tfacp200._index1 = {:tfcmg101.ttyp,:tfcmg101.ninv}
+		and	tfacp200.tpay = tfacp.tpay.credit
+		and	tfacp200._compnr = :tfcmg101.comp
+		group by tfacp200.tdoc,tfacp200.docn
+		selectdo
+			refr1 = tfacp200.tdoc & str$(tfacp200.docn) 
+			select	tfgld106.*
+			from 	tfgld106
+			where	tfgld106._index1 = {:tfacp200.tdoc,:tfacp200.docn}
+			and	tfgld106.dbcr = tfgld.dbcr.credit
+			and	tfgld106.cont = tcyesno.yes
+			and	tfgld106._compnr = :tfcmg101.comp
+			selectdo
+				refr1 =refr1 &"/"&  tfgld106.ctyp& str$(tfgld106.cinv) 
+				
+				select	tfacp200.refr:repo.reference		|test.sn
+				from	tfacp200
+				where	tfacp200._index1 ={:tfgld106.ctyp,:tfgld106.cinv}
+				and	tfacp200.docn = 0 
+				selectdo
+				selectempty
+					repo.reference =  ""
+				endselect				|test.en
+			selectempty
+				select	tfgld102.*
+				from	tfgld102
+				where	tfgld102._index2 = {:tfcmg101.comp,:tfacp200.tdoc,:tfacp200.docn}
+				and	tfgld102.dbcr = tfgld.dbcr.credit
+				and	tfgld102.cont = tcyesno.yes
+				and	tfgld102._compnr = :tfcmg101.comp
+				selectdo
+					refr1 = refr1 &"/"& tfgld102.ctyp& str$(tfgld102.cdoc)
+				selectempty
+				endselect
+			endselect
+			select	tfgld106.txta
+			from 	tfgld106
+			where	tfgld106._index1 = {:tfgld102.ctyp,:tfgld102.cdoc}
+			selectdo
+			endselect
+			refr2 = refr1(36;35)
+			refr3 = refr1(36;35)
+			refr1 = refr1(1;35)
+			debit.ttyp = tfacp200.tdoc
+			debit.ninv = tfacp200.docn
+			if debit.amnt > 0	then
+				debit.amnt = -1*debit.amnt
+			endif
+			flag1 = 8
+			rprt_send()
+		endselect
+		
+		|--------------- Debit Note Payment- Assignment Bank(flag1=9)
+		select	tfacp200.tdoc,tfacp200.docn,sum(tfacp200.amth(1)):debit.pay.amnt
+		from	tfacp200
+		where	tfacp200._index1 = {:tfcmg101.ttyp,:tfcmg101.ninv}
+		and	tfacp200.tpay = tfacp.tpay.normal
+		and	tfacp200._compnr = :tfcmg101.comp
+		and	tfacp200.paym = ""
+		and	tfacp200.step = tfcmg.step.empty
+		group by tfacp200.tdoc,tfacp200.docn
+		selectdo
+			select	t_tfacp200.refr:tfacp200.refr
+			from	tfacp200 t_tfacp200
+			where	t_tfacp200._index1 = {:tfcmg101.ttyp,:tfcmg101.ninv}
+			and	t_tfacp200.tdoc = :tfacp200.tdoc
+			and	t_tfacp200.docn = :tfacp200.docn
+			and	t_tfacp200._compnr = :tfcmg101.comp
+			selectdo
+			endselect
+			debit.pay.ttyp = tfacp200.tdoc
+			debit.pay.ninv = tfacp200.docn
+			if debit.pay.amnt>0	then
+				debit.pay.amnt = -1*debit.pay.amnt
+			endif
+			if isspace(tfacp200.refr)	then
+				tfacp200.refr = "Bank Assignment"
+			endif
+			flag1 = 9
+			rprt_send()
+		endselect
+		
+		|--------------- Retention  (flag=5)
+		select	tfacp201.*
+		from	tfacp201
+		where	tfacp201._index1 = {:tfcmg101.ttyp,:tfcmg101.ninv}
+		and	tfacp201._compnr = :tfcmg101.comp
+		selectdo
+			get.var(pid,"tfacp201.cdf_bloc",bloc1)
+			if not isspace(bloc1)	then
+				select	tfacp002.desc
+				from	tfacp002
+				where	tfacp002._index1 = {:bloc1}
+				and	tfacp002._compnr = :tfcmg101.comp
+				selectdo
+				selectempty
+					tfacp002.desc = ""
+				endselect
+				rep.retention.bal = tfacp201.balc
+				if rep.retention.bal >	0	then
+					rep.retention.bal = -1*rep.retention.bal
+				endif
+				flag1 = 5
+				rprt_send()
+			endif
+		selectempty
+			rep.retention.bal = 0
+		endselect
+		
+		|--------------- Bank Doc & Anticipated Payment (flag1=6)
+		
+		select	tfacp200.typa:bank.ttyp1,tfacp200.doca:bank.docn1,sum(tfacp200.amth(1)):sum.bank.anti.amn
+		from	tfacp200
+		where	tfacp200._index1 = {:tfcmg101.ttyp,:tfcmg101.ninv}
+		and	(tfacp200.tpay = tfacp.tpay.normal or tfacp200.tpay = tfacp.tpay.anticipated)
+		and	tfacp200.paym <> ""					|To excude Debit Note Payment Docs
+		and	tfacp200.step <> tfcmg.step.empty			|To excude Debit Note Payment Docs
+		and	tfacp200.docd <= :date2
+		and	tfacp200._compnr = :tfcmg101.comp
+		group by tfacp200.typa,tfacp200.doca
+		selectdo
+			select	tfcmg110.cheq,tfcmg110.crea
+			from	tfcmg110
+			where 	tfcmg110._index1 = {:tfcmg101.bank,:bank.ttyp1,:bank.docn1}
+			selectdo
+			endselect
+			
+			if sum.bank.anti.amn >	0	then
+				sum.bank.anti.amn = -1*sum.bank.anti.amn
+			endif
+			
+			flag1 = 6
+			rprt_send()
+		selectempty
+			sum.bank.anti.amn=0
+		endselect
+		
+		|-------------- Bank Doc and Normal Payment    (flag1=7)
+		select	tfacp200.isup,tfacp200.ttyp, tfacp200.ninv,
+			tfacp200.tdoc,tfacp200.docn,tfacp200.pcom,
+			tfacp200.payt,tfacp200.payd
+		from	tfacp200
+		where	tfacp200._index1 = {:tfcmg101.ttyp,:tfcmg101.ninv}
+		and	tfacp200.docd <= :date2
+		and	tfacp200._compnr = :tfcmg101.comp
+		selectdo
+			select	tfacp200.isup,tfacp200.ttyp, tfacp200.ninv,
+				tfacp200.tdoc,tfacp200.docn,tfacp200.pcom,
+				tfacp200.payt,tfacp200.payd,tfacp200.paym,
+				tfacp200.amth,tfacp200.refr
+			from	tfacp200
+			where	tfacp200._index1 = {:tfacp200.tdoc,:tfacp200.docn}
+			and	tfacp200.tpay = tfacp.tpay.normal
+			and	tfacp200._compnr = :tfcmg101.comp
+			selectdo
+				
+			if isspace(tfacp200.refr)	then
+				tfacp200.refr = "Bank Assignment"
+			endif			|test.n
+				select	tfcmg003.*
+				from	tfcmg003
+				where	tfcmg003._index1 = {:tfacp200.paym}
+				and	tfcmg003.ps02 = tcyesno.no
+				selectdo
+					bank.amth2 = tfacp200.amth(1)
+					if bank.amth2 >	0	then
+						bank.amth2 = -1*bank.amth2
+					endif
+					
+					bank.ttyp2 = tfacp200.tdoc
+					bank.docn2 = tfacp200.docn
+					
+					flag1 = 7
+					rprt_send()
+				endselect
+			endselect
+		endselect
+		
+	endselect
+}
+ 
+ function initialize.variable()
+ {
+ amth.tds = 0 
+ amth.wct = 0 
+ total.vamh.wct = 0
+ total.vamh.tds = 0
+ sum.adv.amth = 0
+ debit.amnt = 0
+ rep.retention.bal = 0
+ sum.bank.anti.amn = 0
+ amth1 = 0
+ }
+
+function get.date(ref long date3)
+{
+long yy,mm,dd,hh,mi,ss
+
+utc.to.date(tfcmg113.rdat,yy,mm,dd,hh,mi,ss)
+date3 = date.to.num(yy,mm,dd)
+
+}

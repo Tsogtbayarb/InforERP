@@ -1,0 +1,310 @@
+|******************************************************************************
+|* tfisg0241m005  0  VRC B61U a7 isg 
+|* Insert Cash Flow Data through CSV
+|* Paras Kukreti(TV)                     
+|* 2020-01-22
+|******************************************************************************
+|* Main table tfisg041 Cash Flow Data, Form Type 4
+|******************************************************************************
+      
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttfisg041 | Cash Flow Data
+  table   ttfgld018
+   
+	extern	domain	tcmcs.str100	f.ser.inp.path, temp.path, f.path
+	extern	domain	tcmcs.str5	brws
+										
+		domain	tcmcs.str15	cf.at.mn, bp.desc, cprj.desc, leac.desc, reas.desc, ctyp.desc		
+		domain	tcncmp		fcmp					|#Integer
+		domain	tfgld.year	year					|#Integer
+		domain	tfgld.btno	fbno					|#Long
+									
+		domain	tfgld.prod	prod					|#Integer
+		domain	tfgld.btno	btno					|#Long
+		domain	tccom.bpid	bpcd					|#String
+| 		BP Desc						
+		domain	tcncmp		comp				
+		domain	tfgld.ttyp	ttyp					|#String
+		domain	tfgld.docn	docn					|#Long
+		domain	tfgld.lino	line					|#Long
+		domain	tfgld.serl	seqn					|#Long
+		domain	tccprj		cprj				
+| 		Project Desc						
+		domain	tfgld.date	tedt					|#Date
+		domain	tfgld.date	dcdt					|#Date
+		domain	tfcash.flow	ctyp					|#Enumerated
+		domain	tcccur		curr				
+		domain	tcratc		rate				
+		domain	tcamnt		amtf				
+		domain	tcamnt		amnt				
+		domain	tfcash.reasons	reas					|#Enumerated
+| 		Output For Export						
+		domain	tfgld.leac	leac					|#String
+		domain	tfgld.refc	refr					|#Multibyte String
+		domain	tfcmg.cheq	cheq					|#String
+		domain	tcloco		user
+		domain	tcmcs.str50m	appr					|#Multibyte String
+		domain	tfcash.type	type					|#Enumerated
+		domain	tcpono		srno				
+		domain	tcamnt		amth				
+		domain	tccom.bpid	bpid					|#String
+		domain	tfgld.ttyp	ptyp					|#String
+		domain	tfgld.docn	pdoc					|#Long
+		domain	tfgld.lino	lino					|#Long
+		domain	tfmode		mode				
+		domain	tfgld.user	musr					|#String				
+		domain	tcdate		mdat				
+		domain	tfcf.auto.man	cfam					|#Enumerated
+
+
+		string	       	ip.string(10000)
+		long    	in.fp	        				|Input file ptr
+
+		long			server_file_ptr
+		string			tmp.record(2048)
+		domain	tcmcs.str50	server.tmp.file, local.filename
+		long			ret.num,dd,mm,yy
+	
+|Defines
+#define SCANS	"%s,%d,%d,%d,%d,%d,%s,%s,%d,%s,%d,%d,%d,%s,%s,%d,%d,%d,%s,%s,%f,%f,%f,%d,%s,%s,%d,%d,%s,%s,%s,%s,%s,%s"
+#define	FIELDS	cf.at.mn,fcmp,year,fbno,prod,btno,bpcd,bp.desc,comp,ttyp,docn,line,seqn,cprj,cprj.desc,tedt,dcdt,ctyp,ctyp.desc,curr,rate,amtf,amnt,reas,reas.desc,ptyp,pdoc,lino,leac,leac.desc,refr,cheq,musr,appr
+
+#pragma used dll ottdllbw
+#include <bic_dam> 
+#pragma used dll ottstpapihand
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+
+|****************************** function section *******************************
+functions:
+function extern browse.local()
+{
+	mess("tigenstring", 0, "Select The File . . .")
+	if seq.open.dialog.local( false, "", "","Text Files(*.csv)|*.csv|All File(*.*)|*.*", f.ser.inp.path ) > 0 then
+		mess("tigenstring", 0, "Success . . .")
+	else
+		mess("tigenstring", 0, "Cancelled . . .")
+	endif
+	display.all()
+}
+
+function extern process()
+{
+	display.all()
+| 	
+	if isspace(f.ser.inp.path) then
+		mess("tigenstring", 1, "Please Specify a File")
+		return
+	else
+		start.upload.file()
+	endif
+}
+
+function extern start.upload.file()
+{
+	server.tmp.file = creat.tmp.file$( bse.tmp.dir$() )
+	
+	if client2server(f.ser.inp.path, server.tmp.file, false, false, true) = 0 then
+		mess("tigenstring", 0, "File Copy to server:tmp successful !")
+		server_file_ptr = seq.open(server.tmp.file, "r")
+		
+		if server_file_ptr then
+			mess("tigenstring", 0, "Update in Progress . . .")
+			update.receipt.data()
+			seq.close(server_file_ptr)
+			mess("tigenstring", 0, "Update Complete !!")
+		else
+			mess("tigenstring", 1, "ERROR : File Cannot be Opened")
+		endif
+	else
+		mess("tigenstring", 1, "ERROR : Copy Failed")		
+	endif
+	seq.unlink(server.tmp.file)
+}
+
+function update.receipt.data()
+{
+	long	size
+	domain	tcbool	header.text
+
+	header.text = true
+	while(not seq.eof(server_file_ptr))
+		mess("tigenstring", 0, "Update in Progress . . .")		
+		init.all.variables()
+		ret.num = seq.gets(tmp.record, 2048, server_file_ptr)
+		if ret.num = 0 then
+			ret.num = string.scan(tmp.record, SCANS, FIELDS)
+			if ret.num <> 0 then
+				if not header.text then
+					insert.data()
+				endif
+				header.text = false
+				mess("tigenstring", 0, "Update in Progress . . .")
+			endif
+		endif
+	endwhile
+}
+
+function insert.data()
+{
+	string	error.msg(1000)
+	
+	srno = 0
+	mode = tfmode.journal
+	type = empty
+	cfam = tfcf.auto.man.cashflow.manual
+	user = logname$
+	
+	select	tfgld018.user
+	from	tfgld018
+	where	tfgld018._index1 = {:ttyp, :docn}
+	and	tfgld018._compnr = :fcmp
+	as set with 1 rows
+	selectdo
+	endselect
+	
+	select	tfisg041.*
+	from	tfisg041
+	where	tfisg041._index1 = {:fcmp,:btno,:bpcd,:comp,:type,:ttyp,:docn,:line,:seqn,:mode,:srno,:year,:prod,:cfam,:cprj}
+	as set with 1 rows
+	selectdo
+		if dal.change.object("tfisg041") = 0 then
+			dal.set.field("tfisg041.btno",btno)
+			dal.set.field("tfisg041.fcmp",fcmp)
+			dal.set.field("tfisg041.bpcd",bpcd)
+			dal.set.field("tfisg041.comp",comp)
+			dal.set.field("tfisg041.type",type)
+			dal.set.field("tfisg041.ttyp",ttyp)
+			dal.set.field("tfisg041.docn",docn)
+			dal.set.field("tfisg041.line",line)
+			dal.set.field("tfisg041.seqn",seqn)
+			dal.set.field("tfisg041.srno",srno)
+			dal.set.field("tfisg041.dcdt",dcdt)
+			dal.set.field("tfisg041.cprj",cprj)
+			dal.set.field("tfisg041.ctyp",ctyp)
+			dal.set.field("tfisg041.reas",reas)
+			dal.set.field("tfisg041.year",year)
+			dal.set.field("tfisg041.prod",prod)
+			dal.set.field("tfisg041.leac",leac)
+			dal.set.field("tfisg041.curr",curr)
+			dal.set.field("tfisg041.amtf",amtf)
+			dal.set.field("tfisg041.amth",amnt)
+			dal.set.field("tfisg041.bpid",bpcd)
+			dal.set.field("tfisg041.fbno",fbno)
+			dal.set.field("tfisg041.ptyp",ptyp)
+			dal.set.field("tfisg041.pdoc",pdoc)
+			dal.set.field("tfisg041.lino",lino)
+			dal.set.field("tfisg041.rate",rate)
+			dal.set.field("tfisg041.amnt",amnt)
+			dal.set.field("tfisg041.mode",mode)
+			dal.set.field("tfisg041.user",tfgld018.user)
+			dal.set.field("tfisg041.mdat",mdat)
+			dal.set.field("tfisg041.musr",musr)
+			dal.set.field("tfisg041.refr",refr)
+			dal.set.field("tfisg041.cheq",cheq)
+			dal.set.field("tfisg041.tedt",tedt)
+			dal.set.field("tfisg041.appr",appr)
+			dal.set.field("tfisg041.cfam",cfam)
+			if dal.save.object("tfisg041") = 0 then
+				commit.transaction()
+			else
+				abort.transaction()
+				dal.get.error.message(error.msg)
+				message(error.msg)
+			endif
+		endif
+	selectempty
+		if dal.new.object("tfisg041") = 0 then
+			dal.set.field("tfisg041.btno",btno)
+			dal.set.field("tfisg041.fcmp",fcmp)
+			dal.set.field("tfisg041.bpcd",bpcd)
+			dal.set.field("tfisg041.comp",comp)
+			dal.set.field("tfisg041.type",type)
+			dal.set.field("tfisg041.ttyp",ttyp)
+			dal.set.field("tfisg041.docn",docn)
+			dal.set.field("tfisg041.line",line)
+			dal.set.field("tfisg041.seqn",seqn)
+			dal.set.field("tfisg041.srno",srno)
+			dal.set.field("tfisg041.dcdt",dcdt)
+			dal.set.field("tfisg041.cprj",cprj)
+			dal.set.field("tfisg041.ctyp",ctyp)
+			dal.set.field("tfisg041.reas",reas)
+			dal.set.field("tfisg041.year",year)
+			dal.set.field("tfisg041.prod",prod)
+			dal.set.field("tfisg041.leac",leac)
+			dal.set.field("tfisg041.curr",curr)
+			dal.set.field("tfisg041.amtf",amtf)
+			dal.set.field("tfisg041.amth",amnt)
+			dal.set.field("tfisg041.bpid",bpcd)
+			dal.set.field("tfisg041.fbno",fbno)
+			dal.set.field("tfisg041.ptyp",ptyp)
+			dal.set.field("tfisg041.pdoc",pdoc)
+			dal.set.field("tfisg041.lino",lino)
+			dal.set.field("tfisg041.rate",rate)
+			dal.set.field("tfisg041.amnt",amnt)
+			dal.set.field("tfisg041.mode",mode)
+			dal.set.field("tfisg041.user",tfgld018.user)
+			dal.set.field("tfisg041.mdat",mdat)
+			dal.set.field("tfisg041.musr",musr)
+			dal.set.field("tfisg041.refr",refr)
+			dal.set.field("tfisg041.cheq",cheq)
+			dal.set.field("tfisg041.tedt",tedt)
+			dal.set.field("tfisg041.appr",appr)
+			dal.set.field("tfisg041.cfam",cfam)
+			if dal.save.object("tfisg041") = 0 then
+				commit.transaction()
+			else
+				abort.transaction()
+				dal.get.error.message(error.msg)
+				message(error.msg)
+			endif
+		endif
+	endselect
+}
+
+function init.all.variables()
+{
+	tmp.record = ""
+	btno = 0
+	fcmp = 0
+	bpcd = ""
+	comp = 0
+	type = empty
+	ttyp = ""
+	docn = 0
+	line = 0
+	seqn = 0
+	srno = 0
+	dcdt = 0
+	cprj = ""
+	ctyp = empty
+	reas = empty
+	year = 0
+	prod = 0
+	leac = ""
+	curr = ""
+	amtf = 0
+	amth = 0
+	bpid = ""
+	fbno = 0
+	ptyp = ""
+	pdoc = 0
+	lino = 0
+	rate = 0
+	amnt = 0
+	mode = empty
+	user = ""
+	mdat = 0
+	musr = ""
+	refr = ""
+	cheq = ""
+	tedt = 0
+	appr = ""
+	cfam = empty 
+}

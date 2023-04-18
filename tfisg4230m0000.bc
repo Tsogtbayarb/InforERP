@@ -1,0 +1,257 @@
+|******************************************************************************
+|* tfisg4230m000  0  VRC B61U a7 isg 
+|* Update Grouping of RCM Data For Self Invoicing
+|* Paras Kukreti(TV)                     
+|* 2020-02-13
+|******************************************************************************
+|* Main table tfisg430 Grouping of RCM Data for Self Invoicing, Form Type 4
+
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttfisg430 | Grouping of RCM Data for Self Invoicing
+	table	ttfisg411
+	table	ttfisg412
+	table	ttfisg415
+	table	ttfisg409
+	table	ttfisg416
+	table	ttctax940
+	table	ttfgld005
+
+	extern	domain	tfgld.prod	fprd.f
+	extern	domain	tfgld.year     	fyer.f
+	extern	domain	tfgld.amnt	cgst.amnt				
+	extern	domain	tfgld.amnt	sgst.amnt
+	extern	domain	tfgld.amnt	igst.amnt
+	extern	domain	tfgld.amnt	sum.gst.amnt, itax			
+	extern	domain	tfgld.date	o.period.start.date, o.period.end.date
+	
+	long ret_val.1, ret_val.2, bat_no				
+	
+#include<bic_dam>
+#pragma used dll otfglddll5005
+
+|****************************** program section ********************************
+before.program:
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+	get.screen.defaults()
+	
+	
+|****************************** choice section *********************************
+
+choice.update.data:
+on.choice:
+	insert.and.update.RCM.data()
+	
+after.choice:
+	start.session(MODELESS, "tfisg4130m000", "", "")
+	
+|***************************** field section **********************************
+
+field.fprd.f:								
+before.zoom:
+	tfisg416.year = fyer.f						
+	
+|****************************** function section ********************************
+
+functions:
+
+function insert.and.update.RCM.data()
+{
+	select	tfisg415.type, tfisg415.fovn.c, tfisg415.bpid,			
+		tfisg415.srno, tfisg415.fcmp					
+	from	tfisg415
+	where	tfisg415._index1 = {:fyer.f, :fprd.f}
+	and	tfisg415.irnt in ("009", "010", "011")				
+	and	tfisg415.frez = tcyesno.yes
+	selectdo
+		if not isspace(tfisg415.type) then				
+			insert.the.data(tfisg415.type)
+		endif								
+	endselect
+}
+
+
+function long insert.the.data(domain tfgld.ttyp i.typ.val)
+{
+	select	tfisg415.cgst:cgst.amnt,					
+		tfisg415.sgst:sgst.amnt,
+		tfisg415.igst:igst.amnt,
+		tfisg415.itax:itax						
+	from	tfisg415
+	where	tfisg415._index1 = {:fyer.f, :fprd.f}
+	and	tfisg415.type = :i.typ.val
+	and	tfisg415.fovn.c = :tfisg415.fovn.c
+	and	tfisg415.srno = :tfisg415.srno					
+	and	tfisg415.irnt in ("009", "010", "011")				
+	selectdo
+		sum.gst.amnt = cgst.amnt + sgst.amnt + igst.amnt		
+	selectempty
+		cgst.amnt = 0.00
+		cgst.amnt = 0.00
+		igst.amnt = 0.00
+		sum.gst.amnt = 0.00
+		itax = 0.00
+	endselect
+	
+	if sum.gst.amnt > 0.00 then
+		select	tfisg430.*
+		from	tfisg430 for update
+		where	tfisg430._index1 = {	
+					:fyer.f,
+					:fprd.f,
+					:tfisg415.srno,
+					:tfisg415.fovn.c,
+					:i.typ.val
+					}
+		and	tfisg430.srno = :tfisg415.srno				
+		selectdo
+			if tfisg430.trgn = tcyesno.no then			
+				if tfisg430.docn = 0 then		
+					dal.change.object("tfisg430")
+					
+					dal.set.field("tfisg430.fyer", fyer.f)
+					dal.set.field("tfisg430.fprd", fprd.f)
+					dal.set.field("tfisg430.type", i.typ.val)
+					dal.set.field("tfisg430.regn", tfisg415.fovn.c)
+					dal.set.field("tfisg430.bpid", tfisg415.bpid)		
+					dal.set.field("tfisg430.srno", tfisg415.srno)		
+					dal.set.field("tfisg430.cgst", cgst.amnt)	
+					dal.set.field("tfisg430.sgst", sgst.amnt)
+					dal.set.field("tfisg430.igst", igst.amnt)
+					dal.set.field("tfisg430.tgst", sum.gst.amnt)
+					dal.set.field("tfisg430.assv", itax)		
+					dal.set.field("tfisg430.comp", tfisg415.fcmp)	
+					assign.accounting.ledger()		
+					
+					ret_val.1 = dal.save.object("tfisg430")
+					
+					if ret_val.1 = 0 then
+						commit.transaction()
+					else
+						abort.transaction()
+						show.dal.messages(MSG.ALL)
+						return(DALHOOKERROR)
+					endif
+				endif					
+			endif						
+		selectempty	
+			dal.new.object("tfisg430")
+			
+			dal.set.field("tfisg430.fyer", fyer.f)
+			dal.set.field("tfisg430.fprd", fprd.f)
+			dal.set.field("tfisg430.type", i.typ.val)
+			dal.set.field("tfisg430.regn", tfisg415.fovn.c)
+			dal.set.field("tfisg430.bpid", tfisg415.bpid)		
+			dal.set.field("tfisg430.srno", tfisg415.srno)		
+			dal.set.field("tfisg430.cgst", cgst.amnt)		
+			dal.set.field("tfisg430.sgst", sgst.amnt)
+			dal.set.field("tfisg430.igst", igst.amnt)
+			dal.set.field("tfisg430.tgst", sum.gst.amnt)		
+			dal.set.field("tfisg430.comp", tfisg415.fcmp)		
+			
+			assign.accounting.ledger()		
+			
+			ret_val.1 = dal.save.object("tfisg430")
+			
+			if ret_val.1 = 0 then
+				commit.transaction()							
+			else
+				abort.transaction()
+				show.dal.messages(MSG.ALL)
+				return(DALHOOKERROR)
+			endif
+		endselect	
+	endif			
+	return(0)
+}
+
+
+function get.start.date.and.end.date.for.year.period()
+{
+	if tfgld.dll5005.read.start.date.period(	tfgld.ptyp.financial,
+							fyer.f,
+							fprd.f,
+							o.period.start.date) then
+	else
+		o.period.start.date = 0
+	endif
+	
+	if tfgld.dll5005.read.end.date.real.period(	get.compnr(),
+							tfgld.ptyp.financial,
+							fyer.f,
+							fprd.f,
+							o.period.end.date) then
+	else						
+		o.period.end.date = 0
+	endif
+}
+
+
+function long RCM.type.data(domain tfgld.ttyp i.type)
+{
+	domain	tfgld.ttyp bind.type
+	
+	select	tfisg409.type:bind.type
+	from	tfisg409
+	where	tfisg409._index1 = {:i.type}
+	and	tfisg409.rcma = tcyesno.yes
+	selectdo
+	selectempty
+		return(0)
+	endselect
+	
+	return(1)
+}
+
+
+
+function assign.accounting.ledger()
+{
+	domain	tcmcs.cste	get.cste
+	
+	select	tctax940.stpv:get.cste
+	from	tctax940
+	where	tctax940._index3 = {:tfisg415.fovn.c}
+	selectdo
+	selectempty
+		get.cste = ""
+	endselect
+	
+	select	tfisg412.*
+	from	tfisg412
+	where	tfisg412._index1 = {:get.cste}
+	and	tfisg412.rcmi = tcyesno.yes
+	selectdo
+	selectempty
+		db.set.to.default(ttfisg412)
+	endselect
+
+	if cgst.amnt > 0.00 then    						
+		dal.set.field("tfisg430.accc.i", tfisg412.accc.i)
+		dal.set.field("tfisg430.accc.l", tfisg412.accc.l)
+	else
+		dal.set.field("tfisg430.accc.i", "")
+		dal.set.field("tfisg430.accc.l", "")
+	endif
+	
+	if sgst.amnt > 0.00 then    						
+		dal.set.field("tfisg430.accs.i", tfisg412.accs.i)
+		dal.set.field("tfisg430.accs.l", tfisg412.accs.l)
+	else
+		dal.set.field("tfisg430.accs.i", "")
+		dal.set.field("tfisg430.accs.l", "")
+	endif
+	
+	if igst.amnt > 0.00 then						
+		dal.set.field("tfisg430.acci.i", tfisg412.acci.i)
+		dal.set.field("tfisg430.acci.l", tfisg412.acci.l)
+	else
+		dal.set.field("tfisg430.acci.i", "")
+		dal.set.field("tfisg430.acci.l", "")
+	endif
+}

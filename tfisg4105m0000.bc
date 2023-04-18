@@ -1,0 +1,261 @@
+|******************************************************************************
+|* tfisg4105m0000  0  VRC B61U a7 isg 
+|* IR Extension
+|* merino1                       
+|* 2017-05-12
+|******************************************************************************
+|* Main table tfisg405 IR Extension, Form Type 1
+|******************************************************************************
+|* ID : ISGECGST001, IT0386, Saurabh Dubey 12 May 2017, VRC B61U a7 isg
+|* Functional : Mrs. Veena(Isgec)
+|* Isgec Onsite Deployment
+|*
+|* ID : ISGEC01053, Priya Jindal, 31/3/2018
+|* Check for tax codes
+|*
+|* ID: GH321CR634, RAvi Kumar, 27-05-2020
+|* IR Extension Data for Accounts
+|*
+|* ID: GH334CR629, RAvi Kumar, 04-06-2020
+|* Display IR extension for Purchase Order Invoice Processing
+
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttfisg405 	| IR Extension
+	table	ttfisg407 	| IR Extension Lines
+	table	ttfacp100	
+	table	ttctax400
+	table	ttcmcs143
+	table	ttfgld010
+	table	ttpisg122	|* GST Compliance - Master
+	table	ttdpur401
+	
+	extern	domain	tcfovn		gstn.b.no
+	extern	domain	tctax.txnb.l	gstn.c.no
+	extern	domain	tfgld.docn	i.ninv
+	extern	domain	tcorno		g.orno
+	extern	domain	tccprj		g.cprj
+	extern	domain	tcmcs.cste	gstn.c.cste, gstn.b.cste
+	extern	domain	tcdsca		state.desc, o.stat.dsca
+		domain	tcmcs.str30	get.cdf.code
+		domain	tcmcs.str2	g.scod
+		
+	extern	domain	tcmcs.str16	prog.sess		|GH321CR634.a
+		
+	#include"itcisg00001"	
+
+
+|****************************** program section ********************************
+before.program:
+	import("tfacp100.ninv", i.ninv)
+	import("prog.name$", prog.sess)				|GH321CR634.a
+	
+	if prog.sess = "tfisg1201m000" then			|GH334CR629.a.s
+		import("v.docn", i.ninv)
+	endif							|GH334CR629.a.e				
+	
+	insert.IR()
+	
+	if prog.sess = "tfisg1500m100" or prog.sess = "tfisg1201m000" then
+| 		tfisg405.ninv = i.ninv
+	else
+		query.extend.where("tfisg405._index1 = {:i.ninv}")
+	endif
+	
+	if prog.sess <> "tfisg1201m000" then			|GH334CR629.a
+		if prog.sess <> "tfisg1500m100" then		|GH321CR634.a	
+			message("Please Maintain IR Extension Information....")
+		endif
+	endif
+
+before.display.object:
+	select	tfacp100.ifbp, tfacp100.amti, tfacp100.cdf_cprj,
+		tfacp100.cdf_pono
+	from	tfacp100
+	where	tfacp100._index1 = {:tfisg405.ninv}
+	selectdo
+		get.var(pid, "tfacp100.cdf_cprj", g.cprj)
+		get.var(pid, "tfacp100.cdf_pono", g.orno)
+	selectempty
+		tfacp100.ifbp = ""
+	endselect
+
+
+|****************************** group section **********************************
+
+|****************************** choice section *********************************
+
+choice.abort.program:
+before.choice:
+	check.tax.rates()					|ISGEC01053.n
+
+	if not total.matched.with.IR.amount() then
+		message("Supplier Bill Value Mismatched with IRN Value....")
+| 		choice.again()
+	endif
+	
+choice.end.program:
+before.choice:
+	check.tax.rates()					|ISGEC01053.n
+
+	if not total.matched.with.IR.amount() then
+		message("Supplier Bill Value Mismatched with IRN Value....")
+| 		choice.again()
+	endif
+
+|****************************** field section **********************************
+
+field.tfisg405.gstn.b:
+before.zoom:
+	query.extend.where.in.zoom("tctax400.bpid = " & quoted.string(tfacp100.ifbp) & " and tctax400.catg.l = tctax.catg.l.gst")
+
+field.tfisg405.posu:
+before.zoom:
+	tcmcs143.ccty = OWN.COUNTRY
+
+field.gstn.b.no:
+before.display:
+	tctax.dll4100.get.bp.reg.number.based.on.seq.l(tfisg405.gstn.b, gstn.b.no)
+	
+field.gstn.c.no:
+before.display:
+	tctax.dll9140.get.own.reg.number.based.on.seq(tfisg405.gstn.c, gstn.c.no)
+
+field.gstn.b.cste:
+before.display:
+	tcisgdll0100.get.bp.state.from.tax.seqn.l(tfisg405.gstn.b, gstn.b.cste)
+
+field.gstn.c.cste:
+before.display:
+	tcisgdll0100.get.own.state.from.reg.seqn(tfisg405.gstn.c, gstn.c.cste)
+	
+field.state.desc:
+before.display:
+	state.desc = ""
+	
+	select	tcmcs143.dsca:o.stat.dsca, tcmcs143.cdf_scod
+	from	tcmcs143
+	where	tcmcs143.ccty = OWN.COUNTRY
+	selectdo
+		get.var(pid, "tcmcs143.cdf_scod", get.cdf.code)
+		g.scod = trim$(get.cdf.code)
+		
+		if g.scod = tfisg405.posu then
+			state.desc = o.stat.dsca
+		endif
+	endselect		
+		
+		
+
+
+|****************************** function section *******************************
+functions:
+
+function insert.IR()
+{
+	select	tfisg405.ninv
+	from	tfisg405
+	where	tfisg405._index1 = {:i.ninv}
+	selectdo
+	selectempty
+		select	tfacp100.cdf_cprj, tfacp100.cdf_pono
+		from	tfacp100
+		where	tfacp100._index1 = {:i.ninv}
+		selectdo
+			get.var(pid, "tfacp100.cdf_cprj", g.cprj)
+			get.var(pid, "tfacp100.cdf_pono", g.orno)
+		endselect
+		
+		get.GSTIN()
+		
+		tfisg405.ninv = i.ninv
+		tfisg405.gstn.c = tpisg122.gstn.c	|* Isgec GSTIN(Company)
+		tfisg405.gstn.b = tdpur401.rnsb.l	|* Business Partner GSTIN
+		
+		db.insert(ttfisg405, db.skip.dupl, e)
+		
+		if e = 0 then
+			commit.transaction()
+		else
+			abort.transaction()
+		endif
+	endselect
+}
+
+
+function get.GSTIN()
+{
+	select	tpisg122.gstn.c
+	from	tpisg122
+	where	tpisg122._index1 = {:g.cprj}
+	selectdo
+	selectempty
+		tpisg122.gstn.c = 0
+	endselect
+	
+	select	tdpur401.rnsb.l
+	from	tdpur401
+	where	tdpur401._index1 = {:g.orno}
+	selectdo
+	selectempty
+		tdpur401.rnsb.l = 0
+	endselect
+}
+
+
+function long total.matched.with.IR.amount()
+{
+	domain	tfgld.amnt	sum.tval
+	domain	tfgld.amnt	diff.amnt	|* Amount Tolerance
+	
+	select sum(tfisg407.tval):sum.tval
+	from	tfisg407
+	where	tfisg407._index1 = {:tfisg405.ninv}
+	selectdo
+	selectempty
+		sum.tval = 0.00
+	endselect
+	
+	diff.amnt = sum.tval - tfacp100.amti
+	
+	if 	diff.amnt > 1.00 or diff.amnt < (-1.00) then
+		return(0)
+	endif
+	
+	return(1)
+}
+
+function check.tax.rates()								|ISGEC01053.sn
+{
+	domain	tcpono	posi,Line
+	domain	tcpvat	srat,crat,irat
+	
+	select	tfisg407.*
+	from	tfisg407
+	where	tfisg407._index1 = {:tfisg405.ninv}
+	as set with 1 rows
+	selectdo
+		posi = tfisg407.pono
+		if tfisg407.crat <> 0 or tfisg407.irat <> 0 then
+			select	a_tfisg407.crat:crat,a_tfisg407.srat:srat,a_tfisg407.irat:irat,a_tfisg407.pono:line
+			from	tfisg407 a_tfisg407
+			where	a_tfisg407._index1 = {:tfisg407.ninv}
+			and	a_tfisg407.pono <> :posi
+			selectdo
+				if tfisg407.crat = 0 and crat <> 0 then
+					message("Taxes are not maintained correctly")
+					choice.again()
+				else
+					if tfisg407.irat = 0 and irat <> 0 then
+						message("Taxes are not maintained correctly")
+						choice.again()
+					endif
+				endif		
+			endselect
+		endif	
+	endselect		
+
+}											|ISGEC01053.en

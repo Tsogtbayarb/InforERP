@@ -1,0 +1,415 @@
+|******************************************************************************
+|* tfisg2400m850  0  VRC B61U a7 isg 
+|* Print Customer Receipts
+|* merino2                       
+|* 2021-10-08
+|******************************************************************************
+|* Form Type 4
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+		
+	table 	ttfacr200
+	table 	ttccom100
+	table 	ttccom130
+	table 	ttcemm170
+	table 	ttfgld005
+	table 	ttfgld008
+	table 	ttfisg008
+	table 	ttppdm600
+	
+	extern	domain	tccprj		cprj.f,cprj.t,project.no
+	extern	domain	tccom.bpid	bpid.f,bpid.t
+	extern	domain	tfgld.year	year.f,year.t
+	extern	domain	tfgld.prod	prod.f,prod.t
+	extern	domain	tcncmp		comp.f,comp.t
+
+	string err.file(100), file.name(100), line(1000), po(15)
+	long fp, ret
+	domain	tcmcs.long	srno
+	domain	tcmcs.str30	docn.no,Dom.Exp
+	string	invoice.no(300)
+	domain	tfgld.amnt	Ded.amnt,sum.Ded.amnt
+#pragma used dll ottdllbw
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+
+choice.print_data:
+on.choice:
+	create.file()
+
+|****************************** field section *********************************
+
+field.cprj.f:
+check.input:
+	if not isspace(cprj.f) then
+		select	tppdm600.cprj
+		from	tppdm600
+		where	tppdm600._index1 = {:cprj.f}
+		selectdo
+		selectempty
+			message("INVALID PROJECT NO.")
+			input.again()
+		endselect
+	endif
+	
+when.field.changes:
+   cprj.t = cprj.f
+   
+field.cprj.t:
+check.input:
+	if not isspace(cprj.t) and cprj.t <> "~~~~~~~~~" then
+		select	tppdm600.cprj
+		from	tppdm600
+		where	tppdm600._index1 = {:cprj.t}
+		selectdo
+		selectempty
+			message("INVALID PROJECT NO.")
+			input.again()
+		endselect
+	endif
+	
+field.bpid.f:
+check.input:
+	if not isspace(bpid.f) then
+		select	tccom100.bpid
+		from	tccom100
+		where	tccom100._index1 = {:bpid.f}
+		selectdo
+		selectempty
+			message("INVALID BP CODE")
+			input.again()
+		endselect
+	endif
+
+when.field.changes:
+   bpid.t = bpid.f   
+   
+field.bpid.t:
+check.input:
+	if not isspace(bpid.t) and bpid.t <> "~~~~~~~~~" then
+		select	tccom100.bpid
+		from	tccom100
+		where	tccom100._index1 = {:bpid.t}
+		selectdo
+		selectempty
+			message("INVALID BP CODE")
+			input.again()
+		endselect
+	endif
+
+
+field.year.f:
+when.field.changes:
+   year.t = year.f
+
+
+field.prod.f:
+before.zoom:
+	tfgld005.year = year.t
+when.field.changes:
+   prod.t = prod.f   
+
+field.prod.t:
+before.zoom:
+	tfgld005.year = year.t
+   
+field.comp.f:
+when.field.changes:
+   comp.t = comp.f  
+   
+|****************************** function section ******************************
+
+functions:
+
+
+function create.file()
+{
+	err.file = bse.tmp.dir$() & "/" & str$(utc.num()) & ".xls"		
+	fp = seq.open(err.file, "w+")
+	
+	process.file()
+
+	seq.close(fp)
+	file.name = "Customer_Receipt_Report_" & strip$(str$(utc.num())) & ".xls"
+	ret = server2client(err.file, "C:\temp\" & file.name, 0)
+	if ret >= 0 then
+		start.application.local("excel " & "C:\temp\" & file.name, false, ret) 
+	endif
+	message("Process Completed")
+}
+
+
+function process.file()
+{
+	generate.header()
+	read.main.table()
+	
+}
+
+function read.main.table()
+{
+	srno = 0
+	select tcemm170.*
+	from	tcemm170
+	where	tcemm170._index1 inrange {:comp.f} and {:comp.t}
+	selectdo
+		if  year.f <> year.t then
+			select	tfacr200.*
+			from	tfacr200
+			where	tfacr200.trec in  (9,10,11,12)
+			and 	tfacr200.itbp inrange {:bpid.f} and {:bpid.t}
+			and 	tfacr200.year inrange {:year.f} and {:year.t}
+	| 		and 	tfacr200.prod inrange {:prod.f} and {:prod.t}
+			and 	tfacr200.dim1  inrange {:cprj.f} and {:cprj.t}
+			and 	tfacr200.post <> 0
+			and	tfacr200._compnr = :tcemm170.comp
+			order by tfacr200.year
+			selectdo
+				if tfacr200.year = year.t and tfacr200.prod > prod.t then
+					continue 
+				endif
+				
+				select	tccom100.nama,
+					tccom100.cadr
+				from	tccom100
+				where	tccom100._index1 = {:tfacr200.itbp}
+				and	tccom100._compnr = :tcemm170.comp
+				as set with 1 rows
+				selectdo
+					select	tccom130.ccty
+					from	tccom130
+					where	tccom130._index1 = {:tccom100.cadr}
+					and 	tccom130.ccty = "IN"
+					and	tccom130._compnr = :tcemm170.comp
+					as set with 1 rows
+					selectdo
+						Dom.Exp = "Domestic"
+					selectempty 
+						Dom.Exp = "Export"
+					endselect
+				endselect
+				docn.no = ""
+				
+	| 			if tfacr200.docn <> 0 then
+					docn.no = tfacr200.ttyp &"\"&str$(tfacr200.ninv)&"\"& str$(tfacr200.line)
+	| 			endif
+				
+				invoice.no = ""	
+				
+				if not isspace (tfacr200.ttyp) then
+					pick.main.docn.no(tfacr200.ttyp,tfacr200.ninv,tfacr200.line)
+	| 				invoice.no = tfacr200.ttyp &"\"&str$(tfacr200.ninv)
+				endif
+	| 			get.var(pid,"tfacr200.cdf_cprj",project.no)
+	| 			get.var(pid,"tfacr200.dim1",project.no)
+				project.no = tfacr200.dim1
+				
+				sum.Ded.amnt = 0.000
+				select tfisg008.leac
+				from	tfisg008
+				selectdo
+					Ded.amnt = 0.000
+					select sum(tfgld106.amth(1)):Ded.amnt
+					from	tfgld106
+					where	tfgld106._index1 = {:tfacr200.ttyp,:tfacr200.ninv,:tfacr200.line}
+					and	tfgld106.leac = :tfisg008.leac
+					and	tfgld106._compnr = :tcemm170.comp
+					selectdo
+						
+					endselect
+					
+					sum.Ded.amnt = sum.Ded.amnt + Ded.amnt 
+				endselect
+				
+				write.data()
+			endselect
+		else
+			select	tfacr200.*
+			from	tfacr200
+			where	tfacr200.trec in  (9,10,11,12)
+			and 	tfacr200.itbp inrange {:bpid.f} and {:bpid.t}
+			and 	tfacr200.year inrange {:year.f} and {:year.t}
+			and 	tfacr200.prod inrange {:prod.f} and {:prod.t}
+			and 	tfacr200.dim1  inrange {:cprj.f} and {:cprj.t}
+			and 	tfacr200.post <> 0
+			and	tfacr200._compnr = :tcemm170.comp
+			selectdo
+| 				if tfacr200.year = year.t and tfacr200.prod > prod.t then
+| 					continue 
+| 				endif
+				
+				select	tccom100.nama,
+					tccom100.cadr
+				from	tccom100
+				where	tccom100._index1 = {:tfacr200.itbp}
+				and	tccom100._compnr = :tcemm170.comp
+				as set with 1 rows
+				selectdo
+					select	tccom130.ccty
+					from	tccom130
+					where	tccom130._index1 = {:tccom100.cadr}
+					and 	tccom130.ccty = "IN"
+					and	tccom130._compnr = :tcemm170.comp
+					as set with 1 rows
+					selectdo
+						Dom.Exp = "Domestic"
+					selectempty 
+						Dom.Exp = "Export"
+					endselect
+				endselect
+				docn.no = ""
+				
+	| 			if tfacr200.docn <> 0 then
+					docn.no = tfacr200.ttyp &"\"&str$(tfacr200.ninv)&"\"& str$(tfacr200.line)
+	| 			endif
+				
+				invoice.no = ""	
+				
+				if not isspace (tfacr200.ttyp) then
+					pick.main.docn.no(tfacr200.ttyp,tfacr200.ninv,tfacr200.line)
+	| 				invoice.no = tfacr200.ttyp &"\"&str$(tfacr200.ninv)
+				endif
+	| 			get.var(pid,"tfacr200.cdf_cprj",project.no)
+	| 			get.var(pid,"tfacr200.dim1",project.no)
+				project.no = tfacr200.dim1
+				
+				sum.Ded.amnt = 0.000
+				select tfisg008.leac
+				from	tfisg008
+				selectdo
+					Ded.amnt = 0.000
+					select sum(tfgld106.amth(1)):Ded.amnt
+					from	tfgld106
+					where	tfgld106._index1 = {:tfacr200.ttyp,:tfacr200.ninv,:tfacr200.line}
+					and	tfgld106.leac = :tfisg008.leac
+					and	tfgld106._compnr = :tcemm170.comp
+					selectdo
+						
+					endselect
+					
+					sum.Ded.amnt = sum.Ded.amnt + Ded.amnt 
+				endselect
+				
+				write.data()
+			endselect
+		endif
+	endselect
+}
+
+
+function pick.main.docn.no(
+				domain tfgld.ttyp	i.ttyp,
+				domain	tfgld.ninv	i.ninv,
+				domain	tfgld.ninv	i.line
+				)
+{
+	invoice.no = ""
+	domain tfgld.ttyp	l.tdoc,o.ttyp
+	domain	tfgld.ninv	l.docn,o.docn
+	domain	tfgld.lino	l.lino,o.lino
+	select	aa_tfacr200.tdoc:l.tdoc,
+		aa_tfacr200.docn:l.docn,
+		aa_tfacr200.lino:l.lino
+	from	tfacr200  aa_tfacr200
+	where	aa_tfacr200._index1 = {:i.ttyp,:i.ninv,:i.line}
+	and 	aa_tfacr200.docn <> 0
+	and	aa_tfacr200._compnr = :tcemm170.comp
+	group by aa_tfacr200.tdoc, aa_tfacr200.docn, aa_tfacr200.lino
+	selectdo
+		o.ttyp = ""
+		o.docn = 0
+		o.lino = 0
+		select	bb_tfacr200.ttyp:o.ttyp,
+			bb_tfacr200.ninv:o.docn,
+			bb_tfacr200.line:o.lino
+		from	tfacr200  bb_tfacr200
+		where 	bb_tfacr200._index1 <> {:i.ttyp,:i.ninv,:i.line}
+		and	bb_tfacr200.tdoc = {:l.tdoc}
+		and	bb_tfacr200.docn = :l.docn
+		and	bb_tfacr200.lino = :l.lino
+		and	bb_tfacr200._compnr = :tcemm170.comp
+		selectdo
+			if isspace(invoice.no) then
+				invoice.no = o.ttyp &"\"&str$(o.docn)&"\"& str$(o.lino)
+			else
+				invoice.no = trim$(invoice.no)&", "& o.ttyp &"\"&str$(o.docn)&"\"& str$(o.lino)
+			endif
+		endselect
+		
+	endselect
+	
+}
+
+
+function generate.header()
+{
+
+	if fp > 0 then
+		line =concat$("	",
+			sprintf$("S.No."),				|1
+			sprintf$("Company"),				|2
+			sprintf$("Batch No."),				|3
+			sprintf$("Document No."),			|4
+			sprintf$("Document Date"),			|5
+			sprintf$("Year"),				|6
+			sprintf$("Doc. Type (Advance/Unallocated)"),	|7
+			sprintf$("BP Code"),				|8
+			sprintf$("BP Name"),				|9
+			sprintf$("Dom/Exp"),				|10
+			sprintf$("Projet Code"),			|11
+			sprintf$("Invoie No."),			|12
+			sprintf$("Amount Received"),			|13
+			sprintf$("Deductions (TDS/GST TDS/Bank Chgs/Interest on Adv. etc.)"),	|14
+			sprintf$("Gross Receipts"),			|15
+			sprintf$("Transaction Reference"))		|16
+				
+
+		line = strip$(shiftl$(line))
+		seq.puts(line, fp)
+		line  = ""
+	endif
+		
+}
+
+
+function write.data()
+{
+		srno = srno + 1
+			
+		if fp > 0 then
+		line = concat$("	",
+			sprintf$("%d",srno),		|1
+			sprintf$("%d",tcemm170.comp),		|2
+			sprintf$("%d",tfacr200.btno),		|3
+			sprintf$("%s",trim$(docn.no)),			|4
+			sprintf$("%D(%02d/%02m/%04Y)", tfacr200.docd) ,|5
+			sprintf$("%d",tfacr200.year),		|6
+			sprintf$("%s",enum.descr$("tfacr.trec",tfacr200.trec)),|7
+			sprintf$("%s",tfacr200.itbp),			|8
+			sprintf$("%s",trim$(tccom100.nama)),		|9
+			sprintf$("%s",trim$(Dom.Exp)),			|10
+			sprintf$("%s",project.no),		|11
+			sprintf$("%s",trim$(invoice.no)),		|12
+			sprintf$("%f",((tfacr200.amth(1))*-1) - sum.Ded.amnt),|13
+			sprintf$("%s",sum.Ded.amnt),			|14
+			sprintf$("%f",tfacr200.amth(1)*-1),		|15
+			sprintf$("%s",tfacr200.refr))			|16
+
+							
+		line = strip$(shiftl$(line))
+		seq.puts(line, fp)
+		line  = ""
+	endif
+		
+}

@@ -1,0 +1,323 @@
+|******************************************************************************
+|* tfisg2131  0  VRC B61U a7 isg
+|* Assign Advance Payment Linking
+|* tv0001
+|* 2020-10-10
+|******************************************************************************
+|* Main table tfisg231 Assign Advance Payment Linking, Form Type 1
+|******************************************************************************
+
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttfisg231 | Assign Advance Payment Linking
+  table   ttfacp500
+  table   ttfgld011
+  table   ttfgld018
+  table   ttfcmg206
+  table   ttfacp200
+
+  extern domain tcdsca  dsca
+  extern domain tfgld.btno i.btno
+  extern domain tfgld.docn i.v.docn, doco
+  extern domain tcorno i.v.orno
+  extern domain tccom.bpid i.bpid.nama
+  extern domain tcmcs.str100 error.msg, recover.msg
+  extern domain tfgld.ttyp      ttyp
+  long ret
+  long    k, ret1
+  string  i.ramk(50), error1(50)
+  extern domain tcamnt rem.amnt, ad.amnt1, tot.iamt, tot.amnt
+  extern domain tcncmp curr.comp
+  extern domain tcmcs.str30 i.prno, x.prno
+  extern domain tcmcs.str30 ad.amnt
+  extern domain tcmcs.str1 found, found1
+  extern domain tfgld.ninv o.ninv
+  extern domain tfgld.ttyp o.ttyp
+  extern domain tcyesno i.flpd
+  #pragma used dll ottstpapihand
+  #include <bic_dam>
+
+|****************************** program section ********************************
+before.program:
+
+        import("bpid.nama", dsca)
+        import("c.btno", i.btno)
+        import("v.docn", i.v.docn)
+        import("v.orno", i.v.orno)
+        import("bpid.f", i.bpid.nama)
+        import("i.ttyp",ttyp)
+        import("tfacp500.cdf_prno",i.prno)
+        import("i.ninv", doco)
+        import("tfacp500.flpd",i.flpd)
+
+        if isspace(i.prno) then
+                x.prno = i.prno
+        endif
+               query.extend.where("tfisg231.prno = " & quoted.string(i.prno) & " and tfisg231.prno <> " & quoted.string(x.prno) & " and tfisg231.stts = tcyesno.no ")
+
+
+|****************************** group section **********************************
+choice.cont.auto.advance.linking:
+on.choice:
+        auto.advance.linking()
+
+choice.cont.show.all.advance.linking:
+on.choice:
+        show.all.advance.linking()
+
+|***************************** functions ***************************************
+functions:
+
+function extern show.all.advance.linking()
+{
+        select tfisg231.bpid
+        from   tfisg231
+        where  tfisg231._index1 = {:tfisg231.bpid}
+        selectdo
+                domain tcmcs.str30 prno, pono, cprj
+                select	tfacp100.cdf_pono, tfacp100.ifbp
+                from	tfacp100
+                where	tfacp100._index1 = {:i.v.docn}
+                and	tfacp100.cdf_pono = :i.v.orno
+                selectdo
+                        get.var( pid, "tfacp100.cdf_pono", pono)
+                        pono = trim$(pono)
+                        select	tfacp500.ttyp, tfacp500.ninv, tfacp500.line, tfacp500.flpd, tfacp500.ifbp, tfacp500.docd, tfacp500.tpay, tfacp500.ccur,
+                                tfacp500.balc, tfacp500.cdf_cprj, tfacp500.cdf_prno, tfacp500.pdoc, tfacp500.doca, tfacp500.tpay
+                        from	tfacp500
+                        where	tfacp500._index2 = {:i.bpid.nama}
+                        and	tfacp500.flpd = tcyesno.no
+                        selectdo
+                                if tfacp500.tpay = ltoe(9) or tfacp500.tpay = ltoe(10) then
+                                        get.var( pid, "tfacp500.cdf_prno", prno)
+                                        get.var( pid, "tfacp500.cdf_cprj", cprj)
+                                        prno = trim$(prno)
+                                        select	tfisg231.*
+                                        from	tfisg231	for update
+                                        where	tfisg231._index1 = {:tfacp500.ifbp, :tfacp500.ttyp, :tfacp500.ninv, :prno, :tfacp500.line}
+                                        selectdo
+                                        if tfacp500.flpd = tcyesno.no then
+                                                tfisg231.docn = tfacp500.ninv
+                                                tfisg231.dtyp = tfacp500.tpay
+                                                tfisg231.refc = str$(tfacp500.pdoc) & "/" & str$(tfacp500.ttyp) & "/" & str$(tfacp500.doca)
+                                                tfisg231.docd = tfacp500.docd
+                                                tfisg231.ccur = tfacp500.ccur
+                                                tfisg231.balc = tfacp500.balc
+                                                tfisg231.proj = str$(cprj)
+                                                tfisg231.line = tfacp500.line
+                                                db.update(ttfisg231,db.retry,e)
+                                        endif
+                                        selectempty
+                                        if tfacp500.flpd = tcyesno.no then
+                                                tfisg231.bpid =	i.bpid.nama
+                                                tfisg231.prno = prno
+                                                tfisg231.ttyp = tfacp500.ttyp
+                                                tfisg231.docn = tfacp500.ninv
+                                                tfisg231.dtyp = tfacp500.tpay
+                                                tfisg231.refc = str$(tfacp500.pdoc) & "/" & str$(tfacp500.ttyp) & "/" & str$(tfacp500.doca)
+                                                tfisg231.docd = tfacp500.docd
+                                                tfisg231.ccur = tfacp500.ccur
+                                                tfisg231.balc = tfacp500.balc
+                                                tfisg231.proj = str$(cprj)
+                                                tfisg231.line = tfacp500.line
+                                                db.insert(ttfisg231,db.retry,e)
+                                        endif
+                                        endselect
+                                        if not e then
+                                                commit.transaction()
+                                        endif
+                                endif
+                        selectempty
+                        endselect
+                selectempty
+                endselect
+        selectempty
+        endselect
+       query.extend.where("tfisg231.bpid = " & quoted.string(i.bpid.nama))
+       rebuild.query()
+}
+
+function extern auto.advance.linking()
+{
+        select  tfisg231.*
+        from    tfisg231
+        where   tfisg231._index1 = {:i.bpid.nama, :tfisg231.ttyp, :tfacp500.ninv, :tfisg231.prno, :tfisg231.line}
+        selectdo
+        selectempty
+        endselect
+        if tfisg231.stts = tcyesno.no then
+                insert.tfgld101()
+        else
+                        message("Record has already processed")
+        endif
+}
+
+
+function insert.tfgld101()
+{
+        get.fiscal.year()
+        select  tfgld101.*
+        from    tfgld101        for update
+        where   tfgld101._index1 = {:tfgld018.year, :i.btno, "AAP"}
+        selectdo
+                process.record()
+        selectempty
+                dal.new.object("tfgld101")
+                dal.set.field("tfgld101.year", tfgld018.year)
+                dal.set.field("tfgld101.btno", i.btno)
+                dal.set.field("tfgld101.ttyp", "AAP")
+                ret =  dal.save.object("tfgld101")
+                if ret = 0 then
+                        commit.transaction()
+                        process.record()
+                else
+			ret1 = dal.count.error.messages()
+			for k = ret1 to 1 step-1
+                        dal.get.error.message(error1)
+			i.ramk = trim$(i.ramk) & trim$(error1)
+			endfor
+			abort.transaction()
+		endif
+        endselect
+}
+
+function process.record()
+{
+        domain tcmcs.str1 apr.stts
+        found = ""
+        found1 = ""
+        apr.stts = ""
+        o.ttyp = ""
+        o.ninv = 0
+        curr.comp = get.compnr()
+        stpapi.put.field("tfgld1101m000","tfgld100.year",str$(tfgld018.year))
+        stpapi.put.field("tfgld1101m000","tfgld100.btno",str$(i.btno))
+        ret = stpapi.find("tfgld1101m000",error.msg)
+        if ret <> 1 then        |1
+                message("Batch No. not found in tfgld1101m000")
+        else
+
+                        stpapi.put.field("tfgld1101m100","tfgld100.year",str$(tfgld018.year))
+                        stpapi.put.field("tfgld1101m100","tfgld100.btno",str$(i.btno))
+                        stpapi.put.field("tfgld1101m100","tfgld101.ttyp","AAP")
+                        ret = stpapi.find("tfgld1101m100",error.msg)
+                        ret = stpapi.mark("tfgld1101m100",error.msg)
+                        if ret then|2
+                                ret = 0
+                                stpapi.form.command("tfgld1101m100",5,"enter.transactions",error.msg)
+                                stpapi.put.field("tfcmg2131s000","tfacp500.fcom",str$(curr.comp))
+                                stpapi.put.field("tfcmg2131s000","tfacp500.ttyp",tfisg231.ttyp)
+                                stpapi.put.field("tfcmg2131s000","tfacp500.ninv",str$(tfisg231.docn))
+                                stpapi.put.field("tfcmg2131s000","tfacp500.ifbp",tfisg231.bpid)
+                                stpapi.put.field("tfcmg2131s000","tfacp500.line",str$(tfisg231.line))
+                                ret = stpapi.find("tfcmg2131s000",error.msg)
+                                if ret <> 1 then|3
+                                         message("Record not found in tfcmg2131s000")
+                                else
+
+                                        ret = stpapi.mark("tfcmg2131s000",error.msg)
+                                        stpapi.get.field("tfcmg2131s000","tfacp500.balc",ad.amnt)
+                                        ad.amnt1 = lval(ad.amnt)
+                                        if ret then|4
+                                                stpapi.form.command("tfcmg2131s000",5,"exec.cont.process",error.msg)
+
+                                                        start.session(MODAL_OVERVIEW,"tfisg2106s000","tfisg2131s000","")
+                                                        if found = "Y" then|4.1
+
+                                                        select  sum(tfcmg206.iamt):tot.iamt,sum(tfcmg206.amnt):tot.amnt
+                                                        from    tfcmg206
+                                                        where   tfcmg206._index1 = {:tfgld018.year, :i.btno, "AAP",:i.bpid.nama, :curr.comp, :ttyp, :doco}
+                                                        selectdo
+                                                                select  tfacp200.stap
+                                                                from    tfacp200
+                                                                where   tfacp200._index1 = {:o.ttyp, :o.ninv}
+                                                                selectdo
+                                                                if      tfacp200.stap = ltoe(4) then|4.1.1
+                                                                apr.stts = "A"
+                                                                stpapi.put.field("tfcmg2106s000","tfcmg206.bpid",tfisg231.bpid)
+                                                                stpapi.put.field("tfcmg2106s000","tfcmg206.comp",str$(curr.comp))
+                                                                stpapi.put.field("tfcmg2106s000","tfcmg206.ttyp",ttyp)
+                                                                stpapi.put.field("tfcmg2106s000","tfcmg206.ninv",str$(doco))
+                                                                if tot.iamt >= tot.amnt and tot.amnt <> 0 then|4.2
+                                                                        stpapi.form.command("tfcmg2106s000",5,"exec.cont.process",error.msg)
+                                                                        ret = stpapi.mark("tfcmg2114s000",error.msg)
+                                                                                if ret then|12
+                                                                                        stpapi.handle.subproc("tfcmg2114s000","tfcmg2114s000", "add")
+                                                                                        stpapi.end.session("tfcmg2114s000")
+                                                                                        stpapi.end.session("tfcmg2106s000")
+                                                                                        ret = stpapi.save("tfcmg2131s000",recover.msg)
+                                                                                                if ret = 1 then|13
+                                                                                                        message("Record Processed")
+                                                                                                        | update.stts()
+                                                                                                else
+                                                                                                        message("Record saved")
+                                                                                                        | update.stts()
+                                                                                                endif|13
+                                                                                endif|12
+
+                                                                endif|4.2
+                                                                stpapi.end.session("tfcmg2106s000")
+                                                                stpapi.end.session("tfcmg2114s000")
+                                                                        if tot.iamt < tot.amnt or tot.amnt = 0 then
+                                                                                message("Please enter a valid Amount")
+                                                                        endif
+                                                                endif|4.1.1
+
+                                                                selectempty
+                                                                endselect
+                                                        selectempty
+                                                        endselect
+                                                        | endif
+                                                        endif|4.1
+                                                                if found = "" then
+                                                                        message("Record not processed")
+                                                                endif
+                                                                if isspace(apr.stts) then
+                                                                        message("PTR Document status not approved")
+                                                                endif
+                                                        stpapi.end.session("tfcmg2106s000")
+                                                        stpapi.end.session("tfcmg2114s000")
+                                       endif|4
+                                endif|3
+                        endif|2
+        endif|1
+        stpapi.end.session("tfgld1101m100")
+        stpapi.end.session("tfgld1101m100")
+        stpapi.end.session("tfcmg2131s000")
+        stpapi.end.session("tfcmg2106s000")
+        stpapi.end.session("tfcmg2114s000")
+}
+
+function get.fiscal.year()
+{
+        select tfgld018.year
+        from   tfgld018
+        where  tfgld018._index1 = {:ttyp, :doco}
+        selectdo
+        selectempty
+        endselect
+}
+
+function update.stts()
+{
+        select  tfisg231.stts
+        from    tfisg231        for update
+        where   tfisg231._index1 = {:tfisg231.bpid, :tfisg231.ttyp, :tfisg231.docn, :tfisg231.prno, :tfisg231.line}
+        selectdo
+                dal.change.object("tfisg231")
+                dal.set.field("tfisg231.stts", tcyesno.yes)
+                ret =  dal.save.object("tfisg231")
+                if ret = 0 then
+                        commit.transaction()
+                else
+                ret1 = dal.count.error.messages()
+                for k = ret1 to 1 step-1
+                dal.get.error.message(error1)
+                i.ramk = trim$(i.ramk) & trim$(error1)
+                endfor
+                        abort.transaction()
+                endif
+        selectempty
+        endselect
+}

@@ -1,0 +1,1074 @@
+|******************************************************************************
+|* tfisg4515m0000  0  VRC B61U a7 isg 
+|* GSTR 2 Data
+|* merino1                       
+|* 2017-08-22
+|******************************************************************************
+|* Main table tfisg415 GSTR-2 Data, Form Type 1
+|******************************************************************************
+|* ID : GSTLIVE01002, IT0386, Saurabh Dubey, VRC B61U a7 isg
+|* RCM Functionality, Functional Mrs. Veena(Isgec)
+|* Isgec Onsite Deployment
+|*
+|* ID : ISGEC01058, Priya Jindal, 5/5/2018, VRC B61U a7 isg
+|* Changes for category updation
+|*
+|* ID: ISGEC01095, Bharti Garg, 10-08-2018, VRC B61U a7 isg
+|* Added a logic for update invoice on freezed button also
+|*
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttfisg415 | GSTR-2 Data
+	table	ttfisg407
+	table	ttfisg408
+	table	ttfisg409
+	table	ttfacp100
+	table	ttpisg122
+	table	ttccom130
+	table	ttcisg104
+	table	ttfisg425
+	table	ttfacp251		|ISGEC01058.n
+	table	ttfgld018		|ISGEC01058.n
+	table	ttfisg001		|ISGEC01058.n
+	
+	extern	domain	tcmcs.str15	month.desc
+	extern	domain	tcyesno		month.freezed, return.filed
+	extern	domain	tfgld.year	i.year
+	extern	domain	tfgld.prod	i.mnth
+	extern	domain	tccprj		temp.project
+		domain	tcmcs.str10	data.source
+		domain	tcmcs.str20	ngst.flag
+	extern	domain	tcibd.sern	ir.number	|ISGEC01058.n	
+	extern	domain	tcyesno		phy.ware	|ISGEC01058.n
+	
+	extern	domain	tcnama		buyer.nama
+	#pragma used dll otcisgdll0100
+	
+	#include"itcisg00001"
+	
+	#define UNREG.DEALER "Purchase from Unregistered Dealer"
+	#define REG.DEALER "Purchase from Registered Dealer"
+	#define COMPOSITE.DEALER "Purchase From Composition Dealer"
+	#define NON.GST.PUR "Non GST expenses bill"
+	#define GOODS "G"
+	#define SERVICES "S"
+	#define UNMARKED_CATEGORY_RECORDS tfisg415.irnt = "   "	|* Categories not filled
+	
+	
+
+
+|****************************** program section ********************************
+before.program:
+	import("year.f", i.year)
+	import("mnth.f", i.mnth)
+	
+	if i.year <> 0000 then
+		query.extend.where("tfisg415._index1 = {:i.year, :i.mnth}")
+	endif
+
+|****************************** group section **********************************
+|****************************** choice section *********************************
+
+choice.approve.record:
+before.choice:
+	if month.not.freezed() then 
+		message("GSTR Has not been Freezed for Filing....")
+		choice.again()
+	endif
+	
+	if GSTR.filed.for.month() then
+		message("GSTR Has Already been filed for the month...")
+		choice.again()
+	endif
+	
+	if ask.enum("tcmcs00002", tcokca.ok, "No Modifications Will be Allowed After Approving. Are You Sure?") <> tcokca.ok then
+		choice.again()
+	endif
+	
+on.choice:
+	select	tfisg415.appr, tfisg415.frez
+	from	tfisg415 for update
+	where	tfisg415._index1 = {:tfisg415.year, :tfisg415.mnth}
+	selectdo
+		tfisg415.appr = tcyesno.yes 
+		tfisg415.frez = tcyesno.yes 
+		
+		db.update(ttfisg415, db.retry, e)
+		
+		if e = 0 then
+			commit.transaction()
+		else
+			abort.transaction()
+		endif
+	endselect
+	
+	message("Process Completed.....")
+	
+	
+choice.freeze.record:
+before.choice:
+	if GSTR.filed.for.month() then
+		message("GSTR Has Already been filed for the month...")
+		choice.again()
+	endif
+	
+on.choice:
+	modify.year.and.month.GSTR.status(tcyesno.yes) 
+	message("Process Completed.....")
+
+
+choice.modify.month:
+before.choice:
+	if GSTR.filed.for.month() then
+		message("GSTR Has Already been filed for the month. So No Modifications are Allowed...")
+		choice.again()
+	endif
+	
+on.choice:
+	modify.year.and.month.GSTR.status(tcyesno.no) 
+	message("Process Completed.....")
+
+choice.update.category:
+on.choice:
+	if GSTR.filed.for.month() then
+		message("GSTR Has Already been filed for the month. So No Modifications are Allowed...")
+		choice.again()
+	endif
+	
+	if month.not.freezed() then
+		initialize.IR.fields("")
+		update.for.exempted()				|* 1
+		update.for.NON.GST()				|* 2
+		update.for.NON.GST.purpose()			|* 3
+		update.for.nil.rated()				|* 4
+		update.for.composition.dealer()			|* 5
+		update.for.third.country()			|* 6
+		update.for.NON.ITC()				|* 7
+		update.for.import.of.goods.and.service(1)	|* 8
+		update.for.import.of.goods.and.service(2)	|* 9
+		update.for.RCM.unregistered()			|* 10
+		update.for.RCM.registered()			|* 11
+		update.for.GSTR()				|* 12
+		
+| 		message("Process Completed.....")   |ISGEC01058.o
+		refresh.all.occs()
+	else
+		message("Year/Month has been Freezed. So No Modifications are Allowed...")
+		choice.again()
+	endif	
+	
+	db.retry.point()							|ISGEC01058.sn
+	
+	select	tfisg415.*							
+	from	tfisg415 for update
+	where	tfisg415._index1 = {:tfisg415.year, :tfisg415.mnth}
+	and	tfisg415.irnt = "012"
+	selectdo
+		if trim$(tfisg415.sour) = "ERP" then
+			ir.number = str$(tfisg415.ninv)
+			select	whinh310.cwar,tcmcs003.cdf_phwr:phy.ware
+			from	whinh310,tcmcs003
+			where	whinh310.dino =:ir.number
+			and	whinh310.cwar refers to tcmcs003 unref clear
+			selectdo
+				if phy.ware = tcyesno.no and	tfisg415.stat <> tdisg.stat.process then
+					tfisg415.irnt = "013"
+				endif
+			endselect
+			db.update(ttfisg415,db.retry,e)
+		endif	
+	endselect								
+	if e = 0 then
+		commit.transaction()
+	else
+		abort.transaction()
+	endif									
+	message("Process Completed.....")   					|ISGEC01058.en
+
+choice.modify.set:
+before.choice:
+	if GSTR.filed.for.month() or not month.not.freezed() then
+		choice.again()
+	endif
+	
+choice.mark.delete:							|ISGEC01058.sn
+before.choice:
+	if tfisg415.frez = tcyesno.no and tfisg415.stat <> tdisg.stat.process then
+		do.selection(true,update.history.table.tfisg425)						|ISGEC01058.en
+	else
+		message("Freezed record cannot be deleted")
+		choice.again()
+	endif	
+choice.update.purchase.invoice:					|#ISGEC01058.sn
+on.choice:
+| 	if tfisg415.appr = tcyesno.yes then		|#ISGEC01095.o
+	if tfisg415.frez = tcyesno.yes or tfisg415.appr = tcyesno.yes  then	|#ISGEC01095.n
+		update.purchase.invoice.details()
+	else
+		message("Return has not been filed for this month")
+		choice.again()
+	endif						|#ISGEC01058.en
+		
+|****************************** field section **********************************
+
+field.month.desc:
+before.display:
+	tcisgdll0100.get.month.description(tfisg415.mnth, month.desc)
+	
+field.return.filed:
+before.display:
+	if GSTR.filed.for.month() then
+		return.filed = tcyesno.yes 
+	else
+		return.filed = tcyesno.no
+	endif
+	
+field.month.freezed:
+before.display:
+	if month.not.freezed() then
+		month.freezed = tcyesno.no
+	else
+		month.freezed = tcyesno.yes
+	endif
+
+field.temp.project:
+before.display:
+	if tfisg415.sour = "ERP" then
+		select	tfacp100.cdf_cprj:temp.project
+		from	tfacp100
+		where	tfacp100._index1 = {:tfisg415.ninv}
+		selectdo
+		selectempty
+			temp.project = ""
+		endselect
+	else
+		select	tfisg408.cprj:temp.project
+		from	tfisg408
+		where	tfisg408._index1 = {:tfisg415.sour, :tfisg415.ninv}
+		selectdo
+		selectempty
+			temp.project = ""
+		endselect
+	endif	
+	
+field.buyer.nama:
+before.display:
+	select	tccom001.nama:buyer.nama
+	from	tccom001
+	where	tccom001._index1 = {:tfisg415.ccon}
+	as set with 1 rows
+	selectdo
+	selectempty
+		buyer.nama = ""
+	endselect
+	
+	
+|****************************** function section *******************************
+
+functions:
+
+function long month.not.freezed()
+{
+	domain	tcyesno	bind.freeze
+	
+	select	tfisg415.frez:bind.freeze
+	from	tfisg415
+	where	tfisg415._index1 = {:tfisg415.year, :tfisg415.mnth}
+	as set with 1 rows
+	selectdo
+	selectempty
+		bind.freeze = empty
+	endselect
+	
+	if bind.freeze <> tcyesno.yes then
+		return(1)
+	endif
+	
+	return(0)
+}
+
+|* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+
+function long GSTR.filed.for.month()
+{
+	domain	tcyesno	bind.appr
+	
+	select	tfisg415.appr:bind.appr
+	from   	tfisg415
+	where 	tfisg415._index1 = {:tfisg415.year, :tfisg415.mnth}
+	as set with 1 rows
+	selectdo
+	selectempty
+		bind.appr = empty
+	endselect
+	
+	if bind.appr = tcyesno.yes then
+		return(1)
+	endif
+	
+	return(0)
+}
+
+|* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+
+function modify.year.and.month.GSTR.status(domain	tcyesno	i.flag)
+{
+	select	tfisg415.frez
+	from	tfisg415 for update
+	where	tfisg415._index1 = {:tfisg415.year, :tfisg415.mnth}
+	selectdo
+		tfisg415.frez = i.flag 
+		
+		db.update(ttfisg415, db.retry, e)
+		
+		if e = 0 then
+			commit.transaction()
+		else
+			abort.transaction()
+		endif
+	endselect
+}
+
+|* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+
+function update.for.exempted()
+{
+	
+	data.source = "ERP"
+	ngst.flag = ""
+	
+	select	tfisg415.ninv, tfisg415.code, tfisg415.type,
+		tfisg415.srno
+	from	tfisg415
+	where	tfisg415._index1 = {:tfisg415.year, :tfisg415.mnth}
+	and	tfisg415.sour <> :data.source
+	and	UNMARKED_CATEGORY_RECORDS
+	selectdo
+		select	tfisg409.exmt
+		from	tfisg409
+		where	tfisg409._index1 = {:tfisg415.type}
+		selectdo
+		selectempty
+			tfisg409.exmt = empty
+		endselect
+		
+		if tfisg409.exmt = tcyesno.yes then
+			ngst.flag = "Yes"
+			update.IR.Category("001")
+		endif	
+	endselect
+}
+
+|* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+
+function update.for.NON.GST()
+{
+	long	rcod.val
+	ngst.flag = ""
+	
+	select	tfisg415.ninv, tfisg415.code, tfisg415.ptyp,
+		tfisg415.srno, tfisg415.sour
+	from	tfisg415
+	where	tfisg415._index1 = {:tfisg415.year, :tfisg415.mnth}
+	and	UNMARKED_CATEGORY_RECORDS
+	selectdo
+		if trim$(tfisg415.sour) = "ERP" then
+			select	tfacp100.cdf_rcod
+			from	tfacp100
+			where	tfacp100._index1 = {:tfisg415.ninv}
+			selectdo
+				get.var(pid, "tfacp100.cdf_rcod", rcod.val)
+			endselect
+			
+			if rcod.val = 5 then
+				ngst.flag = "Yes"
+				update.IR.Category("002")
+			else
+				select	tfisg409.ngst
+				from	tfisg409
+				where	tfisg409._index3 = {:tfisg415.code}
+				selectdo
+				selectempty
+					tfisg409.ngst = empty
+				endselect
+			
+				if 	tfisg409.ngst = tcyesno.yes or 
+					tfisg415.ptyp = NON.GST.PUR then
+					
+					ngst.flag = "Yes"
+					update.IR.Category("002")
+				endif
+			endif
+		else
+			select	tfisg409.ngst
+			from	tfisg409
+			where	tfisg409._index3 = {:tfisg415.code}
+			selectdo
+			selectempty
+				tfisg409.ngst = empty
+			endselect
+			
+			if 	tfisg409.ngst = tcyesno.yes or 
+				trim$(tfisg415.ptyp) = NON.GST.PUR then
+				update.IR.Category("002")
+			endif
+			
+		endif
+	endselect
+}
+
+|* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+
+function update.for.NON.GST.purpose()
+{
+	data.source = "ERP"
+	ngst.flag = ""
+	
+	select	tfisg415.ninv, tfisg415.srno
+	from	tfisg415
+	where	tfisg415._index1 = {:tfisg415.year, :tfisg415.mnth}
+	and	tfisg415.sour = :data.source
+	and	UNMARKED_CATEGORY_RECORDS
+	selectdo
+		select	tfacp100.cdf_rcod
+		from	tfacp100
+		where	tfacp100._index1 = {:tfisg415.ninv}
+		and	tfacp100.cdf_rcod in(2, 3, 6, 7, 8, 9, 10, 11)
+		selectdo
+			update.IR.Category("003")
+		endselect	
+	endselect
+}
+
+|* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+
+function update.for.nil.rated()
+{
+	ngst.flag = ""
+	
+	select	tfisg415.ninv, tfisg415.ptyp, tfisg415.sour,
+		tfisg415.type, tfisg415.srno, tfisg415.igmt,
+		tfisg415.cgmt, tfisg415.sgmt, tfisg415.csmt,
+		tfisg415.code
+	from	tfisg415
+	where	tfisg415._index1 = {:tfisg415.year, :tfisg415.mnth}
+	and	UNMARKED_CATEGORY_RECORDS
+	selectdo
+		if trim$(tfisg415.sour) = "ERP" then
+			select	tfacp100.ifbp
+			from	tfacp100
+			where	tfacp100._index1 = {:tfisg415.ninv}
+			selectdo
+			selectempty
+				tfacp100.ifbp = ""
+			endselect
+			
+			select	tfisg409.rcma
+			from	tfisg409
+			where	tfisg409._index3 = {:tfisg415.code}
+			and	tfisg409.rcma = tcyesno.yes
+			selectdo
+			selectempty
+				tfisg409.rcma = empty
+			endselect
+			
+			select	tcisg104.txcl
+			from	tcisg104
+			where	tcisg104._index1 = {:tfacp100.ifbp}
+			selectdo
+			selectempty
+				tcisg104.txcl = empty
+			endselect
+					
+			if 	tcisg104.txcl = tcisg.tax.clas.reg and
+				(tfisg415.igmt + tfisg415.cgmt + tfisg415.sgmt + tfisg415.csmt) = 0.0000 and 	|* Total GST Value
+				tfisg409.rcma <> tcyesno.yes then						|* is Zero
+				
+				ngst.flag = "Yes"
+				update.IR.Category("004")
+			endif
+		else
+			select	tfisg408.tgst, tfisg408.type
+			from	tfisg408
+			where	tfisg408._index1 = {:tfisg415.sour, :tfisg415.ninv}
+			selectdo
+			selectempty
+				tfisg408.tgst = 0.00
+				tfisg408.type = ""
+			endselect
+			
+			if 	trim$(tfisg415.ptyp) = REG.DEALER and
+				tfisg408.tgst = 0.00 then
+				
+				ngst.flag = "Yes"
+				update.IR.Category("004")
+			endif
+		endif
+	endselect
+}
+
+|* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+
+function update.for.composition.dealer()
+{
+	ngst.flag = ""
+	
+	select	tfisg415.ninv, tfisg415.ptyp, tfisg415.sour,
+		tfisg415.type, tfisg415.srno
+	from	tfisg415
+	where	tfisg415._index1 = {:tfisg415.year, :tfisg415.mnth}
+	and	UNMARKED_CATEGORY_RECORDS
+	selectdo
+		if trim$(tfisg415.sour) = "ERP" then
+			select	tfacp100.ifbp
+			from	tfacp100
+			where	tfacp100._index1 = {:tfisg415.ninv}
+			selectdo
+			selectempty
+				tfacp100.ifbp = ""
+			endselect
+			
+			select	tcisg104.txcl
+			from	tcisg104
+			where	tcisg104._index1 = {:tfacp100.ifbp}
+			selectdo
+			selectempty
+				tcisg104.txcl = empty
+			endselect
+					
+			if tcisg104.txcl = tcisg.tax.clas.comp then
+				update.IR.Category("005")
+			endif
+		else
+			if trim$(tfisg415.ptyp) = COMPOSITE.DEALER then
+				update.IR.Category("005")
+			endif
+		endif
+	endselect
+}
+
+|* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+
+function update.for.third.country()
+{
+	domain	tccprj	get.cprj
+		long	rcod.val
+	
+	data.source = "ERP"
+	ngst.flag = ""
+	
+	select	tfisg415.ninv, tfisg415.srno
+	from	tfisg415
+	where	tfisg415._index1 = {:tfisg415.year, :tfisg415.mnth}
+	and	tfisg415.sour = :data.source
+	and	UNMARKED_CATEGORY_RECORDS
+	selectdo
+		select	tfacp100.cdf_cprj, tfacp100.cdf_rcod,
+			tfacp100.ccur
+		from	tfacp100
+		where	tfacp100._index1 = {:tfisg415.ninv}
+		selectdo
+			get.var(pid, "tfacp100.cdf_cprj", get.cprj)
+			get.var(pid, "tfacp100.cdf_rcod", rcod.val)
+		endselect
+		
+		select	tpisg122.btad, tccom130.ccty
+		from	tpisg122, tccom130
+		where	tpisg122._index1 = {:get.cprj}
+		and 	tpisg122.btad refers to tccom130 UNREF CLEAR
+		selectdo
+		selectempty
+			tccom130.ccty = ""
+		endselect
+		
+		if	(tccom130.ccty <> OWN.COUNTRY and tfacp100.ccur <> INDIAN_CURRENCY) or
+			rcod.val = 4 or
+			rcod.val = 1 then
+			
+			update.IR.Category("006")
+		endif
+	endselect
+}
+
+|* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+
+function update.for.NON.ITC()
+{
+	ngst.flag = ""
+	
+	select	tfisg415.ninv, tfisg415.ptyp, tfisg415.code,
+		tfisg415.srno, tfisg415.csmt, tfisg415.cgmt, 
+		tfisg415.sgmt, tfisg415.igmt
+	from	tfisg415
+	where	tfisg415._index1 = {:tfisg415.year, :tfisg415.mnth}
+	and	UNMARKED_CATEGORY_RECORDS
+	selectdo
+		select	tfisg409.etax
+		from	tfisg409
+		where	tfisg409._index3 = {:tfisg415.code}
+		selectdo
+		selectempty
+			tfisg409.etax = empty
+		endselect
+		
+		if 	(trim$(tfisg415.ptyp) = "Registered No ITC" or tfisg409.etax = tcyesno.yes) and
+			(tfisg415.igmt + tfisg415.cgmt + tfisg415.sgmt + tfisg415.csmt) <> 0.00 then
+			
+			update.IR.Category("007")
+		endif
+	endselect
+}
+
+|* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+
+function update.for.import.of.goods.and.service(long i.flag.val)
+{
+	domain	tccprj	get.cprj
+	
+	data.source = "ERP"
+	ngst.flag = ""
+	
+	select	tfisg415.ninv, tfisg415.icat, tfisg415.sour,
+		tfisg415.srno
+	from	tfisg415
+	where	tfisg415._index1 = {:tfisg415.year, :tfisg415.mnth}
+	and	UNMARKED_CATEGORY_RECORDS
+	selectdo
+		if trim$(tfisg415.sour) = "ERP" then
+			select	tfacp100.cdf_cprj, tfacp100.ccur
+			from	tfacp100
+			where	tfacp100._index1 = {:tfisg415.ninv}
+			selectdo
+				get.var(pid, "tfacp100.cdf_cprj", get.cprj)
+			endselect
+			
+			select	tpisg122.btad, tccom130.ccty
+			from	tpisg122, tccom130
+			where	tpisg122._index1 = {:get.cprj}
+			and 	tpisg122.btad refers to tccom130 UNREF CLEAR
+			selectdo
+			selectempty
+				tccom130.ccty = ""
+			endselect
+			
+			if 	tccom130.ccty = OWN.COUNTRY and 
+				tfacp100.ccur <> INDIAN_CURRENCY then
+				
+				if tfisg415.icat = GOODS then
+					update.IR.Category("008")
+				else
+					update.IR.Category("009")
+				endif
+			endif
+		else
+			select	tfisg408.ccur
+			from	tfisg408
+			where	tfisg408._index1 = {:tfisg415.sour, :tfisg415.ninv}
+			selectdo
+			selectempty
+				tfisg408.ccur = ""
+			endselect
+			
+			if tfisg408.ccur <> INDIAN_CURRENCY then
+				if tfisg415.icat = GOODS then
+					update.IR.Category("008")
+				else
+					update.IR.Category("009")
+				endif
+			endif	
+		endif
+	endselect
+}
+
+|* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+
+function update.for.RCM.unregistered()
+{
+	ngst.flag = ""
+	
+	select	tfisg415.ninv, tfisg415.ptyp, tfisg415.sour,
+		tfisg415.srno
+	from	tfisg415
+	where	tfisg415._index1 = {:tfisg415.year, :tfisg415.mnth}
+	and	UNMARKED_CATEGORY_RECORDS
+	selectdo
+		if trim$(tfisg415.sour) = "ERP" then
+			select	tfacp100.ifbp
+			from	tfacp100
+			where	tfacp100._index1 = {:tfisg415.ninv}
+			selectdo
+			selectempty
+				tfacp100.ifbp = ""
+			endselect
+			
+			select	tcisg104.txcl
+			from	tcisg104
+			where	tcisg104._index1 = {:tfacp100.ifbp}
+			selectdo
+			selectempty
+				tcisg104.txcl = empty
+			endselect
+			
+			if tcisg104.txcl = tcisg.tax.clas.nreg then
+				update.IR.Category("010")
+			endif
+		else
+			if trim$(tfisg415.ptyp) = UNREG.DEALER then
+				update.IR.Category("010")
+			endif
+		endif
+	endselect
+}
+
+|* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+
+function update.for.RCM.registered()
+{
+	ngst.flag = ""
+	
+	select	tfisg415.ninv, tfisg415.ptyp, tfisg415.sour,
+		tfisg415.type, tfisg415.srno, tfisg415.csmt,
+		tfisg415.cgmt, tfisg415.sgmt, tfisg415.igmt,
+		tfisg415.code
+	from	tfisg415
+	where	tfisg415._index1 = {:tfisg415.year, :tfisg415.mnth}
+	and	UNMARKED_CATEGORY_RECORDS
+	selectdo
+		if trim$(tfisg415.sour) = "ERP" then
+			select	tfacp100.ifbp
+			from	tfacp100
+			where	tfacp100._index1 = {:tfisg415.ninv}
+			selectdo
+			selectempty
+				tfacp100.ifbp = ""
+			endselect
+			
+			select	tcisg104.txcl
+			from	tcisg104
+			where	tcisg104._index1 = {:tfacp100.ifbp}
+			selectdo
+			selectempty
+				tcisg104.txcl = empty
+			endselect
+			
+			select	tfisg409.rcma
+			from	tfisg409
+			where	tfisg409._index3 = {:tfisg415.code}
+			and	tfisg409.rcma = tcyesno.yes
+			selectdo
+			selectempty
+				tfisg409.rcma = empty
+			endselect
+			
+			if 	tcisg104.txcl = tcisg.tax.clas.reg and
+				tfisg409.rcma = tcyesno.yes and
+				(tfisg415.igmt + tfisg415.cgmt + tfisg415.sgmt + tfisg415.csmt) = 0.0000 then
+				
+				update.IR.Category("011")
+			endif
+		else
+			select	tfisg408.tgst, tfisg408.type
+			from	tfisg408
+			where	tfisg408._index1 = {:tfisg415.sour, :tfisg415.ninv}
+			selectdo
+			selectempty
+				tfisg408.tgst = 0.00
+				tfisg408.type = ""
+			endselect
+			
+			select	tfisg409.rcma
+			from	tfisg409
+			where	tfisg409._index1 = {:tfisg408.type}
+			selectdo
+			selectempty
+				tfisg409.rcma = empty
+			endselect
+			
+			if 	trim$(tfisg415.ptyp) = REG.DEALER and
+				tfisg409.rcma = tcyesno.yes and
+				tfisg408.tgst = 0.00 then
+				
+				update.IR.Category("011")
+			endif
+		endif
+	endselect
+}
+
+|* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+
+function update.for.GSTR()
+{
+	ngst.flag = ""
+				|* Remaining Records for GSTR - 2
+	select	tfisg415.ninv,
+		tfisg415.srno
+	from	tfisg415
+	where	tfisg415._index1 = {:tfisg415.year, :tfisg415.mnth}
+	and	UNMARKED_CATEGORY_RECORDS
+	selectdo
+		update.IR.Category("012")
+	endselect
+}
+
+|* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+
+function update.IR.Category(domain tcccur i.catg.val)
+{
+	select	tfisg415.irnt, tfisg415.ngst
+	from	tfisg415 for update
+	where	tfisg415._index1 = {
+				:tfisg415.year,
+				:tfisg415.mnth,
+				:tfisg415.srno
+				}
+	selectdo
+		tfisg415.irnt = i.catg.val
+		tfisg415.ngst = ngst.flag
+		
+		db.update(ttfisg415, db.retry, e)
+		
+		if e = 0 then
+			commit.transaction()
+		else
+			abort.transaction()
+		endif
+	endselect
+}
+
+|* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+
+function initialize.IR.fields(domain tcccur i.catg.val)
+{
+	select	tfisg415.irnt, tfisg415.ngst
+	from	tfisg415 for update
+	where	tfisg415._index1 = {:tfisg415.year, :tfisg415.mnth}
+	selectdo
+		tfisg415.irnt = i.catg.val
+		tfisg415.ngst = ""
+			|* RCM Related Fields
+		tfisg415.igst = 0.00
+		tfisg415.cgst = 0.00
+		tfisg415.sgst = 0.00
+		tfisg415.accc.i = ""
+		tfisg415.accc.l = ""
+		tfisg415.accs.i = ""
+		tfisg415.accs.l = ""
+		tfisg415.acci.i = ""
+		tfisg415.acci.l = ""
+		
+		db.update(ttfisg415, db.retry, e)
+		
+		if e = 0 then
+			commit.transaction()
+		else
+			abort.transaction()
+		endif
+	endselect
+}
+	
+function update.history.table.tfisg425()			|ISGEC01058.sn
+{
+	domain	tclogn	user
+	domain	tcdate	curr.date
+	
+	user = logname$
+	curr.date = utc.num()
+| 	if tfisg415.frez = tcyesno.no and tfisg415.stat <> tdisg.stat.process then
+		select	tfisg425.*
+		from	tfisg425 
+		where	tfisg425._index1 = {:tfisg415.year, :tfisg415.mnth, :tfisg415.srno, :user, :curr.date}
+		selectdo
+		selectempty
+			tfisg425.year  = tfisg415.year
+			tfisg425.mnth  = tfisg415.mnth
+			tfisg425.srno  = tfisg415.srno
+			tfisg425.user  = user
+			tfisg425.date  = curr.date
+			tfisg425.invd  = tfisg415.invd
+			tfisg425.isup  = tfisg415.isup
+			tfisg425.snam  = tfisg415.snam 
+			tfisg425.fovn.b= tfisg415.fovn.b
+			tfisg425.posu  = tfisg415.posu
+			tfisg425.icat  = tfisg415.icat
+			tfisg425.idsc  = tfisg415.idsc
+			tfisg425.code  = tfisg415.code
+			tfisg425.iqty  = tfisg415.iqty
+			tfisg425.unit  = tfisg415.unit
+			tfisg425.irat  = tfisg415.irat
+			tfisg425.disc  = tfisg415.disc
+			tfisg425.itax  = tfisg415.itax
+			tfisg425.igrt  = tfisg415.igrt
+			tfisg425.igmt  = tfisg415.igmt
+			tfisg425.cgrt  = tfisg415.cgrt
+			tfisg425.cgmt  = tfisg415.cgmt
+			tfisg425.sgrt  = tfisg415.sgrt
+			tfisg425.sgmt  = tfisg415.sgmt
+			tfisg425.csrt  = tfisg415.csrt
+			tfisg425.csmt  = tfisg415.csmt
+			tfisg425.itct  = tfisg415.itct
+			tfisg425.itcg  = tfisg415.itcg
+			tfisg425.itsg  = tfisg415.itsg
+			tfisg425.itig  = tfisg415.itig
+			tfisg425.itcs  = tfisg415.itcs
+			tfisg425.bosu  = tfisg415.bosu
+			tfisg425.rcma  = tfisg415.rcma 
+			tfisg425.ngst  = tfisg415.ngst
+			tfisg425.oidt  = tfisg415.oidt
+			tfisg425.oinv  = tfisg415.oinv
+			tfisg425.ogst  = tfisg415.ogst
+			tfisg425.adat  = tfisg415.adat
+			tfisg425.adoc  = tfisg415.adoc
+			tfisg425.aamt  = tfisg415.aamt
+			tfisg425.isez  = tfisg415.isez
+			tfisg425.bprt  = tfisg415.bprt
+			tfisg425.cbln  = tfisg415.cbln
+			tfisg425.bldt  = tfisg415.bldt
+			tfisg425.fovn.c= tfisg415.fovn.c
+			tfisg425.sadd  = tfisg415.sadd
+			tfisg425.scit  = tfisg415.scit
+			tfisg425.sste  = tfisg415.sste
+			tfisg425.grno  = tfisg415.grno
+			tfisg425.grdt  = tfisg415.grdt
+			tfisg425.grqt  = tfisg415.grqt
+			tfisg425.grmt  = tfisg415.grmt
+			tfisg425.cdac  = tfisg415.cdac
+			tfisg425.ninv  = tfisg415.ninv
+			tfisg425.ipon  = tfisg415.ipon
+			tfisg425.irdt  = tfisg415.irdt
+			tfisg425.oird  = tfisg415.oird
+			tfisg425.eunt  = tfisg415.eunt
+			tfisg425.payd  = tfisg415.payd
+			tfisg425.sour  = tfisg415.sour
+			tfisg425.ptyp  = tfisg415.ptyp
+			tfisg425.ucod  = tfisg415.ucod
+			tfisg425.unam  = tfisg415.unam
+			tfisg425.frez  = tfisg415.frez
+			tfisg425.appr  = tfisg415.appr
+			tfisg425.frzd  = tfisg415.frzd
+			tfisg425.retd  = tfisg415.retd
+			tfisg425.irnt  = tfisg415.irnt
+			tfisg425.type  = tfisg415.type
+			tfisg425.vtyp  = tfisg415.vtyp
+			tfisg425.vdoc  = tfisg415.vdoc
+			tfisg425.comp  = tfisg415.comp
+			tfisg425.accc.l= tfisg415.accc.l
+			tfisg425.accs.l= tfisg415.accs.l
+			tfisg425.acci.l= tfisg415.acci.l
+			tfisg425.acci.i= tfisg415.acci.i
+			tfisg425.accc.i= tfisg415.accc.i
+			tfisg425.accs.i= tfisg415.accs.i
+			tfisg425.cgst  = tfisg415.cgst
+			tfisg425.sgst  = tfisg415.sgst
+			tfisg425.igst  = tfisg415.igst
+			tfisg425.gstr  = tfisg415.gstr
+			tfisg425.edrn  = tfisg415.edrn
+			tfisg425.stat  = tfisg415.stat
+			tfisg425.ityp  = tfisg415.ityp
+			tfisg425.idoc  = tfisg415.idoc
+			tfisg425.fcmp  = tfisg415.fcmp
+			tfisg425.btno  = tfisg415.btch
+			tfisg425.ttyp  = tfisg425.ttyp
+			tfisg425.docd  = tfisg425.docd
+			db.insert(ttfisg425,db.skip.dupl,e)
+		endselect	
+		if e = 0 then
+			commit.transaction()
+| 			message("Process Completed")
+		else
+			
+			abort.transaction()
+		endif	
+| 	else
+| 		message("Freezed or Processed Record cannot be deleted")
+| 		choice.again()	
+| 	endif		
+}								|ISGEC01058.en
+
+function update.purchase.invoice.details()				|#ISGEC01058.sn
+{	
+	domain whinh.pksp IR_NO
+	
+	select	tfisg415.*
+	from	tfisg415  for update
+	where	tfisg415._index1 = {:tfisg415.year,:tfisg415.mnth}
+| 	and	tfisg415.appr = tcyesno.yes					|#ISGEC01095.o
+	and	(tfisg415.appr = tcyesno.yes or tfisg415.frez = tcyesno.yes)	|#ISGEC01095.n
+	selectdo
+		IR_NO = str$(tfisg415.ninv)
+		
+		if trim$(tfisg415.sour) = "ERP" then
+			select	tfisg001.*
+			from	tfisg001
+			where	tfisg001._index1 = {:tfisg415.ninv}
+			selectdo
+				select	tfacp251.icom, tfacp251.ityp, tfacp251.idoc
+				from	tfacp251	
+				where	tfacp251.shpm = {:IR_NO}
+				and	tfacp251._compnr = :tfisg001.ncmp
+				as set with 1 rows
+				selectdo
+					tfisg415.fcmp = tfacp251.icom
+					tfisg415.ttyp = tfacp251.ityp
+					tfisg415.docd = tfacp251.idoc
+				endselect
+			selectempty
+				select	tfacp251.icom, tfacp251.ityp, tfacp251.idoc
+				from	tfacp251	
+				where	tfacp251.shpm = {:IR_NO}
+				and	tfacp251._compnr = 200
+				as set with 1 rows
+				selectdo
+					tfisg415.fcmp = tfacp251.icom
+					tfisg415.ttyp = tfacp251.ityp
+					tfisg415.docd = tfacp251.idoc
+				endselect	
+			endselect	
+		else
+			select	tfisg408.comp, tfisg408.ttyp, tfisg408.docn
+			from	tfisg408
+			where	tfisg408._index1 = {:tfisg415.sour, :tfisg415.ninv}
+			selectdo
+				tfisg408.ttyp = toupper$(tfisg408.ttyp)
+				tfisg415.fcmp = tfisg408.comp
+				tfisg415.ttyp = tfisg408.ttyp
+				tfisg415.docd = tfisg408.docn
+			selectempty
+				tfisg408.ttyp = ""
+				tfisg415.fcmp = 0
+				tfisg415.ttyp = ""
+				tfisg415.docd = 0
+			endselect
+		endif
+		
+		db.update(ttfisg415,db.retry,e)
+		
+		if tfisg415.fcmp <> 0  then
+			select	tfgld018.btno,tfgld018.ttyp, tfgld018.docn
+			from	tfgld018
+			where	tfgld018._index1 = {:tfisg415.ttyp, :tfisg415.docd}
+			and	tfgld018._compnr = :tfisg415.fcmp
+			selectdo
+				tfisg415.btch = tfgld018.btno
+			endselect
+		else
+			tfisg415.btch = 0
+		endif	
+		db.update(ttfisg415,db.retry,e)
+		
+		if e = 0 then
+			commit.transaction()
+		else
+			message("The ir_no. %s contains incorrect value", IR_NO)
+		endif
+	
+	endselect
+
+	if e = 0 then
+		message("Process Completed")
+	endif
+	
+}											|#ISGEC01058.en
+

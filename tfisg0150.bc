@@ -1,0 +1,304 @@
+|******************************************************************************
+|* tfisg0150  0  VRC B61U a7 isg 
+|* Batch Details On The Basis of Bank and Payment Mehtod
+|* merino1                       
+|* 2018-03-23
+|******************************************************************************
+|* Main table tfisg050 , Form Type 1
+|******************************************************************************
+|*
+|* ID ISGEC01056, Priya Jindal, 24/3/2018,  VRC B61U a7 isg
+|* New Developemnt for Bank Process
+|*                     
+|* GH462CR734, RAvi Kumar, 30-12-2020
+|* Modififcation in bank payment on Banks portal session                                                         
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttfisg050 
+	table	ttfisg051
+	table	ttfisg050
+	table	ttfcmg100
+	table	ttfcmg101
+	table	ttfcmg103
+	table	ttccom100			|GH462CR734.a
+	
+	extern	domain	tcamnt		tot.chq.amnt
+	extern	domain	tfgld.date	curr.date
+	extern	domain	tcmcs.long	brp_id
+	extern	domain	tcmcs.str13	calling.sess
+	extern	domain	tcmcs.str3	pay
+	
+	string		err.file(100), file.name(100), line3(3000), line4(3000)	|GH462CR734.a
+		domain	tfgld.docn	packing.slip				|GH462CR734.a
+	long		ret2, stat.fp						|GH462CR734.a
+
+	#include<bic_desktop>	
+|****************************** program section ********************************
+before.program:
+	import("prog.name$",calling.sess)
+	import("pay",pay)
+	
+	if calling.sess<>"tfisg1270m000" then
+		message("Cannot start session")
+		exit()
+	endif	
+	
+	curr.date = date.num()
+	delete.tfisg050()
+	populate.tfisg050()
+	tot.chq.amnt = 0.00
+	
+	fattr.total.line = true
+
+before.display.object:
+| on.display.total.line:
+	on.main.table(get.total.amnt)
+	display.total.fields( "tfisg050.amnt", tot.chq.amnt)
+
+
+
+|****************************** group section **********************************
+
+|****************************** choice program *********************************
+choice.recheck:
+on.choice:
+| 	update.tfisg050()
+	query.extend.where("tfisg050.chck = tcyesno.yes")
+	rebuild.query()
+	
+choice.regenerate:
+on.choice:
+	query.extend.where("tfisg050.btno <> 0" )
+	rebuild.query()
+
+choice.sent.to.bank:
+on.choice:
+	insert.tfisg051()
+	generate.report()
+|***************************** function section ********************************
+functions:
+
+function get.total.amnt()
+{
+	tot.chq.amnt = 0.00
+	select	sum(tfisg050.amnt):tot.chq.amnt
+	from	tfisg050
+	where	tfisg050.chck = tcyesno.yes
+	selectdo
+	endselect	
+}
+
+function insert.tfisg051()
+{
+	select	tfisg050.*
+	from	tfisg050
+	where	tfisg050.chck = tcyesno.yes
+	selectdo
+		select	tfisg051.*
+		from	tfisg051
+		where	tfisg051._index1 = {:tfisg050.bank,:tfisg050.paym,:tfisg050.btno}
+		selectdo
+		selectempty
+			tfisg051.bank = tfisg050.bank
+			tfisg051.paym = tfisg050.paym
+			tfisg051.btno = tfisg050.btno
+			tfisg051.tadv = tfisg050.tadv
+			tfisg051.bpid = tfisg050.bpid
+			tfisg051.amnt = tfisg050.amnt
+			tfisg051.docn = tfisg050.docn
+			tfisg051.bdat = tfisg050.bdat
+			tfisg051.cheq = tfisg050.cheq
+			tfisg051.stdt = 0
+			tfisg051.user = logname$
+			tfisg051.fnam = ""
+			tfisg051.flid = 0
+			tfisg051.pmtf = tcyesno.no
+			tfisg051.pdat = utc.num()
+			db.insert(ttfisg051,db.skip.dupl,e)
+		endselect
+	endselect
+	if e = 0 then
+		commit.transaction()
+	else	
+		abort.transaction()
+	endif	
+	
+}
+
+function generate.report()
+{	
+	brp_id = brp.open( "rtfisg045001000", "D", 0 )
+	
+	select	tfisg050.*,tccom100.nama
+	from	tfisg050,tccom100
+	where	tfisg050.chck = tcyesno.yes
+	and	tfisg050.bpid refers to tccom100
+	selectdo
+		brp.ready( brp_id )
+	endselect	
+	brp.close( brp_id )
+	
+	generate.report.excel()			|GH462CR734.a
+
+}
+
+
+function delete.tfisg050()
+{
+	db.retry.point()
+	select	tfisg050.*
+	from	tfisg050 for update
+	selectdo
+		db.delete(ttfisg050,db.retry,e)
+		if e = 0 then
+			commit.transaction()
+		else
+			abort.transaction()
+		endif	
+	endselect	
+}
+
+function populate.tfisg050()
+{
+	select	tfcmg100.*
+	from	tfcmg100
+	where	tfcmg100._index1 = {"SCB",:pay}
+	and	tfcmg100.chst = tfcmg.chst.anticipated
+	selectdo
+		select	tfcmg101.*
+		from	tfcmg101
+		where	tfcmg101._index1 = {:tfcmg100.pbtn}
+		and 	tfcmg101.post = tcyesno.yes
+| 		and	tfcmg101.pdat <= :curr.date
+		and	tfcmg101.tadv <> tfcmg.tadv.alone
+		and	tfcmg101.ptyp = :tfcmg100.typo
+		and	tfcmg101.pdoc = :tfcmg100.doco	
+		as set with 1 rows
+		selectdo
+			select	tfcmg103.plan
+			from	tfcmg103
+			where	tfcmg103._index1 = {:tfcmg101.btno}
+			and	tfcmg103.plan <= :curr.date
+			as set with 1 rows
+			selectdo
+| 			endselect	
+			
+				select	tfgld106.*
+				from	tfgld106
+				where	tfgld106._index1 ={:tfcmg101.ptyp,:tfcmg101.pdoc}
+				selectdo
+					select	tfisg051.*
+					from	tfisg051 
+					where	tfisg051._index1 = {:tfcmg100.bank,:tfcmg100.paym,:tfcmg100.pbtn}
+					selectdo
+					selectempty
+						select	tfisg050.*
+						from	tfisg050 
+						where	tfisg050._index1 = {:tfcmg100.bank,:tfcmg100.paym,:tfcmg100.pbtn}
+						selectdo
+						selectempty
+							tfisg050.bank = tfcmg100.bank
+							tfisg050.paym = tfcmg100.paym
+							tfisg050.btno = tfcmg100.pbtn
+							tfisg050.tadv = tfcmg101.tadv
+							tfisg050.bpid = tfcmg101.ptbp
+							tfisg050.amnt = tfcmg100.amnt
+							tfisg050.docn = tfcmg101.ptyp & "\" & str$(tfcmg101.pdoc)
+	| 						tfisg050.bdat = tfcmg101.pdat
+							tfisg050.bdat = tfcmg103.plan
+							tfisg050.chck = tcyesno.no
+							if pay = "CHQ" then
+								tfisg050.cheq = tfcmg100.cheq
+							else
+								tfisg050.cheq = ""
+							endif		
+							db.insert(ttfisg050,db.skip.dupl,e)
+						endselect
+					endselect
+				endselect
+			endselect		
+		endselect
+	endselect
+	if e = 0 then
+		commit.transaction()
+	else
+		abort.transaction()
+	endif	
+
+
+}
+
+
+function generate.report.excel()					|GH462CR734.a.s
+{
+	open.file()
+	generate.header()
+	
+	select	tfisg050.*,tccom100.nama
+	from	tfisg050,tccom100
+	where	tfisg050.chck = tcyesno.yes
+	and	tfisg050.bpid refers to tccom100
+	selectdo
+		print.detail()
+	endselect	
+	
+	close.file()
+}
+
+function open.file()
+{
+	err.file = bse.tmp.dir$() & str$(utc.num()) & ".xls"
+	
+	file.name = "c:\temp\" & str$(utc.num())  & ".xls"
+	
+	stat.fp = seq.open(err.file, "w+")
+	if stat.fp >0 then
+ 		seq.seek(0, 0, stat.fp)
+	endif
+}
+
+function	generate.header()
+{
+	line4 =	concat$("	",
+		sprintf$("Bank"),					|1		
+		sprintf$("Payment Method"),				|2		
+		sprintf$("Batch"),					|3		
+		sprintf$("Type of Payment"),				|4		
+		sprintf$("Supplier Code"),				|5		
+		sprintf$("Supplier Name"),				|6
+		sprintf$("Cheque Amount"),				|7
+		sprintf$("Bank Voucher Reference"),			|8
+		sprintf$("Bank Voucher Date"),				|9
+		sprintf$("Cheque No."))					|10
+		
+		
+	line4 = strip$(shiftl$(line4))		
+	seq.puts(line4, stat.fp)	
+}
+
+function	print.detail()
+{	
+	line3 =	concat$("	",
+		sprintf$("%s", tfisg050.bank),					|1
+		sprintf$("%s", tfisg050.paym),					|2				
+		sprintf$("%s", str$(tfisg050.btno)),				|3				
+		sprintf$("%s", enum.descr$("tfcmg.tadv", tfisg050.tadv)),					|4				
+		sprintf$("%s", tfisg050.bpid),					|5				
+		sprintf$("%s", trim$(tccom100.nama)),				|6
+		sprintf$("%s", str$(tfisg050.amnt)),				|7
+		sprintf$("%s", tfisg050.docn),					|8
+		sprintf$("%s", sprintf$("%D(%02d/%02m/%04Y)", tfisg050.bdat)),	|9
+		sprintf$("%s", tfisg050.cheq))					|10
+		
+		line3 = strip$(shiftl$(line3))
+		seq.puts(line3, stat.fp)
+}
+
+function close.file()
+{
+	seq.close(stat.fp)
+	ret2 = server2client(err.file,file.name,1)
+	ret2 = app_start(file.name,"c:","","","")
+}											|GH462CR734.a.e
+

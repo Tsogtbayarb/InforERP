@@ -1,0 +1,87 @@
+|******************************************************************************
+|* tfisg9535m001  0  VRC B61U a7 isg 
+|* Update tfacp935, when TCS amnt not updated
+|* Ravi Kumar                    
+|* 2021-01-25
+|******************************************************************************
+|* Main table tfacp935 Order Tax Details, Form Type 4
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttfacp935 | Order Tax Details
+  table   twhinh312
+  table   twhinh936
+
+   extern  domain  tcorno	rcno
+   extern	domain	tcpono	rcln
+   extern	domain	tcncmp	curr_comp
+		string	error.msg(500)
+		long	found
+		
+	#include <bic_dam>
+
+|****************************** program section ********************************
+before.program:
+	curr_comp = get.compnr()
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+
+choice.process:
+on.choice:
+	update.tcs.tfacp935()
+	
+	if found = 1 then
+		message("Updated")
+	else
+		message(error.msg)
+	endif
+	
+functions:
+function update.tcs.tfacp935()
+{
+	found = 0
+	error.msg = "NO changed TCS amount"
+	select	whinh312.*
+	from	whinh312
+	where	whinh312._index1 = {:rcno, :rcln}
+	as set with 1 rows
+	selectdo
+		select	whinh936.*
+		from	whinh936
+		where	whinh936._index1 = {:whinh312.rcno, :whinh312.rcln}
+		and	whinh936.ttyp = tctax.indt.l.n.a
+		as set with 1 rows
+		selectdo
+			select	tfacp935.vamt
+			from	tfacp935 for update
+			where	tfacp935._index1 = {:curr_comp, 1, :whinh312.orno, :whinh312.pono, :whinh312.seqn,
+							:whinh312.rcno, :whinh312.rcln, :whinh936.lcln}
+			and	tfacp935.cvat = :whinh936.taxc
+			and	tfacp935.sern = :whinh936.seqn.l
+			as set with 1 rows
+			selectdo
+				if whinh936.aamt <> tfacp935.vamt then
+					found = 1
+					if dal.change.object("tfacp935") = 0 then
+						dal.set.field("tfacp935.vamt", whinh936.aamt)
+						if dal.save.object("tfacp935") = 0 then
+							commit.transaction()
+						else
+							abort.transaction()
+							dal.get.error.message(error.msg)
+						endif
+					endif
+				endif
+			endselect
+		endselect
+	endselect
+}
+
+

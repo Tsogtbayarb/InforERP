@@ -1,0 +1,151 @@
+|******************************************************************************
+|* tfisg0122m000  0  VRC B61U a7 isg 
+|* Cashflow Budget for Monthly Summary for the Division
+|* Ravi Kumar                    
+|* 2020-02-03
+|******************************************************************************
+|* Main table tfisg022 Cashflow Budget for Monthly Summary for the Division, Form Type 1
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttfisg022 | Cashflow Budget for Monthly Summary for the Division
+
+	extern	domain	tcmcs.str100m	hcod.dsca
+	extern	domain	tfisg.htype	htyp
+	extern	domain	tcamnt 		tot.amti, tot.amto, tot.namt, tot.cmti, tot.cmto, tot.cnmt,
+					tot.oami, tot.oamo, tot.oamn
+	
+|****************************** program section ********************************
+before.program:
+	fattr.total.line = true
+
+before.display.object:
+	select	tfisg020.year
+	from	tfisg020
+	where	tfisg020._index1 = {:tfisg022.year, :tfisg022.mnth, :tfisg022.eunt, :tfisg022.rvsn}
+	and	(tfisg020.stat = tpisg.rvsnstat.approved or tfisg020.stat = tpisg.rvsnstat.sendforapp)
+	as set with 1 rows
+	selectdo
+		disable.commands(ADD.SET, MARK.DELETE, dupl.occur)
+	selectempty
+		enable.commands(ADD.SET, MARK.DELETE, dupl.occur)
+	endselect
+	
+	
+|****************************** group section **********************************
+field.hcod.dsca:
+before.display:
+	select	tfisg011.dsca:hcod.dsca
+	from	tfisg011
+	where	tfisg011._index1 = {:tfisg022.hcod}
+	as set with 1 rows
+	selectdo
+	selectempty
+		hcod.dsca = ""
+	endselect
+	
+field.htyp:
+before.display:
+	select	tfisg011.htyp:htyp
+	from	tfisg011
+	where	tfisg011._index1 = {:tfisg022.hcod}
+	as set with 1 rows
+	selectdo
+	selectempty
+	endselect
+	
+on.display.total.line:
+	total.cal()
+	outlook_total()
+    display.total.fields( "tfisg022.amti", tot.amti, 
+                          "tfisg022.amto", tot.amto,
+                          "tfisg022.namt", tot.namt,
+                          "tfisg022.cmti", tot.cmti,
+                          "tfisg022.cmto", tot.cmto,
+                          "tfisg022.cnmt", tot.cnmt,
+                          "tfisg022.oami", tot.oami,
+                          "tfisg022.oamo", tot.oamo,
+                          "tfisg022.oamn", tot.oamn)
+			  
+functions:
+function total.cal()
+{
+	select	sum(tfisg022.amti):tot.amti,
+		sum(tfisg022.amto):tot.amto,
+		sum(tfisg022.namt):tot.namt,
+		sum(tfisg022.cmti):tot.cmti,
+		sum(tfisg022.cmto):tot.cmto
+	from	tfisg022
+	where	tfisg022._index1 = {:tfisg022.year, :tfisg022.mnth, :tfisg022.eunt}
+	selectdo
+	selectempty
+		tot.amti = 0
+		tot.amto = 0
+		tot.namt = 0
+		tot.cmti = 0
+		tot.cmto = 0
+		tot.cnmt = 0
+	endselect
+	
+	tot.cnmt = tot.cmti - tot.cmto
+}
+
+
+
+function outlook_total()
+{
+| 	In Out Net Outlook Totals : Total of Actual till previous month + Outlook value of current and future months
+	string		date.result(80)
+	long		mnth.num
+	domain	tfgld.year	year
+	domain	tpisg.month	month
+	domain	tcamnt		out.act.in, out.act.out, out.act.net, out.curr.in, out.curr.out, out.curr.net, open.amnt.in, open.amnt.out
+	
+	open.amnt.in = 0
+	open.amnt.out = 0
+	out.act.in = 0
+	out.act.out = 0
+	out.act.net = 0
+	out.curr.in = 0
+	out.curr.out = 0
+	out.curr.net = 0
+	
+	date.result = sprintf$("%D(%02d/%02m/%04Y)", date.num())
+	year = lval(trim$(date.result(7;4)))
+	mnth.num = lval(trim$(date.result(4;2)))
+	month = ltoe(mnth.num)
+	
+	select	sum(tfisg022.cmti):out.act.in,
+		sum(tfisg022.cmto):out.act.out,
+		sum(tfisg022.cnmt):out.act.net
+	from	tfisg022
+	where	tfisg022._index1 = {:tfisg022.year, :tfisg022.mnth, :tfisg022.eunt}
+	and	((tfisg022.year < :year) or (tfisg022.year = :year and tfisg022.mnth < :month))
+	selectdo
+	selectempty
+		out.act.in = 0
+		out.act.out = 0
+		out.act.net = 0
+	endselect
+	
+	select	sum(tfisg022.oami):out.curr.in,
+		sum(tfisg022.oamo):out.curr.out,
+		sum(tfisg022.oamn):out.curr.net
+	from	tfisg022
+	where	tfisg022._index1 = {:tfisg022.year, :tfisg022.mnth, :tfisg022.eunt}
+	and	((tfisg022.year > :year) or (tfisg022.year = :year and tfisg022.mnth >= :month))
+	selectdo
+	selectempty
+		out.curr.in = 0
+		out.curr.out = 0
+		out.curr.net = 0
+	endselect
+	
+	tot.oami = open.amnt.in + out.act.in + out.curr.in
+	tot.oamo = open.amnt.out + out.act.out + out.curr.out
+	tot.oamn = tot.oami - tot.oamo
+}
+	
+	

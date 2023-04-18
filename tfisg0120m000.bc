@@ -1,0 +1,293 @@
+|******************************************************************************
+|* tpisg1189m000  0  VRC B61U a7 isg 
+|* Cashflow Budget Header
+|* Ravi Kumar                    
+|* 2019-11-29
+|******************************************************************************
+|* Main table tfisg020 Contractwise Cashflow Header, Form Type 1
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttfisg020 | Contractwise Cashflow Header
+  table   ttccom001
+  table   ttpisg088
+  table   ttpisg089
+  table   ttfisg014
+  table	ttfisg015
+  table	ttfisg013
+  table	ttppdm740
+  table	ttpisg082
+  table	ttpisg012
+  table	ttppdm600
+
+			string		error.message(500)
+	extern	domain	tcmcs.str132	formula.label
+	extern	domain	tcamnt		open.in, open.out, cnhc.amnt, ctoh.amnt, cnhc.amnt.fc
+	extern	domain	tcdsca		eunt.dsca
+		
+	#include <bic_dam>
+|****************************** program section ********************************
+before.program:
+	formula.label = "* In Out Net Outlook Totals = (Total of Actual till previous month) + (Outlook value of current and future months)"
+	
+before.display.object:
+	if tfisg020.stat = tpisg.rvsnstat.approved then
+		enable.commands("complete.revise", "partial.revise")
+		disable.commands(add.set, mark.delete)
+	else
+		disable.commands("complete.revise", "partial.revise")
+		enable.commands(add.set, mark.delete)
+	endif
+	
+	if tfisg020.rtyp = tpisg.rvsntype.complete then
+		if tfisg020.stat = tpisg.rvsnstat.sendforapp or tfisg020.stat = tpisg.rvsnstat.approved then
+			disable.fields("tfisg020.rmks", "tfisg020.ccdt", "tfisg020.addc", "tfisg020.addi")
+		else
+			enable.fields("tfisg020.rmks", "tfisg020.ccdt", "tfisg020.addc", "tfisg020.addi")
+		endif
+	else
+		if tfisg020.stat = tpisg.rvsnstat.sendforapp or tfisg020.stat = tpisg.rvsnstat.approved then
+			disable.fields("tfisg020.rmks", "tfisg020.ccdt", "tfisg020.addc", "tfisg020.addi")
+		else
+			disable.fields("tfisg020.ccdt", "tfisg020.addc", "tfisg020.addi")
+			enable.fields("tfisg020.rmks")
+		endif
+	endif
+	
+	if tfisg020.stat = tpisg.rvsnstat.sendforapp then
+		enable.commands("approve", "reject")
+	else
+		disable.commands("approve", "reject")
+	endif
+	
+	if (tfisg020.stat = tpisg.rvsnstat.free or tfisg020.stat = tpisg.rvsnstat.reject) then
+		enable.commands("send.approval")
+	else
+		disable.commands("send.approval")
+	endif
+
+|****************************** group section **********************************	
+field.eunt.dsca:
+before.display:
+	select	tcemm030.dsca:eunt.dsca
+	from	tcemm030
+	where	tcemm030._index1 = {:tfisg020.eunt}
+	as set with 1 rows
+	selectdo
+	selectempty
+		eunt.dsca = ""
+	endselect
+|***************************** FUNCTIONS ***************************************
+
+choice.complete.revise:
+| before.choice:
+| 	if not check.matrix.role.creater() then
+| 		message("Role Matrix is Not Defined !!!")
+| 		choice.again()
+| 	endif
+on.choice:
+	tfisgdll0112_Update_History(tfisg020.year, tfisg020.mnth, tfisg020.eunt, tfisg020.rvsn)
+	tfisgdll0112_Update_Status_Type(tfisg020.year, tfisg020.mnth, tfisg020.eunt, tfisg020.rvsn, tpisg.rvsntype.complete, tpisg.rvsnstat.free)
+	tfisgdll0112_Increase_rvsn(tfisg020.year, tfisg020.mnth, tfisg020.eunt, tfisg020.rvsn, 1.0)
+| 	
+	select	tfisg020.rrby,
+		tfisg020.rrdt
+	from	tfisg020 for update
+	where	tfisg020._index1 = {:tfisg020.year, :tfisg020.mnth, :tfisg020.eunt, :tfisg020.rvsn}
+	as set with 1 rows
+	selectdo
+		if dal.change.object("tfisg020") = 0 then
+			dal.set.field("tfisg020.rrby", logname$)
+			dal.set.field("tfisg020.rrdt", utc.num())
+			if dal.save.object("tfisg020") = 0 then
+				commit.transaction()
+			else
+				abort.transaction()
+				dal.get.error.message(error.message)
+				message(error.message)
+			endif
+		endif
+	endselect
+	
+choice.partial.revise:
+| before.choice:
+| 	if not check.matrix.role.creater() then
+| 		message("Role Matrix is Not Defined !!!")
+| 		choice.again()
+| 	endif
+on.choice:
+	tfisgdll0112_Update_History(tfisg020.year, tfisg020.mnth, tfisg020.eunt, tfisg020.rvsn)
+	tfisgdll0112_Update_Status_Type(tfisg020.year, tfisg020.mnth, tfisg020.eunt, tfisg020.rvsn, tpisg.rvsntype.partial, tpisg.rvsnstat.free)
+	tfisgdll0112_Increase_rvsn(tfisg020.year, tfisg020.mnth, tfisg020.eunt, tfisg020.rvsn, 0.01)
+	
+	select	tfisg020.rrby,
+		tfisg020.rrdt
+	from	tfisg020 for update
+	where	tfisg020._index1 = {:tfisg020.year, :tfisg020.mnth, :tfisg020.eunt, :tfisg020.rvsn}
+	as set with 1 rows
+	selectdo
+		if dal.change.object("tfisg020") = 0 then
+			dal.set.field("tfisg020.rrby", logname$)
+			dal.set.field("tfisg020.rrdt", utc.num())
+			if dal.save.object("tfisg020") = 0 then
+				commit.transaction()
+			else
+				abort.transaction()
+				dal.get.error.message(error.message)
+				message(error.message)
+			endif
+		endif
+	endselect
+	
+choice.send.approval:
+| before.choice:
+| 	if not check.matrix.role.creater() then
+| 		message("Role Matrix is Not Defined !!!")
+| 		choice.again()
+| 	endif
+on.choice:
+	select	tfisg020.stat,
+		tfisg020.saby,
+		tfisg020.sadt
+	from	tfisg020 for update
+	where	tfisg020._index1 = {:tfisg020.year, :tfisg020.mnth, :tfisg020.eunt, :tfisg020.rvsn}
+	as set with 1 rows
+	selectdo
+		if dal.change.object("tfisg020") = 0 then
+			dal.set.field("tfisg020.stat", tpisg.rvsnstat.sendforapp)
+			dal.set.field("tfisg020.saby", logname$)
+			dal.set.field("tfisg020.sadt", utc.num())
+			if dal.save.object("tfisg020") = 0 then
+				commit.transaction()
+			else
+				abort.transaction()
+				dal.get.error.message(error.message)
+				message(error.message)
+			endif
+		endif
+	endselect
+	
+choice.approve:
+| before.choice:
+| 	if not check.matrix.role.approve() then
+| 		message("Approval Matrix is Not Defined !!!")
+| 		choice.again()
+| 	endif
+	
+on.choice:
+	select	tfisg020.stat,
+		tfisg020.saby,
+		tfisg020.sadt
+	from	tfisg020 for update
+	where	tfisg020._index1 = {:tfisg020.year, :tfisg020.mnth, :tfisg020.eunt, :tfisg020.rvsn}
+	as set with 1 rows
+	selectdo
+		if dal.change.object("tfisg020") = 0 then
+			dal.set.field("tfisg020.stat", tpisg.rvsnstat.approved)
+			dal.set.field("tfisg020.raby", logname$)
+			dal.set.field("tfisg020.radt", utc.num())
+			if dal.save.object("tfisg020") = 0 then
+				commit.transaction()
+			else
+				abort.transaction()
+				dal.get.error.message(error.message)
+				message(error.message)
+			endif
+		endif
+	endselect
+	
+choice.reject:
+| before.choice:
+| 	if not check.matrix.role.approve() then
+| 		message("Approval Matrix is Not Defined !!!")
+| 		choice.again()
+| 	endif
+	
+on.choice:
+	select	tfisg020.stat,
+		tfisg020.saby,
+		tfisg020.sadt
+	from	tfisg020 for update
+	where	tfisg020._index1 = {:tfisg020.year, :tfisg020.mnth, :tfisg020.eunt, :tfisg020.rvsn}
+	as set with 1 rows
+	selectdo
+		if dal.change.object("tfisg020") = 0 then
+			dal.set.field("tfisg020.stat", tpisg.rvsnstat.reject)
+			dal.set.field("tfisg020.raby", logname$)
+			dal.set.field("tfisg020.radt", utc.num())
+			if dal.save.object("tfisg020") = 0 then
+				commit.transaction()
+			else
+				abort.transaction()
+				dal.get.error.message(error.message)
+				message(error.message)
+			endif
+		endif
+	endselect
+
+|*******************************************************Function ************************************
+functions:
+| function boolean check.matrix.role.approve()
+| {	
+| 	domain	tclogn	curr_login
+| 	
+| 	curr_login = logname$
+| 	
+| 	if trim$(curr_login) = "5185" or trim$(curr_login) = "0592" then
+| 		return(true)
+| 	else
+| 		select	tccom001.emno
+| 		from	tccom001
+| 		where	tccom001._index4 = {:curr_login}
+| 		as set with 1 rows
+| 		selectdo
+| 			select	tpisg088.cprj
+| 			from	tpisg088
+| 			where	tpisg088._index1 = {:tfisg020.ccod}
+| 			selectdo
+| 				select	tpisg047.*
+| 				from	tpisg047
+| 				where	tpisg047._index1 = {:tpisg088.cprj, :tccom001.emno}
+| 				as set with 1 rows
+| 				selectdo
+| 					return(true)
+| 				endselect
+| 			endselect
+| 		endselect
+| 	endif
+| 	return(false)
+| }
+
+| function boolean check.matrix.role.creater()
+| {
+| 	domain	tclogn	curr_login
+| 	
+| 	curr_login = logname$
+| 	
+| 	if trim$(curr_login) = "5185" or trim$(curr_login) = "0592" then
+| 		return(true)
+| 	else
+| 		select	tccom001.emno
+| 		from	tccom001
+| 		where	tccom001._index4 = {:curr_login}
+| 		as set with 1 rows
+| 		selectdo
+| 			select	tpisg088.cprj
+| 			from	tpisg088
+| 			where	tpisg088._index1 = {:tfisg020.ccod}
+| 			selectdo
+| 				select	tpisg046.*
+| 				from	tpisg046
+| 				where	tpisg046._index1 = {:tpisg088.cprj, :tccom001.emno}
+| 				as set with 1 rows
+| 				selectdo
+| 					return(true)
+| 				endselect
+| 			endselect
+| 		endselect
+| 	endif
+| 	return(false)
+| }
+

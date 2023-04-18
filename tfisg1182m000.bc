@@ -1,0 +1,2042 @@
+|******************************************************************************
+|* tfisg1182m000  0  VRC B61U a7 isg 
+|* Document Tracking
+|* merino1                       
+|* 2015-12-07
+|******************************************************************************
+|* Main table tfisg182 Document Tracking, Form Type 1
+|******************************************************************************
+|* ID ISGEC002016, Manish Manchanda, 2016-06-01                                                                                
+|* Modifications as per functional  
+|*
+|* ID ISGEC01045, Sandhya, 2016-08-23
+|* Modifications on Functionalities
+|
+|* ID ISGEC16019,Ankit Sharma,2016-09-09,VRC B61U a7 isg
+|* Reason code field mandatory on returning documents
+|*
+|* ID ISGEC016020, Manish Manchanda, 2016-09-09
+|* Reason code field mandatory on returning documents
+|*
+|* ID ISGEC01077, Priya Jindal, 20/7/2018
+|* Changes for check on forward to payment
+|*
+|* ID ISGEC01132,Prasanna Bhuyan,03-12-2018,VRC B61U a7 isg
+|* Added fields and insertion in document tracking history 
+|*
+|* ID ISGEC01141,Prasanna Bhuyan,13-12-2018,VRC B61U a7 isg
+|* Email Alert on returning documents
+|*
+|* ID: ISGEC002040, Arun Chauhan, 27-06-2019
+|* Modification in checks billind advice
+|*
+|* ID: ISGEC002040, Monika, 15-07-2019
+|* Modifications on Form Command "Forwarded To A/C payment by logistics."
+|* 
+|* ID: GH198CR000, RAvi Kumar, 01-11-2019
+|* IR Document not forwarding to A/C
+|* 
+|* ID: GH300CR602, RAvi Kumar, 07-04-2020
+|* Attachment facility in Receipt, Billing advice and document tracking
+|*
+|* GH389CR713, RAvi Kumar, 29-08-2020
+|* Change in Email alert configuration of Discrepant documents
+
+|****************************** declaration section ***************************
+declaration:
+  table   ttfisg182 | Document Tracking
+  table   ttfisg183 | Document Tracking History
+table	ttfisg181
+table	tciisg101
+table	ttdisg832
+table	ttdisg831
+table	ttfgld018						|#ISGEC016020.n
+table	ttccom001						|#ISGEC01141.sn
+table	tbpmdm001						|#ISGEC01141.en
+	table	twhinh312						|#ISGEC002040.n						
+	
+long ret_val
+domain	tcemno	o.tccom001.emno1
+domain	tfisg.doc.stat lsta
+domain	tdisg.type	ptyp
+domain	tcorno	edrn, rcno
+domain	tcorno	temp.rcno, selc.rcno	|#SD02022016.n
+domain	tcyesno	temp.selc	|#SD02022016.n
+
+								|#ISGEC01045.sn
+extern	domain	tcnama		ifbp.nama, login.name
+extern	domain	tcdsca		proj.nama
+extern domain	tcmcs.str20	ttyp.docn
+extern	domain	tcorno	    	old.rcno,b_rcno
+extern	domain	tcmcs.str100 	rcno.str
+								|#ISGEC01045.en
+extern	domain	tcmcs.str6	reas 				|ISGEC01077.n								
+extern	domain	tfgld.date	v.dcdt				|#ISGEC016020.n							
+	domain	tcloco	v.user					|#ISGEC016020.n		
+	domain	tclogn		old.user					|#ISGEC01141.sn	
+	domain	tcmcs.str40	ret.desc
+		long		to.ID, ret, message.ID, first.record		|#ISGEC01141.en	
+#include<bic_dam>
+#include<bic_cmf>						|#ISGEC01141.n
+#include<bic_desktop>						|GH300CR602.a
+
+|****************************** program section ********************************
+before.program:
+	update_selection()				|#ISGEC01045.n
+							|#ISGEC002016.sn
+before.display.object:
+	handle.enable.disable.commands()
+	BP_Name()					|#ISGEC01045.n
+							|#ISGEC002016.en
+							|#ISGEC016020.sn
+	select	tfgld018.dcdt:v.dcdt
+	from	tfgld018
+	where	tfgld018._index1	=	{:tfisg182.ttyp,:tfisg182.docn}
+	as	set with 1 rows
+	selectdo
+	selectempty
+		v.dcdt	=	0
+	endselect
+							|#ISGEC016020.en
+after.form.read:					|#ISGEC016020.n
+	enable.save.on.occ.change()			|#ISGEC016020.n	
+|****************************** group section **********************************
+group.2:						|GH300CR602.a.s
+init.group:
+ret = create.extra.toolbar(
+		"get_attachment", "tcgen:activate")	|GH300CR602.a.e
+		
+|****************************** form section **********************************
+
+|****************************** choice section *********************************
+choice.select_ir_no:						|#ISGEC01132.sn
+
+on.choice:
+	select	tfisg182.*
+	from	tfisg182	for update
+	where	tfisg182._index1 = {:tfisg182.irno}
+	selectdo
+		tfisg182.selc = tcyesno.yes
+		tfisg182.user = trim$(get.login.code.wise.employee.code())
+		db.update(ttfisg182,db.retry,e)
+		if not e then 
+			commit.transaction()
+		else
+			abort.transaction()
+		endif
+	endselect
+	
+
+choice.deselect_ir_no:
+on.choice:
+	select	tfisg182.*
+	from	tfisg182	for update
+	where	tfisg182._index1 = {:tfisg182.irno}
+	selectdo
+		tfisg182.selc = tcyesno.no
+		db.update(ttfisg182,db.retry,e)
+		if not e then 
+			commit.transaction()
+		else
+			abort.transaction()
+		endif
+	endselect
+								
+								|#ISGEC01132.en
+choice.forward_to_ac:
+before.choice:
+								|#ISGEC016020.sn	
+	v.user	=	trim$(get.login.code.wise.employee.code())
+	
+	select	tfisg182.*
+	from	tfisg182
+	where	tfisg182.selc	=	{tcyesno.yes}
+	and	tfisg182.user	=	:v.user
+	selectdo
+								|#ISGEC016020.en
+| 	if not approver(1) then		|#ISGEC002016.o
+	if not approver(2) then	|#ISGEC002016.n
+		mess("tcgenstring", 1, "You are not authorised for this activity")
+		update_selection.1()				|#ISGEC016020.n
+		choice.again()
+	endif
+	
+	check.same.action(2)				|#ISGEC016020.n
+	check.receipt.lines.selected()			|#ISGEC016020.n
+	check_domestic_export_selection()
+	
+	domain	tcpono	aa.rcln
+	aa.rcln = 0
+	select 	tfisg182.lsta:lsta, tfisg182.edrn:edrn, tfisg182.ptyp:ptyp, tfisg182.rcno:rcno
+		,tfisg182.rcln:aa.rcln
+	from 	tfisg182
+	where 	tfisg182.selc  = tcyesno.yes					
+	selectdo	
+	selectempty								
+		mess("tcgenstring",1, "No Record selected")
+		update_selection.1()				|#ISGEC016020.n
+		choice.again()
+		
+	endselect
+	
+	if ptyp = tdisg.type.domestic then
+		if (lsta =  tfisg.doc.stat.free) or (lsta = tfisg.doc.stat.racb)  or (lsta = tfisg.doc.stat.lpay) then		|RAvi.a.GH198CR000
+		else
+			mess("tcgenstring",1,"Document should be either free or returned from logistics")
+			update_selection.1()				|#ISGEC016020.n
+			choice.again()
+		endif
+		if isspace(edrn) then
+			message("Billing advice not linked with receipt number %s . Line cannot be forwarded",rcno)
+			update_selection.1()				|#ISGEC016020.n
+			choice.again()
+		endif
+	else
+		mess("tcgenstring",1,"This activity  not allowed for export")
+		update_selection.1()				|#ISGEC016020.n
+		choice.again()	
+	endif
+	
+	check.all.lines()	|#SD02022016.n
+												|#ISGEC01045.sn
+	if lsta =  tfisg.doc.stat.free then
+		check.receipt.line()					
+		check.confirm(tfisg182.rcno)		
+		check.advice.no(tfisg182.irno, tfisg182.rcno, tfisg182.rcln, tfisg182.ifbp)
+	endif	
+												|#ISGEC01045.en
+	endselect										|#ISGEC016020.n
+on.choice:
+| 	update_status(tfisg.doc.stat.fbil)		|#SD02022016.o
+	
+			|#SD02022016.sn
+	select	tfisg182.rcno:temp.rcno
+	from	tfisg182 
+	where	tfisg182.selc = tcyesno.yes
+	and	tfisg182.user	=	:v.user			|#ISGEC016020.n
+	selectdo
+		update_status(temp.rcno, tfisg.doc.stat.fbil)
+	selectempty
+		temp.rcno = ""
+	endselect
+			|#SD02022016.en
+after.choice:
+	commit.transaction()
+								|#ISGEC016020.sn	
+	select	tfisg182.*
+	from	tfisg182
+	where	tfisg182.selc	=	{tcyesno.yes}
+	and	tfisg182.user	=	:v.user
+	selectdo
+								|#ISGEC016020.en
+	tfisg183.update.history(tfisg182.irno,tfisg182.rcno,tfisg182.rcln,tfisg182.ifbp, utc.num(),tfisg182.lsta)
+	endselect							|#ISGEC016020.n
+	update_selection.1()				|#ISGEC016020.n
+	
+choice.received_by_ac:
+before.choice:
+								|#ISGEC016020.sn	
+	v.user	=	trim$(get.login.code.wise.employee.code())
+	
+	select	tfisg182.*
+	from	tfisg182
+	where	tfisg182.selc	=	{tcyesno.yes}
+	and	tfisg182.user	=	:v.user
+	selectdo
+								|#ISGEC016020.en
+| 	if not approver(2) then			|#ISGEC002016.o
+	if not approver(3) then		|#ISGEC002016.n
+		mess("tcgenstring", 1, "You are not authorised for this activity")
+		update_selection.1()				|#ISGEC016020.n
+		choice.again()
+	endif
+	check.same.action(3)				|#ISGEC016020.n
+	check.receipt.lines.selected()			|#ISGEC016020.n
+	check_domestic_export_selection()
+	select 	tfisg182.lsta:lsta, tfisg182.ptyp:ptyp
+	from 	tfisg182
+	where 	tfisg182.selc  = tcyesno.yes					
+	selectdo
+	selectempty								
+		mess("tcgenstring",1, "No Record selected")
+		update_selection.1()				|#ISGEC016020.n
+		choice.again()
+	endselect
+	if ptyp = tdisg.type.domestic then
+		if (lsta =  tfisg.doc.stat.fbil) then
+		else
+			mess("tcgenstring",1,"Document not forwarded to AC billing")
+			update_selection.1()				|#ISGEC016020.n
+			choice.again()
+		endif
+	else 
+		mess("tcgenstring",1,"This activity  not allowed for export")
+		update_selection.1()				|#ISGEC016020.n
+		choice.again()
+		
+	endif
+	
+	check.all.lines()	|#SD02022016.n
+	check.receipt.line()				|#ISGEC01045.n
+	endselect							|#ISGEC106020.n
+on.choice:
+| 	update_status(tfisg.doc.stat.rbil)	|#SD02022016.o
+	
+			|#SD02022016.sn
+	select	tfisg182.rcno:temp.rcno
+	from	tfisg182 
+	where	tfisg182.selc = tcyesno.yes
+	and	tfisg182.user	=	:v.user			|#ISGEC016020.n
+	selectdo
+		update_status(temp.rcno, tfisg.doc.stat.rbil)
+	selectempty
+		temp.rcno = ""
+	endselect
+			|#SD02022016.en
+	
+after.choice:
+	commit.transaction()
+								|#ISGEC016020.sn		
+	select	tfisg182.*
+	from	tfisg182
+	where	tfisg182.selc	=	{tcyesno.yes}
+	and	tfisg182.user	=	:v.user
+	selectdo
+								|#ISGEC016020.en
+	tfisg183.update.history(tfisg182.irno,tfisg182.rcno,tfisg182.rcln,tfisg182.ifbp, utc.num(),tfisg182.lsta)
+	endselect							|#ISGEC016020.n
+	update_selection.1()				|#ISGEC016020.n
+	
+choice.return_to_logistic:
+before.choice:
+								|#ISGEC016020.sn	
+	v.user	=	trim$(get.login.code.wise.employee.code())
+	
+	select	tfisg182.*
+	from	tfisg182
+	where	tfisg182.selc	=	{tcyesno.yes}
+	and	tfisg182.user	=	:v.user
+	selectdo
+								|#ISGEC016020.en
+	check.same.action(4)				|#ISGEC016020.n							
+	check.receipt.lines.selected()			|#ISGEC016020.n
+	check.maintain.reason.code()			|#ISGEC016020.n
+| 	if isspace(tfisg182.reas) then					|#ISGEC16019.sn	
+| 		mess("tcgenstring",1, "Maintain Reason Code")
+| 		choice.again()
+| 	endif								|#ISGEC16019.en
+	check_domestic_export_selection()
+| 	if not approver(3) then			|#ISGEC002016.o
+	if not approver(4) then		|#ISGEC002016.n
+		mess("tcgenstring", 1, "You are not authorised for this activity")
+		update_selection.1()				|#ISGEC016020.n
+		choice.again()
+	endif
+	
+	check_domestic_export_selection()
+	select 	tfisg182.lsta:lsta, tfisg182.ptyp:ptyp
+	from 	tfisg182
+	where 	tfisg182.selc  = tcyesno.yes					
+	selectdo
+	selectempty								
+		mess("tcgenstring",1, "No Record selected")
+		update_selection.1()				|#ISGEC016020.n
+		choice.again()
+	endselect
+	
+	if ptyp = tdisg.type.domestic then
+		if lsta <> tfisg.doc.stat.rbil then
+			mess("tcgenstring", 1 ,"Document not Returned to logistics")
+			update_selection.1()				|#ISGEC016020.n
+			choice.again()
+		endif
+	else	
+		mess("tcgenstring",1,"This activity  not allowed for export")
+		update_selection.1()				|#ISGEC016020.n
+		choice.again()
+		
+	endif
+	
+	check.all.lines()	|#SD02022016.n
+	check.receipt.line()				|#ISGEC01045.n
+	endselect							|#ISGEC016020.n
+on.choice:
+| 	update_status(tfisg.doc.stat.rlog)	|#SD02022016.o
+	first.record = 0			|#ISGEC01141.n
+
+			|#SD02022016.sn
+	select	tfisg182.rcno:temp.rcno
+	from	tfisg182 
+	where	tfisg182.selc = tcyesno.yes
+	and	tfisg182.user	=	:v.user			|#ISGEC016020.n
+	selectdo
+		update_status(temp.rcno, tfisg.doc.stat.rlog)
+		first.record = first.record + 1			|#ISGEC01141.sn
+		if	first.record = 1	then
+			old.user = ""
+			ret.desc = ""
+			check_in_history_user_and_get_logincode(tfisg182.irno,tfisg182.rcno,
+									tfisg182.rcln,tfisg182.ifbp,tfisg.doc.stat.fbil,old.user)
+			ret.desc = "Return to Logistics by A/C billing(DOM)"
+			send.email.alert(ret.desc)
+		endif						|#ISGEC01141.en	
+	selectempty
+		temp.rcno = ""
+	endselect
+			|#SD02022016.en
+	
+after.choice:
+	commit.transaction()
+								|#ISGEC016020.sn		
+	select	tfisg182.*
+	from	tfisg182
+	where	tfisg182.selc	=	{tcyesno.yes}
+	and	tfisg182.user	=	:v.user
+	selectdo
+								|#ISGEC016020.en
+	tfisg183.update.history(tfisg182.irno,tfisg182.rcno,tfisg182.rcln,tfisg182.ifbp, utc.num(),tfisg182.lsta)
+	endselect							|#ISGEC016020.n
+	update_selection.1()				|#ISGEC016020.n
+	
+choice.return_received_log:
+before.choice:
+										|#ISGEC016020.sn	
+	v.user	=	trim$(get.login.code.wise.employee.code())
+	
+	select	tfisg182.*
+	from	tfisg182
+	where	tfisg182.selc	=	{tcyesno.yes}
+	and	tfisg182.user	=	:v.user
+	selectdo
+								|#ISGEC016020.en
+
+| 	if not approver(4) then				|#ISGEC002016.o
+	if not approver(5) then			|#ISGEC002016.n
+		mess("tcgenstring", 1, "You are not authorised for this activity")
+		update_selection.1()				|#ISGEC016020.n
+		choice.again()
+	endif
+	check.same.action(5)				|#ISGEC016020.n
+	check.receipt.lines.selected()			|#ISGEC016020.n
+	check_domestic_export_selection()
+	
+	select 	tfisg182.lsta:lsta, tfisg182.ptyp:ptyp
+	from 	tfisg182
+	where 	tfisg182.selc  = tcyesno.yes					
+	selectdo
+	selectempty								
+		mess("tcgenstring",1, "No Record selected")
+		update_selection.1()				|#ISGEC016020.n
+		choice.again()
+	endselect
+	if ptyp = tdisg.type.domestic then
+		if lsta <> tfisg.doc.stat.rlog then
+			mess("tcgenstring", 1 ,"Document not Received from logistics")
+			update_selection.1()				|#ISGEC016020.n
+			choice.again()
+		endif
+	else	
+		mess("tcgenstring",1,"This activity  not allowed for export")
+		update_selection.1()				|#ISGEC016020.n
+		choice.again()
+		
+	endif
+	
+	check.all.lines()	|#SD02022016.n
+	check.receipt.line()				|#ISGEC01045.n
+	endselect						|#ISGEC016020.n
+on.choice:
+| 	update_status(tfisg.doc.stat.racb)	|#SD02022016.o
+
+			|#SD02022016.sn
+	select	tfisg182.rcno:temp.rcno
+	from	tfisg182 
+	where	tfisg182.selc = tcyesno.yes
+	and	tfisg182.user	=	:v.user			|#ISGEC016020.n
+	selectdo
+		update_status(temp.rcno, tfisg.doc.stat.racb)
+	selectempty
+		temp.rcno = ""
+	endselect
+			|#SD02022016.en
+	
+after.choice:
+	commit.transaction()
+								|#ISGEC016020.sn	
+	select	tfisg182.*
+	from	tfisg182
+	where	tfisg182.selc	=	{tcyesno.yes}
+	and	tfisg182.user	=	:v.user
+	selectdo
+								|#ISGEC016020.en
+
+	tfisg183.update.history(tfisg182.irno,tfisg182.rcno,tfisg182.rcln,tfisg182.ifbp, utc.num(),tfisg182.lsta)
+	endselect						|#ISGEC016020.n
+	update_selection.1()				|#ISGEC016020.n
+	
+choice.dispatch_sales:
+before.choice:
+								|#ISGEC016020.sn	
+	v.user	=	trim$(get.login.code.wise.employee.code())
+	
+	select	tfisg182.*
+	from	tfisg182
+	where	tfisg182.selc	=	{tcyesno.yes}
+	and	tfisg182.user	=	:v.user
+	selectdo
+								|#ISGEC016020.en
+| 	if not approver(5) then				|#ISGEC002016.o
+	if not approver(6) then			|#ISGEC002016.n
+		mess("tcgenstring", 1, "You are not authorised for this activity")
+		update_selection.1()				|#ISGEC016020.n
+		choice.again()
+	endif
+	check.same.action(6)				|#ISGEC016020.n
+	check.receipt.lines.selected()			|#ISGEC016020.n
+	check_domestic_export_selection()
+	
+	select 	tfisg182.lsta:lsta, tfisg182.ptyp:ptyp
+	from 	tfisg182
+	where 	tfisg182.selc  = tcyesno.yes					
+	selectdo
+	selectempty								
+		mess("tcgenstring",1, "No Record selected")
+		update_selection.1()				|#ISGEC016020.n
+		choice.again()
+	endselect
+	if ptyp = tdisg.type.domestic then
+| 		if lsta <> tfisg.doc.stat.racb then				|#ISGEC002016.o
+		if lsta <> tfisg.doc.stat.rbil then				|#ISGEC002016.n
+			mess("tcgenstring", 1 ,"Document not Returned to logistics")
+			update_selection.1()				|#ISGEC016020.n
+			choice.again()
+		endif
+	else	
+		mess("tcgenstring",1,"This activity  not allowed for export")
+		update_selection.1()				|#ISGEC016020.n
+		choice.again()
+		
+	endif
+	
+	check.all.lines()	|#SD02022016.n
+	check.receipt.line()				|#ISGEC01045.n
+	endselect						|#ISGEC016020.n
+on.choice:
+| 	update_status(tfisg.doc.stat.disp)	|#SD02022016.o
+
+			|#SD02022016.sn
+	select	tfisg182.rcno:temp.rcno
+	from	tfisg182 
+	where	tfisg182.selc = tcyesno.yes
+	and	tfisg182.user	=	:v.user			|#ISGEC016020.n
+	selectdo
+		update_status(temp.rcno, tfisg.doc.stat.disp)
+	selectempty
+		temp.rcno = ""
+	endselect
+			|#SD02022016.en
+	
+after.choice:
+	commit.transaction()
+								|#ISGEC016020.sn	
+	select	tfisg182.*
+	from	tfisg182
+	where	tfisg182.selc	=	{tcyesno.yes}
+	and	tfisg182.user	=	:v.user
+	selectdo
+								|#ISGEC016020.en
+	tfisg183.update.history(tfisg182.irno,tfisg182.rcno,tfisg182.rcln,tfisg182.ifbp, utc.num(),tfisg182.lsta)
+	endselect						|#ISGEC016020.n
+	update_selection.1()				|#ISGEC016020.n
+
+choice.forward_to_payment:
+before.choice:
+								|#ISGEC016020.sn	
+	v.user	=	trim$(get.login.code.wise.employee.code())
+	
+	select	tfisg182.*
+	from	tfisg182
+	where	tfisg182.selc	=	{tcyesno.yes}
+	and	tfisg182.user	=	:v.user
+	selectdo
+								|#ISGEC016020.en
+| 	if not approver(6) then			|#ISGEC002016.o
+	if not approver(7) then		|#ISGEC002016.n
+		mess("tcgenstring", 1, "You are not authorised for this activity")
+		update_selection.1()				|#ISGEC016020.n
+		choice.again()
+	endif
+	check.same.action(7)				|#ISGEC016020.n
+	check.receipt.lines.selected()			|#ISGEC016020.n
+	check_domestic_export_selection()
+							|#ISGEC016020.sn
+	if	trim$(tfisg182.ttyp)	=	"FOC"	then
+	else	
+							|#ISGEC016020.en
+	check_str()
+	endif						|#ISGEC016020.n
+	select 	tfisg182.lsta:lsta, tfisg182.ptyp:ptyp
+	from 	tfisg182
+	where 	tfisg182.selc  = tcyesno.yes					
+	selectdo
+	selectempty								
+		mess("tcgenstring",1, "No Record selected")
+		update_selection.1()				|#ISGEC016020.n
+		choice.again()	
+	endselect
+	
+	if ptyp = tdisg.type.domestic then
+		if lsta <> tfisg.doc.stat.disp then
+			mess("tcgenstring", 1 ,"Sales Invoice Not dispatched")
+			update_selection.1()				|#ISGEC016020.n
+			choice.again()
+		endif	
+	else	
+			mess("tcgenstring",1,"This activity  not allowed for export")
+			update_selection.1()				|#ISGEC016020.n
+			choice.again()
+		
+	endif
+	
+	check.all.lines()	|#SD02022016.n
+	check.receipt.line()				|#ISGEC01045.n
+		if	tfisg182.ptyp	=	tdisg.type.domestic	then	|#ISGEC016020.sn
+			BP_Name()			
+			if	trim$(ttyp.docn)	=	"/0"	then
+				select	a_tdisg832.reas:reas					|ISGEC01077.sn
+				from	tdisg832 a_tdisg832
+				where	a_tdisg832._index1 = {:tfisg182.edrn}
+				selectdo
+					if trim$(reas) = "FIV" or trim$(reas) = "FOC" then
+					else
+						message("Purchase Invoice not booked.")
+						update_selection.1()	
+						choice.again()
+						
+					endif	
+				endselect						|ISGEC01077.en
+| 				message("Purchase Invoice not booked.")		|ISGEC01077.so
+| 				update_selection.1()	
+| 				choice.again()					|ISGEC01077.eo
+			endif
+		endif					
+	endselect								|#ISGEC016020.en	
+on.choice:
+| 	update_status(tfisg.doc.stat.facb)	|#SD02022016.o
+	
+			|#SD02022016.sn
+	select	tfisg182.rcno:temp.rcno
+	from	tfisg182 
+	where	tfisg182.selc = tcyesno.yes
+	and	tfisg182.user	=	:v.user			|#ISGEC016020.n
+	selectdo
+		update_status(temp.rcno, tfisg.doc.stat.facb)
+	selectempty
+		temp.rcno = ""
+	endselect
+			|#SD02022016.en
+	
+after.choice:
+	commit.transaction()
+								|#ISGEC016020.sn		
+	select	tfisg182.*
+	from	tfisg182
+	where	tfisg182.selc	=	{tcyesno.yes}
+	and	tfisg182.user	=	:v.user
+	selectdo
+								|#ISGEC016020.en
+	tfisg183.update.history(tfisg182.irno,tfisg182.rcno,tfisg182.rcln,tfisg182.ifbp, utc.num(),tfisg182.lsta)
+	endselect						|#ISGEC016020.n
+	update_selection.1()				|#ISGEC016020.n
+
+choice.received_in_ac:
+before.choice:
+								|#ISGEC016020.sn	
+	v.user	=	trim$(get.login.code.wise.employee.code())
+	
+	select	tfisg182.*
+	from	tfisg182
+	where	tfisg182.selc	=	{tcyesno.yes}
+	and	tfisg182.user	=	:v.user
+	selectdo
+								|#ISGEC016020.en
+| 	if not approver(7) then				|#ISGEC002016.o
+	if not approver(8) then			|#ISGEC002016.n
+		mess("tcgenstring", 1, "You are not authorised for this activity")
+		update_selection.1()				|#ISGEC016020.n
+		choice.again()
+	endif
+	check.same.action(8)				|#ISGEC016020.n
+	check.receipt.lines.selected()			|#ISGEC016020.n
+	check_domestic_export_selection()
+	select 	tfisg182.lsta:lsta, tfisg182.ptyp:ptyp
+	from 	tfisg182
+	where 	tfisg182.selc  = tcyesno.yes					
+	selectdo
+	selectempty							
+		mess("tcgenstring",1, "No Record selected")
+		update_selection.1()				|#ISGEC016020.n
+		choice.again()
+	endselect
+	
+	if ptyp = tdisg.type.domestic then
+		if lsta <> tfisg.doc.stat.facb then
+			mess("tcgenstring", 1 ,"Document not forwarded to AC payment by AC billing")
+			update_selection.1()				|#ISGEC016020.n
+			choice.again()
+		endif	
+	else	
+		mess("tcgenstring",1,"This activity  not allowed for export")
+		update_selection.1()				|#ISGEC016020.n
+		choice.again()
+		
+	endif
+	
+	check.all.lines()	|#SD02022016.n
+	check.receipt.line()				|#ISGEC01045.n
+	endselect					|#ISGEC016020.n			
+on.choice:
+| 	update_status(tfisg.doc.stat.rpab)	|#SD02022016.o
+
+			|#SD02022016.sn
+	select	tfisg182.rcno:temp.rcno
+	from	tfisg182 
+	where	tfisg182.selc = tcyesno.yes
+	and	tfisg182.user	=	:v.user			|#ISGEC016020.n
+	selectdo
+		update_status(temp.rcno, tfisg.doc.stat.rpab)
+	selectempty
+		temp.rcno = ""
+	endselect
+			|#SD02022016.en
+	
+after.choice:
+	commit.transaction()
+								|#ISGEC016020.sn	
+	select	tfisg182.*
+	from	tfisg182
+	where	tfisg182.selc	=	{tcyesno.yes}
+	and	tfisg182.user	=	:v.user
+	selectdo
+								|#ISGEC016020.en
+
+	tfisg183.update.history(tfisg182.irno,tfisg182.rcno,tfisg182.rcln,tfisg182.ifbp, utc.num(),tfisg182.lsta)
+	endselect						|#ISGEC016020.n
+	update_selection.1()				|#ISGEC016020.n
+	
+choice.returned_by_ac:
+before.choice:
+								|#ISGEC016020.sn	
+	v.user	=	trim$(get.login.code.wise.employee.code())
+	
+	select	tfisg182.*
+	from	tfisg182
+	where	tfisg182.selc	=	{tcyesno.yes}
+	and	tfisg182.user	=	:v.user
+	selectdo
+								|#ISGEC016020.en
+	check.receipt.lines.selected()			|#ISGEC016020.n
+	check.maintain.reason.code()			|#ISGEC016020.n
+| 	if isspace(tfisg182.reas) then					|#ISGEC16019.sn
+| 		mess("tcgenstring",1, "Maintain Reason Code")
+| 		choice.again()
+| 	endif								|#ISGEC16019.en
+| 	if not approver(8) then			|#ISGEC002016.o
+	if not approver(9) then		|#ISGEC002016.n
+		mess("tcgenstring", 1, "You are not authorised for this activity")
+		update_selection.1()				|#ISGEC016020.n
+		choice.again()
+	endif
+	check.same.action(9)				|#ISGEC016020.n
+	check_domestic_export_selection()
+	select 	tfisg182.lsta:lsta, tfisg182.ptyp:ptyp
+	from 	tfisg182
+	where 	tfisg182.selc  = tcyesno.yes					
+	selectdo
+	selectempty								
+		mess("tcgenstring",1, "No Record selected")
+		update_selection.1()				|#ISGEC016020.n
+		choice.again()
+	endselect
+	
+	if ptyp = tdisg.type.domestic then
+| 		if lsta <> tfisg.doc.stat.rpab						|#ISGEC016020.o
+| 		or lsta <> tfisg.doc.stat.alog		then		|#ISGEC016019.n	|#ISGEC016020.o
+		on	case	lsta					|#ISGEC016020.sn
+			case	tfisg.doc.stat.rpab:
+			case	tfisg.doc.stat.alog:
+			break
+		default:						|#ISGEC016019.en
+			mess("tcgenstring", 1 ,"Document not received from AC billing")
+			update_selection.1()				|#ISGEC016020.n
+			choice.again()
+			break
+| 		endif							|#ISGEC016020.o
+		endcase						|#ISGEC016020.n
+	else
+| 		if lsta <> ltoe(11) then	|#SD02022016.o
+		if lsta <> ltoe(12) then	|#SD02022016.n
+			mess("tcgenstring", 1 ,"Document not received from AC payment from logistics")
+			update_selection.1()				|#ISGEC016020.n
+			choice.again()
+		endif
+	endif	
+	
+	check.all.lines()	|#SD02022016.n
+	check.receipt.line()				|#ISGEC01045.n
+	endselect					|#ISGEC016020.n
+
+on.choice:
+| 	update_status(tfisg.doc.stat.ralg)	|#SD02022016.o
+	first.record = 0			|#ISGEC01141.n
+
+			|#SD02022016.sn
+	select	tfisg182.rcno:temp.rcno
+	from	tfisg182 
+	where	tfisg182.selc = tcyesno.yes
+	and	tfisg182.user	=	:v.user			|#ISGEC016020.n
+	selectdo
+		update_status(temp.rcno, tfisg.doc.stat.ralg)
+		first.record = first.record + 1			|#ISGEC01141.sn
+		if	first.record = 1	then
+			ret.desc = ""
+			old.user = ""
+			check_in_history_user_and_get_logincode(tfisg182.irno,tfisg182.rcno,
+									tfisg182.rcln,tfisg182.ifbp,tfisg.doc.stat.fbil,old.user)
+			ret.desc = "Returned by A/C payment to Logistics"
+			send.email.alert(ret.desc)
+		endif						|#ISGEC01141.en	
+	selectempty
+		temp.rcno = ""
+	endselect
+			|#SD02022016.en
+	
+after.choice:
+	commit.transaction()
+								|#ISGEC016020.sn	
+	select	tfisg182.*
+	from	tfisg182
+	where	tfisg182.selc	=	{tcyesno.yes}
+	and	tfisg182.user	=	:v.user
+	selectdo
+								|#ISGEC016020.en
+
+	tfisg183.update.history(tfisg182.irno,tfisg182.rcno,tfisg182.rcln,tfisg182.ifbp, utc.num(),tfisg182.lsta)
+	endselect						|#ISGEC016020.n
+	update_selection.1()				|#ISGEC016020.n
+	
+choice.received_by_logistics:
+before.choice:
+								|#ISGEC016020.sn	
+	v.user	=	trim$(get.login.code.wise.employee.code())
+	
+	select	tfisg182.*
+	from	tfisg182
+	where	tfisg182.selc	=	{tcyesno.yes}
+	and	tfisg182.user	=	:v.user
+	selectdo
+								|#ISGEC016020.en
+| 	if not approver(9) then				|#ISGEC002016.o
+	if not approver(10) then			|#ISGEC002016.n
+		mess("tcgenstring", 1, "You are not authorised for this activity")
+		update_selection.1()				|#ISGEC016020.n
+		choice.again()
+	endif
+	check.same.action(10)				|#ISGEC016020.n
+	check.receipt.lines.selected()			|#ISGEC016020.n
+	check_domestic_export_selection()
+	select 	tfisg182.lsta:lsta
+	from 	tfisg182
+	where 	tfisg182.selc  = tcyesno.yes					
+	selectdo
+	selectempty							
+		mess("tcgenstring",1, "No Record selected")
+		update_selection.1()				|#ISGEC016020.n
+		choice.again()
+	endselect
+	if lsta <> tfisg.doc.stat.ralg then	
+		mess("tcgenstring", 1 ,"Document Not Returned to Logistics by A.C payment")
+		update_selection.1()				|#ISGEC016020.n
+		choice.again()
+	endif	
+	
+	check.all.lines()	|#SD02022016.n
+	check.receipt.line()				|#ISGEC01045.n
+	endselect					|#ISGEC016020.n
+on.choice:
+| 	update_status(tfisg.doc.stat.ralg)		|#ISGEC002016.o
+| 	update_status(tfisg.doc.stat.lpay)		|#ISGEC002016.n		|#SD02022016.o
+	
+			|#SD02022016.sn
+	select	tfisg182.rcno:temp.rcno
+	from	tfisg182 
+	where	tfisg182.selc = tcyesno.yes
+	and	tfisg182.user	=	:v.user			|#ISGEC016020.n
+	selectdo
+		update_status(temp.rcno, tfisg.doc.stat.lpay)
+	selectempty
+		temp.rcno = ""
+	endselect
+			|#SD02022016.en
+	
+after.choice:
+	commit.transaction()
+										|#ISGEC016020.sn	
+	select	tfisg182.*
+	from	tfisg182
+	where	tfisg182.selc	=	{tcyesno.yes}
+	and	tfisg182.user	=	:v.user
+	selectdo
+								|#ISGEC016020.en
+
+	tfisg183.update.history(tfisg182.irno,tfisg182.rcno,tfisg182.rcln,tfisg182.ifbp, utc.num(),tfisg182.lsta)
+	endselect						|#ISGEC016020.n
+	update_selection.1()				|#ISGEC016020.n
+	
+choice.forward_by_ac:
+before.choice:
+										|#ISGEC016020.sn	
+	v.user	=	trim$(get.login.code.wise.employee.code())
+	
+	select	tfisg182.*
+	from	tfisg182
+	where	tfisg182.selc	=	{tcyesno.yes}
+	and	tfisg182.user	=	:v.user
+	selectdo
+								|#ISGEC016020.en
+| 	if not approver(10) then				|#ISGEC002016.o
+	if not approver(11) then				|#ISGEC002016.n
+		mess("tcgenstring", 1, "You are not authorised for this activity")
+		update_selection.1()				|#ISGEC016020.n
+		choice.again()
+	endif
+	check.same.action(11)				|#ISGEC016020.n
+	check.receipt.lines.selected()			|#ISGEC016020.n
+	check_domestic_export_selection()
+	
+	domain	tcpono	aa.rcln
+	domain	tcbool	compare
+	aa.rcln = 0
+	compare = true
+	select 	tfisg182.lsta:lsta, tfisg182.ptyp:ptyp, tfisg182.edrn:edrn, tfisg182.rcno:rcno,
+		tfisg182.rcln:aa.rcln
+	from 	tfisg182
+	where 	tfisg182.selc  = tcyesno.yes			
+	selectdo
+	selectempty						
+		mess("tcgenstring",1, "No Record selected")
+		update_selection.1()				|#ISGEC016020.n
+		choice.again()
+	endselect						
+	if ptyp = tdisg.type.domestic then
+| 		if	lsta = tfisg.doc.stat.free then			|#ISGEC016020.sn	|ISGEC002040.so
+| 			mess("tcgenstring", 1 ,"Action not valid.")	
+| 			update_selection.1()				
+| 			choice.again()	
+| 		endif							|#ISGEC016020.en	|ISGEC002040.eo
+		if lsta <> tfisg.doc.stat.lpay then
+| 			mess("tcgenstring", 1 ,"Document not received from AC payment")	|#ISGEC016020.so
+| 			update_selection.1()				|#ISGEC016020.n
+| 			choice.again()							|#ISGEC016020.eo
+		endif	
+| 		if lsta <> tfisg.doc.stat.free then	|ISGEC002040.sn
+		if edrn = "" then			|bharti.n
+			select	tdisg027.dech		
+			from	tdisg027
+			where	tdisg027.rcno = :rcno
+			and 	tdisg027.recl = :aa.rcln
+			selectdo
+			selectempty			|ISGEC002040.en
+				select	whinh312.cwar		|ISGEC002040.sn
+	 			from	whinh312
+	 			where	whinh312._index1 = {:rcno}
+	 			selectdo
+					compare = str.startswith(whinh312.cwar,"P")
+					if not compare then
+						message("Billing advice/Delivery Challan not linked with receipt number/Warehouse for this receipt no. is not starts with P.")
+						choice.again()
+					endif
+				selectempty
+				endselect	
+| 				message("Billing advice/Delivery Challan not linked with receipt number %s . Line cannot be forwarded",rcno) |ISGEC002040.n
+| 				update_selection.1()				
+| 				choice.again()
+			endselect			|ISGEC002040.n
+		endif					|bharti.n	
+| 			select	whinh312.cwar		|ISGEC002040.sn
+| 			from	whinh312
+| 			where	whinh312._index1 = {:rcno}
+| 			selectdo
+| 				compare = str.startswith(whinh312.cwar,"P")
+| 				if not compare then
+| 					message("Warehouse for this receipt no. is not starts with P.")
+| 					choice.again()
+| 				endif
+| 			selectempty
+| 			endselect				
+| 		endif					|ISGEC002040.en
+		
+	else
+| 		if lsta <> ltoe(14) then				|#ISGEC016020.o
+		on	case	lsta					|#ISGEC016020.sn
+			case	tfisg.doc.stat.racb:
+			case	tfisg.doc.stat.lpay:
+			case	tfisg.doc.stat.free:
+				break
+			default:					|#ISGEC016020.en
+			mess("tcgenstring",1 ,"Document not free to process")
+			update_selection.1()				|#ISGEC016020.n
+			choice.again()
+			break						|#ISGEC016020.n
+		endcase						|#ISGEC016020.n
+| 		endif
+	endif
+| 	if isspace(edrn) then									|#ISGEC002040.so
+| 		message("Billing advice not linked with receipt number %s . Line cannot be forwarded",rcno)
+| 		update_selection.1()				|#ISGEC016020.n
+| 		choice.again()
+| 	endif											|#ISGEC002040.eo
+
+	check.all.lines()	|#SD02022016.n
+	check.receipt.line()				|#ISGEC01045.n
+	endselect						|#ISGEC016020.n
+on.choice:
+| 	update_status(tfisg.doc.stat.flog)	|#SD02022016.o
+	
+			|#SD02022016.sn
+	select	tfisg182.rcno:temp.rcno
+	from	tfisg182 
+	where	tfisg182.selc = tcyesno.yes
+	and	tfisg182.user	=	:v.user			|#ISGEC016020.n
+	selectdo
+		update_status(temp.rcno, tfisg.doc.stat.flog)
+	selectempty
+		temp.rcno = ""
+	endselect
+			|#SD02022016.en
+	
+after.choice:
+	commit.transaction()
+								|#ISGEC016020.sn		
+	select	tfisg182.*
+	from	tfisg182
+	where	tfisg182.selc	=	{tcyesno.yes}
+	and	tfisg182.user	=	:v.user
+	selectdo
+								|#ISGEC016020.en
+	tfisg183.update.history(tfisg182.irno,tfisg182.rcno,tfisg182.rcln,tfisg182.ifbp, utc.num(),tfisg182.lsta)
+	endselect						|#ISGEC016020.n
+	update_selection.1()				|#ISGEC016020.n
+	
+choice.received_by_payment:
+before.choice:
+										|#ISGEC016020.sn	
+	v.user	=	trim$(get.login.code.wise.employee.code())
+	
+	select	tfisg182.*
+	from	tfisg182
+	where	tfisg182.selc	=	{tcyesno.yes}
+	and	tfisg182.user	=	:v.user
+	selectdo
+								|#ISGEC016020.en
+| 	if not approver(11) then			|#ISGEC002016.o
+	if not approver(12) then			|#ISGEC002016.n
+		mess("tcgenstring", 1, "You are not authorised for this activity")
+		update_selection.1()				|#ISGEC016020.n
+		choice.again()
+	endif
+	check.same.action(12)				|#ISGEC016020.n
+	check.receipt.lines.selected()			|#ISGEC016020.n
+	check_domestic_export_selection()
+	select 	tfisg182.lsta:lsta
+	from 	tfisg182
+	where 	tfisg182.selc  = tcyesno.yes					
+	selectdo
+	selectempty								
+		mess("tcgenstring",1, "No Record selected")
+		update_selection.1()				|#ISGEC016020.n
+		choice.again()	
+	endselect
+	if lsta <> tfisg.doc.stat.flog then
+		mess("tcgenstring", 1 ,"Document not forwarded to AC payment")
+		update_selection.1()				|#ISGEC016020.n
+		choice.again()
+	endif
+
+	check.all.lines()	|#SD02022016.n
+	check.receipt.line()				|#ISGEC01045.n
+	endselect					|#ISGEC016020.n
+on.choice:
+| 	update_status(tfisg.doc.stat.alog)	|#SD02022016.n
+	
+			|#SD02022016.sn
+	select	tfisg182.rcno:temp.rcno
+	from	tfisg182 
+	where	tfisg182.selc = tcyesno.yes
+	and	tfisg182.user	=	:v.user			|#ISGEC016020.n
+	selectdo
+		update_status(temp.rcno, tfisg.doc.stat.alog)
+	selectempty
+		temp.rcno = ""
+	endselect
+			|#SD02022016.en
+	
+after.choice:
+	commit.transaction()
+										|#ISGEC016020.sn		
+	select	tfisg182.*
+	from	tfisg182
+	where	tfisg182.selc	=	{tcyesno.yes}
+	and	tfisg182.user	=	:v.user
+	selectdo
+								|#ISGEC016020.en
+	tfisg183.update.history(tfisg182.irno,tfisg182.rcno,tfisg182.rcln,tfisg182.ifbp, utc.num(),tfisg182.lsta)
+	endselect						|#ISGEC016020.n
+	update_selection.1()				|#ISGEC016020.n
+	
+choice.conclusor:								|#ISGEC016019.sn
+before.choice:
+										|#ISGEC016020.sn	
+	v.user	=	trim$(get.login.code.wise.employee.code())
+	
+	select	tfisg182.*
+	from	tfisg182
+	where	tfisg182.selc	=	{tcyesno.yes}
+	and	tfisg182.user	=	:v.user
+	selectdo
+		if	trim$(tfisg182.ptrn)	=	"/0"	then
+			message("Purchase Invoice not booked.")
+			update_selection.1()				|#ISGEC016020.n
+			choice.again()
+		endif
+								|#ISGEC016020.en
+	if not approver(13) then			
+		mess("tcgenstring", 1, "You are not authorised for this activity")
+		update_selection.1()				|#ISGEC016020.n
+		choice.again()
+	endif
+	check.same.action(13)				|#ISGEC016020.n
+	check.receipt.lines.selected()			|#ISGEC016020.n
+	select 	tfisg182.lsta:lsta, tfisg182.ptyp:ptyp
+	from 	tfisg182
+	where 	tfisg182.selc  = tcyesno.yes					
+	selectdo
+	selectempty								
+		mess("tcgenstring",1, "No Record selected")
+		update_selection.1()				|#ISGEC016020.n
+		choice.again()
+	endselect
+
+	on	case	tfisg182.lsta			|#ISGEC016020.sn
+	case	tfisg.doc.stat.alog:
+	case	tfisg.doc.stat.rpab:
+		break
+	default:					|#ISGEC016020.en
+| 	if tfisg182.lsta <> tfisg.doc.stat.alog then	|#ISGEC016020.o
+		mess("tcgenstring", 1, "documents are not received by accounts payment")
+		update_selection.1()				|#ISGEC016020.n
+		choice.again()
+| 	endif						|#ISGEC016020.o
+		break					|#ISGEC016020.n
+	endcase					|#ISGEC016020.n
+	endselect					|#ISGEC016020.n
+on.choice:
+	select	tfisg182.rcno:temp.rcno
+	from	tfisg182 
+	where	tfisg182.selc = tcyesno.yes
+	and	tfisg182.user	=	:v.user			|#ISGEC016020.n
+	selectdo
+		update_status(temp.rcno, tfisg.doc.stat.conl)
+	selectempty
+		temp.rcno = ""
+	endselect
+after.choice:
+	commit.transaction()
+								|#ISGEC016020.sn	
+	select	tfisg182.*
+	from	tfisg182
+	where	tfisg182.selc	=	{tcyesno.yes}
+	and	tfisg182.user	=	:v.user
+	selectdo
+								|#ISGEC016020.en
+	tfisg183.update.history(tfisg182.irno,tfisg182.rcno,tfisg182.rcln,tfisg182.ifbp, utc.num(),tfisg182.lsta)	
+										|#ISGEC016019.en
+	endselect					|#ISGEC016020.n									
+	update_selection.1()				|#ISGEC016020.n										
+|***************************** field section **************************************
+field.tfisg182.selc:					|#ISGEC016020.en
+when.field.changes:
+	execute(update.db)
+	refresh()
+							|#ISGEC016020.en	
+|***************************** function section ***********************************
+functions:
+
+| function update_status(domain	tfisg.doc.stat	u.stat)				|#SD02022016.o
+function update_status(domain	tcorno i.rcno, domain	tfisg.doc.stat	u.stat)	|#SD02022016.n
+{
+	select 	tfisg182.lsta
+	from 	tfisg182 for update
+	where	tfisg182._index2 = {:i.rcno}	|#SD02022016.n
+	and	tfisg182.selc = tcyesno.yes
+	selectdo
+		tfisg182.lsta = u.stat
+| 		tfisg182.user = logname$			|#ISGEC016020.o
+		tfisg182.cdte =  utc.num()
+| 		tfisg182.selc = tcyesno.no			|#ISGEC016020.o
+		db.update(ttfisg182,db.retry)
+	endselect
+}
+
+function tfisg183.update.history(
+				domain	tcibd.sern 	i.irno,
+				domain tcorno		i.rcno,
+				domain	tcpono		i.rcln,
+				domain	tccom.bpid	i.ifbp,
+				domain	tcdate		i.date,
+				domain	tfisg.doc.stat	i.stat)
+{
+	domain	tcpono	o.tfisg183.irno
+	
+	
+	select	tfisg182.*
+	from	tfisg182
+	where	tfisg182._index1 = {:i.irno, :i.rcno,:i.rcln ,:i.ifbp}
+	selectdo
+	endselect
+	
+	select 	count(tfisg183.irno):o.tfisg183.irno
+	from 	tfisg183 
+	where 	tfisg183._index1 = {:i.irno, :i.rcno,:i.rcln ,:i.ifbp}
+	selectdo
+	selectempty
+		o.tfisg183.irno = 0
+	endselect
+	
+	select 	tfisg183.*
+	from 	tfisg183 for update
+	where 	tfisg183._index1 = {:i.irno, :i.rcno,:i.rcln ,:i.ifbp, :i.date}
+	selectdo
+	selectempty
+| 		if o.tfisg183.irno =  0 then
+| 			o.tfisg183.irno = 1
+| 		endif
+		
+		tfisg183.irno = tfisg182.irno 
+		tfisg183.rcno = tfisg182.rcno 
+		tfisg183.rcln = tfisg182.rcln
+		tfisg183.ifbp = tfisg182.ifbp
+		tfisg183.irdt = tfisg182.irdt
+		tfisg183.invn = tfisg182.invn
+		tfisg183.ivdt = tfisg182.ivdt 
+		tfisg183.iamt = tfisg182.iamt
+		tfisg183.orno = tfisg182.orno 
+		tfisg183.cprj = tfisg182.cprj
+		tfisg183.ptyp = tfisg182.ptyp
+		tfisg183.edrn = tfisg182.edrn
+		tfisg183.cnvn = tfisg182.cnvn
+		tfisg183.cinv = tfisg182.cinv
+		tfisg183.ttyp = tfisg182.ttyp
+		tfisg183.docn = tfisg182.docn
+		tfisg183.ptrn = tfisg182.ptrn
+		tfisg183.reas = tfisg182.reas
+		tfisg183.rea2 = tfisg182.rea2				|#ISGEC01132.sn
+		tfisg183.rea3 = tfisg182.rea3				
+		tfisg183.rea4 = tfisg182.rea4				
+		tfisg183.rea5 = tfisg182.rea5				|#ISGEC01132.en
+		tfisg183.stat = tfisg182.stat
+		tfisg183.selc = tfisg182.selc
+		tfisg183.lsta = i.stat
+		tfisg183.user = logname$
+		tfisg183.cdte =	i.date
+		tfisg183.hdat = i.date
+		tfisg183.vers = o.tfisg183.irno + 1
+		
+		db.insert(ttfisg183,db.retry,e)
+		commit.transaction()
+	endselect
+}
+function boolean approver(domain	tcpono	i.form)
+{
+	domain	tcemno	o.tccom001.emno 
+	o.tccom001.emno = get.login.code.wise.employee.code()
+	
+	select	tfisg181.*
+	from	tfisg181
+	where	tfisg181._index1  = {:o.tccom001.emno}
+	selectdo
+		on case i.form
+| 		case 	1:						|#ISGEC002016.o
+		case 	2:						|#ISGEC002016.n
+| 			if tfisg181.fbil = tcyesno.yes then
+| 			if tfisg181.dtyp =  ltoe(1) then		|#ISGEC002016.o
+			if tfisg181.dtyp =  ltoe(2) then		|#ISGEC002016.n
+				return(true)
+			endif
+			break
+| 		case 2:							|#ISGEC002016.o
+		case 3:							|#ISGEC002016.n
+| 			if tfisg181.rbil = tcyesno.yes then
+| 			if tfisg181.dtyp =  ltoe(2) then		|#ISGEC002016.o
+			if tfisg181.dtyp =  ltoe(3) then		|#ISGEC002016.n
+				return(true)
+			endif
+			break
+| 		case 3:							|#ISGEC002016.o
+		case 4:							|#ISGEC002016.n
+| 			if tfisg181.rlog = tcyesno.yes then
+| 			if tfisg181.dtyp =  ltoe(3) then		|#ISGEC002016.o
+			if tfisg181.dtyp =  ltoe(4) then		|#ISGEC002016.n
+				return(true)
+			endif
+			break
+| 		case 4:							|#ISGEC002016.o
+		case 5:							|#ISGEC002016.n	
+| 			if tfisg181.racb = tcyesno.yes then
+| 			if tfisg181.dtyp =  ltoe(4) then		|#ISGEC002016.o
+			if tfisg181.dtyp =  ltoe(5) then		|#ISGEC002016.n
+				return(true)
+			endif
+			break
+| 		case 5:							|#ISGEC002016.o
+		case 6:							|#ISGEC002016.n
+| 			if tfisg181.disp = tcyesno.yes then
+| 			if tfisg181.dtyp =  ltoe(5) then		|#ISGEC002016.o
+			if tfisg181.dtyp =  ltoe(6) then		|#ISGEC002016.n
+				return(true)
+			endif
+			break
+| 		case 6:							|#ISGEC002016.o
+		case 7:							|#ISGEC002016.n	
+| 			if tfisg181.facb = tcyesno.yes then
+| 			if tfisg181.dtyp =  ltoe(6) then		|#ISGEC002016.o
+			if tfisg181.dtyp =  ltoe(7) then		|#ISGEC002016.n
+				return(true)
+			endif
+
+			break
+| 		case 7:							|#ISGEC002016.o
+		case 8:							|#ISGEC002016.n
+| 			if tfisg181.rpab = tcyesno.yes then
+| 			if tfisg181.dtyp =  ltoe(7) then		|#ISGEC002016.o
+			if tfisg181.dtyp =  ltoe(8) then		|#ISGEC002016.n
+				return(true)
+			endif
+			break
+| 		case 8:							|#ISGEC002016.o
+		case 9:							|#ISGEC002016.n
+| 			if tfisg181.ralg = tcyesno.yes then
+| 			if tfisg181.dtyp =  ltoe(8) then		|#ISGEC002016.o
+			if tfisg181.dtyp =  ltoe(9) then		|#ISGEC002016.n
+				return(true)
+			endif
+			break
+| 		case 9:							|#ISGEC002016.o
+		case 10:						|#ISGEC002016.n
+| 			if tfisg181.lpay = tcyesno.yes then
+| 			if tfisg181.dtyp =  ltoe(9) then		|#ISGEC002016.o
+			if tfisg181.dtyp =  ltoe(10) then		|#ISGEC002016.n
+				return(true)
+			endif
+			break
+| 		case 10:						|#ISGEC002016.o
+		case 11:						|#ISGEC002016.n
+| 			if tfisg181.flog = tcyesno.yes then
+| 			if tfisg181.dtyp =  ltoe(10) then		|#ISGEC002016.o
+			if tfisg181.dtyp =  ltoe(11) then		|#ISGEC002016.n	
+				return(true)
+			endif
+			break
+| 		case 11:						|#ISGEC002016.o
+		case 12:						|#ISGEC002016.n
+| 			if tfisg181.alog = tcyesno.yes then
+| 			if tfisg181.dtyp =  ltoe(11) then		|#ISGEC002016.o
+			if tfisg181.dtyp =  ltoe(12) then		|#ISGEC002016.n
+				return(true)
+			endif
+			break
+		case 13:						|#ISGEC016019.sn
+			if tfisg181.dtyp =  ltoe(13) then		
+				return(true)
+			endif
+			break
+		endcase							|#ISGEC016019.en
+		
+	endselect
+	return(false)
+}
+
+
+function  domain tcemno get.login.code.wise.employee.code()
+{
+	domain	tcemno		o.emno
+	domain 	tfgld.user	curr.user
+	
+	curr.user = logname$
+	
+	select tccom001.emno:o.emno
+	from	tccom001
+	where	tccom001._index4 = {:curr.user}
+	as set with 1 rows
+	selectdo
+	selectempty
+		o.emno = ""
+	endselect
+	
+	return(o.emno)
+}
+
+function check_domestic_export_selection()
+{
+	long domestic1, export1
+	
+	domestic1 = 0
+	export1 = 0
+	select 	tfisg182.ptyp
+	from 	tfisg182
+	where 	tfisg182.selc  = tcyesno.yes
+	and	tfisg182.user	=	:v.user				|#ISGEC016020.n
+	and	tfisg182.ptyp = tdisg.type.domestic
+	selectdo
+		domestic1 = 1
+	selectempty
+		domestic1 =  0
+	endselect	
+	
+	select	tfisg182.ptyp
+	from tfisg182
+	where 	tfisg182.selc  = tcyesno.yes
+	and	tfisg182.user	=	:v.user				|#ISGEC016020.n
+	and	tfisg182.ptyp = tdisg.type.export
+	selectdo
+		export1 = 1
+	selectempty
+		export1 =  0
+	endselect
+	if domestic1  = 1 and export1  = 1 then
+		mess("tcgenstring", 1,"You have selected Export and domestic lines. Please select only one type")
+		update_selection.1()				|#ISGEC016020.n
+		choice.again()
+	endif
+	old.rcno = ""						|#ISGEC01045.n
+								|#ISGEC002016.sn
+	select	a_tfisg182.selc
+	from	tfisg182	a_tfisg182
+	where	a_tfisg182._index1	=	{:tfisg182.irno,:tfisg182.rcno}
+	and	a_tfisg182.ifbp		=	:tfisg182.ifbp
+	and	a_tfisg182.rcln		<>	{:tfisg182.rcln}
+	and	a_tfisg182.selc		=	tcyesno.no
+	selectdo
+| 		message("Please select all the lines for their receipt.")			|#ISGEC01045.so
+| 		choice.again()									|#ISGEC01045.eo
+	endselect
+								|#ISGEC002016.en
+}
+
+function check_str()
+{
+	domain	tfgld.ttyp	ltyp.f
+	domain	tfgld.docn	ltsr.f
+	domain	tcorno	o.tfisg182.rcno
+	domain	tcpono	o.tfisg182.rcln
+	select	tfisg182.rcno:o.tfisg182.rcno, tfisg182.rcln:o.tfisg182.rcln
+	from tfisg182
+	where 	tfisg182.selc  = tcyesno.yes
+	selectdo
+		select	tdisg832.edrn, tdisg831.rnso.l
+		from	tdisg832, tdisg831
+		where	tdisg832._index4 = {:o.tfisg182.rcno, :o.tfisg182.rcln}
+		and	tdisg832.tobi = tcyesno.yes
+		and 	tdisg832.edrn refers to tdisg831
+		selectdo
+			select 	ciisg101.ltyp:ltyp.f,
+			ciisg101.ltsr:ltsr.f
+			from	ciisg101
+			where	ciisg101._index1 = {:tdisg831.rnso.l}
+			as set with 1 rows
+			selectdo
+			selectempty
+				message("STR not generated")
+				update_selection.1()				|#ISGEC016020.n
+				choice.again()
+			endselect
+		endselect	
+	endselect
+}
+									|#ISGEC002016.sn									
+function	handle.enable.disable.commands()
+{
+	domain	tcemno		o.tccom001.emno 
+	domain	tfisg.doc.stat	i.dtyp
+	initialize.form.commands()
+	
+	o.tccom001.emno = get.login.code.wise.employee.code()
+	
+	select	tfisg181.dtyp:i.dtyp
+	from	tfisg181
+	where	tfisg181._index1	=	{:o.tccom001.emno}
+	selectdo
+		on	case	i.dtyp
+		case	tfisg.doc.stat.fbil:
+			enable.commands("forward_to_ac")
+			break
+		case	tfisg.doc.stat.rbil:
+			enable.commands("received_by_ac")
+			break
+		case	tfisg.doc.stat.rlog:
+			enable.commands("return_to_logistic")
+			break
+		case	tfisg.doc.stat.racb:
+			enable.commands("return_received_log")
+			break
+		case	tfisg.doc.stat.disp:
+			enable.commands("dispatch_sales")
+			break
+		case	tfisg.doc.stat.facb:
+			enable.commands("forward_to_payment")
+			break
+		case	tfisg.doc.stat.rpab:
+			enable.commands("received_in_ac")
+			break
+		case	tfisg.doc.stat.ralg:
+			enable.commands("returned_by_ac")
+			break
+		case	tfisg.doc.stat.lpay:
+			enable.commands("received_by_logistics")
+			break
+		case	tfisg.doc.stat.flog:
+			enable.commands("forward_by_ac")
+			break
+		case	tfisg.doc.stat.alog:
+			enable.commands("received_by_payment")
+			break
+		case	tfisg.doc.stat.conl:
+			enable.commands("conclusor")
+			break
+		endcase
+	endselect
+
+}
+
+function	initialize.form.commands()
+{
+	disable.commands("forward_to_ac")
+	disable.commands("received_by_ac")
+	disable.commands("return_to_logistic")
+	disable.commands("return_received_log")
+	disable.commands("dispatch_sales")
+	disable.commands("forward_to_payment")
+	disable.commands("received_in_ac")
+	disable.commands("returned_by_ac")
+	disable.commands("received_by_logistics")
+	disable.commands("forward_by_ac")
+	disable.commands("received_by_payment")
+	disable.commands("conclusor")			|#ISGEC016019.n	
+}
+									|#ISGEC002016.en
+									
+					|#SD02022016.sn						
+function check.all.lines()
+{
+	select	tfisg182.rcno:selc.rcno
+	from	tfisg182 
+	where	tfisg182.selc = tcyesno.yes
+	as set with 1 rows
+	selectdo
+	endselect
+	
+	select	tfisg182.selc:temp.selc
+	from	tfisg182 
+	where	tfisg182._index2 = {:selc.rcno}
+	selectdo
+		if temp.selc = tcyesno.no then
+			message("Please Check All Lines of Receipt No. %s Before", selc.rcno)
+			update_selection.1()				|#ISGEC016020.n
+			choice.again()
+		endif
+	endselect
+}
+					|#SD02022016.en
+											|#ISGEC01045.sn
+function BP_Name()
+{
+	ttyp.docn = ""
+	select	tccom100.nama:ifbp.nama
+	from	tccom100
+	where	tccom100._index1 = {:tfisg182.ifbp}
+	selectdo
+	selectempty
+		ifbp.nama = ""	
+	endselect	
+	
+	select	tcmcs052.dsca:proj.nama
+	from	tcmcs052
+	where	tcmcs052._index1 = {:tfisg182.cprj}
+	selectdo
+	selectempty
+		proj.nama = ""	
+	endselect
+	
+	select	tccom001.nama:login.name
+	from	tccom001
+	where	tccom001._index4 = {:tfisg182.user}
+	as set with 1 rows
+	selectdo
+	selectempty
+		select	tccom001.nama:login.name			|#ISGEC016020.sn
+		from	tccom001
+		where	tccom001._index1 = {:tfisg182.user}
+		as set with 1 rows
+		selectdo
+		selectempty
+			login.name = ""
+		endselect						|#ISGEC016020.en
+	endselect
+	
+	
+	ttyp.docn = str$(tfisg182.ttyp) & "/" & str$(tfisg182.docn)
+}
+
+function update_selection()	
+{
+	select 	tfisg182.lsta
+	from 	tfisg182 for update
+	where	tfisg182.selc = tcyesno.yes
+	selectdo
+		tfisg182.selc = tcyesno.no
+		db.update(ttfisg182,db.retry,e)
+	endselect
+	if not e then 
+		commit.transaction()
+	else
+		abort.transaction()
+	endif	
+}
+
+function update_selection.1()	
+{
+	domain	tcmcs.long	ret
+	
+	v.user	=	trim$(get.login.code.wise.employee.code())
+	
+	select 	tfisg182.lsta
+	from 	tfisg182	for	update
+	where	tfisg182.selc	=	tcyesno.yes
+	and	tfisg182.user	=	:v.user
+	selectdo
+| 		tfisg182.selc	=	tcyesno.no
+| 		db.update(ttfisg182,db.retry,e)
+		dal.change.object("tfisg182")
+		dal.set.field("tfisg182.selc", tcyesno.no)
+		ret	=	dal.save.object("tfisg182")
+	endselect
+| 	if	not e	then 
+	if	ret	=	0	then
+		commit.transaction()
+	else
+		abort.transaction()
+	endif	
+}
+
+function check.confirm(domain	tcorno	i.rcno)
+{
+	select	whinh312.conf,whinh312.rcln
+	from	whinh312
+	where	whinh312._index1 = {:i.rcno}
+	and	whinh312.conf <> tcyesno.no
+	selectdo
+	selectempty
+		message("All the Warehouse Receipt No. %s line not confirm", i.rcno)
+		update_selection.1()				|#ISGEC016020.n
+		choice.again()
+	endselect	
+}
+
+function check.advice.no(	domain	tcibd.sern 	i.irno,
+				domain tcorno		i.rcno,
+				domain	tcpono		i.rcln,
+				domain	tccom.bpid	i.ifbp)
+{
+	select	tfisg182.edrn
+	from	tfisg182
+	where	tfisg182._index1 = {:i.irno, :i.rcno,:i.rcln ,:i.ifbp}
+	and	tfisg182.selc <> tcyesno.no
+	selectdo
+	selectempty
+		message("Billing Advice not linked with all Receipt lines")
+		update_selection.1()				|#ISGEC016020.n
+		choice.again()	
+	endselect
+	
+}
+
+function check.receipt.line()
+{
+	rcno.str = ""
+	select	b_tfisg182.rcno:b_rcno
+	from	tfisg182	b_tfisg182
+	where	b_tfisg182.selc = tcyesno.yes
+	group by b_tfisg182.rcno	
+	selectdo
+		select	tfisg182.rcno
+		from	tfisg182
+		where	tfisg182._index2 = {:b_rcno}
+		and	tfisg182.selc = tcyesno.no
+		as set with 1 rows
+		selectdo
+			if not isspace(rcno.str) then
+				rcno.str = rcno.str & "," & tfisg182.rcno
+			else
+				rcno.str = tfisg182.rcno
+			endif	
+		endselect	
+	endselect
+	if not isspace(rcno.str) then
+		message("All the Receipt line number should be selected of %s", rcno.str)
+		update_selection.1()				|#ISGEC016020.n
+		choice.again()	
+	endif	
+}
+
+											|#ISGEC01045.en
+											|#ISGEC016020.sn
+function	check.receipt.lines.selected()
+{
+	select	m_tfisg182.selc
+	from	tfisg182	m_tfisg182
+	where	m_tfisg182._index2	=	{:tfisg182.rcno}
+	and	m_tfisg182.selc		=	tcyesno.no
+	as	set with 1 rows
+	selectdo
+		message("All lines of receipt not selected.")
+		update_selection.1()			
+		choice.again()
+	endselect
+}
+
+function	check.maintain.reason.code()
+{
+	select	m_tfisg182.reas
+	from	tfisg182	m_tfisg182
+	where	m_tfisg182._index2	=	{:tfisg182.rcno}
+	and	m_tfisg182.reas		=	""
+	as	set with 1 rows
+	selectdo
+		mess("tcgenstring",1, "Maintain Reason Code")
+		update_selection.1()			
+		choice.again()
+	endselect
+}
+
+function	check.same.action(domain	tcmcs.long	v.stat)
+{
+	if	tfisg182.lsta	=	ltoe(v.stat)	then
+		message("Action already taken.")
+		update_selection.1()	
+		choice.again()
+	endif	
+}
+											|#ISGEC016020.en
+function send.email.alert(									|#ISGEC01141.sn
+				domain	tcmcs.str40	return.desc
+									)		
+{
+	domain	tcnama		nama		
+	domain	tcmcs.str50	o.reas, o.rea2, o.rea3, o.rea4, o.rea5
+	string tmp.file(200),line(500), invc.date(80), login.user(20)
+	long	fp, attachment.ID, stat,var.bor
+	
+	tmp.file = creat.tmp.file$(bse.tmp.dir$()) & ".html"							
+	fp = seq.open(tmp.file,"w+")
+	if fp <=0 then
+		message("Temp file can not be created")
+	endif
+
+	line = ""
+	invc.date = ""
+	
+	invc.date = sprintf$("%D(%02d/%02m/%04Y)", tfisg182.ivdt)
+
+	seq.puts("<HTML>", fp)
+	seq.puts("<BODY>", fp)
+	
+	seq.puts("<TABLE >",fp)
+	
+	seq.puts("<TR>",fp)
+	seq.puts("<TD align = ""left""><B>IR No.:</B>",fp)
+	seq.puts("<TD align = ""centre"">" &  tfisg182.irno,fp)
+	seq.puts("</TR>",fp)
+	
+	seq.puts("<TR>",fp)
+	seq.puts("<TD align = ""left""><B>Supplier:</B>",fp) 
+	seq.puts("<TD align = ""centre"">" & tfisg182.ifbp,fp)
+	seq.puts("<TD align = ""left"">" & trim$(ifbp.nama),fp)
+	seq.puts("</TR>",fp)
+	
+	seq.puts("<TR>",fp)
+	seq.puts("<TD align = ""left""><B>Invoice No.:</B>",fp)  
+	seq.puts("<TD align = ""centre"">" &  tfisg182.invn,fp)
+	seq.puts("</TR>",fp)
+	
+	seq.puts("<TR>",fp)
+	seq.puts("<TD align = ""left""><B>Invoice Date:</B>",fp) 
+	seq.puts("<TD align = ""centre"">" &  invc.date,fp)
+	seq.puts("</TR>",fp)
+	
+	seq.puts("<TR>",fp)
+	seq.puts("<TD align = ""left""><B>Project:</B>",fp) 
+	seq.puts("<TD align = ""centre"">" &  tfisg182.cprj,fp)
+	seq.puts("<TD align = ""left"">" & trim$(proj.nama),fp)
+	seq.puts("</TR>",fp)
+	
+	get_reasoncode_description(tfisg182.reas, o.reas)
+	get_reasoncode_description(tfisg182.rea2, o.rea2)
+	get_reasoncode_description(tfisg182.rea3, o.rea3)
+	get_reasoncode_description(tfisg182.rea4, o.rea4)
+	get_reasoncode_description(tfisg182.rea5, o.rea5)
+	
+	seq.puts("<TR>",fp)
+	seq.puts("<TD align = ""left""><B>Reason 1:</B>",fp)  
+	seq.puts("<TD align = ""centre"">" &  o.reas,fp)
+	seq.puts("</TR>",fp)
+	
+	seq.puts("<TR>",fp)
+	seq.puts("<TD align = ""left""><B>Reason 2:</B>",fp)  
+	seq.puts("<TD align = ""centre"">" &  o.rea2,fp)
+	seq.puts("</TR>",fp)
+	
+	seq.puts("<TR>",fp)
+	seq.puts("<TD align = ""left""><B>Reason 3:</B>",fp)  
+	seq.puts("<TD align = ""centre"">" &  o.rea3,fp)
+	seq.puts("</TR>",fp)
+	
+	seq.puts("<TR>",fp)
+	seq.puts("<TD align = ""left""><B>Reason 4:</B>",fp)  
+	seq.puts("<TD align = ""centre"">" &  o.rea4,fp)
+	seq.puts("</TR>",fp)
+	
+	seq.puts("<TR>",fp)
+	seq.puts("<TD align = ""left""><B>Reason 5:</B>",fp)  
+	seq.puts("<TD align = ""centre"">" &  o.rea5,fp)
+	seq.puts("</TR>",fp)
+	
+	seq.puts("<TR>",fp)
+	seq.puts("<TD align = ""left""><B></B>",fp)   
+	seq.puts("</TR>",fp)
+	
+	
+	seq.puts("<TR>",fp)
+	seq.puts("<TD align = ""left""><B>|********************This is a system generated mail.********************|</B>",fp)  
+	seq.puts("</TR>",fp)
+	
+	seq.puts("</TABLE>",fp)
+	
+	seq.puts("</BODY>",fp)
+	seq.puts("</HTML>", fp)
+												
+	
+	ret = seq.close(fp)
+	
+	
+	login.user = logname$
+	
+	select 	bpmdm001.mail,tccom001.nama 
+	from 	tccom001,bpmdm001
+	where 	tccom001._index4 = {:login.user}
+	and	tccom001.emno refers to bpmdm001
+	as set with 1 rows
+	selectdo
+	selectempty
+		bpmdm001.mail = ""
+	endselect
+
+	if isspace(bpmdm001.mail) then
+		message("Email ID for user " & login.user & " Not maintained")
+	endif		
+	
+	|******* Email Header
+        message.ID = cmf.create()
+	line = "IR Number " & tfisg182.irno & return.desc
+	ret = cmf.setClass(message.ID, "CMF.NOTE.EMAIL")
+        ret = cmf.setSubject(message.ID,line)
+	
+	|******** from ID
+	to.ID = cmf.createRecipient(message.ID, ttcmf.role.from)  
+	ret = cmf.setRecipientName(to.ID,tccom001.nama)
+        ret = cmf.setRecipientAddress(to.ID, bpmdm001.mail)	
+	ret = cmf.setRecipientType(to.ID, "SMTP")
+ 
+	mail.to(old.user)										
+		
+| 	if	tfisg182.rcno(1;4)	=	"R201"	then									|GH389CR713.com.s					
+| 		mail.to("0479")
+| 		else if	tfisg182.rcno(1;4)	=	"R301"	then
+| 			mail.to("9451")
+| 			else if	tfisg182.rcno(1;4)	<>	"R201" and tfisg182.rcno(1;4)	<>	"R301"	then
+| 				mail.to("5105")
+| 				mail.to("9353")
+| 			endif
+| 		endif
+| 	endif															|GH389CR713.com.e
+
+	if tfisg182.rcno(1;4) =	"R101" then											|GH389CR713.a.s
+		mail.to("9803")
+		mail.to("0760")
+	else
+		if	tfisg182.rcno(1;4) = "R201" then														
+			mail.to("0479")
+		else 
+			if	tfisg182.rcno(1;4) = "R301" then
+				mail.to("9451")
+				mail.to("5105")
+			else 
+				if	tfisg182.rcno(1;4) <> "R201" and tfisg182.rcno(1;4) <> "R301" and tfisg182.rcno(1;4) <> "R101"	then
+					mail.to("5105")
+					mail.to("9353")
+				endif
+			endif
+		endif	
+	endif															|GH389CR713.a.e
+			
+	|********* Mail Body
+	attachment.ID = cmf.createAttachment(message.ID)
+	ret = cmf.setAttachmentBody(attachment.ID,ttyeno.yes)   						  
+	ret = cmf.setAttachmentMIME(attachment.ID,"text/html")  						 
+	ret = cmf.setAttachmentFileName(attachment.ID,tmp.file,"abc.txt")
+
+
+	|*********  Send mail
+        if message.ID <>0 then
+                stat = cmf.startService("SMTP",2)
+                if stat <> 0 then
+                        message("Message could not be sent "&
+                                "(Infor ERP Enterprise eMessage Connector"&
+                                " service did not start)")
+		endif
+			
+                stat = cmf.send(message.ID,"SMTP")
+                if stat<>0 then
+                        message("Message could not be sent "& "(Infor ERP Enterprise eMessage Connector "&
+                                "service refused message)")
+                        cmf.stopService("SMTP",2)
+                endif
+                stat = cmf.stopService("SMTP",2)
+        endif	
+}
+
+|******** to ID ********************************************************
+function	mail.to(
+				domain	tclogn	i.user
+							)
+{
+	select 	bpmdm001.mail,tccom001.nama 								 
+	from 	tccom001,bpmdm001
+	where 	tccom001._index4 = {:i.user}
+	and	tccom001.emno refers to bpmdm001
+	and	bpmdm001.mail <> ""
+	selectdo
+		to.ID = cmf.createRecipient(message.ID, ttcmf.role.to)  
+		ret = cmf.setRecipientName(to.ID,tccom001.nama)
+		ret = cmf.setRecipientAddress(to.ID, bpmdm001.mail)	
+		ret = cmf.setRecipientResponsibility(to.ID, "TRUE")		
+		ret = cmf.setRecipientType(to.ID, "SMTP")
+	selectempty
+	endselect
+}												
+
+function	get_reasoncode_description(
+						domain	tcmcs.str3	i.reas,
+					ref	domain	tcmcs.str50	o.dsca
+										)
+{
+	o.dsca = ""
+	
+	select	tfisg180.dsca:o.dsca
+	from	tfisg180
+	where	tfisg180._index1 = {:i.reas}
+	selectdo
+	selectempty
+		o.dsca = ""
+	endselect
+}
+
+function	check_in_history_user_and_get_logincode(
+							domain	tcibd.sern 	i.irno,
+							domain	tcorno		i.rcno,
+							domain	tcpono		i.rcln,
+							domain	tccom.bpid	i.ifbp,
+							domain	tfisg.doc.stat	i.lsta,
+						ref	domain	tcloco		o.user)
+{
+	
+	select 	tfisg183.user:o.user
+	from 	tfisg183
+	where 	tfisg183._index1 = {:i.irno, :i.rcno,:i.rcln ,:i.ifbp}
+	and	tfisg183.lsta = :i.lsta
+	selectdo
+	selectempty
+		o.user = ""
+	endselect
+}
+													|#ISGEC01141.en
+													
+function extern get_attachment()									|GH300CR602.a.s
+{
+
+	domain	tcncmp			curr.comp, curr.comp.o
+	domain	tcmcs.str1		p.char, c.char
+	domain	tcmcs.str30		i.host	
+	domain	tclogn			o.user
+	domain	tcmcs.str50		pass.string, handle.string
+		string			open.link(200),sess.code(30)
+	domain	tcibd.sern	irno.str
+	
+	pass.string = trim$(tfisg182.irno) 
+	
+	o.user = logname$
+	
+	i.host = hostname$()
+	i.host =  toupper$(i.host)
+	i.host = trim$(i.host)
+	
+	curr.comp.o = get.compnr()
+	
+	select	tcemm030.lcmp:curr.comp
+	from	tcemm030
+	where	tcemm030.fcmp = :curr.comp.o
+	as set with 1 rows
+	selectdo
+	selectempty
+		curr.comp = 0
+	endselect
+	
+	p.char = ""
+	c.char = ""
+	handle.string = ""
+| 	handle.string =  "DOCUMENTTRACKING_" & str$(curr.comp)
+	handle.string =  "IRN_" & str$(curr.comp)
+	
+| 	p.char = (tfisg182.lsta  = tfisg.doc.stat.free) ? "y":"n"
+	p.char = "n"
+		
+	on case i.host
+	case "VISHNU":	
+		open.link = 	"chrome.exe --app=http://192.9.200.146/Attachment/Attachment.aspx?AthHandle=" & trim$(handle.string) &
+				"&Index=" & trim$(pass.string) & "&AttachedBy=" & trim$(o.user) & "&ed=" & p.char	
+		break
+		
+	case "VISHNU10GST":	
+		open.link = 	"chrome.exe --app=http://192.9.200.146/ATHERPTEST/Attachment.aspx?AthHandle=" & trim$(handle.string) &
+				"&Index=" & trim$(pass.string) & "&AttachedBy=" & trim$(o.user) & "&ed=" & p.char
+		break
+	endcase
+		
+
+	open.link = trim$(open.link)
+	
+	app_start(open.link, "", "", "", "")
+
+}
+												|GH300CR602.a.e
+
+

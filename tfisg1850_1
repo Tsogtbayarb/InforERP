@@ -1,0 +1,1354 @@
+|******************************************************************************
+|* tfisg185  0  VRC B61U a7 isg 
+|* DAL of tfisg185
+|* merino1
+|* 16-01-14 [17:37]
+|******************************************************************************
+|* Script Type: DAL
+|*
+|* ID:- ISGECFIN011,Gokul Chaurasia,06-06-2016,  VRC B61U a7 isg
+|* Logic For generation of Serial no.
+|*
+|* ID ISGEC01036, Shilpa Janardanan, 13/06/2016, VRC B61U a7 isg
+|*
+|* ID ISGECFIN013 , Kuldeep Sharma, 18/06/2016, VRC B61u a7 isg
+|* Create Extra Tool bar to show the button
+|*
+|* ID ISGEC016005, Shilpa Janardanan, 14/07/2016, VRC B61U a7 isg
+|* 
+|* ID ISGEC01043, Dharmendra, 23-07-2016
+|*
+|* ID ISGEC016007, Manish Manchanda, 2016-08-31
+|* Modifications - code commented
+|*
+|* ID ISGEC01050, Priya Jindal, 13/3/2018
+|* Changes on the status for data population
+|*
+|* GH662_14122021, Utam Kumar Singh
+|* Issue in Quick Payment for Invoice Payment 
+|******************************************************************************
+        
+	table	ttfisg185	| Payment Process
+	table	ttfmsl020	| Advance Request
+	table	ttfacp200	| Open Items (Purchase Invoices and Payments)
+	table	ttfacp251	| Invoices Related to Purchase Receipt Lines
+	table	ttcemm170	| Companies
+	table	ttfisg000	| Finance Customize Parameter
+	table	ttfacp201	| Payment Schedules
+	table	ttccom100
+	table	ttfisg189
+	domain tcmcs.str6	pyad
+	domain tfisg.tran	i.type
+	domain	tfoption	o.optn,	v.optn
+							|#ISGECFIN011.sn
+	long	ret
+	domain	tcorno	i.orno
+	domain	tccprj	i.cprj
+	domain	tcncmp	i.ncmp
+	domain  tcccty	i.ccty
+	domain  tccvat	i.cvat
+	domain	tccom.bpid	o.bpid
+	domain	tcmcs.str10m	i.iprq
+	domain	tcorno		o.adrq
+	domain	tfisg.tran	o.tran
+							|#ISGECFIN011.en
+	domain	tcorno	g.orno				|#ISGECFIN013.n
+	domain tcdsca global.bloc				|#ISGECFIN013.n
+	domain	tcmcs.str10m	o.iprq			|#ISGEC016005.sn
+	domain	tcmcs.str50	ptr.info
+	domain	tcmcs.str6m	previous.line.pyad	|GH662_14122021
+	long	found					|#ISGEC016005.en
+#include <bic_dal2>
+
+
+function extern long before.open.object.set()
+{
+	g.orno = ""				|#ISGECFIN013.n
+	dal.field.depends.on("tfisg185.cvat"	,			|#ISGEC016005.n
+				HOOK_IS_APPLICABLE ,
+				"tfisg185.stax","tfisg185.type")
+				
+	dal.field.depends.on("tfisg185.ccty", HOOK_IS_APPLICABLE ,
+				"tfisg185.stax")			|#ISGEC016005.n
+	dal.field.depends.on("tfisg185.adrq", HOOK_IS_APPLICABLE ,
+				"tfisg185.type")			|#ISGEC016005.n
+	dal.field.depends.on("tfisg185.sele", HOOK_IS_APPLICABLE, "tfisg185.proc")			
+				
+	tcmcs.dll0095.read.parm("tfisg000")				|#ISGECFIN011.n
+	return(0)
+}
+
+function extern long before.save.object(long type)
+{
+	if (tfisg185.type <> tfisg.tran.paym or tfisg185.type <> tfisg.tran.payi) and isspace(tfisg185.bpid) then
+		dal.set.error.message("@Business Partner is mandatory")
+		return(DALHOOKERROR)
+	endif
+	
+	if tfisg185.type = tfisg.tran.paym and isspace(tfisg185.adrq) then
+| 		dal.set.error.message("@Payment Request is mandatory")
+| 		return(DALHOOKERROR)
+	endif
+	
+| 	if not check_select_data() then			|#SD01062016.o
+	if tfisg185.type <> tfisg.tran.invo then	|#SD01062016.n
+		if not check_select_data() then
+			return(DALHOOKERROR)
+		endif	
+	endif
+									|#ISGECFIN011.sn 
+									|#ISGEC016005.so
+| 	if not isspace(i.iprq)	then
+| 		tfisg185.iprq = i.iprq
+| 	endif
+									|#ISGEC016005.eo
+	
+| 	if tfisg185.sele = tcyesno.yes	then
+| 		tfisg185.balh = tfisg185.balc
+| 	else
+| 		tfisg185.balh = 0
+| 	endif
+| 	tfisg185.rblk = tfisg185.sele
+| 	on case type		|#test
+| 	case DAL_UPDATE:	
+									|#ISGEC016005.so
+	| 		if isspace(tfisg185.iprq)	then
+	| 			if generate.invoice.payment.request()	then
+	| 				show.dal.messages(MSG.ALL)
+	| 				return(DALHOOKERROR)
+	| 			endif
+	| 		endif
+									|#ISGEC016005.eo
+| 		break
+| 	endcase
+								|#ISGECFIN011.en
+	on case type						|GH662_14122021.strt
+	case DAL_UPDATE:
+		if tfisg185.type = tfisg.tran.invo then
+			if tfisg185.sele = tcyesno.yes then
+				if not select.line() then		
+					dal.set.error.message("@ Transaction Type(%s) and Document No.(%s) already used for Payment Advise '%s'.",tfisg185.ttyp,tfisg185.ninv,previous.line.pyad)	
+					return(DALHOOKERROR)
+				endif	
+			endif	
+		endif		
+		break
+	endcase							|GH662_14122021.end
+	
+	return(0)
+}
+
+function extern long	after.get.object()
+{
+	if tfisg185.ncmp <> 0 then
+		select	tfisg185.pyad:pyad
+		from	tfisg185
+		where	tfisg185._index1 = {:tfisg185.iprq,:tfisg185.bpid,:tfisg185.type,:tfisg185.adrq}
+		and	tfisg185._compnr = :tfisg185.ncmp
+		and	tfisg185.pyad <> "      "
+		as set with 1 rows
+		selectdo
+			if tfisg185.sele = tcyesno.yes then
+				return(0)
+			else
+				return(1)
+			endif
+		endselect
+	endif
+	return(0)
+}
+
+function extern boolean method.is.allowed(long		i.method)
+{
+	on case i.method
+		case DAL_NEW:
+| 			select	tfisg185.type:i.type
+| 			from	tfisg185
+| 			where	tfisg185._index1 = {:tfisg185.iprq,:tfisg185.bpid,:tfisg185.type,:tfisg185.adrq}
+| 			as set with 1 rows
+| 			selectdo
+| 				on	case	i.type
+| 				case	tfisg.tran.invo:
+| 				case	tfisg.tran.paym:
+| 				case	tfisg.tran.payi:
+| 					return(false)
+| 					break
+| 				endcase
+| 			endselect
+			if tfisg185.proc = tcyesno.yes then
+				return(false)
+			endif
+		break
+	case DAL_UPDATE:
+		if tfisg185.proc = tcyesno.yes then
+			return(false)
+		endif
+		break
+	case DAL_DESTROY:
+		if tfisg185.proc = tcyesno.yes then
+			return(false)
+		endif
+		break
+	endcase
+
+	return(true)
+}
+
+|******************************** tfisg185.adrq *******************************
+function	extern	boolean	tfisg185.adrq.is.applicable(long	type)
+{
+	on	case	tfisg185.type
+	case	tfisg.tran.paym:
+	case	tfisg.tran.payi:
+		return(true)
+		break
+	endcase
+	return(false)
+}
+
+| function extern boolean tfisg185.adrq.is.valid(long type)		|#ISGEC016005.sn
+| {
+| 	found = 0
+| 	select	tfisg185.iprq:o.iprq
+| 	from	tfisg185
+| 	where	tfisg185.adrq.d = :tfisg185.adrq
+| 	selectdo
+| 		found = 1
+| 		ptr.info =  strip$(o.iprq) & "," &  ptr.info
+| 	endselect
+| 	if found = 1 then
+| 		dal.set.warning.message  ("tfisg1185.001" ,ptr.info )
+| 		show.dal.messages(MSG.WARNING)
+| 	endif
+| 	return(true)
+
+| }								|#ISGEC016005.en
+
+| ******************************** tfisg185.ttyp *******************************
+function	extern	boolean	tfisg185.ttyp.is.readonly(long	type)
+{
+	on	case	tfisg185.type
+	case	tfisg.tran.adva:
+	case	tfisg.tran.unal:
+	case	tfisg.tran.stan:
+	case	tfisg.tran.paym:
+	case	tfisg.tran.payi:
+		return(true)
+		break
+	endcase
+	return(false)
+}
+
+|******************************** tfisg185.ninv *******************************
+function	extern	boolean	tfisg185.ninv.is.readonly(long	type)
+{
+	on	case	tfisg185.type
+	case	tfisg.tran.adva:
+	case	tfisg.tran.unal:
+	case	tfisg.tran.stan:
+	case	tfisg.tran.paym:
+	case	tfisg.tran.payi:
+		return(true)
+		break
+	endcase
+	return(false)
+}
+
+|******************************** tfisg185.docd *******************************
+function	extern	boolean	tfisg185.docd.is.readonly(long	type)
+{
+	return(true)
+}
+
+|******************************** tfisg185.cvat *******************************
+function	extern	boolean	tfisg185.cvat.is.derived(long	type)
+{
+	get.request.type()
+	
+									|#ISGEC016005.so
+| 		on	case	tfisg185.type
+| 		case	tfisg.tran.invo:	|#SD01062016.n
+| 		case	tfisg.tran.unal:
+| 		case	tfisg.tran.stan:	|#SD01062016.n	
+| 		case	tfisg.tran.rete:	
+| 		case	tfisg.tran.payi:	
+| 			return(true)
+| 			break
+| 		case	tfisg.tran.paym:	|#SD01062016.sn
+| 				select	tfmsl020.optn:o.optn
+| 				from	tfmsl020
+| 				where	tfmsl020._index1 = {:tfisg185.adrq}
+| 				selectdo
+| 				selectempty
+| 					o.optn = empty
+| 				endselect
+				
+| 				if o.optn <> tfoption.advance then
+| 					if v.optn <> tfoption.account then		|#ISGEC016005.n
+| 						return(true)
+| 					endif	
+| 				endif
+| 			break			|#SD01062016.en
+
+| 		endcase
+			|#ISGEC016005.n	
+									|#ISGEC016005.eo
+									|#ISGEC016005.sn
+	select	tfmsl020.optn:o.optn
+	from	tfmsl020
+	where	tfmsl020._index1 = {:tfisg185.adrq.d}
+	selectdo
+		if o.optn = tfoption.advance and tfisg185.type = tfisg.tran.paym then
+			return(false)
+		endif
+		if o.optn = tfoption.account and tfisg185.type = tfisg.tran.paym and tfisg185.stax = tcyesno.yes then
+			return(false)
+		endif
+		
+	endselect
+									|#ISGEC016005.en
+	return(true)
+}
+
+function extern boolean tfisg185.stax.is.applicable(long type)	|#ISGEC016005.sn
+{	
+						|#ISGEC016005.sn
+	select	tfmsl020.optn
+	from	tfmsl020
+	where	tfmsl020._index1 = {:tfisg185.adrq.d}
+	and	tfmsl020.optn = 2
+	selectdo
+		if tfisg185.type = tfisg.tran.paym then
+			return(true)
+		endif
+	endselect
+	
+							|#ISGEC016005.en
+	return(false)
+}
+function extern boolean tfisg185.cvat.is.applicable(long type)	
+{
+	
+									|#ISGEC016005.so
+| 	if tfisg185.stax = tcyesno.yes then
+| 		return(true)
+| 	endif
+									|#ISGEC016005.eo
+									|#ISGEC016005.sn
+	select	tfmsl020.optn:o.optn
+	from	tfmsl020
+	where	tfmsl020._index1 = {:tfisg185.adrq.d}
+	selectdo
+		if o.optn = tfoption.advance and tfisg185.type = tfisg.tran.paym then
+			return(true)
+		endif
+		if o.optn = tfoption.account and tfisg185.type = tfisg.tran.paym and tfisg185.stax = tcyesno.yes then
+			return(true)
+		endif
+		
+	endselect
+									|#ISGEC016005.en
+	return(false)
+}									|#ISGEC016005.en
+
+|******************************** tfisg185.ccty ***********************	|#SD01062016.sn
+function	extern	boolean	tfisg185.ccty.is.derived(long	type)
+{
+									|#ISGEC016005.so
+| 	on	case	tfisg185.type
+| 	case	tfisg.tran.stan:
+| 	case	tfisg.tran.invo:
+| 	case	tfisg.tran.payi:
+| 		return(true)
+| 		break
+| 	case	tfisg.tran.paym:	|#SD01062016.sn
+| 			select	tfmsl020.optn:o.optn
+| 			from	tfmsl020
+| 			where	tfmsl020._index1 = {:tfisg185.adrq}
+| 			selectdo
+| 			selectempty
+| 				o.optn = empty
+| 			endselect
+| 			
+| 			if o.optn <> tfoption.advance then
+| 				if v.optn <> tfoption.account then		|#ISGEC016005.n
+| 						return(true)
+| 				endif	
+
+| 			endif
+| 		break			|#SD01062016.en
+| 	endcase
+									|#ISGEC016005.eo
+									|#ISGEC016005.sn
+	select	tfmsl020.optn:o.optn
+	from	tfmsl020
+	where	tfmsl020._index1 = {:tfisg185.adrq.d}
+	selectdo
+		if o.optn = tfoption.advance and tfisg185.type = tfisg.tran.paym then
+			return(false)
+		endif
+		if o.optn = tfoption.account and tfisg185.type = tfisg.tran.paym and tfisg185.stax = tcyesno.yes then
+			return(false)
+		endif
+		
+	endselect
+									|#ISGEC016005.en
+	return(false)
+}
+									|#SD01062016.en
+function extern boolean tfisg185.ccty.is.applicable(long type)	
+{
+	
+									|#ISGEC016005.so
+| 	if tfisg185.stax = tcyesno.yes then
+| 		return(true)
+| 	endif
+									|#ISGEC016005.eo
+									|#ISGEC016005.sn
+	select	tfmsl020.optn:o.optn
+	from	tfmsl020
+	where	tfmsl020._index1 = {:tfisg185.adrq.d}
+	selectdo
+		if o.optn = tfoption.advance and tfisg185.type = tfisg.tran.paym then
+			return(true)
+		endif
+		if o.optn = tfoption.account and tfisg185.type = tfisg.tran.paym and tfisg185.stax = tcyesno.yes then
+			return(true)
+		endif
+		
+	endselect
+									|#ISGEC016005.en
+	return(false)
+}									|#ISGEC016005.en
+								
+|******************************** tfisg185.cprj *******************************
+function	extern	boolean	tfisg185.cprj.is.readonly(long	type)
+{
+	on	case	tfisg185.type
+	case	tfisg.tran.invo:
+	case	tfisg.tran.stan:
+	case	tfisg.tran.paym:
+	case	tfisg.tran.payi:
+	case	tfisg.tran.rete:	
+		return(true)
+		break
+	endcase
+	return(false)
+}
+
+|******************************** tfisg185.orno *******************************
+function	extern	boolean	tfisg185.orno.is.readonly(long	type)
+{
+	on	case	tfisg185.type
+	case	tfisg.tran.invo:
+	case	tfisg.tran.stan:
+	case	tfisg.tran.paym:
+	case	tfisg.tran.payi:
+	case	tfisg.tran.rete:	
+		return(true)
+		break
+	endcase
+	return(false)
+}
+
+function	extern	boolean	tfisg185.orno.is.valid()
+{
+	domain tcorno		t.orno
+						|#ISGECFIN013.sn
+	if not dal.is.field.changed("tfisg185.orno") then
+		return(true)
+	endif
+						|#ISGECFIN013.en
+	select	ir_tdpur400.orno:t.orno
+	from	tdpur400 ir_tdpur400
+	where	ir_tdpur400._index1 = {:tfisg185.orno}
+	and	ir_tdpur400.otbp = :tfisg185.bpid
+	selectdo
+		return(true)
+	endselect
+	return(false)
+}
+|******************************** tfisg185.amti *******************************
+function	extern	boolean	tfisg185.amti.is.readonly(long	type)
+{
+	select	tcemm170.fcua
+	from	tcemm170
+	where	tcemm170._index1	=	{:tfisg185.ncmp}
+	as	set with 1 rows
+	selectdo
+	selectempty
+		tcemm170.fcua	=	""
+	endselect
+	
+	on	case	tfisg185.type
+	case	tfisg.tran.adva:
+	case	tfisg.tran.unal:
+	case	tfisg.tran.stan:
+	| 		if	tfisg185.ccur	=	tcemm170.fcua	then
+			return(true)
+	| 		endif
+		break
+	case	tfisg.tran.paym:
+		if	tfisg185.ccur	<>	tcemm170.fcua	then
+			tfisg185.amti	=	tfmsl020.aamt
+		endif
+		break
+	endcase
+	return(false)
+}
+
+|******************************** tfisg185.bpid *******************************
+function	extern	boolean	tfisg185.bpid.is.mandatory(long	type)
+{
+	| 	if tfisg185.type <> tfisg.tran.stan and isspace(tfisg185.bpid) then
+| 	if ((tfisg185.type <> tfisg.tran.paym) or (tfisg185.type <> tfisg.tran.payi) and isspace(tfisg185.bpid)) then	|#ISGEC016005.o
+	if ((tfisg185.type = tfisg.tran.paym) or (tfisg185.type = tfisg.tran.payi) and isspace(tfisg185.bpid)) then	|#ISGEC016005.n
+	else
+		if isspace(tfisg185.bpid) then
+			if not isspace(tfisg185.adrq)	then						|#ISGECFIN011.sn
+			else										|#ISGECFIN011.en
+				dal.set.error.message("@Business Partner is mandatory")
+				return(true)
+			endif										|#ISGECFIN011.n
+		endif		|#ISGEC016005.n	
+	endif
+	return(false)
+}
+
+|******************************** tfisg185.adrq *******************************
+function	extern	boolean	tfisg185.adrq.is.mandatory(long	type)
+{
+	if tfisg185.type = tfisg.tran.paym then
+		dal.set.error.message("@Please Enter Payment Request...")
+		return(true)
+	endif
+		
+	return(false)
+}
+|******************************** tfisg185.amth *******************************
+function	extern	boolean	tfisg185.amth.is.readonly(long	type)
+{
+	on	case	tfisg185.type
+	case	tfisg.tran.adva:
+	case	tfisg.tran.unal:
+	case	tfisg.tran.stan:
+		return(true)
+		break
+	endcase
+	return(false)
+}
+|******************************** tfisg185.ccur *******************************
+function	extern	boolean	tfisg185.ccur.is.readonly(long	type)
+{
+	on	case	tfisg185.type
+	case	tfisg.tran.invo:
+	case	tfisg.tran.paym:
+	case	tfisg.tran.payi:
+		return(true)
+		break
+	endcase
+	return(false)
+}
+|******************************** tfisg185.balc *******************************
+	| function	extern	boolean	tisg185.balc.is.readonly(long	type)
+	| {
+	| 	on	case	tfisg185.type
+	| 	case	tfisg.tran.adva:
+	| 	case	tfisg.tran.unal:
+	| 	case	tfisg.tran.stan:
+	| 	case	tfisg.tran.paym:	
+	| 		return(true)
+	| 	break
+	| 	endcase
+	| 	return(false)
+	| }
+
+|******************************** tfisg185.balh *******************************
+function	extern	boolean	tfisg185.balh.is.readonly(long	type)
+{
+	on	case	tfisg185.type
+	case	tfisg.tran.payi:	
+		return(true)
+	break
+	endcase
+	return(false)
+}
+									|#ISGECFIN013.so
+| function	extern	boolean	tisg185.balh.is.valid(long	type)
+| {
+									|#ISGECFIN013.eo
+									|#ISGECFIN013.sn
+function	extern	boolean	tfisg185.balh.is.valid(long	type)
+{
+	if not dal.is.field.changed("tfisg185.balh") then 
+		return(true)
+	endif
+									|#ISGECFIN013.en
+	on	case	tfisg185.type
+	case	tfisg.tran.adva:
+	case	tfisg.tran.unal:
+| 	case	tfisg.tran.stan:					|#ISGECFIN013.o
+	case	tfisg.tran.paym:	
+									|#ISGEC016005.sn
+	case	tfisg.tran.invo:	
+	case	tfisg.tran.rete:	
+	case	tfisg.tran.payi:	
+									|#ISGEC016005.en
+		if	tfisg185.balh	>	tfisg185.balc	then
+									|#ISGECFIN013.sn
+			dal.set.error.message("@To be paid can not be > balance")
+			return(false)
+									|#ISGECFIN013.en
+| 			return(DALHOOKERROR)				|#ISGECFIN013.o
+		endif
+		break
+	endcase
+	return(true)
+}
+
+
+| function	extern	boolean	tfisg185.balh.is.derived(long	type)
+| {
+| 	on	case	tfisg185.type
+| 		case	tfisg.tran.paym:	
+| 			return(true)		
+| 			break
+| 		endcase
+| 	return(false)
+| }
+
+function extern void tfisg185.balh.update()
+{
+   tfisg185.balh = tfisg185.balc
+}
+
+
+
+|******************************** tfisg185.refr *******************************
+function	extern	boolean	tfisg185.refr.is.readonly(long	type)
+{
+	if	tfisg185.type	=	tfisg.tran.payi	then
+		return(true)
+	endif
+	return(false)
+}
+|******************************** tfisg185.rblk *******************************
+function	extern	boolean	tfisg185.rblk.is.readonly(long	type)
+{
+	if	tfisg185.type	=	tfisg.tran.payi	then
+		return(true)
+	endif
+	return(false)
+}
+|******************************** tfisg185.sele *******************************
+function	extern	boolean	tfisg185.sele.is.applicable(long	type)
+{
+	if tfisg185.proc =tcyesno.yes then
+		return(false)
+	endif
+	return(true)
+
+}
+function	boolean	check_select_data()
+{
+	domain	tfgld.amnt	totl.invo, totl.allo, totl.uall, i.oamt
+	
+	if	tfisg185.ncmp	<>	0	then
+		on	case	tfisg185.type
+		case	tfisg.tran.invo:
+		case	tfisg.tran.adva:
+		case	tfisg.tran.unal:
+		case	tfisg.tran.rete:
+			totl.invo	=	0
+			totl.allo	=	0
+			totl.uall	=	0
+			i.oamt		=	0
+			
+			select	tfacp251.ityp,
+				tfacp251.idoc
+			from	tfacp251
+			where	tfacp251._index3	=	{:tfisg185.ncmp,tfacp.otyp.purchase,:tfisg185.orno}
+			and	tfacp251._compnr	=	:tfisg185.ncmp
+			group	by tfacp251.ityp, tfacp251.idoc
+			selectdo		
+				select	tfacp200.amth
+				from	tfacp200	
+				where	tfacp200._index1	=	{:tfacp251.ityp,:tfacp251.idoc}
+				and	tfacp200.docn		<>	0
+				and	tfacp200.tpay		in	(8,4)
+				and	tfacp200._compnr	=	:tfisg185.ncmp
+				selectdo
+					totl.invo	=	totl.invo	+	abs(tfacp200.amth(1))
+				endselect
+					
+				select	tfacp200.amth
+				from	tfacp200
+				where	tfacp200.cdf_prno	=	{:tfisg185.orno}
+				and	tfacp200.docn		=	0
+				and	tfacp200.tpay		in	(11,12)
+				and	tfacp200._compnr	=	:tfisg185.ncmp
+				selectdo
+					totl.allo	=	totl.allo	+	abs(tfacp200.amth(1))
+				endselect
+				
+				select	tfacp200.amth
+				from	tfacp200
+				where	tfacp200.cdf_prno	=	{:tfisg185.orno}
+				and	tfacp200.tpay		in	(9,10)
+				and	tfacp200.step		=	20
+				and	tfacp200._compnr	=	:tfisg185.ncmp
+				selectdo
+					totl.uall	=	totl.uall	+	abs(tfacp200.amth(1))
+				endselect
+				
+				select	tdpur400.oamt:i.oamt
+				from	tdpur400
+				where	tdpur400._index1	=	{:tfisg185.orno}
+				and	tdpur400._compnr	=	:tfisg185.ncmp
+				as	set with 1 rows
+				selectdo
+				endselect
+
+			endselect
+
+			if i.oamt > 0 then
+				if	(i.oamt	-	totl.invo	-(totl.allo + totl.uall))	<	tfisg185.balh	then
+					dal.set.error.message("@Total payment exceeds PO value")
+					return(false)
+				endif
+			endif
+			break
+		endcase
+	endif
+	return(true)
+
+}
+							|#ISGECFIN011.sn
+function long	generate.invoice.payment.request()
+{
+| 	tfisg185.iprq	=	tfisg000.seri
+	tfisg185.iprq	=	tfisg000.qser		|#ISGEC016005.n
+| 	if not tcmcs.dll0050.check.and.generate.order.number(			|#ISGEC016005.so
+| 				3, tfisg185.iprq, tfisg000.nrgr, 
+| 				9, tfisg000.seri) then				|#ISGEC016005.eo
+	if not tcmcs.dll0050.check.and.generate.order.number(			|#ISGEC016005.sn
+				3, tfisg185.iprq, tfisg000.qngr, 
+				9, tfisg000.qser) then				|#ISGEC016005.en
+| 		commit.transaction()						|#ISGEC016005.o
+		tfisg185.user = logname$		|#ISGEC016005.n
+	else
+		return(1)
+	endif	
+	return(0)
+}
+
+function extern long populate.data.dal(
+					domain tccom.bpid	i.bpid,
+					domain	tcorno		i.adrq,
+					domain	tfisg.tran	i.tran,
+					domain	tcmcs.str10m	a.iprq			|#ISGEC016005.n
+					)
+{
+	i.iprq = ""
+	o.bpid = shiftl$(strip$(i.bpid))
+	o.adrq = shiftl$(strip$(i.adrq))
+	o.tran = i.tran
+	global.bloc = ""  	|#ISGECFIN013.n
+	select	tcemm170.comp,
+		tcemm170.fcua
+	from	tcemm170
+	selectdo	
+		if	tcemm170.comp	<>	100	and
+			tcemm170.comp	<>	900	then
+			on	case	o.tran
+			case	tfisg.tran.invo:
+				select	tfacp200.ttyp,
+					tfacp200.ninv,
+					tfacp200.pysh,
+					tfacp200.tpay,
+					tfacp200.docn,
+					tfacp200.ifbp,
+					tfacp200.docd,
+					tfacp200.isup,
+					tfacp200.stap,
+					tfacp200.liqd,
+					tfacp200.ccur,
+					tfacp200.amti,
+					tfacp200.amth,
+					tfacp200.balh,
+					tfacp200.balc,
+					tfacp200.cdf_prno,
+					tfacp200.cdf_cprj
+				from	tfacp200
+				where	tfacp200._index2	=	{:o.bpid}
+				and	tfacp200.tpay		=	1
+				and	tfacp200.docn		=	0
+				and	(tfacp200.balh(1) - tfacp200.bala)	>	0.00	|#SD01062016.n
+				and	tfacp200._compnr = :tcemm170.comp
+				selectdo
+					select	tfgld106.*
+					from	tfgld106
+					where	tfgld106._index1 = {:tfacp200.ttyp, :tfacp200.ninv}
+					and	tfgld106._compnr = :tcemm170.comp
+					as set with 1 rows
+					selectdo
+						get.schedule.no(tfisg.tran.invo,a.iprq)			|#ISGEC016005.n
+					endselect	
+				endselect
+			break
+			case	tfisg.tran.rete:
+				select	tfacp200.ttyp,
+					tfacp200.ninv,
+					tfacp200.pysh,
+					tfacp200.tpay,
+					tfacp200.docn,
+					tfacp200.ifbp,
+					tfacp200.docd,
+					tfacp200.isup,
+					tfacp200.stap,
+					tfacp200.liqd,
+					tfacp200.ccur,
+					tfacp200.amti,
+					tfacp200.amth,
+					tfacp200.balh,
+					tfacp200.balc,
+					tfacp200.cdf_prno,
+					tfacp200.cdf_cprj,
+					tfacp201.ttyp,
+					tfacp201.ninv,
+					tfacp201.schn,
+					tfacp201.balc,
+					tfacp201.cdf_bloc
+				from	tfacp200, tfacp201
+				where	tfacp200._index2	=	{:o.bpid}
+				and	tfacp200.tpay		=	1
+				and	tfacp200.docn		=	0
+				and	tfacp200._compnr	=	:tcemm170.comp
+				and	tfacp201._index1	=	{tfacp200.ttyp,tfacp200.ninv}
+				and	tfacp201.cdf_bloc	<>	""
+				and	tfacp201.balc		<>	0
+				and	tfacp201._compnr	=	:tcemm170.comp
+				selectdo
+					get.schedule.no(tfisg.tran.rete,a.iprq)		|#ISGEC016005.n
+				endselect
+				break
+			case	tfisg.tran.paym:
+| 			case	tfisg.tran.payi:					|# ISGEC0143.o
+				if not isspace(o.adrq) then
+					select	tfmsl020.*
+					from	tfmsl020
+	 				where	tfmsl020._index1 = {:o.adrq}
+| 					and	tfmsl020.stat = tfmsl.lc.stat.sfin			|ISGEC01050.o
+					and	tfmsl020.stat = tfmsl.lc.stat.veri			|ISGEC01050.n
+					and	tfmsl020._compnr = :tcemm170.comp
+					and	tfmsl020.ackn = tfmsl.ackn.receive		|#ISGEC016005.n
+					selectdo
+| 						if o.tran = tfisg.tran.payi and tfmsl020.optn = tfoption.advance then	|#ISGEC016005.so
+| 						
+| 							continue
+| 						endif								|#ISGEC016005.eo
+								|#ISGECFIN013.sn
+						select	a_tfisg185.*
+						from	tfisg185	a_tfisg185
+| 						where	a_tfisg185._index1 = {:tfisg185.iprq}
+						where	a_tfisg185._index1 = {:a.iprq}
+| 						and a_tfisg185.adrq = :tfisg185.adrq
+						and a_tfisg185.adrq = :o.adrq
+						as set with 1 rows
+						selectdo
+						selectempty
+								|#ISGECFIN013.sn
+							insert.payment.process.dal(a.iprq)	|#ISGEC016005.n
+						endselect	|#ISGECFIN013.en
+
+					endselect
+				else
+					select	tfmsl020.*
+					from	tfmsl020
+					where	tfmsl020.bpid =	:o.bpid
+| 					and	tfmsl020.stat = tfmsl.lc.stat.sfin			|ISGEC01050.o
+					and	tfmsl020.stat = tfmsl.lc.stat.veri			|ISGEC01050.n
+					and	tfmsl020._compnr = :tcemm170.comp
+					and	tfmsl020.ackn = tfmsl.ackn.receive		|#ISGEC016005.n
+					selectdo
+| 						if o.tran = tfisg.tran.payi and tfmsl020.optn = tfoption.advance then |#ISGEC016005.so
+| 							continue
+| 						endif									|#ISGEC016005.eo
+								|#ISGECFIN013.sn
+						select	a_tfisg185.*
+						from	tfisg185	a_tfisg185
+| 						where	a_tfisg185._index1 = {:tfisg185.iprq}
+| 						and a_tfisg185.adrq = :tfisg185.adrq
+						where	a_tfisg185._index1 = {:a.iprq}
+						and a_tfisg185.adrq = :o.adrq
+						and a_tfisg185.adrq.d = :tfmsl020.adrq
+						as set with 1 rows
+						selectdo
+						selectempty
+								|#ISGECFIN013.sn
+							insert.payment.process.new.dal(a.iprq)	|#ISGEC016005.n
+						endselect	|#ISGECFIN013.en
+					endselect
+				endif
+				
+				break
+											|# ISGEC0143.sn
+			case	tfisg.tran.payi:					
+				if not isspace(o.adrq) then
+					select	tfmsl020.*
+					from	tfmsl020
+	 				where	tfmsl020._index1 = {:o.adrq}
+| 					and	tfmsl020.stat = tfmsl.lc.stat.sfin		|ISGEC01050.o
+					and	tfmsl020.stat = tfmsl.lc.stat.veri		|ISGEC01050.n
+| 					and	tfmsl020._compnr = :tcemm170.comp
+					and	tfmsl020.ackn = tfmsl.ackn.receive
+					selectdo
+						select	a_tfisg185.*
+						from	tfisg185	a_tfisg185
+| 						where	a_tfisg185._index1 = {:tfisg185.iprq}
+						where	a_tfisg185._index1 = {:a.iprq}
+						and a_tfisg185.adrq = :tfmsl020.adrq
+						as set with 1 rows
+						selectdo
+						selectempty
+							insert.dat.for.payment.process.for.invoice(a.iprq)
+						endselect
+
+					endselect
+				else if not isspace(g.orno) then
+					select	tfmsl020.*
+					from	tfmsl020
+	 				where	tfmsl020._index2 = {:g.orno}
+| 					and	tfmsl020.stat = tfmsl.lc.stat.sfin		|ISGEC01050.o
+					and	tfmsl020.stat = tfmsl.lc.stat.veri		|ISGEC01050.n
+| 					and	tfmsl020._compnr = :tcemm170.comp
+					and	tfmsl020.ackn = tfmsl.ackn.receive
+					selectdo
+						select	a_tfisg185.*
+						from	tfisg185	a_tfisg185
+| 						where	a_tfisg185._index1 = {:tfisg185.iprq}
+						where	a_tfisg185._index1 = {:a.iprq}
+						and a_tfisg185.adrq = :tfmsl020.adrq
+						as set with 1 rows
+						selectdo
+						selectempty
+							insert.dat.for.payment.process.for.invoice(a.iprq)
+						endselect
+					endselect
+				else	
+					select	tfmsl020.*
+					from	tfmsl020
+					where	tfmsl020.bpid =	:o.bpid
+| 					and	tfmsl020.stat = tfmsl.lc.stat.sfin		|ISGEC01050.o
+					and	tfmsl020.stat = tfmsl.lc.stat.veri		|ISGEC01050.n
+| 					and	tfmsl020._compnr = :tcemm170.comp
+					and	tfmsl020.ackn = tfmsl.ackn.receive
+					selectdo
+						select	a_tfisg185.*
+						from	tfisg185	a_tfisg185
+| 						where	a_tfisg185._index1 = {:tfisg185.iprq}
+| 						and a_tfisg185.adrq = :tfisg185.adrq
+						where	a_tfisg185._index1 = {:a.iprq}
+						and a_tfisg185.adrq = :o.adrq
+						and a_tfisg185.adrq.d = :tfmsl020.adrq
+						as set with 1 rows
+						selectdo
+						selectempty
+							insert.dat.for.payment.process.for.invoice(a.iprq)
+						endselect
+					endselect
+				endif
+				endif
+												|# ISGEC01043.en
+				break				
+			endcase
+		endif
+	endselect
+	return(0)
+}
+
+| function	get.schedule.no(domain tfisg.tran	i.tran)						|#ISGEC016005.o
+function	get.schedule.no(domain tfisg.tran	i.tran,domain tcmcs.str10m i.iprq)		|#ISGEC016005.n
+{
+	string	v.bloc(30)
+							|#ISGECFIN013.sn
+| 	select tfgld106.otyp from tfgld106				|#ISGEC016007.so
+| 	where tfgld106._index1 = {:tfacp200.ttyp,:tfacp200.ninv}
+| 	as set with 1 rows
+| 	selectdo
+| 	selectempty
+| 		return
+| 	endselect							|#ISGEC016007.en
+							|#ISGECFIN013.sn
+	select	tfacp201.schn,
+		tfacp201.payd,
+		tfacp201.balc,
+		tfacp201.bala,
+		tfacp201.cdf_bloc:v.bloc
+	from	tfacp201
+	where	tfacp201._index1	=	{:tfacp200.ttyp,:tfacp200.ninv}
+| 	and	tfacp201.bala > 0.00		|#ISGEC01036.o
+	and	tfacp201.balc > 0.00		|#ISGEC01036.n
+	and	tfacp201._compnr	=	:tcemm170.comp
+	selectdo
+							|#ISGECFIN013.sn
+		if (tfacp201.balc - tfacp201.bala) <= 0 then
+			continue
+		endif
+		global.bloc = v.bloc
+		if	tfacp200.pysh	=	tcyesno.no	then
+			tfacp201.schn = 0
+		endif
+							|#ISGECFIN013.en
+		on case i.tran
+		case tfisg.tran.invo:
+| 			if isspace(.bloc) then		|#SD01062016.o	For Testing Purpose
+				insert.payment.process.dal(i.iprq)		|#ISGEC016005.n
+| 			endif
+		break	
+		case tfisg.tran.rete:
+			if not isspace(v.bloc) then
+				insert.payment.process.dal(i.iprq)		|#ISGEC016005.n
+			endif
+		break
+		endcase
+	selectempty
+		tfacp201.schn	=	0
+							|#ISGECFIN013.sn
+		on case i.tran
+		case tfisg.tran.invo:
+				insert.payment.process.dal(i.iprq)		|#ISGEC016005.n
+		break	
+		case tfisg.tran.rete:
+			if not isspace(v.bloc) then
+				insert.payment.process.dal(i.iprq)		|#ISGEC016005.n
+			endif
+		break
+		endcase
+							|#ISGECFIN013.en
+	endselect
+}
+
+| function boolean insert.payment.process.dal()			|#ISGEC016005.o
+function boolean insert.payment.process.dal(domain tcmcs.str10m i.iprq)			|#ISGEC016005.n
+{
+							|#ISGECFIN03.sn
+	i.cprj = ""
+	i.orno = ""
+	i.ccty = ""
+	i.cvat = ""
+	select tfacp251.orno:i.orno,
+		tdpur401.cprj:i.cprj,
+		tdpur401.ccty:i.ccty,
+		tdpur401.cvat:i.cvat
+	from tfacp251,tdpur401
+	where tfacp251._index1 = {:tcemm170.comp,:tfacp200.ttyp,:tfacp200.ninv}
+	and tfacp251.orno <> ""
+	and	tfacp251._compnr = :tcemm170.comp					|# ISGEC01043.n
+	and tdpur401._index1 = {tfacp251.orno,tfacp251.pono,tfacp251.sqnb}
+	as set with 1 rows
+	selectdo
+	endselect
+	if not isspace(g.orno) and trim$(i.orno) <> trim$(g.orno) then
+		return(true)
+	endif
+			
+							|#ISGECFIN03.en
+	select	a_tfisg185.*
+	from	tfisg185	a_tfisg185
+	where	a_tfisg185._index1 = {:tfisg185.iprq,:o.bpid,:tfisg185.type,:tfisg185.adrq,
+| 					:tcemm170.comp,:tfacp200.ttyp, :tfacp200.ninv,:tfmsl020.adrq}		|#ISGEC01036.o
+					:tcemm170.comp,:tfacp200.ttyp, :tfacp200.ninv,:tfmsl020.adrq,:tfacp201.schn}	|#ISGEC01036.n
+	selectdo
+	selectempty
+		dal.new.object("tfisg185")
+		dal.set.field("tfisg185.iprq",i.iprq)					|#ISGEC016005.n
+		if o.tran = tfisg.tran.paym or o.tran = tfisg.tran.payi then
+			dal.set.field("tfisg185.bpid",tfmsl020.bpid)
+		else	
+			dal.set.field("tfisg185.bpid",o.bpid)
+		endif
+
+		dal.set.field("tfisg185.type",o.tran)
+		dal.set.field("tfisg185.adrq",o.adrq)
+		dal.set.field("tfisg185.refr","")
+
+		on	case	o.tran
+		case	tfisg.tran.invo:
+		case	tfisg.tran.rete:
+
+| 			get.var(pid, "tfacp200.cdf_cprj", i.cprj)			|#ISGECFIN03.so
+| 			get.var(pid, "tfacp200.cdf_prno", i.orno)			|#ISGECFIN03.eo
+			dal.set.field("tfisg185.ncmp",tcemm170.comp)
+			dal.set.field("tfisg185.ttyp",tfacp200.ttyp)
+			dal.set.field("tfisg185.adrq.d",tfmsl020.adrq)
+			dal.set.field("tfisg185.ninv",tfacp200.ninv)
+			if	tfacp200.pysh	=	tcyesno.no	then
+				dal.set.field("tfisg185.schn",0)
+				dal.set.field("tfisg185.balc",tfacp200.balh(1))
+				dal.set.field("tfisg185.balh",0)
+			else
+				dal.set.field("tfisg185.schn",tfacp201.schn)
+				dal.set.field("tfisg185.balc",(tfacp201.balc - tfacp201.bala))
+| 				dal.set.field("tfisg185.balh",0)                                |#ISGEC01039.o
+				dal.set.field("tfisg185.balh",(tfacp201.balc - tfacp201.bala))  |#ISGEC01039.n
+			endif
+			dal.set.field("tfisg185.docd",tfacp200.docd)
+			dal.set.field("tfisg185.isup",tfacp200.isup)
+			dal.set.field("tfisg185.cprj",i.cprj)
+			dal.set.field("tfisg185.orno",i.orno)
+			dal.set.field("tfisg185.stap",enum.descr$("tfacp.stap",tfacp200.stap))
+			dal.set.field("tfisg185.liqd",tfacp200.liqd)
+			dal.set.field("tfisg185.ccur",tfacp200.ccur)
+			dal.set.field("tfisg185.amti",tfacp200.amti)
+			dal.set.field("tfisg185.amth",tfacp200.amth(1))
+			dal.set.field("tfisg185.sele",tcyesno.no)
+			dal.set.field("tfisg185.proc",tcyesno.no)
+			dal.set.field("tfisg185.bloc",global.bloc)		|#ISGECFIN013.n			
+			dal.set.field("tfisg185._compnr",tcemm170.comp)
+			ret = dal.save.object("tfisg185",e)	
+			break
+
+		case	tfisg.tran.paym:
+			
+			dal.set.field("tfisg185.ncmp",tfmsl020.fcom)
+			dal.set.field("tfisg185.adrq.d",tfmsl020.adrq)
+			dal.set.field("tfisg185.ttyp","")
+			dal.set.field("tfisg185.ninv",0)
+			dal.set.field("tfisg185.schn",0)
+			dal.set.field("tfisg185.docd",date.num())
+			dal.set.field("tfisg185.isup","")
+			dal.set.field("tfisg185.cprj",tfmsl020.cprj)
+			dal.set.field("tfisg185.orno",tfmsl020.orno)
+			dal.set.field("tfisg185.stap","")
+			dal.set.field("tfisg185.liqd",0)
+			dal.set.field("tfisg185.ccur",tfmsl020.ccur)
+			if	tfmsl020.ccur	<>	tcemm170.fcua	then
+				dal.set.field("tfisg185.amti",tfmsl020.aamt)
+			else
+				dal.set.field("tfisg185.amti",0)
+			endif
+			dal.set.field("tfisg185.amth",tfmsl020.aamt)
+			dal.set.field("tfisg185.balc",tfmsl020.aamt)
+			dal.set.field("tfisg185.ccty",i.ccty)
+			dal.set.field("tfisg185.cvat",i.cvat)
+| 			dal.set.field("tfisg185.balh",0)
+			dal.set.field("tfisg185.balh",tfmsl020.aamt)	|sh.n
+			dal.set.field("tfisg185.sele",tcyesno.no)
+			dal.set.field("tfisg185.proc",tcyesno.no)
+			dal.set.field("tfisg185.bloc",global.bloc)			|#ISGECFIN013.n
+			dal.set.field("tfisg185._compnr",tcemm170.comp)
+			ret = dal.save.object("tfisg185",e)
+			break
+		endcase
+		if not ret	then
+			i.iprq = tfisg185.iprq
+		else
+			show.dal.messages(MSG.ALL)
+			return(DALHOOKERROR)
+		endif
+	endselect
+	return(true)
+}
+
+| function boolean insert.payment.process.new.dal()					|#ISGEC016005.o
+function boolean insert.payment.process.new.dal(domain tcmcs.str10m i.iprq)		|#ISGEC016005.n
+{
+	select	b_tfisg185.*
+	from	tfisg185	b_tfisg185
+	where	b_tfisg185._index1 = {:tfisg185.iprq,:o.bpid,:tfisg185.type,:tfmsl020.adrq,
+					:tcemm170.comp,:tfacp200.ttyp, :tfacp200.ninv,:tfmsl020.adrq}
+	selectdo
+	selectempty
+		dal.new.object("tfisg185")
+		dal.set.field("tfisg185.iprq",i.iprq)					|#ISGEC016005.n
+		if o.tran = tfisg.tran.paym or o.tran = tfisg.tran.payi then
+			dal.set.field("tfisg185.bpid",tfmsl020.bpid)
+		else	
+			dal.set.field("tfisg185.bpid",o.bpid)
+		endif	
+		dal.set.field("tfisg185.type",o.tran)
+		dal.set.field("tfisg185.adrq","")
+		dal.set.field("tfisg185.adrq.d",tfmsl020.adrq)
+		dal.set.field("tfisg185.refr","")
+		dal.set.field("tfisg185.ncmp",tfmsl020.fcom)
+		dal.set.field("tfisg185.ttyp","")
+		dal.set.field("tfisg185.ninv",0)
+		dal.set.field("tfisg185.schn",0)
+		dal.set.field("tfisg185.docd",date.num())
+		dal.set.field("tfisg185.isup","")
+		dal.set.field("tfisg185.cprj",tfmsl020.cprj)
+		dal.set.field("tfisg185.orno",tfmsl020.orno)
+		dal.set.field("tfisg185.stap","")
+		dal.set.field("tfisg185.liqd",0)
+		dal.set.field("tfisg185.ccur",tfmsl020.ccur)
+		if	tfmsl020.ccur	<>	tcemm170.fcua	then
+			dal.set.field("tfisg185.amti",tfmsl020.aamt)
+		else
+			dal.set.field("tfisg185.amti",0)
+		endif
+		dal.set.field("tfisg185.amth",tfmsl020.aamt)
+		dal.set.field("tfisg185.balc",tfmsl020.aamt)
+| 		dal.set.field("tfisg185.balh",0)
+		dal.set.field("tfisg185.balh",tfmsl020.aamt)	|
+		dal.set.field("tfisg185.sele",tcyesno.no)
+		dal.set.field("tfisg185.proc",tcyesno.no)
+		dal.set.field("tfisg185._compnr",tcemm170.comp)
+		ret = dal.save.object("tfisg185",e)
+		if not ret	then
+			i.iprq = tfisg185.iprq
+			commit.transaction()
+		else
+			show.dal.messages(MSG.ALL)
+			return(DALHOOKERROR)
+		endif
+	endselect
+	return(true)
+}
+							|#ISGECFIN011.en
+
+|******************************** field dependencies **************************
+function	field.dependencies()
+{
+	| 	dal.field.depends.on("tfisg185.sele",HOOK_IS_APPLICABLE,"tfisg185.type")
+	dal.field.depends.on("tfisg185.adrq",HOOK_IS_APPLICABLE,"tfisg185.type")
+	dal.field.depends.on("tfisg185.refr",HOOK_IS_READONLY,"tfisg185.type")
+	dal.field.depends.on("tfisg185.rblk",HOOK_IS_READONLY,"tfisg185.type")
+	dal.field.depends.on("tfisg185.ttyp",HOOK_IS_READONLY,"tfisg185.type")
+	dal.field.depends.on("tfisg185.ninv",HOOK_IS_READONLY,"tfisg185.type")
+	dal.field.depends.on("tfisg185.schn",HOOK_IS_READONLY,"tfisg185.type")
+	dal.field.depends.on("tfisg185.docd",HOOK_IS_READONLY,"tfisg185.type")
+	dal.field.depends.on("tfisg185.isup",HOOK_IS_READONLY,"tfisg185.type")
+	dal.field.depends.on("tfisg185.stap",HOOK_IS_READONLY,"tfisg185.type")
+	dal.field.depends.on("tfisg185.liqd",HOOK_IS_READONLY,"tfisg185.type")	
+	dal.field.depends.on("tfisg185.cvat",HOOK_IS_READONLY + HOOK_IS_DERIVED,"tfisg185.type")
+	dal.field.depends.on("tfisg185.ccty",HOOK_IS_READONLY + HOOK_IS_DERIVED,"tfisg185.type")	|#SD01062016.n
+	dal.field.depends.on("tfisg185.balh",HOOK_IS_READONLY + HOOK_IS_DERIVED,"tfisg185.type")	|#SD01062016.n
+	dal.field.depends.on("tfisg185.cprj",HOOK_IS_READONLY,"tfisg185.type")
+	dal.field.depends.on("tfisg185.orno",HOOK_IS_READONLY,"tfisg185.type")
+	dal.field.depends.on("tfisg185.amti",HOOK_IS_READONLY,"tfisg185.type","tfisg185.ccur")
+	dal.field.depends.on("tfisg185.amth",HOOK_IS_READONLY,"tfisg185.type","tfisg185.amti")
+	dal.field.depends.on("tfisg185.balh",HOOK_IS_VALID,"tfisg185.type","tfisg185.balc")
+}
+
+
+function extern boolean tfcmg1508m000.is.allowed()			|#ISGEC01036.sn
+{
+	select	tccom100.sndr
+	from	tccom100
+	where	tccom100._index1 = {:tfisg185.bpid}
+	and 	tccom100.sndr = tcyesno.no
+	selectdo
+		return(false)
+	endselect
+	return(true)					|#ISGEC01036.en
+}
+							|#ISGECFIN013.sn
+function extern long set.purchase.order(domain tcorno i.orno)
+{
+	g.orno = i.orno
+	return(0)
+}
+							|#ISGECFIN013.en
+function get.request.type()
+{
+	select	tfmsl020.optn:v.optn
+	from	tfmsl020
+	where	tfmsl020._index1 = {:tfisg185.adrq.d}
+	selectdo
+	selectempty
+		v.optn = empty
+	endselect
+	
+}
+
+function insert.dat.for.payment.process.for.invoice(domain tcmcs.str10m i.iprq)
+{
+	i.ccty = ""
+	i.cvat = ""
+	
+	select	a_tfisg185.*
+	from	tfisg185	a_tfisg185
+	where	a_tfisg185._index1 = {:i.iprq,:o.bpid,:o.tran,:o.adrq,
+					:tfmsl020.comp,:tfacp200.ttyp, :tfacp200.ninv,:tfmsl020.adrq,:tfacp201.schn}
+	selectdo
+	selectempty
+		dal.new.object("tfisg185")
+		dal.set.field("tfisg185.iprq",i.iprq)
+		dal.set.field("tfisg185.bpid",tfmsl020.bpid)
+		dal.set.field("tfisg185.type",o.tran)
+		dal.set.field("tfisg185.adrq",o.adrq)
+		dal.set.field("tfisg185.refr","")
+			
+		dal.set.field("tfisg185.ncmp",tfmsl020.comp)
+		dal.set.field("tfisg185.adrq.d",tfmsl020.adrq)
+		dal.set.field("tfisg185.ttyp","")
+		dal.set.field("tfisg185.ninv",0)
+		dal.set.field("tfisg185.schn",0)
+		dal.set.field("tfisg185.docd",date.num())
+		dal.set.field("tfisg185.isup","")
+		dal.set.field("tfisg185.cprj",tfmsl020.cprj)
+		dal.set.field("tfisg185.orno",tfmsl020.orno)
+		dal.set.field("tfisg185.stap","")
+		dal.set.field("tfisg185.liqd",0)
+		dal.set.field("tfisg185.ccur",tfmsl020.ccur)
+		if	tfmsl020.ccur	<>	tcemm170.fcua	then
+			dal.set.field("tfisg185.amti",tfmsl020.aamt)
+		else
+			dal.set.field("tfisg185.amti",0)
+		endif
+		dal.set.field("tfisg185.amth",tfmsl020.aamt)
+		dal.set.field("tfisg185.balc",tfmsl020.aamt)
+		dal.set.field("tfisg185.ccty",i.ccty)
+		dal.set.field("tfisg185.cvat",i.cvat)
+		dal.set.field("tfisg185.balh",tfmsl020.aamt)	|sh.n
+		dal.set.field("tfisg185.sele",tcyesno.no)
+		dal.set.field("tfisg185.proc",tcyesno.no)
+		dal.set.field("tfisg185.bloc",global.bloc)			|#ISGECFIN013.n
+		dal.set.field("tfisg185._compnr",tcemm170.comp)
+		ret = dal.save.object("tfisg185",e)
+		break
+	endselect
+
+}
+
+function extern boolean select.line()
+{
+	|domain	tcmcs.str6m	previous.line.pyad,previous.header.pyad
+	long			advice.no
+
+	select	line_table.pyad:previous.line.pyad
+	from	tfisg185 line_table
+	where	line_table.ttyp = :tfisg185.ttyp
+	and	line_table.ninv = :tfisg185.ninv
+	and	line_table.pyad <> :tfisg185.pyad
+	and	line_table.ncmp = :tfisg185.ncmp
+	and	line_table.sele = tcyesno.yes
+	as set with 1 rows
+	selectdo
+		return(false)
+	selectempty
+		previous.line.pyad = ""
+	endselect
+
+	return(true)
+	
+| 	select	tfisg189.pyad
+| 	from	tfisg189
+| 	where	tfisg189._index2 = {:previous.line.pyad} 
+| 	selectdo
+| 		advice.no = val(strip$(shiftl$(tfisg189.pyad)))
+| 		select tfcmg109.stpp
+| 		from 	tfcmg109
+| 		where	tfcmg109._index1 = {:advice.no}
+| 		and	tfcmg109.stpp = tfcmg.stpp.selected
+| 		selectdo
+| 		selectempty
+| 			return(false)	
+| 		endselect
+| 	endselect	
+}
+
+
+|******************************** END OF CODE *********************************
+

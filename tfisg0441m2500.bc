@@ -1,0 +1,484 @@
+|******************************************************************************
+|* tfisg0441m250  0  VRC B61U a7 live
+|* Export Cash Flow Data in to Excel
+|* Paras Kukreti             
+|* 2020-01-20
+|******************************************************************************
+|* Main table tfisg041	Cash Flow Data, Form Type 4
+|******************************************************************************
+declaration:
+
+  table   ttfgld203
+  table   ttfgld201
+  table   ttfgld008
+  table   ttfisg041
+  table   ttfisg045
+  table   ttcemm170
+  table   ttccom100
+  table   ttcmcs052
+  table   ttfgld010
+
+	extern	domain  tfgld.year     	fyer.f
+	extern	domain  tfgld.year     	fyer.t
+	extern	domain	tfgld.prod     	fprd.f
+	extern	domain	tfgld.prod     	fprd.t
+	extern	domain  tcncmp		ncmp.f
+	extern	domain  tcncmp		ncmp.t
+	extern	domain  tccprj		cprj.f
+	extern	domain  tccprj		cprj.t
+	extern	domain  tcyesno		select.project
+	
+	extern domain	tcmcs.str20	i.docn,i.pdoc
+	extern domain	tcnama	user	
+	extern	domain	tcdsca	v.dsca
+	
+		domain	tcmcs.st33	filename
+		domain	tcmcs.str215	outfile
+		domain	tcdate		current.date
+		domain	tcamnt		amnt.lac
+	
+			string 		header1(1024)
+			
+			string		final.str(2048)
+			long		out.fp			|Output File
+			long		close.out.fp
+			long		ret, i
+
+#include <bic_tt>
+#include <bic_dam>
+#pragma used dll        ottdllbw
+
+#define DEL	  ","
+
+|****************************** program section ********************************
+before.display.object:
+	if select.project = tcyesno.no then
+		enable.fields("cprj.f")
+		enable.fields("cprj.t")
+	else
+		disable.fields("cprj.f")
+		disable.fields("cprj.t")
+	endif
+	display("cprj.f")
+	display("cprj.t")
+	
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+| choice.cont.process:
+| on.choice:
+|    execute(print.data)
+
+| choice.print.data:
+| on.choice:
+|        read.main.table()
+	
+|****************************** field section **********************************
+field.select.project:
+after.input:
+	if select.project = tcyesno.yes then
+		disable.fields("cprj.f")
+		disable.fields("cprj.t")
+	else
+		enable.fields("cprj.f")
+		enable.fields("cprj.t")
+	endif
+	display("cprj.f")
+	display("cprj.t")
+	
+field.ncmp.f:
+when.field.changes:
+	ncmp.t = ncmp.f
+
+field.fyer.f:
+when.field.changes:
+	fyer.t = fyer.f
+
+field.fprd.f:
+when.field.changes:
+	fprd.t = fprd.f
+
+field.cprj.f:
+when.field.changes:
+	cprj.t = cprj.f	
+
+|****************************** function section *******************************
+functions:
+
+function extern export.excel()
+{
+	current.date = utc.num()
+
+	outfile = creat.tmp.file$(bse.tmp.dir$())
+	out.fp = open.ascii.file(outfile, "w")
+	
+	if out.fp < 1  then
+		choice.again()
+	else
+		create.cashflow.header()
+		export.cashflow.flat.file()
+		close.out.fp = close.ascii.file(out.fp)
+		if close.out.fp <> 0  then
+			message("Error in closing Input File")
+			choice.again()
+		endif
+	endif
+	
+	export.output.to.excel.file()
+	ret = file.rm(outfile)
+}
+
+function create.cashflow.header()
+{
+	header1 = concat$( DEL, "Cash Flow Auto/Manual" ,
+				"Cash Flow Auto/Manual Enum.",
+				"Financial Company",
+				"Year",
+				"Payment Batch",
+				"Period" ,
+				"Financial Batch"  ,
+				"BP Code",
+				"BP Description ",
+				"Target Company",
+				"Tran. Type",
+				"Document" ,
+				"Line No.",
+				"Seq. No.",
+				"Project",
+				"Project Description",
+				"Transaction Entry Date",
+				"Doc. Date",
+				"Cash Flow Type Enum Value",
+				"Cash Flow Type",
+				"Currency", 
+				"Rate",
+				"Amount In",
+				"Amount in Home Cur.",
+				"Amount in Lacs",
+				"Reason Enum Value",
+				"Reason",
+				"Payment Transaction Type",
+				"Payment Documnet Number",
+				"Payment Line Number",
+| 				"Output For Export",
+				"Ledger Account",
+				"Ledger Description",
+				"Transaction Reference",
+				"Cheque No.",
+				"Finalised By",
+				"Remarks")
+	ret = seq.puts(header1, out.fp)
+}
+
+function export.cashflow.flat.file()
+{
+	domain	tcamnt	v.fobh
+	domain	tcamnt	leacdbamt
+	domain	tcamnt	leaccramt
+	domain	tcamnt	balance
+	domain	tcamnt	total.bal
+	
+	long 	curr.comp
+	
+	curr.comp = get.compnr()
+	
+	total.bal = 0
+	
+	if select.project = tcyesno.no then
+		select	tfisg041.*
+		from	tfisg041
+		where	tfisg041._index1 inrange {:ncmp.f} and {:ncmp.t}
+		and	tfisg041.year between :fyer.f and :fyer.t
+		and	tfisg041.prod between :fprd.f and :fprd.t
+		and	tfisg041.cprj between :cprj.f and :cprj.t
+		selectdo
+			amnt.lac = 0
+			if tfisg041.ctyp = tfcash.flow.out then
+				amnt.lac = tfisg041.amnt/(-100000)
+			else
+				amnt.lac = tfisg041.amnt/(100000)
+			endif
+			
+			get.project.description()
+			get.document.number()
+			get.user.name()
+			get.bp.description()
+			get.ledger.description()
+			search.and.replace.comma.char(tfisg041.refr, tfisg041.refr)
+			final.str  = concat$( DEL,	enum.descr$("tfcf.auto.man", tfisg041.cfam),
+							strip$(str$(tfisg041.cfam)),
+							strip$(str$(tfisg041.fcmp)),
+							strip$(str$(tfisg041.year)),
+							strip$(str$(tfisg041.btno)),
+							strip$(str$(tfisg041.prod)),
+							strip$(str$(tfisg041.fbno)),
+							strip$(str$(tfisg041.bpcd)),
+							strip$(str$(tccom100.nama)),
+							strip$(str$(tfisg041.comp)),
+							strip$(str$(tfisg041.ttyp)),
+							strip$(str$(tfisg041.docn)),
+							strip$(str$(tfisg041.line)),
+							strip$(str$(tfisg041.seqn)),
+							strip$(str$(tfisg041.cprj)),
+							strip$(str$(v.dsca)),
+							strip$(str$(tfisg041.tedt)),
+							strip$(str$(tfisg041.dcdt)),
+							strip$(str$(tfisg041.ctyp)),
+							enum.descr$("tfcash.flow", tfisg041.ctyp),
+							strip$(str$(tfisg041.curr)),
+							strip$(str$(tfisg041.rate)),
+							strip$(str$(tfisg041.amtf)),
+							strip$(str$(tfisg041.amnt)),
+							strip$(str$(amnt.lac)),
+							strip$(str$(tfisg041.reas)),
+							enum.descr$("tfcash.reasons", tfisg041.reas),
+							strip$(str$(tfisg041.ptyp)),
+							strip$(str$(tfisg041.pdoc)),
+							strip$(str$(tfisg041.line)),
+| 							strip$(str$(i.pdoc)),
+							strip$(str$(tfisg041.leac)),
+							strip$(str$(tfgld008.desc)),
+							strip$(str$(tfisg041.refr)),
+							strip$(str$(tfisg041.cheq)),
+							strip$(str$(tfisg041.user)),
+							strip$(str$(tfisg041.appr)))
+							
+			write.record.to.file()
+		endselect
+	else
+		select	tfisg041.*, tfisg045.cprj
+		from	tfisg041, tfisg045
+		where	tfisg041._index1 inrange {:ncmp.f} and {:ncmp.t}
+		and	tfisg041.year between :fyer.f and :fyer.t
+		and	tfisg041.prod between :fprd.f and :fprd.t
+		and	tfisg041.cprj = tfisg045.cprj
+		and	tfisg045.efpr = tcyesno.yes
+		selectdo
+			amnt.lac = 0
+			if tfisg041.ctyp = tfcash.flow.out then
+				amnt.lac = tfisg041.amnt/(-100000)
+			else
+				amnt.lac = tfisg041.amnt/(100000)
+			endif
+			
+			get.project.description()
+			get.document.number()
+			get.user.name()
+			get.bp.description()
+			search.and.replace.comma.char(tfisg041.refr, tfisg041.refr)
+			final.str  = concat$( DEL,	enum.descr$("tfcf.auto.man", tfisg041.cfam),
+							strip$(str$(tfisg041.fcmp)),
+							strip$(str$(tfisg041.year)),
+							strip$(str$(tfisg041.btno)),
+							strip$(str$(tfisg041.prod)),
+							strip$(str$(tfisg041.fbno)),
+							strip$(str$(tfisg041.bpcd)),
+							strip$(str$(tccom100.nama)),
+							strip$(str$(tfisg041.comp)),
+							strip$(str$(tfisg041.ttyp)),
+							strip$(str$(tfisg041.docn)),
+							strip$(str$(tfisg041.line)),
+							strip$(str$(tfisg041.seqn)),
+							strip$(str$(tfisg041.cprj)),
+							strip$(str$(v.dsca)),
+							strip$(str$(tfisg041.tedt)),
+							strip$(str$(tfisg041.dcdt)),
+							enum.descr$("tfcash.flow", tfisg041.ctyp),
+							strip$(str$(tfisg041.cprj)),
+							strip$(str$(v.dsca)),
+							strip$(str$(tfisg041.curr)),
+							strip$(str$(tfisg041.rate)),
+							strip$(str$(tfisg041.amtf)),
+							strip$(str$(tfisg041.amnt)),
+							enum.descr$("tfcash.reasons", tfisg041.reas),
+							strip$(str$(tfisg041.ptyp)),
+							strip$(str$(tfisg041.pdoc)),
+							strip$(str$(tfisg041.line)),
+| 							strip$(str$(i.pdoc)),
+							strip$(str$(tfisg041.leac)),
+							strip$(str$(tfgld008.desc)),
+							strip$(str$(tfisg041.refr)),
+							strip$(str$(tfisg041.cheq)),
+							strip$(str$(tfisg041.user)),
+							strip$(str$(tfisg041.appr)))
+							
+			write.record.to.file()
+		endselect
+	endif
+}
+
+
+function get.project.description()
+{
+	v.dsca	=	""
+	select	tcmcs052.dsca
+	from	tcmcs052
+	where	tcmcs052._index1 = {:tfisg041.cprj}
+	as	set with 1 rows
+	selectdo
+		v.dsca	=	tcmcs052.dsca
+	selectempty
+		select	tfgld010.desc
+		from	tfgld010
+		where	tfgld010._index1	=	{1,:tfisg041.cprj}
+		as	set with 1 rows
+		selectdo
+			v.dsca	=	tfgld010.desc
+		endselect
+	endselect
+}
+
+function get.document.number()
+{
+	i.docn = tfisg041.ttyp & "/" & str$(tfisg041.docn) & "/" &  str$(tfisg041.line) & "/" & str$(tfisg041.srno) 
+}
+
+function get.output.export()
+{
+	i.pdoc = tfisg041.ptyp & "/" & str$(tfisg041.pdoc) & "/" & str$(tfisg041.line)
+}
+
+function get.user.name()
+{
+	select	ttaad200.name:user
+	from	ttaad200
+	where	ttaad200._index1 = {:tfisg041.user}
+	and	ttaad200._compnr = 000
+	selectdo
+	selectempty
+		user = ""
+	endselect
+}
+
+function get.bp.description()
+{
+	select	tccom100.nama
+	from	tccom100
+	where	tccom100._index1 = {:tfisg041.bpcd}
+	as set with 1 rows
+	selectdo
+	endselect
+}
+
+function get.ledger.description()
+{
+	select	tfgld008.desc
+	from	tfgld008
+	where	tfgld008._index1 = {:tfisg041.leac}
+	as set with 1 rows
+	selectdo
+	selectempty
+		tfgld008.desc = ""
+	endselect
+}
+
+function write.record.to.file()
+{
+	long ret
+	
+	ret = seq.puts(final.str, out.fp)
+}
+
+function extern domain tcmcs.long close.ascii.file(long file.fp)
+{
+	domain	tcmcs.long	close.file.fp
+
+	close.file.fp =seq.close(file.fp)
+	if close.file.fp <> 0 then
+		message("Error In Closing File")
+		|* Error In Closing File
+		return(-1)
+	endif
+	return(0)
+}
+
+function export.output.to.excel.file()
+{
+	domain	tcmcs.str20	date.time.stamp
+	long 	dummy.ret, i
+	long	temp.file.size
+	long	file.present
+	
+	string	o.file.name(100)
+	
+	date.time.stamp = sprintf$("%u(%04Y%02m%02d)_%U(%02h%02m%02s)", current.date , current.date)
+	
+	filename = "Cash Flow_Excel_Data_"&strip$(date.time.stamp)
+	
+	o.file.name = "C:\temp\" & filename
+	dummy.ret = server2client(outfile,o.file.name & ".csv",true)
+						
+	if dummy.ret = 0 then
+| 		suspend(5000)
+		file.present = seq.fstat.local(o.file.name & ".csv", temp.file.size)
+		if file.present < 0 then
+			for i = 1 to 10
+				file.present = seq.fstat.local(o.file.name & ".csv", temp.file.size)
+				if file.present >= 0 then
+					break
+				else
+| 					suspend(5000)
+				endif
+			endfor
+		endif
+		e = app_start(o.file.name & ".csv","","","","")
+	endif					
+}
+
+function domain tcmcs.long open.ascii.file(domain tcmcs.str100  file.name,
+					   domain tcmcs.str1    open.mode)
+{
+	domain	tcmcs.long	fp
+
+	fp = seq.open(file.name, open.mode)
+
+	if fp < 1 then
+		message("Error In Opening File")
+		|* Error In Opening File
+		return(-1)
+	endif
+	return(fp)
+}
+
+function search.and.replace.comma.char(string  i.txt.str(1024),	
+				ref  string  o.txt.str)		
+{
+                long       	tab.count
+                long       	str.len
+		string		str.text(1024)	, hold.text(1024)		
+	domain  tcmcs.long      tab.pos
+	
+	str.len = 0
+	str.text = ""
+                
+	str.text = trim$(i.txt.str)
+	hold.text = str.text
+	str.len = len(str.text)
+                
+	tab.pos = pos(str.text , chr$(44))
+                
+	if tab.pos = 0  then
+		o.txt.str = trim$(str.text)
+		return
+	endif
+
+	for tab.count = 1 to str.len
+		tab.pos = pos(str.text , chr$(44))
+                if tab.pos >= 1 then
+			str.text = str.text(1;tab.pos - 1)
+                else
+                        break
+                endif
+                                
+                if tab.pos < str.len then
+                        str.text = str.text & chr$(59) & hold.text(tab.pos + 1;str.len)
+                endif
+	endfor
+	
+        o.txt.str = trim$(str.text)
+}

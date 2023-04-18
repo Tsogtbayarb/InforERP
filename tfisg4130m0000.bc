@@ -1,0 +1,459 @@
+|******************************************************************************
+|* tfisg4300m000  0  VRC B61U a7 isg 
+|* RCM Data For Self Invoicing
+|* Paras Kukreti(TV)                       
+|* 2020-02-13
+|******************************************************************************
+|* Main table tfisg430 RCM Data for Self Invoicing, Form Type 1
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttfisg430 | Grouping of RCM Data for Self Invoicing
+	table	ttfgld018
+	table	ttfisg310
+	table	ttfisg312						
+	table 	ttfgld100							
+	table 	ttfgld101
+	table 	ttfgld102							
+	
+	extern	domain	tfgld.year	i.fyer
+	extern	domain	tfgld.prod	i.fprd
+	extern	domain	tcmcs.long	cont.trans
+	 	domain	tfgld.amnt	o.total.cgst	
+	 	domain	tfgld.amnt	o.total.sgst	
+	 	domain	tfgld.amnt	o.total.igst	
+	 	domain	tfgld.amnt	o.total.gst	
+		double 	trans.amnt						
+		long 	ret, opno,ret1,ret2
+		string 	error(256),sess(13),sub.sess1(13),sub.sess2(13),seqn(4),docn(10),lino(10),
+			str.btno(11),err.str(50),suno(6),suno1(6),ccur(3),isup(30),refa(30),docd(10),error.msg(256)
+		domain 	tcbool afs.success,first.record,valid.data
+		long 	amnt, line, doc, rp, reof, wp,dbcr
+		string 	leac(12),refr(30),file.name(50), buff(1024), err.file(50),ttyp(3)
+		double 	line.amnt, inv.amnt
+		domain	tcmcs.str15	docn.no, docn.date
+		domain	tfgld.amnt	amnt.cgst, amnt.sgst, amnt.igst		
+
+
+#pragma used dll ottstpapihand
+#pragma nowarnings
+#define ERR shiftl$(shiftr$(error)) <> ""
+#include <bic_tt> 
+#include<bic_dam>								
+|****************************** program section ********************************
+before.program:
+	
+	import("fyer.f", i.fyer)
+	import("fprd.f", i.fprd)
+	
+	query.extend.where("tfisg430.fyer = :i.fyer and tfisg430.fprd = :i.fprd")
+
+	fattr.total.line = true
+	
+	execute(update.db)						
+	db.retry.point()
+	select	tfisg430.docn
+	from	tfisg430 for update
+	where	tfisg430.trgn = tcyesno.yes
+	selectdo
+		tfisg430.trgn = tcyesno.no
+		db.update(ttfisg430, db.retry,e)
+		commit.transaction()
+	endselect								
+
+on.display.total.line:
+	find.taxes.total()
+	
+	display.total.fields( "tfisg430.cgst", o.total.cgst)
+	display.total.fields( "tfisg430.sgst", o.total.sgst)
+	display.total.fields( "tfisg430.igst", o.total.igst)
+	display.total.fields( "tfisg430.tgst", o.total.gst)
+	
+| 	select	d_tfisg430.trgn							
+| 	from	tfisg430 d_tfisg430
+| 	where	d_tfisg430._index1 = {:tfisg430.fyer, :tfisg430.fprd, :tfisg430.srno, :tfisg430.regn, :tfisg430.type}
+| 	and	d_tfisg430.trgn = tcyesno.yes
+| 	as set with 1 rows
+| 	selectdo
+| 		enable.commands("gen.transaction")
+| 	selectempty
+| 		disable.commands("gen.transaction")
+| 	endselect								
+| 	
+| before.display.object:	
+| 	db.retry.point()
+| 	select	tfisg430.docn, tfisg430.trgn
+| 	from	tfisg430	for	update
+| 	where	tfisg430._index1 = {:tfisg430.fyer,:tfisg430.fprd,
+| 				    :tfisg430.srno, :tfisg430.regn, :tfisg430.type}
+| 	and	tfisg430.regn = :tfisg430.regn
+| 	and	tfisg430.type = :tfisg430.type
+| 	and	tfisg430.trgn = tcyesno.yes
+| 	selectdo
+| 		if tfisg430.docn = 0 then
+| 			tfisg430.trgn = tcyesno.no
+| 			db.update(ttfisg430, db.retry,e)
+| 			commit.transaction()
+| 			enable.fields("tfisg430.trgn")
+| 		else
+| 			tfisg430.trgn = tcyesno.yes
+| 			db.update(ttfisg430, db.retry,e)
+| 			commit.transaction()
+| 			disable.fields("tfisg430.trgn")
+| 		endif
+| 		
+| 	endselect
+
+
+| 	select	d_tfisg430.trgn							
+| 	from	tfisg430 d_tfisg430
+| 	where	d_tfisg430.trgn = tcyesno.yes
+| 	as set with 1 rows
+| 	selectdo
+| 		enable.commands("gen.transaction")
+| 	selectempty
+| 		disable.commands("gen.transaction")
+| 	endselect								
+|****************************** group section **********************************
+|****************************** choice section *********************************
+|****************************** field section **********************************
+
+field.tfisg430.docn:
+before.zoom:
+	tfgld018.ttyp = tfisg430.ttyp
+	
+|****************************** function section *******************************
+
+functions:	
+	
+function find.taxes.total()
+{		
+	select	sum(tfisg430.cgst):o.total.cgst,
+	 	sum(tfisg430.sgst):o.total.sgst,
+	 	sum(tfisg430.igst):o.total.igst,
+	 	sum(tfisg430.tgst):o.total.gst
+	from	tfisg430
+	where	tfisg430._index1 = {:tfisg430.fyer, :tfisg430.fprd}
+	selectdo
+	selectempty
+		o.total.cgst = 0.00
+		o.total.sgst = 0.00
+		o.total.igst = 0.00
+		o.total.gst = 0.00
+	endselect
+}
+
+function extern	gen.transaction()						
+{
+	execute(update.db)
+		
+	domain	tcmcs.long	srno
+	domain	tcbool		first.time
+	domain	tcncmp		curr.comp, cgst.comp, sgst.comp, igst.comp
+		long		ret_val, ret_val1, ret, year
+
+
+	
+	amnt.cgst = 0
+	amnt.sgst = 0
+	curr.comp = get.compnr()
+	
+	cont.trans = 1
+	start.session(MODAL, "tfisg3112m000", "", "")
+	import("cont.trans", cont.trans)
+	if cont.trans then
+		select	tfisg312.*
+		from	tfisg312
+		where	tfisg312._index1 = 1
+		as set with 1 rows
+		selectdo
+		endselect
+		
+		year = val(sprintf$("%D(%04Y)",tfisg312.date))
+
+		first.time = true
+		select	sum(tfisg430.cgst):amnt.cgst, sum(tfisg430.sgst):amnt.sgst, sum(tfisg430.igst):amnt.igst,
+			tfisg430.accc.i, tfisg430.accc.l, tfisg430.accs.i, tfisg430.accs.l,
+			tfisg430.acci.i, tfisg430.acci.l,
+			tfisg430.regn, tfisg430.bpid, tfisg430.type|, tfisg430.comp
+		from	tfisg430
+		where	tfisg430.trgn = tcyesno.yes
+		group by tfisg430.regn, tfisg430.bpid, tfisg430.type, |tfisg430.comp,
+			 tfisg430.accc.i, tfisg430.accc.l, tfisg430.accs.i, tfisg430.accs.l,
+			 tfisg430.acci.i, tfisg430.acci.l
+		selectdo
+			if tfisg430.docn = 0 then
+				if same.selected.record() then
+					if check.batch.requirement() then
+						if series.defined() then
+							if first.time then
+								clean.mess()
+								afs.success = false
+								str.btno = "0"
+								stpapi.put.field("tfgld1101m000", "tfgld100.tedt", str$(tfisg312.date))
+								stpapi.put.field("tfgld1101m000", "tfgld100.year", str$(year))
+								stpapi.put.field("tfgld1101m000", "tfgld100.bref", str$(tfisg312.bref))										
+								ret = stpapi.insert("tfgld1101m000", true, error)
+								if ERR then
+									message("Cannot Create Batch :- ",shiftl$(error))
+									stpapi.recover("tfgld1101m000", error)
+									stpapi.end.session("tfgld1101m000", error)
+								else 
+									stpapi.get.field("tfgld1101m000","tfgld100.btno",str.btno)
+									afs.success = true
+								endif
+								first.time = false
+							endif
+					
+
+
+							if tfisg430.lgcc = 0 then			
+								cgst.comp = curr.comp
+							else
+								cgst.comp = tfisg430.lgcc
+							endif
+							
+							if tfisg430.lgsc = 0 then
+								sgst.comp = curr.comp
+							else
+								sgst.comp = tfisg430.lgsc
+							endif
+							
+							if tfisg430.lgic = 0 then
+								igst.comp = curr.comp
+							else
+								igst.comp = tfisg430.lgic
+							endif
+							
+							if afs.success then
+								ret = stpapi.find("tfgld1101m000", error)
+								if ret then
+									stpapi.handle.subproc("tfgld1101m000","tfgld1101m100","add")
+									stpapi.put.field("tfgld1101m100", "tfgld101.year", str$(year))
+									stpapi.put.field("tfgld1101m100", "tfgld101.btno", str$(str.btno))
+									stpapi.put.field("tfgld1101m100", "tfgld101.ttyp", str$(tfisg312.ttyp)) 
+									ret = stpapi.insert("tfgld1101m100", true, error)
+									if ret = 1 then
+										afs.success = true
+									else
+										message(" 2 %s",error)
+										afs.success = false 
+									endif
+								else
+									message(" 3 %s",error)
+									afs.success = false 
+								endif
+							    
+
+								ret = stpapi.find("tfgld1101m100", error)
+								if ret = 1 then
+									ret = stpapi.mark("tfgld1101m100", error)
+									afs.success = true
+								else
+									message(" 1 %s",error)
+									afs.success = false 
+								endif
+								message("Batch Created %s",str.btno)
+							endif
+								
+								
+							stpapi.form.command( "tfgld1101m100", 5, "enter.transactions", error.msg )
+							stpapi.put.field( "tfgld1115m000", "tfgld102.ttyp", "RCM")
+							stpapi.put.field( "tfgld1115m000", "tfgld102.docn", str$(tfisg310.seri))
+							ret_val = stpapi.change.view( "tfgld1115m000", error.msg )
+							stpapi.handle.subproc("tfgld1101m100","tfgld1115m000","add")
+							if not isspace(tfisg430.accc.i) then
+								stpapi.put.field( "tfgld1115m000", "tfgld102.tcom", str$(cgst.comp) )
+								stpapi.put.field( "tfgld1115m000", "tfgld102.leac", str$(tfisg430.accc.i))
+								stpapi.put.field( "tfgld1115m000", "tfgld102.bpid", str$(tfisg430.bpid) )
+								stpapi.put.field( "tfgld1115m000", "tfgld102.amnt", str$(amnt.cgst) )
+								stpapi.put.field( "tfgld1115m000", "tfgld102.dbcr", str$(tfgld.dbcr.debit) )
+								stpapi.put.field( "tfgld1115m000", "tfgld102.refr", str$(tfisg312.bref))
+								ret_val = stpapi.insert( "tfgld1115m000", true, error.msg )
+								
+								stpapi.handle.subproc("tfgld1101m100","tfgld1115m000","add")
+								stpapi.put.field( "tfgld1115m000", "tfgld102.tcom", str$(curr.comp) )
+								stpapi.put.field( "tfgld1115m000", "tfgld102.leac", str$(tfisg430.accc.l))
+								stpapi.put.field( "tfgld1115m000", "tfgld102.bpid", str$(tfisg430.bpid) )
+								stpapi.put.field( "tfgld1115m000", "tfgld102.amnt", str$(amnt.cgst) )
+								stpapi.put.field( "tfgld1115m000", "tfgld102.dbcr", str$(tfgld.dbcr.credit))
+								stpapi.put.field( "tfgld1115m000", "tfgld102.refr", str$(tfisg312.bref))
+								ret_val = stpapi.insert( "tfgld1115m000", true, error.msg )
+								
+								stpapi.put.field( "tfgld1115m000", "tfgld102.tcom", str$(sgst.comp) )
+								stpapi.put.field( "tfgld1115m000", "tfgld102.leac", str$(tfisg430.accs.i))
+								stpapi.put.field( "tfgld1115m000", "tfgld102.bpid", str$(tfisg430.bpid) )
+								stpapi.put.field( "tfgld1115m000", "tfgld102.amnt", str$(amnt.sgst) )
+								stpapi.put.field( "tfgld1115m000", "tfgld102.dbcr", str$(tfgld.dbcr.debit))
+								stpapi.put.field( "tfgld1115m000", "tfgld102.refr", str$(tfisg312.bref))
+								ret_val = stpapi.insert( "tfgld1115m000", true, error.msg )
+
+								stpapi.handle.subproc("tfgld1101m100","tfgld1115m000","add")
+								stpapi.put.field( "tfgld1115m000", "tfgld102.tcom", str$(curr.comp) )
+								stpapi.put.field( "tfgld1115m000", "tfgld102.leac", str$(tfisg430.accs.l))
+								stpapi.put.field( "tfgld1115m000", "tfgld102.bpid", str$(tfisg430.bpid) )
+								stpapi.put.field( "tfgld1115m000", "tfgld102.amnt", str$(amnt.sgst) )
+								stpapi.put.field( "tfgld1115m000", "tfgld102.dbcr", str$(tfgld.dbcr.credit))
+								stpapi.put.field( "tfgld1115m000", "tfgld102.refr", str$(tfisg312.bref))
+								ret_val = stpapi.insert( "tfgld1115m000", true, error.msg )
+								
+							else
+								stpapi.handle.subproc("tfgld1101m100","tfgld1115m000","add")
+								stpapi.put.field( "tfgld1115m000", "tfgld102.tcom", str$(igst.comp) )
+								stpapi.put.field( "tfgld1115m000", "tfgld102.leac", str$(tfisg430.acci.i))
+								stpapi.put.field( "tfgld1115m000", "tfgld102.bpid", str$(tfisg430.bpid) )
+								stpapi.put.field( "tfgld1115m000", "tfgld102.amnt", str$(amnt.igst) )
+								stpapi.put.field( "tfgld1115m000", "tfgld102.dbcr", str$(tfgld.dbcr.debit))
+								stpapi.put.field( "tfgld1115m000", "tfgld102.refr", str$(tfisg312.bref))
+								ret_val = stpapi.insert( "tfgld1115m000", true, error.msg )
+								if ret_val then
+									stpapi.handle.subproc("tfgld1101m100","tfgld1115m000","add")
+									stpapi.put.field( "tfgld1115m000", "tfgld102.tcom", str$(curr.comp) )
+									stpapi.put.field( "tfgld1115m000", "tfgld102.leac", str$(tfisg430.acci.l))
+									stpapi.put.field( "tfgld1115m000", "tfgld102.bpid", str$(tfisg430.bpid) )
+									stpapi.put.field( "tfgld1115m000", "tfgld102.amnt", str$(amnt.igst) )
+									stpapi.put.field( "tfgld1115m000", "tfgld102.dbcr", str$(tfgld.dbcr.credit))
+									stpapi.put.field( "tfgld1115m000", "tfgld102.refr", str$(tfisg312.bref))
+									ret_val = stpapi.insert( "tfgld1115m000", true, error.msg )
+								endif
+							endif
+							
+							refresh()
+							
+							stpapi.get.field("tfgld1115m000","tfgld102.docn",docn.no)
+							stpapi.get.field("tfgld1115m000","tfgld102.dcdt",docn.date)
+
+							if not ret_val then
+								message(error.msg)
+								ret_val1 = stpapi.recover( "tfgld1115m000", error.msg )
+								stpapi.end.session( "tfgld1115m000" )
+							endif
+							stpapi.end.session("tfgld1101m100",  error)
+							stpapi.end.session( "tfgld1101m000",  error)
+							stpapi.end.session( "tfgld1115m000",  error)
+							
+							if ret_val then
+								db.retry.point()
+								select	tfisg430.docn
+								from	tfisg430	for	update
+								where	tfisg430._index1 = {	
+											:tfisg430.fyer,
+											:tfisg430.fprd}
+								and	tfisg430.regn = :tfisg430.regn
+								and	tfisg430.type = :tfisg430.type
+								and	tfisg430.trgn = tcyesno.yes
+								selectdo
+									tfisg430.ttyp = tfisg312.ttyp
+									tfisg430.docn = val(docn.no)
+| 									tfisg430.docd = date.num()
+									tfisg430.docd = tfisg312.date
+									tfisg430.batn = val(str.btno)
+									tfisg430.trgn = tcyesno.no
+									db.update(ttfisg430, db.retry,e)
+									commit.transaction()
+								endselect
+							else
+								db.retry.point()
+								select	tfisg430.docn
+								from	tfisg430	for	update
+								where	tfisg430._index1 = {	
+											:tfisg430.fyer,
+											:tfisg430.fprd}
+								and	tfisg430.regn = :tfisg430.regn
+								and	tfisg430.type = :tfisg430.type
+								and	tfisg430.trgn = tcyesno.yes
+								selectdo
+									tfisg430.trgn = tcyesno.no
+									db.update(ttfisg430, db.retry,e)
+									commit.transaction()
+								endselect
+							endif
+						else
+							message("Series not defined for ISGEC GSTIN ")
+						endif
+					else
+						message("Some value is missing, can't create Batch")
+					endif
+				else
+					message("Selected records are not same")
+				endif
+			else
+				message("Document already generate for selected record")
+			endif
+		endselect
+	else
+		message("Transaction Canceled")
+	endif
+}
+	
+function domain	tcbool check.batch.requirement()
+{
+	if trim$(tfisg430.regn) = "" then
+		return(false)
+	endif
+	if trim$(tfisg430.bpid) = "" then
+		return(false)
+	endif
+	if trim$(tfisg430.type) = "" then
+		return(false)
+	endif
+	if tfisg430.comp = 0 then
+		return(false)
+	endif
+	if trim$(tfisg430.accc.i) = "" then
+		if trim$(tfisg430.acci.i) = "" then
+			return(false)
+		else
+			return(true)
+		endif
+	else
+		return(true)
+	endif
+}
+
+function domain tcbool same.selected.record()
+{	
+	domain	tcbool one.record
+	
+	one.record = true
+	
+	select	tfisg430.accc.i, tfisg430.accc.l, tfisg430.accs.i, tfisg430.accs.l,
+		tfisg430.acci.i, tfisg430.acci.l,
+		tfisg430.regn, tfisg430.bpid, tfisg430.type|, tfisg430.comp
+	from	tfisg430
+	where	tfisg430.trgn = tcyesno.yes
+	group by tfisg430.regn, tfisg430.bpid, tfisg430.type,| tfisg430.comp,
+		 tfisg430.accc.i, tfisg430.accc.l, tfisg430.accs.i, tfisg430.accs.l,
+		 tfisg430.acci.i, tfisg430.acci.l
+	selectdo
+		if not one.record then
+			return(false)
+		endif
+		one.record = false
+	endselect
+	return(true)
+}
+
+function domain tcbool series.defined() 
+{
+	select	tfisg310.seri
+	from	tfisg310
+	where	tfisg310.regn = :tfisg430.regn
+	as set with 1 rows
+	selectdo
+	selectempty
+		return(false)
+		tfisg310.seri = 0
+	endselect
+	return(true)
+}
+
+function extern print.tax.invoice()
+{	
+	export("tfisg430.comp", tfisg430.comp)
+	export("tfisg430.docn", tfisg430.docn)
+	export("tfisg430.ttyp", tfisg430.ttyp)
+	start.session(MODAL, "tfisg2400m460", "", "")
+}

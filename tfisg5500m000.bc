@@ -1,0 +1,625 @@
+|******************************************************************************
+|* tfisg5500m000  0  VRC B61U a7 isg 
+|* Check Master (AFS)
+|* TechVikas                     
+|* 2020-07-22
+| 01/04/2019   737150
+| 01/04/2020    737516
+|******************************************************************************
+|* Main table tfisg500 Check Master for AFS, Form Type 1
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttfisg500	|* Payment Batch finalization
+	table	ttfcmg100	|* Check Master
+	table	ttfcmg101	|* Payment/Trade Notes Payable Advice
+	table	ttfgld018	|* Documents
+	table	ttfgld100	|* Financial Batch
+	table	ttfgld109	|* Finalization Run Number Status
+	table	ttfgld112	|* Relation Intercompany Documents
+	table	ttfisg185	|* Payments Process
+
+long	 ret_val,rt1 ,process.id.kill,i,ret.val,brp_id1
+
+domain tcncmp f.comp,t.comp
+domain tfgld.user cur.user
+
+
+| #pragma used dll ottstpapihand
+#pragma used dll ottdllbw
+#pragma used dll ottstpapihand
+#include <bic_dam>
+
+|****************************** program section ********************************
+before.program:
+cur.user =logname$	
+f.comp=get.compnr()
+t.comp=f.comp
+get.data.from.tfcmg100()
+update.data.status()
+
+| query.extend.where("vginh015.stst = " & quoted.string(m.stst))
+| query.extend.where("tfisg500.chst = tfcmg.chst.anticipated")
+query.extend.where("tfisg500.trun = 0 and tfisg500.chst = tfcmg.chst.anticipated")
+|****************************** group section **********************************
+
+after.form.read:
+	enable.save.on.occ.change()
+
+
+field.tfisg500.sele:
+before.field:
+	if tfisg500.proc = tcyesno.yes or tfisg500.chst  <> ltoe(5) then
+	| 		disable.fields( READONLY, "tfisg500.sele", actual.occ)
+		disable.fields("tfisg500.sele", actual.occ)
+	else
+		enable.fields("tfisg500.sele", actual.occ)
+	endif
+
+
+
+
+
+Functions:
+
+function extern refresh.alldata() 
+{
+	get.data.from.tfcmg100()
+	update.data.status()
+	anticipated()
+}
+
+function get.data.from.tfcmg100()
+{
+
+| 	| 	| select tfisg500.*
+| 	| 	| from  tfisg500 for update
+| 	| 	| where tfisg500.dout < 737150
+| 	| 	| 	| where tfisg500.chst =1
+| 	| 	| selectdo
+| 	| 	| 	db.delete(ttfisg500,db.retry,e)	
+| 	| 	| endselect
+| 	| 	| commit.transaction()
+
+domain tfcmg.tadv m.tadv
+domain tcncmp m.fcom,m.curcomp
+domain tfgld.btno m.fbat
+domain tcorno m.pono
+domain tfgld.bstt b.stat
+domain tcmcs.str6m m.str.padv
+domain tfgld.year m.year
+domain tfgld.trun m.trun
+domain tfgld.user  m.trus 
+domain tfgld.date  m.trdt 
+
+
+m.curcomp =get.compnr()
+select *
+from  tfcmg100
+| where tfcmg100.cheq not in ( select tfisg500.cheq from tfisg500 where tfisg500.chst=5)
+| where tfcmg100.cmba not in ( select tfisg500.cmba from tfisg500 where tfisg500.chst=5)
+where tfcmg100.chst in (5)
+and tfcmg100.dout >=737516   || 01/04/2020    737516
+| 	| 	| and tfcmg100.dout >=737150
+| and tfcmg100.cheq in ("         132510")
+| where tfcmg100.chst in (5,6)
+selectdo
+	m.fcom=m.curcomp
+	m.str.padv = str$(tfcmg100.pbtn)
+
+	select tfgld112.comt
+	from tfgld112
+	where tfgld112._index1={:m.curcomp,:tfcmg100.typo,:tfcmg100.doco}
+	selectdo
+		m.fcom = tfgld112.comt
+	selectempty
+		m.fcom=m.curcomp
+	endselect
+
+
+	select tfgld018.year,tfgld018.btno
+	from tfgld018
+	where tfgld018._index1={:tfcmg100.typo,:tfcmg100.doco}
+	selectdo
+		m.fbat  = tfgld018.btno 
+		m.year = tfgld018.year
+		
+		select tfgld100.stat,tfgld100.trun
+		from tfgld100
+		where tfgld100._index1={:tfgld018.year,:tfgld018.btno}
+		selectdo
+			b.stat =tfgld100.stat
+			m.trun =tfgld100.trun
+			
+			
+			select tfgld109.trus,tfgld109.trdt
+			from tfgld109
+			where tfgld109._index1={:tfgld018.year,:tfgld100.trun}
+			selectdo
+				m.trus =tfgld109.trus
+				m.trdt =tfgld109.trdt
+			selectempty
+				m.trus=""
+				m.trdt=0
+			endselect
+
+		selectempty
+			m.fbat=0
+			m.trun =0
+			b.stat =ltoe(1)
+			m.trus=""
+			m.trdt=0				
+		endselect
+	selectempty
+		m.trus=""
+		m.trdt=0
+		m.fbat=0
+		m.trun =0
+		b.stat =ltoe(1)
+		m.trus=""
+		m.trdt=0			
+	endselect
+
+	select tfcmg101.tadv:m.tadv
+	from  tfcmg101
+	where tfcmg101._index1={:tfcmg100.pbtn}
+	as set with 1 rows
+	selectdo		
+	selectempty
+	endselect
+
+
+	select tfisg185.orno:m.pono
+	from  tfisg185
+	where tfisg185._index4={:m.str.padv}
+	and tfisg185.bank=:tfcmg100.bank
+	and tfisg185.paym=:tfcmg100.paym
+	and tfisg185.cheq=:tfcmg100.cheq		
+	as set with 1 rows
+	selectdo		
+	selectempty
+		m.pono =""
+	endselect	
+
+
+	
+	db.retry.point()
+	select *
+	from  tfisg500 for update
+	where tfisg500._index1={:tfcmg100.bank,:tfcmg100.paym,:tfcmg100.cheq} 
+	selectdo
+
+		tfisg500.tadv=m.tadv
+		tfisg500.fcom=m.fcom
+		tfisg500.fbat=m.fbat
+		tfisg500.pono=m.pono
+		tfisg500.year=m.year
+		tfisg500.stat=b.stat
+		tfisg500.bsat=b.stat
+		tfisg500.trun=m.trun
+		tfisg500.trus=m.trus
+		tfisg500.trdt=m.trdt
+		
+		if etol(b.stat) =6 then
+			tfisg500.proc=tcyesno.yes	
+		endif
+
+		db.update(ttfisg500,db.retry,e)
+		commit.transaction()
+		
+		m.fcom =0
+		m.tadv = ltoe(1)
+		m.fbat =0
+		m.pono =""
+		
+
+	selectempty
+		tfisg500.bank=tfcmg100.bank
+		tfisg500.paym=tfcmg100.paym
+		tfisg500.cheq=tfcmg100.cheq
+		tfisg500.chst=tfcmg100.chst
+		tfisg500.ptbp=tfcmg100.ptbp
+		tfisg500.ccur=tfcmg100.ccur
+		tfisg500.rate=tfcmg100.rate
+		tfisg500.ratf=tfcmg100.ratf
+		tfisg500.amnt=tfcmg100.amnt
+		tfisg500.rdat=tfcmg100.rdat
+		tfisg500.rtyp=tfcmg100.rtyp
+		tfisg500.dout=tfcmg100.dout
+		tfisg500.typo=tfcmg100.typo
+		tfisg500.doco=tfcmg100.doco
+		tfisg500.pbtn=tfcmg100.pbtn
+		tfisg500.drec=tfcmg100.drec
+		tfisg500.ttyp=tfcmg100.ttyp
+		tfisg500.docn=tfcmg100.docn
+		tfisg500.btno=tfcmg100.btno
+		tfisg500.chnm=tfcmg100.chnm
+		tfisg500.chad=tfcmg100.chad
+		tfisg500.expr=tfcmg100.expr
+		tfisg500.expd=tfcmg100.expd
+		tfisg500.sele=tcyesno.no
+		tfisg500.tadv=m.tadv
+		tfisg500.fcom=m.fcom
+		tfisg500.fbat=m.fbat
+		tfisg500.pono=m.pono
+		tfisg500.trun=m.trun
+		tfisg500.trus=m.trus
+		tfisg500.trdt=m.trdt
+		if etol(b.stat) =6 then
+			tfisg500.proc=tcyesno.yes	
+		else
+			tfisg500.proc=tcyesno.no
+			
+		endif
+		
+
+		db.insert(ttfisg500,db.retry,e)
+		commit.transaction()
+		
+		m.fcom =0
+		m.tadv = ltoe(1)
+		m.fbat =0
+		m.pono =""
+		
+	endselect	
+		
+	
+endselect
+
+}
+
+
+
+function update.data.status()
+{
+
+	db.retry.point()
+	select *
+	from  tfisg500 for update
+	where tfisg500.chst<>6
+| 	where tfisg500.chst=5
+| 	where tfisg500._index1={:tfcmg100.bank,:tfcmg100.paym,:tfcmg100.cheq} 
+	selectdo
+		
+		select tfcmg100.chst
+		from  tfcmg100 
+		where tfcmg100._index1={:tfisg500.bank,:tfisg500.paym,:tfisg500.cheq} 
+		selectdo
+
+			tfisg500.chst=tfcmg100.chst
+| 			db.update(ttfisg500,db.retry,db.skip.rowchanged,e)
+			db.update(ttfisg500,db.retry,e)
+			commit.transaction()
+
+		selectempty
+		
+			
+		endselect	
+	
+	endselect
+}
+
+
+
+
+function extern process.cheque()
+{
+
+
+if check.user(cur.user) then
+brp_id1 = brp.open( "rtfisg540001000", "D", 0 )
+
+
+	select *
+	from  tfisg500 
+	where tfisg500._index1={:tfisg500.bank,:tfisg500.paym}
+	and tfisg500.sele =tcyesno.yes
+	and tfisg500.proc =tcyesno.no
+	selectdo		
+		process.Data()
+	selectempty
+		message("Record not Selected for Finalization....")
+	selecteos
+		message("Finalization Compeleted....")
+	endselect
+
+brp.close( brp_id1 )
+else
+	message("User %s are not authorised, for Batch Finalization.....",cur.user)
+endif
+
+}
+
+
+
+
+function  extern process.Data()
+{
+
+long value,ret,max.trun,cur.dt
+
+string error(100)
+| string error(50)
+string ret.val(50),str.date(15)
+domain tfgld.user  str.user
+| domain tfgld.date str.date
+string error.msg(50)
+string trun(50)
+
+value =2020
+
+cur.dt =date.num()
+
+	select tfgld018.year,tfgld018.btno
+	from tfgld018
+	where tfgld018._index1={:tfisg500.typo,:tfisg500.doco}
+	selectdo
+	selectempty		
+	endselect
+
+
+	stpapi.put.field( "tfgld1210m000", "job.ref.date", str$(cur.dt) )
+	stpapi.get.field( "tfgld1210m000", "job.ref.date", ret.val )
+| 	stpapi.put.field( "tfgld1210m000", "year.f", str$("2020") )
+	stpapi.put.field( "tfgld1210m000", "year.f", str$(tfgld018.year) )
+	stpapi.put.field( "tfgld1210m000", "user.f", "" )	
+	stpapi.put.field( "tfgld1210m000", "user.t", "~~~~~~~~~~~~~~~~" )
+	stpapi.put.field( "tfgld1210m000", "comp.f", str$(f.comp) )
+	stpapi.put.field( "tfgld1210m000", "comp.t", str$(t.comp) )
+| 	stpapi.put.field( "tfgld1210m000", "btno.f", str$("155") )
+| 	stpapi.put.field( "tfgld1210m000", "btno.t", str$("155") )
+	stpapi.put.field( "tfgld1210m000", "btno.f", str$(tfisg500.fbat) )
+	stpapi.put.field( "tfgld1210m000", "btno.t", str$(tfisg500.fbat) )
+	stpapi.put.field( "tfgld1210m000", "ttyp.f", "" )	
+	stpapi.put.field( "tfgld1210m000", "ttyp.t", "~~~" )
+| 	stpapi.put.field( "tfgld1210m000", "tedt.f", str$(value) )
+	stpapi.put.field( "tfgld1210m000", "tedt.t", str$(cur.dt) )	
+	stpapi.put.field( "tfgld1210m000", "fprd.f", str$("0") )
+	stpapi.put.field( "tfgld1210m000", "fprd.t", str$("99") )
+	stpapi.put.field( "tfgld1210m000", "rprd.f", str$("0") )
+	stpapi.put.field( "tfgld1210m000", "rprd.t", str$("99") )
+	stpapi.put.field( "tfgld1210m000", "jprt.f", str$("2") )
+	stpapi.put.field( "tfgld1210m000", "totals", str$("2") )	
+	stpapi.put.field( "tfgld1210m000", "finaliz.status", str$("2") )
+	stpapi.put.field( "tfgld1210m000", "only.system", str$("2") )
+	
+	
+
+
+| 	stpapi.update( "tfgld1210m000", do.update, error ) 
+
+| 	long ret
+| 	if get.argc() = 0 then
+| 		return( stpapi.mark( "tfgld1210m000" ) ) 
+| 	else
+| 		error = get.string.arg(1)
+| 		ret =  stpapi.mark( "tfgld1210m000" , error  )
+| 		put.string.arg(1, error)
+| 		return( ret ) 
+| 	endif
+
+| 	return( stpapi.save( "tfgld1210m000", error ) )
+
+| 	if get.argc() = 0 then
+| 		return( stpapi.find( "tfgld1210m000"  ) )
+| 	else
+| 		error = get.string.arg(1)
+| 		ret =  stpapi.find( "tfgld1210m000" , error  )
+| 		put.string.arg(1, error)
+| 		return( ret ) 
+| 	endif
+
+| 	stpapi.clear( "tfgld1210m000" )
+
+| 	stpapi.set.report( "tfgld1210m000", reportname, device, error )
+
+| 	if get.argc() = 0 then
+| 		return( stpapi.change.view( "tfgld1210m000" ) )
+| 	else
+| 		error = get.string.arg(1)
+| 		ret = stpapi.change.view( "tfgld1210m000",  error )
+| 		put.string.arg(1, error)
+| 		return( ret )
+| 	endif
+
+	stpapi.form.command( "tfgld1210m000", 5, "exec.cont.process", error )
+	ret.val =""
+	stpapi.get.field( "tfgld1210m000", "tfgld109.trun", ret.val )	
+	stpapi.get.field( "tfgld1210m000", "tfgld109.crus", str.user )
+	stpapi.get.field( "tfgld1210m000", "tfgld109.crdt", str.date )
+	
+	if val(ret.val) <> 0  then		
+		tfisg500.trun=val(ret.val)
+| 		select tfgld109.trus,tfgld109.trdt
+| 		from tfgld109
+| 		where tfgld109._index1={:tfgld018.year,:tfisg500.trun}
+| 		selectdo
+| 		selectempty
+| 			tfgld109.trus=""
+| 			tfgld109.trdt=0
+| 		endselect
+		
+		
+		select tfisg500.trun,tfisg500.proc
+		from  tfisg500 for update
+		where tfisg500._index1={:tfisg500.bank,:tfisg500.paym,:tfisg500.cheq} 
+		selectdo
+			tfisg500.trun=val(ret.val)
+			tfisg500.trus=strip$(str.user)
+			tfisg500.trdt=val(str.date)
+			if val(ret.val)<> 0 then 
+				tfisg500.proc=tcyesno.yes
+			else
+				tfisg500.proc=tcyesno.no
+			endif
+			db.update(ttfisg500,db.retry,e)
+			commit.transaction()
+
+		selectempty
+
+
+		endselect	
+		
+		
+		
+	endif
+	
+brp.ready( brp_id1 )
+
+
+| 	string ret(20)
+| 	if get.argc() = 0 then
+| 		 stpapi.get.mess.code( "tfgld1210m000" ) 
+| 	else
+| 		error = get.string.arg(1)
+| 		ret = stpapi.get.mess.code( "tfgld1210m000", error )
+| 		put.string.arg(1, error)
+| 	| 		return( ret )
+| 	endif
+
+| 	return( stpapi.get.error( ) )
+	
+	
+	
+	if get.argc() = 0 then
+		stpapi.end.session( "tfgld1210m000" ) 
+	else
+		error = get.string.arg(1)
+		stpapi.end.session( "tfgld1210m000" , error  )
+		put.string.arg(1, error)
+	endif
+	
+
+DLLUSAGE
+	Function to define an action when a sub process is started.
+	Possible actions are: add/send/ignore/kill 
+		add     - add child session to internal structure, 
+				session dll of child can be used
+		send    - send all api calls to child instead of parent
+		ignore  - child process is ignored, parent will wait
+				until child exits (for background processes)
+		kill    - child process is killed immediately
+ENDDLLUSAGE
+
+
+| 	stpapi.handle.subproc( "tfgld1210m000", sub.process, action )
+
+| 	stpapi.enum.answer( "tfgld1210m000", question, answer )	
+	
+	
+	
+| 	stpapi.get.field( "tfgld1210m000", "job.ref.date", value )
+| 	stpapi.get.field( "tfgld1210m000", "year.f", value )
+| 	stpapi.get.field( "tfgld1210m000", "user.f", value )
+| 	stpapi.get.field( "tfgld1210m000", "user.t", value )
+| 	stpapi.get.field( "tfgld1210m000", "comp.f", value )
+| 	stpapi.get.field( "tfgld1210m000", "comp.t", value )
+| 	stpapi.get.field( "tfgld1210m000", "btno.f", value )
+| 	stpapi.get.field( "tfgld1210m000", "btno.t", value )
+| 	stpapi.get.field( "tfgld1210m000", "ttyp.f", value )
+| 	stpapi.get.field( "tfgld1210m000", "ttyp.t", value )
+| 	stpapi.get.field( "tfgld1210m000", "tedt.f", value )
+| 	stpapi.get.field( "tfgld1210m000", "tedt.t", value )
+| 	stpapi.get.field( "tfgld1210m000", "fprd.f", value )
+| 	stpapi.get.field( "tfgld1210m000", "fprd.t", value )
+| 	stpapi.get.field( "tfgld1210m000", "rprd.f", value )
+| 	stpapi.get.field( "tfgld1210m000", "rprd.t", value )
+| 	stpapi.get.field( "tfgld1210m000", "jprt.f", value )
+| 	stpapi.get.field( "tfgld1210m000", "totals", value )
+| 	stpapi.get.field( "tfgld1210m000", "finaliz.status", value )
+| 	stpapi.get.field( "tfgld1210m000", "only.system", value )
+| 	stpapi.get.field( "tfgld1210m000", "tfgld109.trun", value )
+| 	stpapi.get.field( "tfgld1210m000", "tfgld109.trst", value )
+| 	stpapi.get.field( "tfgld1210m000", "tfgld109.crus", value )
+| 	stpapi.get.field( "tfgld1210m000", "tfgld109.crdt", value )
+| 	stpapi.get.field( "tfgld1210m000", "creation.time", value )
+| 	stpapi.get.field( "tfgld1210m000", "tfgld109.trdt", value )
+| 	stpapi.get.field( "tfgld1210m000", "finalization.time", value )
+
+
+
+
+}
+
+
+
+
+
+function extern all.data()
+
+{
+
+
+
+	query.extend.where("tfisg500.chst > 0",EXTEND_OVERWRITE)
+| 	query.extend.where("tfisg500.chst = " & quoted.string(m.stst),EXTEND_APPEND)
+	rebuild.query()   
+| 	prev.check = not prev.check
+	set.checked.command("all.data",1)
+	set.checked.command("anticipated", 0)
+	set.checked.command("finalize", 0)
+	set.checked.command("selected_finalize", 0)
+}
+
+
+
+function extern anticipated()
+
+{
+	
+
+| 	query.extend.where("tfisg500.chst = tfcmg.chst.anticipated",EXTEND_OVERWRITE)
+	query.extend.where("tfisg500.trun = 0 and tfisg500.chst = tfcmg.chst.anticipated",EXTEND_OVERWRITE)
+
+	rebuild.query()   
+
+	set.checked.command("anticipated", 1)
+	set.checked.command("all.data",0)
+	set.checked.command("finalize", 0)
+	set.checked.command("selected_finalize", 0)
+}
+
+function extern finalize()
+
+{
+	
+
+	query.extend.where("tfisg500.trun <> 0",EXTEND_OVERWRITE)
+
+	rebuild.query()   
+
+	set.checked.command("finalize", 1)
+	set.checked.command("all.data",0)
+	set.checked.command("anticipated", 0)
+	set.checked.command("selected_finalize", 0)
+}
+
+function extern selected_finalize()
+
+{
+	
+
+	query.extend.where("tfisg500.sele = 1 and tfisg500.proc=2",EXTEND_OVERWRITE)
+
+	rebuild.query()   
+
+	set.checked.command("selected_finalize", 1)
+	set.checked.command("finalize", 0)
+	set.checked.command("all.data",0)
+	set.checked.command("anticipated", 0)
+}
+
+
+function domain tcbool check.user(domain tfgld.user m.user)
+{
+select tfgld025.*
+from tfgld025
+where tfgld025._index1={:m.user}
+selectdo
+	return(true)
+endselect
+return(false)
+
+}

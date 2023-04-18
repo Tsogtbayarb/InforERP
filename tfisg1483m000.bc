@@ -1,0 +1,461 @@
+|******************************************************************************
+|* dmisg1483m000  0  VRC B61U a7 isg 
+|* Billing Document Tracking
+|* merino1                       
+|* 2019-06-25
+|******************************************************************************
+|* Form Type 4
+|******************************************************************************
+|* ISGEC002039, Arun Chauhan, 25-06-2019	
+|* New Development		
+|****************************** declaration section ***************************
+declaration:
+	
+	table	ttfisg182
+	table	ttfisg183
+	table	ttdisg831
+	table	ttdisg832
+	table	ttppdm600
+	table	ttcmcs052
+	table	tcisli205
+	table	ttpisg039
+	
+	extern	domain	tcncmp		comp.f,comp.t
+	extern domain	tcyesno		invn,foc
+	extern domain	tccprj		cprj.f,cprj.t
+	extern domain	tfgld.ttyp	ttyp.f,ttyp.t
+	extern domain	tfgld.docn	docn.f,docn.t
+	extern domain	tcdate		dbad.f,dbad.t
+	
+		domain	tcmcs.str100m	Reason.for.return
+		domain	tcdate		Received.by.Accounts.date
+		domain	tcdate		Forwarded.to.Accounts.date
+		domain	tcdate		Returned.by.Accounts.date
+		domain	tcdate		Re.Forwarded.to.Accounts.date
+		domain	tcdate		latest.Received.by.Accounts.date
+		domain	tcamnt		Billing.value
+		domain	tcibd.sern 	con.irno
+		domain	tcmcs.str100m	hold.irno
+
+|****************************** excel variable ********************************
+	string	err.file(100), file.name(100), line(1000)
+	long	stat.fp, ret2
+|****************************** program section ********************************
+
+#pragma used dll ottdllbw
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+choice.print_data:
+on.choice:
+       generate.file()
+
+|****************************** program section *********************************
+before.display.object:
+	if etol(invn) = 2 and etol(foc) = 2 then
+		disable.fields("ttyp.f","ttyp.t","docn.f","docn.t")
+		ttyp.f = ""
+		ttyp.t = ""
+	endif
+	
+|****************************** field section *********************************	
+field.invn:
+after.input:
+	if etol(invn) = 1 then
+		ttyp.f = "STR"
+		ttyp.t = "STR"
+		foc = tcyesno.no
+		enable.fields("ttyp.f","ttyp.t","docn.f","docn.t")
+		disable.fields("foc")
+	else
+		disable.fields("ttyp.f","ttyp.t","docn.f","docn.t")
+		enable.fields("foc")
+		ttyp.f = ""
+		ttyp.t = ""
+	endif
+field.foc:
+after.input:
+	if etol(foc) = 1 then
+		invn = tcyesno.no
+		disable.fields("invn")
+	else
+		enable.fields("invn")
+	endif
+	
+field.comp.f:
+when.field.changes:
+	comp.t = comp.f
+
+field.dbad.f:
+when.field.changes:
+	dbad.t = dbad.f
+field.cprj.f:
+before.zoom:																
+	query.extend.where.in.zoom("tppdm600.ncmp inrange " &str$(comp.f)& "and " &str$(comp.t))	
+when.field.changes:
+	cprj.t = cprj.f
+
+field.cprj.t:
+before.zoom:																
+	query.extend.where.in.zoom("tppdm600.ncmp inrange " &str$(comp.f)& "and " &str$(comp.t))	
+
+
+field.docn.f:
+before.zoom:																
+	query.extend.where.in.zoom("cisli205.ityp inrange '"&ttyp.f&"' and '"&ttyp.t&"' and cisli205.sfcp inrange " &str$(comp.f)& "and " &str$(comp.t) )	
+when.field.changes:
+	docn.t = docn.f
+	
+field.docn.t:
+before.zoom:																
+	query.extend.where.in.zoom("cisli205.ityp inrange '"&ttyp.f&"' and '"&ttyp.t&"' and cisli205.sfcp inrange " &str$(comp.f)& "and " &str$(comp.t) )	
+|****************************** function section ******************************
+
+functions:
+function extern generate.file()
+{	
+	err.file = bse.tmp.dir$() & str$(utc.num()) & ".xls"
+	
+	file.name = "C:\temp\" & str$(utc.num())  & ".xls"
+	
+	stat.fp = seq.open(err.file, "w+")
+	if stat.fp >0 then
+ 		seq.seek(0, 0, stat.fp)
+	endif
+	generate.header()
+	read.main.table()
+	seq.close(stat.fp)
+	ret2 = server2client(err.file,file.name,1)
+	ret2 = app_start(file.name,"c:","","","")
+}
+
+function generate.header()
+{
+															
+
+	line= 	concat$("	",
+		sprintf$("Project"),				|1
+		sprintf$("Project Name"),			|1.1
+		sprintf$("DBA No"),			  	|2
+		sprintf$("Invoice Type"),			|2.1
+		sprintf$("Invoice No."),			 |2.2
+		sprintf$("DBA Date"),				|3
+		sprintf$("DBA Amount"),			|4
+		sprintf$("IRN No"),			   	|5
+		sprintf$("Forwarded to Accounts (First Time)"),|6
+		sprintf$("Received by Accounts (First Time)"),	|7
+		sprintf$("Returned by Accounts (Latest)"),	|8
+		sprintf$("Reason for return "),		|9
+		sprintf$("Re Forwarded to Accounts (Latest)"),	|10
+		sprintf$("Received by Accounts (latest)"),	|11
+		sprintf$("Status"))				|12
+		
+	line = strip$(shiftl$(line))		
+	seq.puts(line, stat.fp)		
+}
+
+function read.main.table()
+{	
+	domain	tcorno		i.irno,i.edrn
+	select tppdm600.*,
+		tcmcs052.dsca
+	from	tppdm600,tcmcs052
+	where	tppdm600._index1 inrange {:cprj.f} and {:cprj.t}
+	and 	tppdm600.ncmp inrange    :comp.f and :comp.t
+	and 	tppdm600.cprj refers to tcmcs052
+	selectdo
+		i.edrn = ""
+		select	tt_tfisg182.edrn:i.edrn
+		from	tfisg182	tt_tfisg182
+		where	tt_tfisg182.cprj = :tppdm600.cprj
+		and 	tt_tfisg182.cdte inrange :dbad.f and :dbad.t
+		and	tt_tfisg182.edrn <> ""
+		and 	tt_tfisg182.irno <> ""
+		group by tt_tfisg182.edrn
+		order by tt_tfisg182.edrn
+		selectdo 
+			if invn = tcyesno.yes and foc = tcyesno.no then
+| 				select	tfisg182.*,					|commented by Veena to pick sale Invoice from tpisg039
+| 					tdisg831.*
+| 				from	tfisg182,tdisg831
+| 				where	tfisg182.edrn = :i.edrn	
+| 				and	tfisg182.cprj = :tppdm600.cprj
+| 				and 	tfisg182.ptyp = 2
+| 				and 	tfisg182.ttyp inrange :ttyp.f and :ttyp.t
+| 				and 	tfisg182.docn inrange :docn.f and :docn.t
+| 				and 	tfisg182.ttyp <> ""
+| 				and 	tfisg182.docn <> 0
+| 				and 	tfisg182.edrn refers to tdisg831
+| 				as set with 1 rows
+| 				selectdo
+| 					get.data()
+| 					write.data()
+| 				endselect
+
+				select	tfisg182.*,					|Added by Veena on 07-08-2019 to pick sale Invoice from tpisg039
+					tdisg831.*,
+					tpisg039.*
+				from	tfisg182,tdisg831,tpisg039
+				where	tfisg182.edrn = :i.edrn	
+				and	tfisg182.cprj = :tppdm600.cprj
+				and 	tfisg182.ptyp = 2
+				and 	tpisg039.ityp inrange :ttyp.f and :ttyp.t
+				and 	tpisg039.idoc inrange :docn.f and :docn.t
+				and 	tpisg039.ityp <> ""
+				and 	tpisg039.idoc <> 0
+				and 	tfisg182.edrn refers to tdisg831
+				and 	tfisg182.edrn = tpisg039.edrn
+				and 	tfisg182.rcno = tpisg039.rcno
+				and 	tfisg182.rcln = tpisg039.rcln
+				as set with 1 rows
+				selectdo
+					get.data()
+					write.data()
+				endselect
+				
+			else 	if invn = tcyesno.no and foc = tcyesno.yes then
+					select	tfisg182.*,
+						tdisg831.*,
+						tdisg832.*
+					from	tfisg182,tdisg831, tdisg832
+					where	tfisg182.edrn = :i.edrn				
+					and 	tfisg182.cprj = :tppdm600.cprj
+					and 	tfisg182.ptyp = 2
+					and  	tdisg832.tobi = tcyesno.no 
+					and 	tfisg182.edrn refers to tdisg831					
+					and 	tfisg182.edrn = tdisg832.edrn
+					and 	tfisg182.rcno = tdisg832.rcno
+					and 	tfisg182.rcln = tdisg832.rcln
+					as set with 1 rows
+					selectdo
+						get.data()
+						write.data()
+					endselect
+				else
+					select	tfisg182.*,
+						tdisg831.*,
+						tpisg039.*
+					from	tfisg182,tdisg831, tpisg039
+					where	tfisg182.edrn = :i.edrn				
+					and 	tfisg182.cprj = :tppdm600.cprj
+					and 	tfisg182.ptyp = 2
+					and  	tpisg039.ityp = "" 
+					and  	tpisg039.idoc = 0
+					and 	tfisg182.edrn refers to tdisg831
+					and 	tfisg182.edrn = tpisg039.edrn
+					and 	tfisg182.rcno = tpisg039.rcno
+					and 	tfisg182.rcln = tpisg039.rcln
+					as set with 1 rows
+					selectdo
+						get.data()
+						write.data()
+					endselect
+				endif
+			endif
+		endselect
+	endselect
+	
+}
+
+
+function get.data()
+{
+	domain	tcdsca		reas.dsca
+	domain	tcdsca		reas.dsc2
+	domain	tcdsca		reas.dsc3
+	domain	tcdsca		reas.dsc4
+	domain	tcdsca		reas.dsc5
+	Billing.value = 0.00
+	Reason.for.return = ""
+	reas.dsca  = ""
+	reas.dsc2  = ""
+	reas.dsc3  = ""
+	reas.dsc4  = ""
+	reas.dsc5  = ""
+	if not isspace (tfisg182.reas) or
+		not isspace (tfisg182.rea2) or				
+		not isspace (tfisg182.rea3) or				
+		not isspace (tfisg182.rea4) or				
+		not isspace (tfisg182.rea5)  then
+	reason.code.description(tfisg182.reas,reas.dsca)		
+	reason.code.description(tfisg182.rea2,reas.dsc2)		
+	reason.code.description(tfisg182.rea3,reas.dsc3)		
+	reason.code.description(tfisg182.rea4,reas.dsc4)		
+	reason.code.description(tfisg182.rea5,reas.dsc5)		
+		
+	Reason.for.return = trim$(reas.dsca)&"|"&trim$(reas.dsc2)
+	Reason.for.return = Reason.for.return &"|"&trim$(reas.dsc3) &"|"&trim$(reas.dsc4) 
+	Reason.for.return = Reason.for.return &"|"&trim$(reas.dsc5)
+	endif
+	select sum(tdisg832.bivl):Billing.value
+	from	tdisg832
+	where	tdisg832._index1 = {:tdisg831.edrn}
+	selectdo
+	selectempty
+		Billing.value = 0.00
+	endselect
+	
+	Forwarded.to.Accounts.date = 0
+	select b_tfisg183.cdte:Forwarded.to.Accounts.date
+	from	tfisg183  b_tfisg183
+	where	b_tfisg183._index1 = {:tfisg182.irno,:tfisg182.rcno,:tfisg182.rcln,:tfisg182.ifbp}
+	and 	b_tfisg183.lsta = 2
+	order by b_tfisg183.cdte asc
+	as set with 1 rows
+	selectdo
+	selectempty
+		Forwarded.to.Accounts.date = 0
+	endselect
+	
+	Received.by.Accounts.date = 0
+	select a_tfisg183.cdte:Received.by.Accounts.date
+	from	tfisg183  a_tfisg183
+	where	a_tfisg183._index1 = {:tfisg182.irno,:tfisg182.rcno,:tfisg182.rcln,:tfisg182.ifbp}
+	and 	a_tfisg183.lsta = 3
+	and 	a_tfisg183.cdte >= :Forwarded.to.Accounts.date
+	order by a_tfisg183.cdte asc
+	as set with 1 rows
+	selectdo
+	selectempty
+		Received.by.Accounts.date = 0
+	endselect
+	
+	
+	
+	Returned.by.Accounts.date = 0
+	select c_tfisg183.cdte:Returned.by.Accounts.date
+	from	tfisg183  c_tfisg183
+	where	c_tfisg183._index1 = {:tfisg182.irno,:tfisg182.rcno,:tfisg182.rcln,:tfisg182.ifbp}
+	and 	c_tfisg183.lsta = 4
+	and 	c_tfisg183.cdte >= :Received.by.Accounts.date 
+	order by c_tfisg183.cdte desc
+	as set with 1 rows
+	selectdo
+	selectempty
+		Returned.by.Accounts.date = 0
+	endselect
+	
+	Re.Forwarded.to.Accounts.date = 0
+	select d_tfisg183.cdte:Re.Forwarded.to.Accounts.date
+	from	tfisg183  d_tfisg183
+	where	d_tfisg183._index1 = {:tfisg182.irno,:tfisg182.rcno,:tfisg182.rcln,:tfisg182.ifbp}
+	and 	d_tfisg183.lsta = 2
+	and 	d_tfisg183.cdte >= :Returned.by.Accounts.date
+	order by d_tfisg183.cdte desc
+	as set with 1 rows
+	selectdo
+	selectempty
+		Re.Forwarded.to.Accounts.date = 0
+	endselect
+
+	latest.Received.by.Accounts.date = 0
+	select e_tfisg183.cdte:latest.Received.by.Accounts.date
+	from	tfisg183  e_tfisg183
+	where	e_tfisg183._index1 = {:tfisg182.irno,:tfisg182.rcno,:tfisg182.rcln,:tfisg182.ifbp}
+	and 	e_tfisg183.lsta = 3
+	and 	e_tfisg183.cdte >= :Re.Forwarded.to.Accounts.date
+	order by e_tfisg183.cdte desc
+	as set with 1 rows
+	selectdo
+	selectempty
+		latest.Received.by.Accounts.date = 0
+	endselect
+}
+
+function reason.code.description(
+						domain	tcmcs.str3	i.reas,
+					ref	domain	tcdsca		i.dsca
+					)
+{
+	select 	tfisg180.dsca:i.dsca
+	from	tfisg180
+	where	tfisg180._index1 = {:i.reas}
+	selectdo
+	selectempty
+		i.dsca = ""
+	endselect
+	
+}
+
+function write.data()
+{	
+	get.irno()
+	line =	concat$("	",
+		sprintf$("%s",tppdm600.cprj),			|1
+		sprintf$("%s",trim$(tcmcs052.dsca)),		|1.1
+		sprintf$("%s",tfisg182.edrn),			|2
+		sprintf$("%s",tpisg039.ityp),			|2
+		sprintf$("%s",tpisg039.idoc),			|2
+		sprintf$("%u(%02d/%2h/%04Y)",tdisg831.frzd),	|3
+		sprintf$("%s",str$(Billing.value)),		|4
+		sprintf$("%s",hold.irno),			|5	
+		sprintf$("%u(%02d/%2h/%04Y)",Forwarded.to.Accounts.date),		|6	
+		sprintf$("%u(%02d/%2h/%04Y)",Received.by.Accounts.date),		|7	
+		sprintf$("%u(%02d/%2h/%04Y)",Returned.by.Accounts.date),		|8
+		sprintf$("%s",Reason.for.return),					|9	
+		sprintf$("%u(%02d/%2h/%04Y)",Re.Forwarded.to.Accounts.date),		|10
+		sprintf$("%u(%02d/%2h/%04Y)",latest.Received.by.Accounts.date),	|11	
+		sprintf$("%s",enum.descr$("tfisg.doc.stat",tfisg182.lsta)))		|12
+		
+		line = strip$(shiftl$(line))
+		seq.puts(line, stat.fp)
+		tfisg182.edrn = ""
+}
+
+function get.irno()
+{
+	hold.irno = ""
+	con.irno = ""
+	if invn = tcyesno.no then
+		select	tfisg182.irno:con.irno,
+			tfisg182.edrn
+		from	tfisg182,tdisg831, tpisg039
+		where	tfisg182.edrn = :tfisg182.edrn				
+		and 	tfisg182.cprj = :tppdm600.cprj
+		and 	tfisg182.ptyp = 2
+		and  	(tpisg039.ityp = "" or 	tpisg039.idoc = 0)
+		and 	tfisg182.edrn refers to tdisg831
+		and 	tfisg182.edrn = tpisg039.edrn
+		and 	tfisg182.rcno = tpisg039.rcno
+		and 	tfisg182.rcln = tpisg039.rcln
+		group by tfisg182.edrn,tfisg182.irno	
+		selectdo
+			if isspace(hold.irno) then
+				hold.irno = trim$(con.irno)
+			else
+				hold.irno = trim$(hold.irno) & "|" & trim$(con.irno)
+			endif
+		selectempty
+			con.irno = ""
+		endselect
+	else
+		select	tfisg182.irno:con.irno
+		from	tfisg182,tdisg831, tpisg039
+		where	tfisg182.edrn = :tfisg182.edrn				
+		and	tfisg182.cprj = :tppdm600.cprj
+		and 	tfisg182.ptyp = 2
+		and 	tpisg039.ityp inrange :ttyp.f and :ttyp.t
+		and 	tpisg039.idoc inrange :docn.f and :docn.t
+		and 	tpisg039.ityp <> ""
+		and 	tpisg039.idoc <> 0
+		and 	tfisg182.edrn refers to tdisg831
+		and 	tfisg182.edrn = tpisg039.edrn
+		and 	tfisg182.rcno = tpisg039.rcno
+		and 	tfisg182.rcln = tpisg039.rcln
+		selectdo
+			if isspace(hold.irno) then
+				hold.irno = trim$(con.irno)
+			else
+				hold.irno = trim$(hold.irno) & "|" & trim$(con.irno)
+			endif
+		selectempty
+			con.irno = ""
+		endselect
+	endif
+	
+
+}

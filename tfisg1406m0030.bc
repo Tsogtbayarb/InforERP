@@ -1,0 +1,324 @@
+|******************************************************************************
+|* tfisg1406m003  0  VRC B61U a7 isg 
+|* Provision Detail
+|* Paras Kukreti                     
+|* 2020-02-26
+|******************************************************************************
+|* Main table tfgld106 Finalized Transactions, Form Type 4
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttfgld106 | Finalized Transactions
+	table	ttfgld102 | NON-Finalized Transactions
+	table	ttfgld008
+	table	ttfisg055
+	
+	extern	domain	tfgld.date	date.f, date.t
+	extern	domain	tccprj		cprj.f, cprj.t	
+	extern	domain	tcemno		emno.f, emno.t		
+	extern	domain	tcyesno		nonf			
+	extern	domain	tfgld.leac	leac.f, leac.t
+	extern	domain	tcmcs.str20	i.docn,i.pdoc
+		
+		domain	tcmcs.st33	filename
+		domain	tcmcs.str215	outfile
+		domain	tcdate		current.date
+		domain	tfgld.amnt	credit.amnt
+		domain	tfgld.amnt	debit.amnt
+		domain	tfgld.amnt	blnc
+		domain	tcncmp		hold.ocmp
+		domain	tfgld.leac	hold.leac
+	
+			string 		header1(1024)
+			
+			string		final.str(2048)
+			long		out.fp			|Output File
+			long		close.out.fp
+			long		ret
+
+#include <bic_tt>
+#include <bic_dam>
+#pragma used dll        ottdllbw
+
+#define DEL	  ","
+|****************************** program section ********************************
+before.program:
+	date.t = date.num()
+	display("date.t")
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+	get.screen.defaults()
+	date.t = date.num()
+	display("date.t")
+
+|****************************** choice section ********************************
+
+choice.cont.process:
+on.choice:
+   execute(print.data)
+
+choice.print.data:
+on.choice:
+       read.main.table()
+
+|****************************** field section *********************************
+
+field.leac.f:
+when.field.changes:
+	leac.t = leac.f
+
+field.date.f:
+when.field.changes:
+	date.t = date.f
+	
+field.cprj.f:	
+when.field.changes:
+	cprj.t = cprj.f
+
+field.emno.f:
+when.field.changes:
+	emno.t = emno.f
+
+|****************************** function section *******************************
+functions:
+
+function read.main.table()
+{
+	current.date = utc.num()
+
+	outfile = creat.tmp.file$(bse.tmp.dir$())
+	out.fp = open.ascii.file(outfile, "w")
+	
+	if out.fp < 1  then
+		choice.again()
+	else
+		create.provision.header()
+		export.provision.flat.file()
+		close.out.fp = close.ascii.file(out.fp)
+		if close.out.fp <> 0  then
+			message("Error in closing Input File")
+			choice.again()
+		endif
+	endif
+	
+	export.output.to.excel.file()
+	ret = file.rm(outfile)
+}
+
+function create.provision.header()
+{
+	header1 = concat$( DEL, "Co. No.",
+				"Ledger",
+				"Batch no.",
+				"Transaction Date",
+				"Document Type",
+				"Document No.",
+				"Project",
+				"Employee",
+				"Currency",
+				"Amount in FC",
+				"Amount in INR (Debit)",
+				"Amount in INR (Credit)",
+				"Balance",
+				"Reference"
+					  )
+	ret = seq.puts(header1, out.fp)
+}
+
+function export.provision.flat.file()
+{
+	blnc = 0
+	select	tfgld106.*
+	from	tfgld106
+	where	tfgld106._index3 inrange {:leac.f} and {:leac.t}
+	and	tfgld106.dcdt inrange :date.f and :date.t
+	and	tfgld106.dim3 inrange :emno.f and :emno.t
+	and	tfgld106.dim1 inrange :cprj.f and :cprj.t
+	order by tfgld106.ocmp, tfgld106.leac, tfgld106.tedt
+	selectdo
+		if (hold.ocmp <> tfgld106.ocmp or hold.leac <> tfgld106.leac) then
+			blnc = 0
+		endif
+		hold.ocmp = tfgld106.ocmp
+		hold.leac = tfgld106.leac
+		select	a_tfisg055.leac
+		from	tfisg055 a_tfisg055
+		where	a_tfisg055._index1 = {:tfgld106.leac}
+		as set with 1 rows
+		selectdo
+			if tfgld106.dbcr = tfgld.dbcr.debit then
+				debit.amnt = tfgld106.amth(1)
+				credit.amnt = 0
+			else
+				credit.amnt = tfgld106.amth(1)
+				debit.amnt = 0
+			endif
+			search.and.replace.comma.char(tfgld106.refr, tfgld106.refr)
+			blnc = blnc  + debit.amnt - credit.amnt
+			final.str  = concat$( DEL,	strip$(str$(tfgld106.ocmp)),
+							strip$(str$(tfgld106.leac)),
+							strip$(str$(tfgld106.obat)),
+							sprintf$("%D(%02d/%02m/%04Y)", tfgld106.tedt),
+							strip$(str$(tfgld106.otyp)),
+							strip$(str$(tfgld106.odoc)),
+							strip$(str$(tfgld106.dim1)),
+							strip$(str$(tfgld102.dim3)),
+							strip$(str$(tfgld106.ccur)),
+							strip$(str$(tfgld106.amnt)),
+							strip$(str$(debit.amnt)),
+							strip$(str$(credit.amnt)),
+							strip$(str$(blnc)),
+							strip$(str$(tfgld106.refr)))
+	| 						enum.descr$("tfcash.flow", tfisg041.ctyp))	
+			write.record.to.file()
+		endselect
+		if nonf = tcyesno.yes then
+			select	tfgld102.*
+			from	tfgld102
+			where	tfgld102._index1 = {:tfgld106.ocmp, 
+				:tfgld106.oyer, :tfgld106.obat, :tfgld106.otyp,
+				:tfgld106.odoc, :tfgld106.olin, :tfgld106.osrl, 
+				:tfgld106.osrn}
+			selectdo
+				select	b_tfisg055.leac
+				from	tfisg055 b_tfisg055
+				where	b_tfisg055._index1 = {:tfgld102.leac}
+				as set with 1 rows
+				selectdo
+					if tfgld102.dbcr = tfgld.dbcr.debit then
+						debit.amnt = tfgld102.amth(1)
+						credit.amnt = 0
+					else
+						credit.amnt = tfgld102.amth(1)
+						debit.amnt = 0
+					endif
+					blnc = blnc  + debit.amnt - credit.amnt
+					search.and.replace.comma.char(tfgld102.refr, tfgld102.refr)
+					final.str  = concat$( DEL,	strip$(str$(tfgld102.cono)),
+									strip$(str$(tfgld102.leac)),
+									strip$(str$(tfgld102.btno)),
+									sprintf$("%D(%02d/%02m/%04Y)", tfgld102.tedt),
+									strip$(str$(tfgld102.ttyp)),
+									strip$(str$(tfgld102.docn)),
+									strip$(str$(tfgld102.dim1)),
+									strip$(str$(tfgld102.dim3)),
+									strip$(str$(tfgld102.ccur)),
+									strip$(str$(tfgld102.amnt)),
+									strip$(str$(debit.amnt)),
+									strip$(str$(credit.amnt)),
+									strip$(str$(blnc)),
+									strip$(str$(tfgld102.refr)))
+					write.record.to.file()
+				endselect
+			endselect
+		endif
+	endselect
+}
+
+function write.record.to.file()
+{
+	long ret
+	
+	ret = seq.puts(final.str, out.fp)
+}
+
+function extern domain tcmcs.long close.ascii.file(long file.fp)
+{
+	domain	tcmcs.long	close.file.fp
+
+	close.file.fp =seq.close(file.fp)
+	if close.file.fp <> 0 then
+		message("Error In Closing File")
+		|* Error In Closing File
+		return(-1)
+	endif
+	return(0)
+}
+
+function export.output.to.excel.file()
+{
+	domain	tcmcs.str20	date.time.stamp
+	long 	dummy.ret, i
+	long	temp.file.size
+	long	file.present
+	
+	string	o.file.name(100)
+	
+	date.time.stamp = sprintf$("%u(%04Y%02m%02d)_%U(%02h%02m%02s)", current.date , current.date)
+	
+	filename = "ProvisionDetail_Excel_Data_"&strip$(date.time.stamp)
+	
+	o.file.name = "C:\temp\" & filename
+	dummy.ret = server2client(outfile,o.file.name & ".csv",true)
+						
+	if dummy.ret = 0 then
+		file.present = seq.fstat.local(o.file.name & ".csv", temp.file.size)
+		if file.present < 0 then
+			for i = 1 to 10
+				file.present = seq.fstat.local(o.file.name & ".csv", temp.file.size)
+				if file.present >= 0 then
+					break
+				else
+				endif
+			endfor
+		endif
+		e = app_start(o.file.name & ".csv","","","","")
+	endif					
+}
+
+function domain tcmcs.long open.ascii.file(domain tcmcs.str100  file.name,
+					   domain tcmcs.str1    open.mode)
+{
+	domain	tcmcs.long	fp
+
+	fp = seq.open(file.name, open.mode)
+
+	if fp < 1 then
+		message("Error In Opening File")
+		|* Error In Opening File
+		return(-1)
+	endif
+	return(fp)
+}
+
+function search.and.replace.comma.char(string  i.txt.str(1024),	
+				ref  string  o.txt.str)		
+{
+                long       	tab.count
+                long       	str.len
+		string		str.text(1024)	, hold.text(1024)		
+	domain  tcmcs.long      tab.pos
+	
+	str.len = 0
+	str.text = ""
+                
+	str.text = trim$(i.txt.str)
+	hold.text = str.text
+	str.len = len(str.text)
+                
+	tab.pos = pos(str.text , chr$(44))
+                
+	if tab.pos = 0  then
+		o.txt.str = trim$(str.text)
+		return
+	endif
+
+	for tab.count = 1 to str.len
+		tab.pos = pos(str.text , chr$(44))
+                if tab.pos >= 1 then
+			str.text = str.text(1;tab.pos - 1)
+                else
+                        break
+                endif
+                                
+                if tab.pos < str.len then
+                        str.text = str.text & chr$(59) & hold.text(tab.pos + 1;str.len)
+                endif
+	endfor
+	
+        o.txt.str = trim$(str.text)
+}

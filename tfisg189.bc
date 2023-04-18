@@ -1,0 +1,255 @@
+|******************************************************************************
+|* tfisg189  0  VRC B61U a7 isg 
+|* dal2 for payment request
+|* merino1
+|* 16-07-16 [18:07]
+|******************************************************************************
+|* Script Type: DAL
+|*
+|* ID ISGEC01043, Dharmendra, 23-07-2016
+|*
+|* ID ISGEC016007, Manish Manchanda, 2016-08-31
+|* Modifications - BP code inactive check.
+|*
+|* ID ISGEC016010, Manish Manchanda, 2016-09-26
+|* Modifications - Retention condition to be checked in case of Payment Request
+|*
+|* ID ISGEC01050, Priya Jindal, 13/3/2018
+|* Changes in conditions for data population
+|* 
+|* GH608CR935, RAvi Kumar, 19-07-2021
+|* Add Payment Information in Quick Payment session after Process of Payment
+|******************************************************************************
+                                                                                
+#include <bic_dal2>
+	table	ttfisg189
+	table	ttfisg185
+	table	ttfisg000
+	table	ttfmsl020								|#ISGEC016010.n
+	table	ttccom100								|GH608CR935.a
+	long ret_val
+	extern domain tcorno	hold.orno
+
+function extern long before.open.object.set()
+{
+	tcmcs.dll0095.read.parm("tfisg000")
+	dal.field.depends.on("tfisg189.adrq", HOOK_IS_APPLICABLE ,
+				"tfisg189.type")
+	dal.field.depends.on("tfisg189.orno", HOOK_IS_DERIVED ,
+				"tfisg189.type")		
+	return(0)
+}
+function extern long before.new.object()
+{
+	tfisg189.pyad = ""
+	tfisg189.bpid = ""
+	tfisg189.adrq = ""
+	return(0)
+}
+
+function extern long before.save.object(long type)
+{
+	dal.start.business.method("tfisg185","set.purchase.order",ret_val,hold.orno)	
+	if type = DAL_NEW then
+		if generate.invoice.payment.request()	then
+			show.dal.messages(MSG.ALL)
+			return(DALHOOKERROR)
+		endif
+		
+		dal.start.business.method("tfisg185","populate.data.dal",ret_val,tfisg189.bpid,tfisg189.adrq,tfisg189.type,tfisg189.iprq)
+		if ret_val <> 0 then
+			return(DALHOOKERROR)
+		endif
+		if isspace(tfisg189.bpid) then
+			select tfisg185.bpid:tfisg189.bpid from tfisg185
+			where tfisg185._index1 = {:tfisg189.iprq}
+			as set with 1 rows
+			selectdo
+			endselect
+		endif
+		
+	endif
+	return(0)
+}
+function long	generate.invoice.payment.request()
+{
+	tfisg189.iprq	=	tfisg000.qser		
+	if not tcmcs.dll0050.check.and.generate.order.number(	
+				3, tfisg189.iprq, tfisg000.qngr, 
+				9, tfisg000.qser) then			
+		tfisg189.user = logname$	
+	else
+		return(1)
+	endif	
+	return(0)
+}
+function extern boolean method.is.allowed(long		i.method)
+{
+	on case i.method
+		case DAL_NEW:
+		break
+	case DAL_UPDATE:
+		if tfisg189.proc = tcyesno.yes then
+			return(false)
+		endif
+		break
+	case DAL_DESTROY:
+		if tfisg189.proc = tcyesno.yes then
+			return(false)
+		endif
+		break
+	endcase
+
+	return(true)
+}
+								|# ISGEC01043.sn
+function extern boolean select.all.is.allowed()
+{
+	if tfisg189.proc = tcyesno.yes then
+		return(false)
+	endif
+	return(true)
+}
+
+function extern boolean deselect.all.is.allowed()
+{
+	if tfisg189.proc = tcyesno.yes then
+		return(false)
+	endif
+	return(true)
+}
+
+								|# ISGEC01043.en
+function extern boolean tfisg189.adrq.is.mandatory()
+{
+	if tfisg189.type = tfisg.tran.paym then
+		dal.set.error.message("@Please Enter Payment Request...")
+		return(true)
+	endif
+		
+	return(false)
+}
+function	extern	boolean	tfisg189.adrq.is.applicable(long	type)
+{
+	on	case	tfisg189.type
+	case	tfisg.tran.paym:
+	case	tfisg.tran.payi:
+		return(true)
+		break
+	endcase
+	return(false)
+}
+
+function extern boolean tfisg189.adrq.is.valid()
+{
+	if not isspace(tfisg189.bpid) then
+		select	tfmsl020.adrq
+			,tfmsl020.optn									|#ISGEC016010.n
+		from	tfmsl020
+		where	tfmsl020._index1 = {:tfisg189.adrq}
+| 		and	tfmsl020.stat = tfmsl.lc.stat.sfin				|ISGEC01050.o
+		and	tfmsl020.stat = tfmsl.lc.stat.veri				|ISGEC01050.n
+		and	tfmsl020.bpid = :tfisg189.bpid
+		and	tfmsl020.ackn = tfmsl.ackn.receive
+| 		and 	tfmsl020.optn <> tfoption.retention						|#ISGEC016010.o
+		selectdo
+			if	tfisg189.type	=	tfisg.tran.paym		and			|#ISGEC016010.sn
+				tfmsl020.optn	=	tfoption.retention	then			
+				return(false)
+			endif										|#ISGEC016010.en
+		selectempty
+			return(false)
+		endselect
+	else
+		select	tfmsl020.adrq
+			,tfmsl020.optn									|#ISGEC016010.n
+		from	tfmsl020
+		where	tfmsl020._index1 = {:tfisg189.adrq}
+| 		and	tfmsl020.stat = tfmsl.lc.stat.sfin					|ISGEC01050.o
+		and	tfmsl020.stat = tfmsl.lc.stat.veri					|ISGEC01050.n
+		and	tfmsl020.ackn = tfmsl.ackn.receive
+| 		and 	tfmsl020.optn <> tfoption.retention						|#ISGEC016010.o
+		selectdo
+			if	tfisg189.type	=	tfisg.tran.paym		and			|#ISGEC016010.sn
+				tfmsl020.optn	=	tfoption.retention	then			
+				return(false)
+			endif										|#ISGEC016010.en
+		selectempty
+			return(false)
+		endselect	
+	endif
+	return(true)
+
+}
+
+
+function	extern	boolean	tfisg189.orno.is.derived(long	type)
+{
+	on	case	tfisg189.type
+	case	tfisg.tran.paym:		
+	case	tfisg.tran.payi:
+		return(true)
+		break
+	endcase
+	return(false)
+}
+function	extern	boolean	tfisg189.bpid.is.mandatory(long	type)
+{
+	if ((tfisg189.type = tfisg.tran.paym) or (tfisg189.type = tfisg.tran.payi) and isspace(tfisg189.bpid)) then
+	else
+		if isspace(tfisg189.bpid) then
+			if not isspace(tfisg189.adrq)	then						
+			else										
+				dal.set.error.message("@Business Partner is mandatory")
+				return(true)
+			endif										
+		endif		|
+	endif
+	return(false)
+}
+										|#ISGEC016007.sn
+function	extern	boolean	tfisg189.bpid.is.valid(long	type)
+{
+	if	not	isspace(tfisg189.bpid)	then
+| 		select	tccom100.prst
+| 		from	tccom100
+| 		where	tccom100._index1	=	{:tfisg189.bpid}
+| 		and	tccom100.prst		=	tccom.prst.active
+| 		as	set with 1 rows
+| 		selectdo
+| 			return(true)
+| 		endselect
+| 		return(false)
+
+		select	tccom100.prst,								|GH608CR935.a.s
+			tccom100.endt
+		from	tccom100
+		where	tccom100._index1 = {:tfisg189.bpid}
+		as set with 1 rows
+		selectdo
+			if tccom100.prst = tccom.prst.inactive then
+				dal.set.error.message("@BP is not active")
+				return(DALHOOKERROR)
+			endif
+			
+			if tccom100.endt <> 0 then
+				if tccom100.endt < utc.num() then
+					dal.set.error.message("@BP is expired")
+					return(DALHOOKERROR)
+				endif	
+			endif
+		endselect									|GH608CR935.a.e
+	endif
+	return(true)
+}		
+										|#ISGEC016007.en
+
+function extern long before.destroy.object()
+{
+	select tfisg185.* from tfisg185 for update
+	where tfisg185._index1 = {:tfisg189.iprq}
+	selectdo
+		db.delete(ttfisg185,db.retry)
+	endselect
+	return(0)
+}

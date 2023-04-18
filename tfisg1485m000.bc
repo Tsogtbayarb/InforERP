@@ -1,0 +1,2119 @@
+|******************************************************************************
+|* tfisg1485m000  0  VRC B61U a7 isg 
+|* STATUS OF PURCHASE ORDER
+|* tv0001                       
+|* 2020-08-10
+|******************************************************************************
+|* Main table tfisg185, Form Type 4
+|******************************************************************************
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttfisg185	|* Payments Process
+	table	ttfacp251	|* Invoices Related To Purchase Receipt Lines
+	table	ttfacp100	|* Received Purchase Invoices
+	table	ttfacp200	|* Open Items (Purchase Invoices &amp; Payments)
+	table	ttcmcs052	|* Projects
+	table	ttdpur400	|* Purchase Orders
+	table	ttccom100	|* Business Partners
+	table	ttfacp245	|* Receipts
+	table	ttfcmg101	|* Payment/Trade Notes Payable Advice
+	table	ttfgld018	|* Documents
+	table	ttfacp203	|* Withholding Tax Amounts
+	
+	
+	table	ttdpur401	|* Purchase Order Lines
+	table	ttcmcs036	|* Tax Codes by Country
+	table	ttcmcs041	|* Delivery Terms
+	table	ttctax941	|* Aggregate Taxes
+	table	ttcemm030	|* Enterprise Units
+	table	ttdpur406	|* Purchase Actual Receipts
+	table	ttfmsl020	|* Advance Request
+	table	ttfcmg100	|* Check Master
+	table	ttfcmg110	|* Anticipated Payments/Receipts
+	table	ttfgld112	|* Relation Intercompany Documents
+	
+| 	
+	extern	domain	tcorno		orno.f
+	extern	domain	tccom.bpid	otbp.f
+	extern	domain	tcccur		ccur.f
+	extern	domain	tcncmp		comp.f, comp.t
+		domain	tcncmp		curr.comp,m.lcmp
+	
+	string	err.file(100), file.name(100), line(1500)
+		long  	stat.fp, ret2,pur.booking.batch,pay.booking.batch
+		
+	domain tfgld.amnt prt.amnt.inr
+	domain tfgld.amnt tds.amnt.fc,tds.amnt.inr
+	domain tfgld.amnt tds.amnt.fc1,tds.amnt.inr1,tds.amnt.inr2,tds.amnt.fc2
+	domain tfgld.amnt prevbal.amnt.fc,prevbal.amnt.inr
+	
+	domain tfgld.amnt tds.amnt,ptr.amnt.fc,	ptr.amnt.inr,paid.amnt.fc,paid.amnt.inr, bal.amnt.fc, bal.amnt.inr 
+	domain	tcpvat		rate	
+	extern domain tctax.layr.l	layer.temp1,layer.temp2			
+	extern domain tfgld.amnt all.line.total.tax.amount,rect.amnt,line.tax.amnt,rect.gross.amnt
+
+	
+	extern domain tcmcs.str1	print.line
+	extern	domain	tcorno	pay.req.rep		|RAvi.a
+	long sr.no ,m.srno
+	
+	
+|| for totals
+domain tfgld.amnt tot.tds.amnt.fc,						
+tot.tds.amnt.inr,						
+tot.ptr.amnt.fc,							
+tot.ptr.amnt.inr,								
+tot.paid.amnt.fc,						
+tot.paid.amnt.inr,						
+tot.bal.amnt.fc	,					
+tot.bal.amnt.inr,						
+tot.basic.amnt,
+tot.gross.amnt
+
+
+||
+
+
+extern domain tfgld.amnt tot.amti,tot.amth
+
+	extern	domain	tcamnt	o.kkcess.rate					
+	extern	domain	tcamnt	sgst.amnt, tot.sgst, ind.sgst, sgst.rate,	
+				cess.amnt, cess.rate				
+	extern	domain	tcamnt	cgst.amnt, tot.cgst, ind.cgst, cgst.rate	
+	extern	domain	tcamnt	igst.amnt, tot.sgst, ind.igst, igst.rate	
+	extern	domain	tcamnt	ind.exc,ind.stx,ind.oth1,ind.oth2,ind.bas
+	extern	domain	tcamnt	tot.oth.stx,oth.stx,oth.exc	
+	domain	tcamnt	sgst.rate.t, sgst.amnt.t, utgs.rate.t, utgs.amnt.t
+	extern	domain	tcamnt	iamt.m,exc.amnt,exc.rate,stx.rate,
+				stx.amnt,tot.amnt,oth.chg1,oth.chg2
+	extern	domain	tcamnt	tot.exc,tot.stx,tot.oth1,tot.oth2,tot.bas,cess						
+	extern  domain	tcdsca	Particulars.dsca
+	domain tfgld.btno m.btno
+
+	#pragma used dll ottdllbw
+
+
+|****************************** program section ********************************
+before.program:
+	curr.comp = get.compnr()
+	select tcemm030.lcmp:m.lcmp
+	from tcemm030
+	where tcemm030.fcmp =:curr.comp
+	as set with 1 rows
+	selectdo
+	selectempty
+		m.lcmp=0
+	endselect
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+	get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.print.report:
+on.choice:
+	generate.file()
+
+|****************************** field section *********************************
+
+field.orno.f:
+when.field.changes:
+	
+select tdpur400.orno,tdpur400.otbp,tdpur400.ccur,tdpur400.oamt,tccom100.nama
+from tdpur400,tccom100
+where tdpur400._compnr =:m.lcmp
+and tdpur400._index1={:orno.f}
+and tdpur400.otbp refers to tccom100
+selectdo
+	otbp.f = tdpur400.otbp	
+	ccur.f = tdpur400.ccur
+selectempty
+endselect
+
+
+check.input:	
+| all.line.total.tax.amount=0
+select tdpur400.orno,tdpur400.otbp,tdpur400.ccur,tdpur400.oamt,tccom100.nama
+from tdpur400,tccom100
+where tdpur400._compnr =:m.lcmp
+and tdpur400._index1={:orno.f}
+and tdpur400.otbp refers to tccom100
+selectdo
+	otbp.f = tdpur400.otbp	
+	ccur.f = tdpur400.ccur
+| 	get.tax.value()
+selectempty
+	
+	message("Order Not found, Please Enter Correct Order No.",e)
+	set.input.error("")
+	|*   ???
+	
+endselect
+
+
+
+field.otbp.f:
+before.display:
+	otbp.f = tdpur400.otbp	
+
+
+field.ccur.f:
+before.display:
+ccur.f = tdpur400.ccur
+	
+
+	
+| when.field.changes:
+| 	docn.t = docn.f
+| 	
+| 	
+| field.docn.t:
+| before.zoom:
+| 	tfgld018.ttyp = ttyp.t
+| 	
+| 	
+| field.fyer.f:
+| when.field.changes:
+| 	fyer.t = fyer.f
+| 	
+| 	
+| field.fprd.f:
+| when.field.changes:
+| 	fprd.t = fprd.f
+
+| field.comp.f:
+| when.field.changes:
+| 	comp.t = comp.f
+
+
+|****************************** function section ******************************
+
+functions:
+
+function generate.file()
+{
+	err.file = bse.dir$() & str$(utc.num()) & ".xls"
+	
+	file.name = "c:\temp\" & str$(utc.num())  & ".xls"
+	
+	stat.fp = seq.open(err.file, "w+")
+	generate.header()
+	read.main.table()
+	
+	message("Please refer to file %s in C:", file.name)
+	
+	seq.close(stat.fp)
+	ret2 = server2client(err.file,file.name,1)
+	ret2 = app_start(file.name,"c:","","","")
+}
+
+
+
+function generate.header()
+{
+
+select tfisg185.cprj,tcmcs052.dsca
+from tfisg185,tcmcs052
+where tfisg185._index2={:orno.f}
+and tfisg185.cprj refers to tcmcs052
+selectdo
+selectempty
+	
+	select tdpur401.cprj,tcmcs052.dsca
+	from tdpur401,tcmcs052
+	where tdpur401._compnr =:m.lcmp
+	and tdpur401._index1={:orno.f}
+	and tdpur401.cprj <> ""
+	and tdpur401.cprj refers to tcmcs052	 
+	as set with 1 rows
+	selectdo
+		tfisg185.cprj = tdpur401.cprj
+		
+	selectempty	
+		tcmcs052.dsca=""
+		tfisg185.cprj=""
+		
+	endselect
+endselect
+
+
+
+if stat.fp >0 then
+		
+| 		line =concat$("	", 								|RAvi.a.cng.s.10092020
+| 			sprintf$("PO NO"),					|1						
+| 			sprintf$("%s", orno.f),					|2
+| 			sprintf$("PROJECT"),					|3
+| 			sprintf$("%s",tfisg185.cprj ),				|4
+| 			sprintf$("%s",tcmcs052.dsca),				|5
+| 			sprintf$("Supplier"),					|6
+| 			sprintf$("%s", otbp.f),					|7
+| 			sprintf$("%s",tccom100.nama),				|8
+| 			sprintf$("%s",""))					|Last
+| 	
+| 		line = strip$(shiftl$(line))
+| 		seq.puts(line, stat.fp)
+		seq.puts("<table border = ""1"">", stat.fp)
+		seq.puts("<tr>", stat.fp)
+		seq.puts("<td align = ""center"" nowrap><b>PO NO</b></td>", stat.fp)
+		seq.puts("<td align = ""center"" nowrap><b>" & orno.f & "</b></td>", stat.fp)
+		seq.puts("<td align = ""center"" nowrap><b>PROJECT</b></td>", stat.fp)
+		seq.puts("<td align = ""center"" nowrap><b>" & tfisg185.cprj & "</b></td>", stat.fp)
+		seq.puts("<td align = ""center"" nowrap><b>" & tcmcs052.dsca & "</b></td>", stat.fp)
+		seq.puts("<td align = ""center"" nowrap><b>Supplier</b></td>", stat.fp)
+		seq.puts("<td align = ""center"" nowrap><b>" & otbp.f & "</b></td>", stat.fp)
+		seq.puts("<td align = ""center"" nowrap><b>" & tccom100.nama & "</b></td>", stat.fp)
+		seq.puts("</tr>", stat.fp)
+		seq.puts("</table>", stat.fp)							|RAvi.a.cng.e.10092020
+	endif
+	generate.header2()
+}
+
+function generate.header2()
+{
+
+	all.line.total.tax.amount=0
+	get.tax.value()
+
+	if stat.fp >0 then
+		
+| 		line =concat$("	", 									|RAvi.a.cng.s.10092020
+| 		sprintf$("PO Value(Basic)"),						|1
+| 		sprintf$("%s",str$(tdpur400.oamt)),					|2
+| 		sprintf$("%s",tdpur400.ccur),						|3
+| 		sprintf$("PO Value(Gross)"),						|4
+| 		sprintf$("%s",str$(tdpur400.oamt+all.line.total.tax.amount)),		|5
+| 		sprintf$(""),								|6
+| 		sprintf$(""),								|7
+| 		sprintf$(""),								|8
+| 		sprintf$(""))								|Last
+| 	
+| 		line = strip$(shiftl$(line))
+| 		seq.puts(line, stat.fp)
+		seq.puts("<table border = ""1"">", stat.fp)
+		seq.puts("<tr>", stat.fp)
+		seq.puts("<td align = ""center"" nowrap><b>PO Value(Basic)</b></td>", stat.fp)
+		seq.puts("<td align = ""center"" nowrap><b>" & str$(tdpur400.oamt) & "</b></td>", stat.fp)
+		seq.puts("<td align = ""center"" nowrap><b>" & tdpur400.ccur & "</b></td>", stat.fp)
+		seq.puts("<td align = ""center"" nowrap><b>PO Value(Gross)</b></td>", stat.fp)
+		seq.puts("<td align = ""center"" nowrap><b>" & str$(tdpur400.oamt + all.line.total.tax.amount) & "</b></td>", stat.fp)
+		seq.puts("</tr>", stat.fp)
+		seq.puts("</table>", stat.fp)								|RAvi.a.cng.e.10092020
+	endif				
+	generate.header3()
+}
+
+
+
+function generate.header3()
+{
+	if stat.fp >0 then
+		
+| 		line =concat$("	", 									|RAvi.a.cng.s.10092020
+| 			sprintf$("IR No."),					|1
+| 			sprintf$("Particulars"),				|2
+| 			sprintf$("WH/PUR Receipt No"),				|3
+| 			sprintf$("Receipt Date"),				|4
+| 			sprintf$("Recipt Amt (Basic)"),				|5
+| 			sprintf$("Recipt Amt (Gross)"),				|6
+| 			sprintf$("Payment Advice No."),				|7
+| 			sprintf$("Bank Voucher No."),				|8
+| 			sprintf$("Date"),					|9
+			|sprintf$("Financial Batch No"),				|10
+| 			sprintf$("Payment Fin. Batch"),				|10
+| 			sprintf$("Pur Booking Batch"),				|
+| 			sprintf$("Purchase Document No"),			|11
+| 			sprintf$("Document Date"),				|12
+| 			sprintf$("TDS Amount (FC)"),				|13
+| 			sprintf$("TDS Amount INR"),				|14
+| 			sprintf$("PTR Amount (In FC)"),				|15
+| 			sprintf$("PTR Amount (In INR)"),			|16
+| 			sprintf$("Amount Paid in (FC)"),				|17
+| 			sprintf$("Amount Paid"),				|18
+| 			sprintf$("Balance (FC)"),					|19
+| 			sprintf$("Balance (INR)"),					|20
+| 			sprintf$(""))						|Last
+	
+| 		line = strip$(shiftl$(line))
+| 		seq.puts(line, stat.fp)
+
+		seq.puts("<table border = ""1"">", stat.fp)
+		seq.puts("<tr>", stat.fp)
+		seq.puts("<td align = ""center"" nowrap><b>IR No.</b></td>", stat.fp)					|1		
+		seq.puts("<td align = ""center"" nowrap><b>Particulars</b></td>", stat.fp)				|2
+		seq.puts("<td align = ""center"" nowrap><b>WH/PUR Receipt No</b></td>", stat.fp)			|3
+		seq.puts("<td align = ""center"" nowrap><b>Receipt Date</b></td>", stat.fp)				|4
+		seq.puts("<td align = ""center"" nowrap><b>Recipt Amt (Basic)</b></td>", stat.fp)			|5
+		seq.puts("<td align = ""center"" nowrap><b>Recipt Amt (Gross)</b></td>", stat.fp)			|6
+		seq.puts("<td align = ""center"" nowrap><b>Payment Request</b></td>", stat.fp)				|7
+		seq.puts("<td align = ""center"" nowrap><b>Payment Advice No.</b></td>", stat.fp)			|8
+		seq.puts("<td align = ""center"" nowrap><b>Bank Voucher No.</b></td>", stat.fp)				|9
+		seq.puts("<td align = ""center"" nowrap><b>Date</b></td>", stat.fp)					|10
+| 		seq.puts("<td align = ""center"" nowrap><b>Financial Batch No</b></td>", stat.fp)					|10
+| 		seq.puts("<td align = ""center"" nowrap><b>Pur Booking Batch</b></td>", stat.fp)					|10
+		seq.puts("<td align = ""center"" nowrap><b>Purchase Document No</b></td>", stat.fp)			|11
+		seq.puts("<td align = ""center"" nowrap><b>Document Date</b></td>", stat.fp)			|12
+		seq.puts("<td align = ""center"" nowrap><b>TDS Amount (FC)</b></td>", stat.fp)			|13
+		seq.puts("<td align = ""center"" nowrap><b>TDS Amount INR</b></td>", stat.fp)			|14
+		seq.puts("<td align = ""center"" nowrap><b>PTR Amount (In FC)</b></td>", stat.fp)			|15
+		seq.puts("<td align = ""center"" nowrap><b>PTR Amount (In INR)</b></td>", stat.fp)			|16
+		seq.puts("<td align = ""center"" nowrap><b>Amount Paid in (FC)</b></td>", stat.fp)			|17
+		seq.puts("<td align = ""center"" nowrap><b>Amount Paid</b></td>", stat.fp)			|18
+		seq.puts("<td align = ""center"" nowrap><b>Balance (FC)</b></td>", stat.fp)			|19
+		seq.puts("<td align = ""center"" nowrap><b>Balance (INR)</b></td>", stat.fp)			|20
+		seq.puts("</tr>", stat.fp)
+		seq.puts("</table>", stat.fp)								|RAvi.a.cng.e.10092020
+	endif
+}
+
+|* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+function read.main.table()
+{
+
+	tot.tds.amnt.fc	=0					
+	tot.tds.amnt.inr=0						
+	tot.ptr.amnt.fc	=0							
+	tot.ptr.amnt.inr=0								
+	tot.paid.amnt.fc=0						
+	tot.paid.amnt.inr=0						
+	tot.bal.amnt.fc	=0					
+	tot.bal.amnt.inr=0						
+	tot.basic.amnt=0
+	tot.gross.amnt=0
+	rect.amnt =0
+
+
+	print.payment.details()
+	print.receipt.details()
+	print.creditnote.details()	
+	print.receipt.matched.details()
+	print.total()
+	
+}
+
+
+|* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+
+|* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+function print.payment.details()
+{
+
+
+	
+prevbal.amnt.fc =0
+prevbal.amnt.inr =0
+tds.amnt =0
+ptr.amnt.fc =0
+ptr.amnt.inr =0
+paid.amnt.fc =0
+paid.amnt.inr =0
+bal.amnt.fc =0
+bal.amnt.inr  =0
+tds.amnt.fc1  =0
+tds.amnt.fc2 =0
+tds.amnt.inr1  =0
+tds.amnt.inr2  =0
+
+
+
+select  tfacp200.*
+from tfacp200
+| where tfacp200._index1={:tfacp251.ityp,:tfacp251.idoc}
+where  tfacp200.tdoc =""
+and  tfacp200.tpay in(11,12)
+and tfacp200.cdf_prno =:orno.f
+and tfacp200.cdf_cprj =:tfisg185.cprj
+selectdo
+	tot.amth =abs(tfacp200.amth(1))
+	tot.amti =abs(tfacp200.amti)
+	Particulars.dsca = enum.descr$("tfacp.tpay", tfacp200.tpay, "2")
+	
+	
+||tv.rss.05092020
+
+select tfgld112.cono,tfgld112.ttyp,tfgld112.docn
+from tfgld112
+where tfgld112._index2={:curr.comp,:tfacp200.ttyp ,:tfacp200.ninv}
+selectdo
+
+
+	select tfgld018.year,tfgld018.btno
+	from tfgld018
+	where tfgld018._compnr=:tfgld112.cono
+	and tfgld018._index1={:tfgld112.ttyp,:tfgld112.docn}
+	selectdo
+		
+		select tfcmg110.bank,tfcmg110.paym,tfcmg110.cheq
+		from tfcmg110
+		where tfcmg110._compnr=:tfgld112.cono
+		and tfcmg110._index3={:tfgld018.year,:tfgld018.btno,:tfgld112.ttyp,:tfgld112.docn}
+		selectdo
+			
+		selectempty
+			tfcmg100.pbtn=0
+		endselect
+		
+		select tfcmg100.chst,tfcmg100.pbtn
+		from tfcmg100
+		where tfcmg100._compnr=:tfgld112.cono
+		and tfcmg100._index1={:tfcmg110.bank,:tfcmg110.paym,:tfcmg110.cheq}
+		and tfcmg100.chst<>6			
+		selectdo
+			get.data.for.print()
+		selectempty
+			tfcmg100.pbtn=0
+		endselect
+
+	endselect
+
+
+selectempty
+	
+		tfgld112.ttyp =tfacp200.ttyp
+		tfgld112.docn =tfacp200.ninv
+
+		select tfcmg110.bank,tfcmg110.paym,tfcmg110.cheq
+		from tfcmg110
+		where tfcmg110._index3={:tfacp200.year,:tfacp200.btno,:tfacp200.ttyp,:tfacp200.ninv}
+		selectdo
+			
+			select tfcmg100.chst,tfcmg100.pbtn
+			from tfcmg100
+			where tfcmg100._index1={:tfcmg110.bank,:tfcmg110.paym,:tfcmg110.cheq}
+			and tfcmg100.chst<>6
+			selectdo
+				
+				
+| 				get.data.for.print()
+			selectempty
+				if m.srno =1 then
+					m.srno =0
+				endif
+				
+				tfcmg100.pbtn=0
+			endselect
+		selectempty
+			tfcmg100.pbtn=0
+		endselect
+	get.data.for.print()		
+endselect
+||tv.rss.05092020	
+	
+
+
+endselect
+
+
+}
+
+
+function get.data.for.print()
+{
+
+
+| 	select  tfcmg110.*
+| 	from tfcmg110
+| 	where tfcmg110._index3={:tfacp200.year,:tfacp200.btno,:tfacp200.ttyp,:tfacp200.ninv}
+| 	selectdo
+| 	endselect
+
+
+| 	select tfcmg100.chst,tfcmg100.pbtn
+| 	from tfcmg100
+| 	where tfcmg100._index1={:tfcmg110.bank,:tfcmg110.paym,:tfcmg110.cheq}
+| 	and tfcmg100.chst<>6
+| 	selectdo
+
+		select tfisg185.*
+		from tfisg185
+		where tfisg185._index2={:orno.f}
+| 		and tfisg185.type =:tfisg185.type
+| 		and tfisg185.pyad =:tfisg185.pyad
+		and tfisg185.ncmp=:curr.comp
+		and tfisg185.type > 1
+		and tfisg185.ninv=0
+		and tfisg185.bank =:tfcmg110.bank 
+		and tfisg185.paym =:tfcmg110.paym
+		and tfisg185.cheq =:tfcmg110.cheq		
+		selectdo
+			
+			m.btno =val(tfisg185.pyad)
+			
+			select tfcmg101.ptyp,tfcmg101.pdoc,tfcmg101.pdat
+			from tfcmg101
+			where tfcmg101._compnr=:m.lcmp
+		| 	where tfcmg101._compnr=:tfisg185.ncmp
+			and tfcmg101._index1={:m.btno,:tfisg185.bpid}
+			as set with 1 rows
+			selectdo
+				select tfgld018.btno
+				from tfgld018
+				where tfgld018._compnr=:m.lcmp
+		| 		where tfgld018._compnr=:tfisg185.ncmp
+				and tfgld018._index1={:tfcmg101.ptyp,:tfcmg101.pdoc}
+				as set with 1 rows
+				selectdo
+				selectempty
+					tfgld018.btno=0		
+					
+				endselect
+				
+				
+				
+			endselect
+			Particulars.dsca = ""
+			if tfisg185.type = ltoe(5) or tfisg185.type = ltoe(7) then
+				select	tfmsl020.optn
+				from	tfmsl020
+				where	tfmsl020._index1 = {:tfisg185.adrq}
+				selectdo
+					Particulars.dsca = enum.descr$("tfoption", tfmsl020.optn)
+				selectempty
+				endselect
+			else
+				Particulars.dsca = enum.descr$("tfisg.tran", tfisg185.type)
+			endif
+		selectempty
+			tfacp203.amth(1)=0
+		endselect
+
+		select tfacp203.amth
+		from tfacp203
+	| 	where tfacp203._compnr=:m.lcmp
+		where tfacp203._index1={:tfacp200.ttyp,:tfacp200.ninv,:tfacp200.line}
+	| 	as set with 1 rows
+		selectdo
+			tds.amnt.inr =tds.amnt.inr+tfacp203.amth(1)
+			tds.amnt.fc =tds.amnt.fc+tfacp203.amti
+		selectempty
+			tds.amnt.inr=0
+			tds.amnt.fc=0
+			tfacp203.amth(1)=0	
+			tfacp203.amth(2)=0	
+			tfacp203.amth(3)=0	
+			
+		endselect
+
+		print.paymentl.line()
+		
+		
+| 	endselect
+}
+
+function print.paymentl.line()
+{
+	pay.req.rep = paym.req(tfcmg100.pbtn)
+
+if tdpur400.ccur <> "INR" then		
+	
+| tot.amti =tot.amti + tfisg185.amti
+| tot.amth=tot.amth  + tfisg185.amth
+	
+
+| 	tds.amnt.fc =tfacp203.amti
+| 	tds.amnt.inr =tfacp203.amth(1)
+	ptr.amnt.fc =0
+	ptr.amnt.inr =0
+
+| 	paid.amnt.fc = tfisg185.amti
+| 	paid.amnt.inr =tfisg185.amth
+	paid.amnt.fc = tot.amti
+| 	paid.amnt.inr =(tot.amth -tds.amnt.inr)
+	paid.amnt.inr =(tot.amth)
+
+	bal.amnt.fc =(tfacp203.amti+paid.amnt.fc +prevbal.amnt.fc)-ptr.amnt.fc
+| 	bal.amnt.inr  =(tfacp203.amth(1)+paid.amnt.inr+prevbal.amnt.inr)-ptr.amnt.inr	
+	bal.amnt.inr  =(tds.amnt.inr+paid.amnt.inr+prevbal.amnt.inr)-ptr.amnt.inr	
+	
+else	
+
+
+	tds.amnt.fc =0
+| 	tds.amnt.inr =tfacp203.amth(1)
+	ptr.amnt.fc =0
+	ptr.amnt.inr =0
+
+	paid.amnt.fc = 0
+| 	paid.amnt.inr =tfisg185.amth
+| 	paid.amnt.inr =(tot.amth -tds.amnt.inr)
+	paid.amnt.inr =(tot.amth)
+
+	
+	bal.amnt.fc =0
+| 	bal.amnt.inr  =(tfacp203.amth(1)+paid.amnt.inr+prevbal.amnt.inr)-ptr.amnt.inr
+	bal.amnt.inr  =(tds.amnt.inr+paid.amnt.inr+prevbal.amnt.inr)-ptr.amnt.inr
+
+	
+	
+	
+endif
+
+| 	line = concat$("	",
+| 		sprintf$("%s", ""),								|1				|RAvi.a.cng.s.10092020	
+		|sprintf$("%s", enum.descr$("tfisg.tran", tfisg185.type, "2")),			|2	
+| 		sprintf$("%s", trim$(Particulars.dsca)),					|2
+| 		sprintf$("%s", ""),								|3
+| 		sprintf$("%s", ""),								|4
+| 		sprintf$("%s", ""),								|5
+| 		sprintf$("%s", ""),								|6
+| 		sprintf$("%s", tfcmg100.pbtn),							|7	
+		|sprintf$("%s", tfcmg101.ptyp &"-"& str$(tfcmg101.pdoc)),			|8
+| 		sprintf$("%s", tfacp200.ttyp &"-"& str$(tfacp200.ninv)),			|8
+		|sprintf$("%s", tfcmg101.pdoc),							|9
+		|sprintf$("%D(%02d/%02m/%04Y)", tfcmg101.pdat),					|10
+| 		sprintf$("%D(%02d/%02m/%04Y)", tfacp200.docd),					|10
+		|sprintf$("%s", tfgld018.btno),							|11
+| 		sprintf$("%s", tfacp200.btno),							|11
+| 		sprintf$("%s", ""),								|
+| 		sprintf$("%s", ""),								|12
+| 		sprintf$("%s", ""),								|13
+| 		sprintf$("%s", str$(tds.amnt.fc)),						|14
+| 		sprintf$("%s", str$(tds.amnt.inr)),						|14
+| 		sprintf$("%s", str$(ptr.amnt.fc)),								|15
+| 		sprintf$("%s", str$(ptr.amnt.inr)),								|16
+| 		sprintf$("%s", str$(paid.amnt.fc)),						|17
+| 		sprintf$("%s", str$(paid.amnt.inr)),						|18
+| 		sprintf$("%s", str$(bal.amnt.fc)),						|18
+| 		sprintf$("%s", str$(bal.amnt.inr)),						|19
+| 		sprintf$("%s","")
+| 		)										|Last
+
+| 		line = strip$(shiftl$(line))
+| 		seq.puts(line, stat.fp)
+
+
+		seq.puts("<table border = ""1"">", stat.fp)
+		seq.puts("<tr>", stat.fp)
+		seq.puts("<td align = ""center"" nowrap></td>", stat.fp)								|1		
+		seq.puts("<td align = ""center"" nowrap>" & trim$(Particulars.dsca) & "</td>", stat.fp)					|2
+		seq.puts("<td align = ""center"" nowrap></td>", stat.fp)								|3
+		seq.puts("<td align = ""center"" nowrap></td>", stat.fp)								|4
+		seq.puts("<td align = ""center"" nowrap></td>", stat.fp)								|5
+		seq.puts("<td align = ""center"" nowrap></td>", stat.fp)								|6
+		seq.puts("<td align = ""center"" nowrap>" & pay.req.rep & "</td>", stat.fp)						|7
+		seq.puts("<td align = ""center"" nowrap>" & str$(tfcmg100.pbtn) & "</td>", stat.fp)					|8
+| 		seq.puts("<td align = ""center"" nowrap>" & tfacp200.ttyp &"-"& str$(tfacp200.ninv) & "</td>", stat.fp)			|9
+		seq.puts("<td align = ""center"" nowrap>" & tfgld112.ttyp &"-"& str$(tfgld112.docn) & "</td>", stat.fp)			|9
+		seq.puts("<td align = ""center"" nowrap>" & sprintf$("%D(%02d/%02m/%04Y)", tfacp200.docd) & "</td>", stat.fp)		|10
+| 		seq.puts("<td align = ""center"" nowrap>" & tfacp200.btno & "</td>", stat.fp)						|10
+| 		seq.puts("<td align = ""center"" nowrap></td>", stat.fp)								|10
+		seq.puts("<td align = ""center"" nowrap></td>", stat.fp)								|11
+		seq.puts("<td align = ""center"" nowrap></td>", stat.fp)								|12
+		seq.puts("<td align = ""center"" nowrap>"&str$(tds.amnt.fc)&"</td>", stat.fp)						|13
+		seq.puts("<td align = ""center"" nowrap>"&str$(tds.amnt.inr)&"</td>", stat.fp)						|14
+		seq.puts("<td align = ""center"" nowrap>"&str$(ptr.amnt.fc)&"</td>", stat.fp)						|15
+		seq.puts("<td align = ""center"" nowrap>"&str$(ptr.amnt.inr)&"</td>", stat.fp)						|16
+		seq.puts("<td align = ""center"" nowrap>"&str$(paid.amnt.fc)&"</td>", stat.fp)						|17
+		seq.puts("<td align = ""center"" nowrap>"&str$(paid.amnt.inr)&"</td>", stat.fp)						|18
+		seq.puts("<td align = ""center"" nowrap>"&str$(bal.amnt.fc)&"</td>", stat.fp)						|19
+		seq.puts("<td align = ""center"" nowrap>"&str$(bal.amnt.inr)&"</td>", stat.fp)						|20
+		seq.puts("</tr>", stat.fp)
+		seq.puts("</table>", stat.fp)									|RAvi.a.cng.e.10092020
+
+
+if tdpur400.ccur <> "INR" then		
+	prevbal.amnt.inr =bal.amnt.inr
+	prevbal.amnt.fc =bal.amnt.fc
+
+else
+	prevbal.amnt.inr =bal.amnt.inr
+	prevbal.amnt.fc =0
+endif
+
+
+tot.basic.amnt=tot.basic.amnt +0
+tot.gross.amnt=tot.gross.amnt+0
+tot.tds.amnt.fc	=tot.tds.amnt.fc + tds.amnt.fc					
+tot.tds.amnt.inr=tot.tds.amnt.inr + tds.amnt.inr						
+tot.ptr.amnt.fc	=tot.ptr.amnt.fc + ptr.amnt.fc							
+tot.ptr.amnt.inr=tot.ptr.amnt.inr + ptr.amnt.inr								
+tot.paid.amnt.fc=tot.paid.amnt.fc + paid.amnt.fc						
+tot.paid.amnt.inr=tot.paid.amnt.inr + paid.amnt.inr	
+
+
+init.variables()
+
+}
+
+
+function init.variables()
+{
+tot.amth =0
+paid.amnt.fc =0
+paid.amnt.inr=0
+tfgld018.btno=0
+tfcmg101.pdat=0
+tfcmg101.ptyp =""
+tfcmg101.pdoc=0
+tfisg185.pyad=""
+tds.amnt.fc=0
+tds.amnt.inr =0
+ptr.amnt.fc =0
+ptr.amnt.inr=0
+paid.amnt.fc=0
+paid.amnt.inr=0
+
+tds.amnt.fc1  =0
+tds.amnt.fc2 =0
+tds.amnt.inr1  =0
+tds.amnt.inr2  =0
+rect.amnt=0
+rect.gross.amnt=0
+
+}
+
+
+function print.receipt.details()
+{
+
+init.variables()
+domain tfgld.btno m.btno
+print.line ="Y"
+
+select tfacp251.ityp,tfacp251.idoc
+from tfacp251
+| where tfacp251._index3={:curr.comp,1,:orno.f}
+where tfacp251._index3={:m.lcmp,1,:orno.f}				|# sanjeev - 29/08/2020
+group by tfacp251.ityp,tfacp251.idoc
+order by tfacp251.ityp,tfacp251.idoc
+selectdo
+print.line ="Y"
+
+sr.no=0
+m.srno=0
+	||tv.rss.01092020.sn
+
+| 	select  tfacp200.ttyp,tfacp200.ninv,tfacp200.amnt,tfacp200.amti,tfacp200.amth
+	select  tfacp200.*
+	from tfacp200
+	where tfacp200._index1={:tfacp251.ityp,:tfacp251.idoc}
+	and  tfacp200.lino =1
+| 	and  tfacp200.tdoc =""
+	and  tfacp200.tpay=8
+	selectdo
+		m.srno =m.srno+1
+| 		sr.no =sr.no+1
+| 		tot.amth =tfacp200.amnt
+
+		get.data.print.receipt.line()
+		
+| 		if print.line ="Y" then
+| 			print.receipt.line()			|RAvi.a.24082020
+| 		endif
+		rect.amnt=0				|RAvi.a.24082020
+	
+	selectempty
+		tfacp200.amnt = 0
+		tfacp200.amti = 0
+		tfacp200.amth(1) = 0
+		tfacp200.amth(2) = 0
+		tfacp200.amth(3) = 0
+		print.non.payment.lines()
+	endselect
+
+
+	
+endselect
+
+
+
+}
+
+
+
+function print.non.payment.lines()			|tv.rss.02092020.sn
+{
+sr.no=0
+m.srno =0
+
+	||tv.rss.01092020.sn
+
+| 	select  tfacp200.ttyp,tfacp200.ninv,tfacp200.amnt,tfacp200.amti,tfacp200.amth
+	select  tfacp200.*
+	from tfacp200
+	where tfacp200._index1={:tfacp251.ityp,:tfacp251.idoc}
+	and  tfacp200.lino =0
+| 	and  tfacp200.tdoc =""
+| 	and  tfacp200.tpay=8
+	selectdo
+		m.srno =m.srno+1
+| 		sr.no =sr.no+1
+| 		tot.amth =tfacp200.amnt
+
+		get.data.print.receipt.line()
+
+
+	selectempty
+		tfacp200.amnt = 0
+		tfacp200.amti = 0
+		tfacp200.amth(1) = 0
+		tfacp200.amth(2) = 0
+		tfacp200.amth(3) = 0
+		
+	endselect
+
+
+
+}
+
+
+
+function get.data.print.receipt.line()
+{
+
+
+select tfgld112.cono,tfgld112.ttyp,tfgld112.docn
+from tfgld112
+where tfgld112._index2={:curr.comp,:tfacp200.tdoc ,:tfacp200.docn}
+selectdo
+
+
+	select tfgld018.year,tfgld018.btno
+	from tfgld018
+	where tfgld018._compnr=:tfgld112.cono
+	and tfgld018._index1={:tfgld112.ttyp,:tfgld112.docn}
+	selectdo
+		
+		select tfcmg110.bank,tfcmg110.paym,tfcmg110.cheq
+		from tfcmg110
+		where tfcmg110._compnr=:tfgld112.cono
+		and tfcmg110._index3={:tfgld018.year,:tfgld018.btno,:tfgld112.ttyp,:tfgld112.docn}
+		selectdo
+			
+			select tfcmg100.chst,tfcmg100.pbtn
+			from tfcmg100
+			where tfcmg100._compnr=:tfgld112.cono
+			and tfcmg100._index1={:tfcmg110.bank,:tfcmg110.paym,:tfcmg110.cheq}
+			and tfcmg100.chst<>6			
+			selectdo
+			selectempty
+				if m.srno =1 then
+					m.srno =0
+				endif
+				
+				tfcmg100.pbtn=0
+			endselect
+		selectempty
+			tfcmg100.pbtn=0
+		endselect		
+
+	endselect
+
+
+selectempty
+	
+		tfgld112.ttyp =tfacp200.ttyp
+		tfgld112.docn =tfacp200.ninv
+	
+
+		select tfcmg110.bank,tfcmg110.paym,tfcmg110.cheq
+		from tfcmg110
+		where tfcmg110._index3={:tfacp200.year,:tfacp200.btno,:tfacp200.tdoc,:tfacp200.docn}
+		selectdo
+			
+			select tfcmg100.chst,tfcmg100.pbtn
+			from tfcmg100
+			where tfcmg100._index1={:tfcmg110.bank,:tfcmg110.paym,:tfcmg110.cheq}
+			and tfcmg100.chst<>6
+			selectdo
+			selectempty
+				if m.srno =1 then
+					m.srno =0
+				endif
+				tfcmg100.pbtn=0
+			endselect
+		selectempty
+			tfcmg100.pbtn=0
+		endselect
+endselect
+
+		
+	
+		select  tfacp200.tdoc,tfacp200.docn,sum(tfacp200.amnt):tot.amth
+		from tfacp200
+		where tfacp200._index1={:tfacp251.ityp,:tfacp251.idoc}
+		and  tfacp200.tdoc =:tfacp200.tdoc
+		and  tfacp200.docn =:tfacp200.docn
+		and  tfacp200.tpay=8
+		group by tfacp200.tdoc,tfacp200.docn
+		selectdo
+			
+		selectempty
+			tot.amth =0
+		endselect
+		tot.amth =abs(tot.amth)
+
+		select tfgld018.btno
+		from tfgld018
+	| 	where tfgld018._compnr=:m.lcmp
+		where tfgld018._index1={:tfacp200.tdoc,:tfacp200.docn}
+		as set with 1 rows
+		selectdo
+			pay.booking.batch =tfgld018.btno	
+		selectempty
+			tfgld018.btno=0	
+			pay.booking.batch=0	
+		endselect
+		
+		
+		
+
+		select  tfacp200.step
+		from tfacp200
+		where tfacp200._index1={:tfacp251.ityp,:tfacp251.idoc}
+		and tfacp200.typa =:tfacp200.tdoc
+		and tfacp200.doca =:tfacp200.docn
+		and  tfacp200.tpay=8
+		and tfacp200.step =17
+		selectdo
+		selectempty
+	| 		tfacp200.step=0
+		endselect
+	
+	if tfacp200.step <> ltoe(17) then
+		
+
+
+
+	||tv.rss.01092020.en
+
+		select tfacp251.shpm,tfacp251.rcno,tfacp251.ityp,tfacp251.idoc,sum(tfacp251.iamt):rect.amnt
+		from tfacp251
+		| where tfacp251._index3={:curr.comp,1,:orno.f}
+		where tfacp251._index3={:m.lcmp,1,:orno.f}				|# sanjeev - 29/08/2020
+		and tfacp251.ityp =:tfacp200.ttyp
+		and tfacp251.idoc =:tfacp200.ninv
+		group by tfacp251.shpm,tfacp251.rcno,tfacp251.ityp,tfacp251.idoc
+		order by tfacp251.shpm,tfacp251.rcno,tfacp251.ityp,tfacp251.idoc
+		selectdo
+		print.line ="Y"
+
+
+			select tfacp251.orno,tfacp251.pono,tfacp251.sqnb,tfacp251.icom,tfacp251.rseq,tfacp251.loco
+			from tfacp251
+		| 	where tfacp251._index3={:curr.comp,1,:orno.f}
+			where tfacp251._index3={:m.lcmp,1,:orno.f}			|# Sanjeev - 29/08/2020
+			and  tfacp251.shpm =:tfacp251.shpm
+			and  tfacp251.rcno =:tfacp251.rcno
+			and  tfacp251.ityp =:tfacp251.ityp
+			and  tfacp251.idoc =:tfacp251.idoc
+			selectdo
+				
+
+				select tfacp245.rdat
+				from tfacp245
+				where tfacp245._index1={:tfacp251.shpm,
+							:tfacp251.otyp,
+							:tfacp251.orno,
+							:tfacp251.pono,
+							:tfacp251.sqnb,
+		| 					:tfacp251.icom,
+							:tfacp251.loco,
+							:tfacp251.rcno,
+							:tfacp251.rseq}
+				selectdo
+				selectempty
+					tfacp245.rdat=0
+				endselect
+				
+
+				select  tfacp200.amnt,tfacp200.amti,tfacp200.amth
+				from tfacp200
+				where tfacp200._index1={:tfacp251.ityp,:tfacp251.idoc}
+				and  tfacp200.tdoc =""
+				as set with 1 rows
+				selectdo
+				selectempty
+					tfacp200.amnt = 0
+					tfacp200.amti = 0
+					tfacp200.amth(1) = 0
+					tfacp200.amth(2) = 0
+					tfacp200.amth(3) = 0
+				endselect
+				
+				
+				
+				
+				select tfgld018.btno,tfgld018.dcdt
+				from tfgld018
+				where tfgld018._index1={:tfacp251.ityp,:tfacp251.idoc}
+				as set with 1 rows
+				selectdo
+				selectempty
+					tfgld018.btno=0		
+					
+				endselect	
+
+				select tfacp203.amth,tfacp203.amti
+				from tfacp203
+				where tfacp203._index1={:tfacp251.ityp,:tfacp251.idoc}
+				and tfacp203.txtp=5
+		| 		as set with 1 rows
+				selectdo
+					tds.amnt.fc1 =tds.amnt.fc1+ tfacp203.amti
+					tds.amnt.inr1 =tds.amnt.inr1+tfacp203.amth(1)
+					tfacp203.amth(1)=0
+					tfacp203.amti=0
+				selectempty
+					tfacp203.amth(1)=0	
+					tfacp203.amth(2)=0	
+					tfacp203.amth(3)=0	
+					tfacp203.amti=0
+					tds.amnt.inr1 =0
+					
+				endselect
+
+				| 	print.receipt.line()
+			selectempty
+				tfacp203.amth(1)=0	
+				tfacp203.amth(2)=0	
+				tfacp203.amth(3)=0	
+				tfacp203.amti=0
+				tds.amnt.inr1 =0
+				tds.amnt.fc1 =0
+			
+			endselect
+
+| 			sr.no =0
+
+| 			pay.booking.batch =0
+			select tfisg185.*
+			from tfisg185
+			where tfisg185._index2={:orno.f}
+			and tfisg185.ttyp =:tfacp251.ityp
+			and tfisg185.ninv =:tfacp251.idoc
+			and tfisg185.ncmp=:curr.comp
+			and tfisg185.type > 1
+			selectdo
+				print.line ="N"
+		| 		sr.no =sr.no+1
+		| 	selectempty						|RAvi.a.s.24082020
+		| 		tfisg185.pyad = ""
+			endselect						|RAvi.a.e.24082020
+			m.btno =val(tfisg185.pyad)
+
+			
+				
+| 				select tfcmg101.ptyp,tfcmg101.pdoc,sum(tfcmg101.amth(1)):tot.amth,sum(tfcmg101.amti):tot.amti
+				select tfcmg101.ptyp,tfcmg101.pdoc,sum(tfcmg101.amti):tot.amti
+				from tfcmg101
+				where tfcmg101._compnr=:m.lcmp
+				and tfcmg101._index1={:m.btno,:tfisg185.bpid}
+				and tfcmg101.ttyp = :tfacp251.ityp		|#Sanjeev-29/08/2020
+				and tfcmg101.ninv = :tfacp251.idoc		|#Sanjeev-29/08/2020
+				group by tfcmg101.ptyp,tfcmg101.pdoc
+				selectdo
+				selectempty
+| 					tot.amth = 0				|RAvi.a.24082020
+| 					tot.amti = 0				|RAvi.a.24082020
+				endselect
+			
+			
+				select tfcmg101.ptyp,tfcmg101.pdoc,tfcmg101.pdat
+				from tfcmg101
+				where tfcmg101._compnr=:m.lcmp
+				and tfcmg101._index1={:m.btno,:tfisg185.bpid}
+				as set with 1 rows
+				selectdo
+| 					select tfgld018.btno
+| 					from tfgld018
+| 					where tfgld018._compnr=:m.lcmp
+| 					and tfgld018._index1={:tfcmg101.ptyp,:tfcmg101.pdoc}
+| 					as set with 1 rows
+| 					selectdo
+| 						pay.booking.batch =tfgld018.btno	
+| 					selectempty
+| 						tfgld018.btno=0	
+| 						pay.booking.batch=0	
+| 					endselect
+					
+					select tfacp203.amth,tfacp203.amti
+					from tfacp203
+					where tfacp203._compnr=:m.lcmp
+					and tfacp203._index1={:tfcmg101.ptyp,:tfcmg101.pdoc}
+					and tfacp203.txtp=5
+					as set with 1 rows
+					selectdo
+						tds.amnt.fc2 =tds.amnt.fc2 + tfacp203.amti
+						tds.amnt.inr2 =tds.amnt.inr2+tfacp203.amth(1)
+						tfacp203.amth(1)=0	
+						tfacp203.amti=0
+					selectempty
+						tfacp203.amth(1)=0	
+						tfacp203.amth(2)=0	
+						tfacp203.amth(3)=0
+						tds.amnt.inr2=0
+						tds.amnt.fc2=0
+						
+					endselect
+					
+					
+					select tfcmg100.chst
+					from tfcmg100
+					where tfcmg100._index1={:tfisg185.bank,:tfisg185.paym,:tfisg185.cheq}
+					and tfcmg100.pbtn=:m.btno
+| 					and tfcmg100.chst<>6
+					selectdo
+						if tfcmg100.chst<>ltoe(6) then
+							sr.no =sr.no+1	
+							
+							if sr.no > 1 then
+								tfacp200.amth(1) =0
+							endif
+							
+							print.receipt.line()		|RAvi.s.24082020
+							rect.amnt=0			|RAvi.com.24082020
+						else
+							print.line ="N"
+						endif
+					endselect
+						
+
+
+		| 			print.receipt.line()		|RAvi.s.24082020
+		| 			rect.amnt=0			|RAvi.com.24082020
+				selectempty
+					tfcmg101.ptyp = ""		|RAvi.a.24082020
+					tfcmg101.pdoc = 0		|RAvi.a.24082020
+					tfcmg101.pdat = 0		|RAvi.a.24082020
+					tfgld018.btno = 0		|RAvi.a.24082020
+					tfacp203.amth(1)=0		|RAvi.a.24082020
+					tfacp203.amth(2)=0		|RAvi.a.24082020
+					tfacp203.amth(3)=0		|RAvi.a.24082020
+| 					pay.booking.batch=0
+					tds.amnt.inr2=0
+					tds.amnt.fc2=0
+					
+				endselect				
+| 			selectempty	
+| 				pay.booking.batch=0		
+		| 		print.receipt.line()			|RAvi.a.24082020
+		| 		rect.amnt=0				|RAvi.a.24082020
+| 			endselect					|RAvi.com.24082020
+			
+| 			if print.line ="Y" then
+| 				print.receipt.line()			|RAvi.a.24082020
+| 			endif
+| 			rect.amnt=0				|RAvi.a.24082020
+		selectempty
+			tfacp200.amnt = 0
+			tfacp200.amti = 0
+			tfacp200.amth(1) = 0
+			tfacp200.amth(2) = 0
+			tfacp200.amth(3) = 0
+		endselect
+		
+		
+		if m.srno > 1 then
+			tfacp200.amth(1) =0
+			sr.no =m.srno
+		endif
+		
+		if sr.no > 1 then
+			tfacp200.amth(1) =0
+		endif
+		
+		if print.line ="Y" then
+			print.receipt.line()			|RAvi.a.24082020
+		endif
+		rect.amnt=0				|RAvi.a.24082020
+	
+	
+	endif	
+
+
+
+}
+
+
+function print.receipt.line()
+{
+
+||
+
+if tdpur400.ccur <> "INR" then		
+	
+| 	tds.amnt.fc =tfacp203.amti
+| 	tds.amnt.inr =tfacp203.amth(1)
+| 	ptr.amnt.fc =0
+| 	ptr.amnt.inr =0
+| 	paid.amnt.fc = tot.amti
+| 	paid.amnt.inr =(tot.amth -tds.amnt.inr)
+| 	bal.amnt.fc =(tfacp203.amti+paid.amnt.fc +prevbal.amnt.fc)-ptr.amnt.fc
+| 	bal.amnt.inr  =(tfacp203.amth(1)+paid.amnt.inr+prevbal.amnt.inr)-ptr.amnt.inr	
+else	
+| 	tds.amnt.fc =0
+| 	tds.amnt.inr =tfacp203.amth(1)
+| 	ptr.amnt.fc =0
+| 	ptr.amnt.inr =0
+| 	paid.amnt.fc = 0
+| 	paid.amnt.inr =(tot.amth -tds.amnt.inr)
+| 	bal.amnt.fc =0
+| 	bal.amnt.inr  =(tfacp203.amth(1)+paid.amnt.inr+prevbal.amnt.inr)-ptr.amnt.inr
+endif
+||
+
+if tdpur400.ccur <> "INR" then
+	tds.amnt.fc =tds.amnt.fc1+tfacp203.amti
+	tds.amnt.inr =tds.amnt.inr1+tds.amnt.inr2
+	ptr.amnt.fc =tfacp200.amti
+	ptr.amnt.inr =tfacp200.amth(1)
+	paid.amnt.fc = tot.amti
+| 	paid.amnt.inr =(tot.amth -tds.amnt.inr)
+	paid.amnt.inr =(tot.amth)
+	rect.gross.amnt =tfacp200.amnt+tds.amnt.inr
+	
+| 	bal.amnt.fc =(tds.amnt.fc+paid.amnt.fc +prevbal.amnt.fc)-(tds.amnt.fc + ptr.amnt.fc )
+	bal.amnt.fc =(paid.amnt.fc +prevbal.amnt.fc)-(tds.amnt.fc + ptr.amnt.fc )
+| 	bal.amnt.inr  =(tfacp203.amth(1)+paid.amnt.inr+prevbal.amnt.inr)-(ptr.amnt.inr) 	
+	bal.amnt.inr  =(paid.amnt.inr+prevbal.amnt.inr)-(ptr.amnt.inr) 	
+	
+| 	bal.amnt.fc = prevbal.amnt.fc -   (tds.amnt.fc + ptr.amnt.fc )
+| 	bal.amnt.inr  =prevbal.amnt.inr - (tds.amnt.inr + ptr.amnt.inr ) 
+else
+	
+	tds.amnt.fc =0
+	tds.amnt.inr =tds.amnt.inr1+tds.amnt.inr2
+	ptr.amnt.fc =0
+	ptr.amnt.inr =tfacp200.amth(1)
+| 	paid.amnt.inr =(tot.amth -tds.amnt.inr)
+	paid.amnt.inr =(tot.amth)
+	rect.gross.amnt =tfacp200.amnt+tds.amnt.inr
+	paid.amnt.fc = 0
+| 	paid.amnt.inr =0
+	bal.amnt.fc = 0
+	
+
+| 	bal.amnt.inr  =prevbal.amnt.inr - (tds.amnt.inr + ptr.amnt.inr ) 
+| 	bal.amnt.inr  =(tfacp203.amth(1)+paid.amnt.inr+prevbal.amnt.inr)-(tds.amnt.inr + ptr.amnt.inr ) 	
+| 	bal.amnt.inr  =(tfacp203.amth(1)+paid.amnt.inr+prevbal.amnt.inr)-(ptr.amnt.inr) 	
+	bal.amnt.inr  =(paid.amnt.inr+prevbal.amnt.inr)-(ptr.amnt.inr) 	
+
+	
+	
+endif
+
+	select	tfgld018.btno:pur.booking.batch
+	from	tfgld018
+	where	tfgld018._index1 = {:tfacp251.ityp,:tfacp251.idoc}
+	selectdo
+	selectempty
+		pur.booking.batch = 0
+	endselect
+	pay.req.rep = paym.req(tfcmg100.pbtn)		|RAvi.a
+	
+	if sr.no <=1 then
+| 	line = concat$("	",									RAvi.a.cng.s.10092020
+| 		sprintf$("%s", tfacp251.shpm),					|1			
+		|sprintf$("%s", enum.descr$("tfisg.tran", tfisg185.type, "2")),	|2
+| 		sprintf$("%s", "Warehouse receipt"),				|2
+| 		sprintf$("%s", tfacp251.rcno),					|3
+| 		sprintf$("%u(%02d/%02m/%04Y)", tfacp245.rdat),			|4
+| 		sprintf$("%s", str$(rect.amnt)),				|5
+		|sprintf$("%s", str$(tfacp200.amnt+tds.amnt.inr)),		|6
+| 		sprintf$("%s", str$(rect.gross.amnt)),				|6
+		|sprintf$("%s", tfisg185.pyad),					|7	
+| 		sprintf$("%s", tfcmg100.pbtn),					|7	
+		|sprintf$("%s", tfcmg101.ptyp &"-"& str$(tfcmg101.pdoc)),	|8
+| 		sprintf$("%s", tfacp200.tdoc &"-"& str$(tfacp200.docn)),	|8
+		|sprintf$("%s", tfcmg101.pdoc),					|9
+		|sprintf$("%D(%02d/%02m/%04Y)", tfcmg101.pdat),			|10
+| 		sprintf$("%D(%02d/%02m/%04Y)", tfacp200.docd),			|10
+| 		sprintf$("%s", pay.booking.batch),					|11
+| 		sprintf$("%s", pur.booking.batch),				|
+| 		sprintf$("%s", tfacp251.ityp &"-"& str$(tfacp251.idoc)),	|12
+| 		sprintf$("%D(%02d/%02m/%04Y)", tfgld018.dcdt),			|13
+| 		sprintf$("%s", str$(tds.amnt.fc)),				|14
+| 		sprintf$("%s", str$(tds.amnt.inr)),				|14
+| 		sprintf$("%s", str$(ptr.amnt.fc)),				|15
+| 		sprintf$("%s", str$(ptr.amnt.inr)),				|16
+| 		sprintf$("%s", paid.amnt.fc),						|17
+| 		sprintf$("%s", paid.amnt.inr),						|18
+| 		sprintf$("%s", bal.amnt.fc),						|18
+| 		sprintf$("%s", bal.amnt.inr),						|19
+| 		sprintf$("%s",""))						|Last
+
+| 		line = strip$(shiftl$(line))
+| 		seq.puts(line, stat.fp)
+		
+	
+		seq.puts("<table border = ""1"">", stat.fp)
+		seq.puts("<tr>", stat.fp)
+		seq.puts("<td align = ""center"" nowrap>" & tfacp251.shpm & "</td>", stat.fp)						|1		
+		seq.puts("<td align = ""center"" nowrap>Warehouse receipt</td>", stat.fp)						|2
+		seq.puts("<td align = ""center"" nowrap>" & tfacp251.rcno & "</td>", stat.fp)						|3
+		seq.puts("<td align = ""center"" nowrap>"&sprintf$("%u(%02d/%02m/%04Y)", tfacp245.rdat)&"</td>", stat.fp)		|4
+		seq.puts("<td align = ""center"" nowrap>"& str$(rect.amnt)&"</td>", stat.fp)						|5
+		seq.puts("<td align = ""center"" nowrap>"&str$(rect.gross.amnt)&"</td>", stat.fp)					|6
+		seq.puts("<td align = ""center"" nowrap>" & pay.req.rep & "</td>", stat.fp)						|7
+		seq.puts("<td align = ""center"" nowrap>" & str$(tfcmg100.pbtn) & "</td>", stat.fp)						|8
+| 		seq.puts("<td align = ""center"" nowrap>" & tfacp200.tdoc &"-"& str$(tfacp200.docn) & "</td>", stat.fp)			|9
+		seq.puts("<td align = ""center"" nowrap>" & tfgld112.ttyp &"-"& str$(tfgld112.docn) & "</td>", stat.fp)			|9
+		seq.puts("<td align = ""center"" nowrap>" & sprintf$("%D(%02d/%02m/%04Y)", tfacp200.docd) & "</td>", stat.fp)		|10
+| 		seq.puts("<td align = ""center"" nowrap>" & pay.booking.batch & "</td>", stat.fp)						|10
+| 		seq.puts("<td align = ""center"" nowrap>" & pur.booking.batch & "</td>", stat.fp)								|10
+		seq.puts("<td align = ""center"" nowrap>" & tfacp251.ityp &"-"& str$(tfacp251.idoc) & "</td>", stat.fp)								|11
+		seq.puts("<td align = ""center"" nowrap>" & sprintf$("%D(%02d/%02m/%04Y)", tfgld018.dcdt) & "</td>", stat.fp)								|12
+		seq.puts("<td align = ""center"" nowrap>" & str$(tds.amnt.fc) & "</td>", stat.fp)						|13
+		seq.puts("<td align = ""center"" nowrap>" & str$(tds.amnt.inr) & "</td>", stat.fp)						|14
+		seq.puts("<td align = ""center"" nowrap>" & str$(ptr.amnt.fc) & "</td>", stat.fp)						|15
+		seq.puts("<td align = ""center"" nowrap>" & str$(ptr.amnt.inr) & "</td>", stat.fp)						|16
+		seq.puts("<td align = ""center"" nowrap>" & str$(paid.amnt.fc) & "</td>", stat.fp)						|17
+		seq.puts("<td align = ""center"" nowrap>" & str$(paid.amnt.inr) & "</td>", stat.fp)						|18
+		seq.puts("<td align = ""center"" nowrap>" & str$(bal.amnt.fc) & "</td>", stat.fp)						|19
+		seq.puts("<td align = ""center"" nowrap>" & str$(bal.amnt.inr) & "</td>", stat.fp)						|20
+		seq.puts("</tr>", stat.fp)
+		seq.puts("</table>", stat.fp)								
+	else
+		rect.amnt=0
+		tfacp200.amnt =0
+| 	line = concat$("	",
+| 		sprintf$("%s", ""),						|1			
+		|sprintf$("%s", enum.descr$("tfisg.tran", tfisg185.type, "2")),	|2
+| 		sprintf$("%s", ""),						|2
+| 		sprintf$("%s", ""),						|3
+| 		sprintf$("%s",""),						|4
+| 		sprintf$("%s", ""),				|5
+| 		sprintf$("%s", ""),				|6
+| 		sprintf$("%s", tfcmg100.pbtn),					|7	
+		|sprintf$("%s", tfcmg101.ptyp &"-"& str$(tfcmg101.pdoc)),	|8
+| 		sprintf$("%s", tfacp200.tdoc &"-"& str$(tfacp200.docn)),	|8
+		|sprintf$("%s", tfcmg101.pdoc),					|9
+		|sprintf$("%D(%02d/%02m/%04Y)", tfcmg101.pdat),			|10
+| 		sprintf$("%D(%02d/%02m/%04Y)", tfacp200.docd),			|10
+| 		sprintf$("%s", pay.booking.batch),				|11
+| 		sprintf$("%s", ""),						|
+| 		sprintf$("%s", ""),						|12
+| 		sprintf$("%s",""),						|13
+| 		sprintf$("%s",""),						|14
+| 		sprintf$("%s", ""),						|14
+| 		sprintf$("%s", ""),						|15
+| 		sprintf$("%s", ""),						|16
+| 		sprintf$("%s", paid.amnt.fc),						|17
+| 		sprintf$("%s", paid.amnt.inr),						|18
+| 		sprintf$("%s", bal.amnt.fc),						|18
+| 		sprintf$("%s", bal.amnt.inr),						|19
+| 		sprintf$("%s",""))						|Last
+
+| 		line = strip$(shiftl$(line))
+| 		seq.puts(line, stat.fp)
+		
+		seq.puts("<table border = ""1"">", stat.fp)
+		seq.puts("<tr>", stat.fp)
+		seq.puts("<td align = ""center"" nowrap></td>", stat.fp)							|1		
+		seq.puts("<td align = ""center"" nowrap></td>", stat.fp)							|2
+		seq.puts("<td align = ""center"" nowrap></td>", stat.fp)							|3
+		seq.puts("<td align = ""center"" nowrap></td>", stat.fp)							|4
+		seq.puts("<td align = ""center"" nowrap></td>", stat.fp)							|5
+		seq.puts("<td align = ""center"" nowrap></td>", stat.fp)							|6
+		seq.puts("<td align = ""center"" nowrap>" & pay.req.rep & "</td>", stat.fp)					|7
+		seq.puts("<td align = ""center"" nowrap>" & str$(tfcmg100.pbtn) & "</td>", stat.fp)					|8
+| 		seq.puts("<td align = ""center"" nowrap>" & tfacp200.tdoc &"-"& str$(tfacp200.docn) & "</td>", stat.fp)		|9
+		seq.puts("<td align = ""center"" nowrap>" & tfgld112.ttyp &"-"& str$(tfgld112.docn) & "</td>", stat.fp)			|9
+		seq.puts("<td align = ""center"" nowrap>" & sprintf$("%D(%02d/%02m/%04Y)", tfacp200.docd) & "</td>", stat.fp)	|10
+| 		seq.puts("<td align = ""center"" nowrap>" & pay.booking.batch & "</td>", stat.fp)				|10
+| 		seq.puts("<td align = ""center"" nowrap>" & pur.booking.batch & "</td>", stat.fp)				|10
+		seq.puts("<td align = ""center"" nowrap></td>", stat.fp)							|11
+		seq.puts("<td align = ""center"" nowrap></td>", stat.fp)							|12
+		seq.puts("<td align = ""center"" nowrap></td>", stat.fp)							|13
+		seq.puts("<td align = ""center"" nowrap></td>", stat.fp)							|14
+		seq.puts("<td align = ""center"" nowrap></td>", stat.fp)							|15
+		seq.puts("<td align = ""center"" nowrap></td>", stat.fp)							|16
+		seq.puts("<td align = ""center"" nowrap>" & str$(paid.amnt.fc) & "</td>", stat.fp)				|17
+		seq.puts("<td align = ""center"" nowrap>" & str$(paid.amnt.inr) & "</td>", stat.fp)				|18
+		seq.puts("<td align = ""center"" nowrap>" & str$(bal.amnt.fc) & "</td>", stat.fp)				|19
+		seq.puts("<td align = ""center"" nowrap>" & str$(bal.amnt.inr) & "</td>", stat.fp)				|20
+		seq.puts("</tr>", stat.fp)
+		seq.puts("</table>", stat.fp)									|RAvi.a.cng.e.10092020
+		
+	endif
+
+
+
+
+if tdpur400.ccur <> "INR" then		
+	prevbal.amnt.inr = bal.amnt.inr
+	prevbal.amnt.fc =bal.amnt.fc
+
+else
+	prevbal.amnt.inr = bal.amnt.inr
+	prevbal.amnt.fc =0
+endif
+
+tot.basic.amnt=tot.basic.amnt + rect.amnt
+tot.gross.amnt=tot.gross.amnt+ tfacp200.amnt
+tot.tds.amnt.fc	=tot.tds.amnt.fc + tds.amnt.fc					
+tot.tds.amnt.inr=tot.tds.amnt.inr + tds.amnt.inr						
+tot.ptr.amnt.fc	=tot.ptr.amnt.fc + ptr.amnt.fc							
+tot.ptr.amnt.inr=tot.ptr.amnt.inr + ptr.amnt.inr								
+tot.paid.amnt.fc=tot.paid.amnt.fc + paid.amnt.fc						
+tot.paid.amnt.inr=tot.paid.amnt.inr + paid.amnt.inr						
+
+
+
+init.variables()
+}
+
+
+||Not matched
+
+function print.receipt.matched.details()
+{
+
+domain tfgld.btno m.btno
+domain tcqrd1  dly.qty
+tds.amnt.fc =0
+tds.amnt.inr=0
+ptr.amnt.fc=0
+ptr.amnt.inr=0
+paid.amnt.fc=0
+paid.amnt.inr=0
+bal.amnt.fc=0
+bal.amnt.inr=0
+dly.qty =0
+rect.gross.amnt=0
+rect.amnt =0
+
+
+domain tfgld.amnt  m.tax.line.amnt
+
+| select tdpur406.orno
+| from tdpur401
+
+| select tdpur406.orno,tdpur406.pono,tdpur406.sqnb,tdpur406.dino,tdpur406.rcno,tdpur406.rseq
+| select tdpur406.orno,tdpur406.pono,tdpur406.sqnb,tdpur406.dino,tdpur406.rcno,tdpur406.rseq
+| select tdpur406.orno,tdpur406.pono,tdpur406.rcno,tdpur406.dino
+select tdpur406.orno,tdpur406.rcno,tdpur406.dino
+from tdpur406
+where tdpur406._index1={:orno.f}
+group by tdpur406.orno,tdpur406.rcno,tdpur406.dino
+order by tdpur406.orno,tdpur406.rcno,tdpur406.dino
+selectdo
+	
+	
+	select tfacp251.orno,tfacp251.pono,tfacp251.sqnb,tfacp251.icom,tfacp251.rseq
+	from tfacp251
+	where tfacp251._index3={:curr.comp,1,:orno.f}
+| 	and  tfacp251.pono =:tdpur406.pono
+	and  tfacp251.shpm =:tdpur406.dino
+	and  tfacp251.rcno =:tdpur406.rcno
+	as set with 1 rows
+	selectdo
+		tfacp251.orno =tfacp251.orno
+	selectempty	
+		rect.amnt =0	
+		line.tax.amnt=0
+		select tdpur406.ddte				|# Sanjeev-29/08/2020.SN
+		from tdpur406
+		where tdpur406._index1={:tdpur406.orno}
+		and tdpur406.dino=:tdpur406.dino
+		and tdpur406.rcno=:tdpur406.rcno
+		and tdpur406._compnr = :m.lcmp
+		as set with 1 rows
+		selectdo
+		endselect					|# Sanjeev-29/08/2020.EN
+
+
+		select tdpur406.rcno,sum(tdpur406.damt):rect.amnt,sum(tdpur406.qiap):dly.qty
+		from tdpur406
+		where tdpur406._index1={:tdpur406.orno}
+		and tdpur406.dino=:tdpur406.dino
+		and tdpur406.rcno=:tdpur406.rcno
+		group by tdpur406.rcno
+		selectdo
+			
+| 			select tdpur401.pric,tdpur401.ccty,tdpur401.cvat
+			
+			
+			if tdpur400.ccur <> "INR" then
+				rect.amnt=(tdpur401.pric*dly.qty)
+			else	
+				line.tax.amnt	=0			
+				select tdpur406.pono,tdpur406.damt
+				from tdpur406
+				where tdpur406._index1={:tdpur406.orno}
+				and tdpur406.dino=:tdpur406.dino
+				and tdpur406.rcno=:tdpur406.rcno
+				group by tdpur406.pono,tdpur406.damt
+				selectdo
+					
+					select tdpur401.*
+					from tdpur401
+					where tdpur401._index1={:orno.f,:tdpur406.pono}
+					as set with 1 rows
+					selectdo
+						if tdpur400.ccur <> "INR" then
+							m.tax.line.amnt =0
+						else
+							m.tax.line.amnt =get.tax.amounts()
+						endif
+						line.tax.amnt = line.tax.amnt + m.tax.line.amnt
+					
+					endselect
+					
+				endselect
+			endif
+			
+			
+		endselect
+
+		print.receipt.matched.line()
+		rect.amnt=0
+		
+	endselect
+
+	
+endselect
+
+
+
+}
+
+
+function print.receipt.matched.line()
+{
+	
+
+if tdpur400.ccur <> "INR" then
+| 	tds.amnt.fc =tfacp203.amti
+| 	tds.amnt.inr =tfacp203.amth(1)
+| 	ptr.amnt.fc =tfacp200.amti
+| 	ptr.amnt.inr =tfacp200.amth(1)
+	paid.amnt.fc = 0
+	paid.amnt.inr =0
+| 	bal.amnt.fc =(tds.amnt.fc + ptr.amnt.fc )-prevbal.amnt.fc
+| 	bal.amnt.inr  =(tds.amnt.inr + ptr.amnt.inr )-prevbal.amnt.inr
+	bal.amnt.fc = prevbal.amnt.fc -   (tds.amnt.fc + ptr.amnt.fc )
+	bal.amnt.inr  =prevbal.amnt.inr - (tds.amnt.inr + ptr.amnt.inr ) 
+else
+	
+	tds.amnt.fc =0
+| 	tds.amnt.inr =tfacp203.amth(1)
+	ptr.amnt.fc =0
+| 	ptr.amnt.inr =tfacp200.amth(1)
+	paid.amnt.fc = 0
+	paid.amnt.inr =0
+| 	bal.amnt.fc =(tds.amnt.fc + ptr.amnt.fc )-prevbal.amnt.fc
+	bal.amnt.fc = 0
+	
+
+	bal.amnt.inr  =prevbal.amnt.inr - (tds.amnt.inr + ptr.amnt.inr ) 
+	
+
+	
+	
+endif
+
+
+															|RAvi.a.cng.s.10092020
+| 	line = concat$("	",
+| 		sprintf$("%s", strip$(tdpur406.dino)),				|1			
+		|sprintf$("%s", enum.descr$("tfisg.tran", tfisg185.type, "2")),	|2
+| 		sprintf$("%s", "Warehouse receipt"),				|2
+| 		sprintf$("%s", tdpur406.rcno),					|3
+| 		sprintf$("%u(%02d/%02m/%04Y)", tdpur406.ddte),			|4
+| 		sprintf$("%s", str$(rect.amnt)),				|5
+| 		sprintf$("%s", str$(rect.amnt+line.tax.amnt)),				|6
+| 		sprintf$("%s", ""),						|7	
+| 		sprintf$("%s", ""),						|8
+		|sprintf$("%s", tfcmg101.pdoc),					|9
+| 		sprintf$("%s", ""),						|10
+| 		sprintf$("%s", ""),						|11
+| 		sprintf$("%s", ""),						|
+		|sprintf$("%s", tfacp251.ityp &"-"& str$(tfacp251.idoc)),	|12
+| 		sprintf$("%s", ""),						|12
+| 		sprintf$("%s", ""),						|12
+		|sprintf$("%D(%02d/%02m/%04Y)", tfgld018.dcdt),			|13
+| 		sprintf$("%s", str$(tds.amnt.fc)),				|14
+| 		sprintf$("%s", str$(tds.amnt.inr)),				|14
+| 		sprintf$("%s", str$(ptr.amnt.fc)),				|15
+| 		sprintf$("%s", str$(ptr.amnt.inr)),				|16
+| 		sprintf$("%s", paid.amnt.fc),						|17
+| 		sprintf$("%s", paid.amnt.inr),						|18
+| 		sprintf$("%s", bal.amnt.fc),						|18
+| 		sprintf$("%s", bal.amnt.inr),						|19
+| 		sprintf$("%s",""))						|Last
+
+| 		line = strip$(shiftl$(line))
+| 		seq.puts(line, stat.fp)
+		
+		seq.puts("<table border = ""1"">", stat.fp)
+		seq.puts("<tr>", stat.fp)
+		seq.puts("<td align = ""center"" nowrap>" & strip$(tdpur406.dino) & "</td>", stat.fp)							|1		
+		seq.puts("<td align = ""center"" nowrap>Warehouse receipt</td>", stat.fp)							|2
+		seq.puts("<td align = ""center"" nowrap>" & tdpur406.rcno & "</td>", stat.fp)							|3
+		seq.puts("<td align = ""center"" nowrap>" & sprintf$("%u(%02d/%02m/%04Y)", tdpur406.ddte) & "</td>", stat.fp)							|4
+		seq.puts("<td align = ""center"" nowrap>" & str$(rect.amnt) & "</td>", stat.fp)							|5
+		seq.puts("<td align = ""center"" nowrap>" & str$(rect.amnt+line.tax.amnt) & "</td>", stat.fp)							|6
+		seq.puts("<td align = ""center"" nowrap></td>", stat.fp)					|7
+		seq.puts("<td align = ""center"" nowrap></td>", stat.fp)					|8
+		seq.puts("<td align = ""center"" nowrap></td>", stat.fp)		|9
+		seq.puts("<td align = ""center"" nowrap></td>", stat.fp)	|10
+| 		seq.puts("<td align = ""center"" nowrap>" & pay.booking.batch & "</td>", stat.fp)				|10
+| 		seq.puts("<td align = ""center"" nowrap>" & pur.booking.batch & "</td>", stat.fp)				|10
+		seq.puts("<td align = ""center"" nowrap></td>", stat.fp)							|11
+		seq.puts("<td align = ""center"" nowrap></td>", stat.fp)							|12
+		seq.puts("<td align = ""center"" nowrap>" & str$(tds.amnt.fc) & "</td>", stat.fp)							|13
+		seq.puts("<td align = ""center"" nowrap>" & str$(tds.amnt.inr) & "</td>", stat.fp)							|14
+		seq.puts("<td align = ""center"" nowrap>" & str$(ptr.amnt.fc) & "</td>", stat.fp)							|15
+		seq.puts("<td align = ""center"" nowrap>" & str$(ptr.amnt.inr) & "</td>", stat.fp)							|16
+		seq.puts("<td align = ""center"" nowrap>" & str$(paid.amnt.fc) & "</td>", stat.fp)				|17
+		seq.puts("<td align = ""center"" nowrap>" & str$(paid.amnt.inr) & "</td>", stat.fp)				|18
+		seq.puts("<td align = ""center"" nowrap>" & str$(bal.amnt.fc) & "</td>", stat.fp)				|19
+		seq.puts("<td align = ""center"" nowrap>" & str$(bal.amnt.inr) & "</td>", stat.fp)				|20
+		seq.puts("</tr>", stat.fp)
+		seq.puts("</table>", stat.fp)									|RAvi.a.cng.e.10092020
+
+
+
+
+if tdpur400.ccur <> "INR" then		
+	prevbal.amnt.inr = bal.amnt.inr
+	prevbal.amnt.fc =bal.amnt.fc
+
+else
+	prevbal.amnt.inr = bal.amnt.inr
+	prevbal.amnt.fc =0
+endif
+
+tot.basic.amnt=tot.basic.amnt + rect.amnt
+tot.gross.amnt=tot.gross.amnt+ (rect.amnt+line.tax.amnt)
+tot.tds.amnt.fc	=tot.tds.amnt.fc + tds.amnt.fc					
+tot.tds.amnt.inr=tot.tds.amnt.inr + tds.amnt.inr						
+tot.ptr.amnt.fc	=tot.ptr.amnt.fc + ptr.amnt.fc							
+tot.ptr.amnt.inr=tot.ptr.amnt.inr + ptr.amnt.inr								
+tot.paid.amnt.fc=tot.paid.amnt.fc + paid.amnt.fc						
+tot.paid.amnt.inr=tot.paid.amnt.inr + paid.amnt.inr						
+init.variables()
+}
+
+
+
+||Not matched
+
+
+
+|| Reciipt Logic End
+
+
+|| Credit Note Start
+
+
+function print.creditnote.details()
+{
+
+domain tfgld.btno m.btno
+
+
+select  tfacp200.*
+from tfacp200
+where tfacp200._index2={:otbp.f}
+and tfacp200.cdf_cprj=:tfisg185.cprj
+and tfacp200.cdf_prno=:orno.f
+and  tfacp200.tdoc =""
+and  tfacp200.tpay=4
+selectdo	
+	print.creditnote.line()
+selectempty
+	tfacp200.amnt = 0
+	tfacp200.amti = 0
+	tfacp200.amth(1) = 0
+	tfacp200.amth(2) = 0
+	tfacp200.amth(3) = 0
+endselect
+
+
+
+}
+
+
+function print.creditnote.line()
+{
+
+if tdpur400.ccur <> "INR" then
+| 	tds.amnt.fc =tfacp203.amti
+	tds.amnt.fc =0
+| 	tds.amnt.inr =tfacp203.amth(1)
+	tds.amnt.inr =0
+	ptr.amnt.fc =tfacp200.amti
+	ptr.amnt.inr =tfacp200.amth(1)
+	paid.amnt.fc = 0
+	paid.amnt.inr =0
+	
+	bal.amnt.fc =prevbal.amnt.fc -(tds.amnt.fc + ptr.amnt.fc )	
+	bal.amnt.inr  =prevbal.amnt.inr - (tds.amnt.inr + ptr.amnt.inr ) 
+else
+	
+	tds.amnt.fc =0
+| 	tds.amnt.inr =tfacp203.amth(1)
+	tds.amnt.inr =0
+	ptr.amnt.fc =0
+	ptr.amnt.inr =tfacp200.amth(1)
+	paid.amnt.fc = 0
+	paid.amnt.inr =0
+| 	bal.amnt.fc =(tds.amnt.fc + ptr.amnt.fc )-prevbal.amnt.fc
+	bal.amnt.fc = 0
+	bal.amnt.inr  =prevbal.amnt.inr - (tds.amnt.inr + ptr.amnt.inr ) 
+
+endif
+	select	tfgld018.btno:pur.booking.batch
+	from	tfgld018
+	where	tfgld018._index1 = {:tfacp200.ttyp,:tfacp200.ninv}
+	selectdo
+	selectempty
+		pur.booking.batch = 0
+	endselect
+
+
+													|RAvi.a.cng.s.10092020
+| 	line = concat$("	",
+| 		sprintf$("%s", ""),						|1			
+		|sprintf$("%s", enum.descr$("tfisg.tran", tfisg185.type, "2")),	|2
+| 		sprintf$("%s", ""),						|2
+| 		sprintf$("%s", ""),						|3
+| 		sprintf$("%s", ""),						|4
+| 		sprintf$("%s", ""),						|5
+| 		sprintf$("%s", ""),						|6
+| 		sprintf$("%s", ""),						|7	
+| 		sprintf$("%s", ""),						|8
+		|sprintf$("%s", tfcmg101.pdoc),					|9
+| 		sprintf$("%s", ""),						|10
+| 		sprintf$("%s", tfacp200.btno),					|11
+| 		sprintf$("%s", pur.booking.batch),						|
+| 		sprintf$("%s", tfacp200.ttyp &"-"& str$(tfacp200.ninv)),	|12
+| 		sprintf$("%D(%02d/%02m/%04Y)", tfacp200.docd),			|13
+| 		sprintf$("%s", str$(tds.amnt.fc)),				|14
+| 		sprintf$("%s", str$(tds.amnt.inr)),				|14
+| 		sprintf$("%s", str$(ptr.amnt.fc)),				|15
+| 		sprintf$("%s", str$(ptr.amnt.inr)),				|16
+| 		sprintf$("%s", paid.amnt.fc),						|17
+| 		sprintf$("%s", paid.amnt.inr),						|18
+| 		sprintf$("%s", bal.amnt.fc),						|18
+| 		sprintf$("%s", bal.amnt.inr),						|19
+| 		sprintf$("%s",""))						|Last
+
+| 		line = strip$(shiftl$(line))
+| 		seq.puts(line, stat.fp)
+		
+		seq.puts("<table border = ""1"">", stat.fp)
+		seq.puts("<tr>", stat.fp)
+		seq.puts("<td align = ""center"" nowrap></td>", stat.fp)							|1		
+		seq.puts("<td align = ""center"" nowrap></td>", stat.fp)							|2
+		seq.puts("<td align = ""center"" nowrap></td>", stat.fp)							|3
+		seq.puts("<td align = ""center"" nowrap></td>", stat.fp)							|4
+		seq.puts("<td align = ""center"" nowrap></td>", stat.fp)							|5
+		seq.puts("<td align = ""center"" nowrap></td>", stat.fp)							|6
+		seq.puts("<td align = ""center"" nowrap></td>", stat.fp)					|7
+		seq.puts("<td align = ""center"" nowrap></td>", stat.fp)							|8
+		seq.puts("<td align = ""center"" nowrap>" & str$(tfcmg101.pdoc) & "</td>", stat.fp)							|9
+		seq.puts("<td align = ""center"" nowrap></td>", stat.fp)							|10
+| 		seq.puts("<td align = ""center"" nowrap>" & tfacp200.btno & "</td>", stat.fp)					|10
+| 		seq.puts("<td align = ""center"" nowrap>" & pur.booking.batch & "</td>", stat.fp)				|10
+		seq.puts("<td align = ""center"" nowrap>" & tfacp200.ttyp &"-"& str$(tfacp200.ninv) & "</td>", stat.fp)		|11
+		seq.puts("<td align = ""center"" nowrap>" & sprintf$("%D(%02d/%02m/%04Y)", tfacp200.docd) & "</td>", stat.fp)	|12
+		seq.puts("<td align = ""center"" nowrap>" & str$(tds.amnt.fc) & "</td>", stat.fp)				|13
+		seq.puts("<td align = ""center"" nowrap>" & str$(tds.amnt.inr) & "</td>", stat.fp)				|14
+		seq.puts("<td align = ""center"" nowrap>" & str$(ptr.amnt.fc) & "</td>", stat.fp)				|15
+		seq.puts("<td align = ""center"" nowrap>" & str$(ptr.amnt.inr) & "</td>", stat.fp)				|16
+		seq.puts("<td align = ""center"" nowrap>" & str$(paid.amnt.fc) & "</td>", stat.fp)				|17
+		seq.puts("<td align = ""center"" nowrap>" & str$(paid.amnt.inr) & "</td>", stat.fp)				|18
+		seq.puts("<td align = ""center"" nowrap>" & str$(bal.amnt.fc) & "</td>", stat.fp)				|19
+		seq.puts("<td align = ""center"" nowrap>" & str$(bal.amnt.inr) & "</td>", stat.fp)				|20
+		seq.puts("</tr>", stat.fp)
+		seq.puts("</table>", stat.fp)									|RAvi.a.cng.e.10092020
+
+
+
+
+if tdpur400.ccur <> "INR" then		
+	prevbal.amnt.inr = bal.amnt.inr
+	prevbal.amnt.fc =bal.amnt.fc
+
+else
+	prevbal.amnt.inr = bal.amnt.inr
+	prevbal.amnt.fc =0
+endif
+
+| tot.basic.amnt=tot.basic.amnt + tfacp251.iamt
+| tot.gross.amnt=tot.gross.amnt+ tfacp200.amnt
+tot.tds.amnt.fc	=tot.tds.amnt.fc + tds.amnt.fc					
+tot.tds.amnt.inr=tot.tds.amnt.inr + tds.amnt.inr						
+tot.ptr.amnt.fc	=tot.ptr.amnt.fc + ptr.amnt.fc							
+tot.ptr.amnt.inr=tot.ptr.amnt.inr + ptr.amnt.inr								
+tot.paid.amnt.fc=tot.paid.amnt.fc + paid.amnt.fc						
+tot.paid.amnt.inr=tot.paid.amnt.inr + paid.amnt.inr						
+init.variables()
+}
+
+
+
+
+
+
+
+function print.total()
+{
+	
+															|RAvi.a.cng.s.10092020
+| line = concat$("	",
+| 	sprintf$("%s", ""),						|1			
+| 	sprintf$("%s", "Total"),					|2
+| 	sprintf$("%s", ""),						|3
+| 	sprintf$("%s",""),						|4
+| 	sprintf$("%s", str$(tot.basic.amnt)),				|5
+| 	sprintf$("%s", str$(tot.gross.amnt)),				|6
+| 	sprintf$("%s", ""),						|7	
+| 	sprintf$("%s", ""),						|8
+| 	sprintf$("%s", ""),						|09
+| 	sprintf$("%s", ""),						|10
+| 	sprintf$("%s", ""),						|11
+| 	sprintf$("%s", ""),						|
+| 	sprintf$("%s", ""),						|12
+| 	sprintf$("%s", str$(tot.tds.amnt.fc)),				|13
+| 	sprintf$("%s", str$(tot.tds.amnt.inr)),				|14
+| 	sprintf$("%s", str$(tot.ptr.amnt.fc)),				|15
+| 	sprintf$("%s", str$(tot.ptr.amnt.inr)),				|16
+| 	sprintf$("%s", tot.paid.amnt.fc),				|17
+| 	sprintf$("%s", tot.paid.amnt.inr),				|18
+| 	sprintf$("%s", bal.amnt.fc),					|19
+| 	sprintf$("%s", bal.amnt.inr),					|20
+| 	sprintf$("%s",""))						|Last
+
+| 	line = strip$(shiftl$(line))
+| 	seq.puts(line, stat.fp)
+	
+	seq.puts("<table border = ""1"">", stat.fp)
+	seq.puts("<tr>", stat.fp)
+	seq.puts("<td align = ""center"" nowrap></td>", stat.fp)							|1		
+	seq.puts("<td align = ""center"" nowrap><b>Total</b></td>", stat.fp)							|2
+	seq.puts("<td align = ""center"" nowrap></td>", stat.fp)							|3
+	seq.puts("<td align = ""center"" nowrap></td>", stat.fp)							|4
+	seq.puts("<td align = ""center"" nowrap><b>" & str$(tot.basic.amnt) & "</b></td>", stat.fp)							|5
+	seq.puts("<td align = ""center"" nowrap><b>" & str$(tot.gross.amnt) & "</b></td>", stat.fp)							|6
+	seq.puts("<td align = ""center"" nowrap></td>", stat.fp)					|7
+	seq.puts("<td align = ""center"" nowrap></td>", stat.fp)					|8
+	seq.puts("<td align = ""center"" nowrap></td>", stat.fp)		|9
+	seq.puts("<td align = ""center"" nowrap></td>", stat.fp)	|10
+| 	seq.puts("<td align = ""center"" nowrap></td>", stat.fp)				|10
+| 	seq.puts("<td align = ""center"" nowrap></td>", stat.fp)				|10
+	seq.puts("<td align = ""center"" nowrap></td>", stat.fp)							|11
+	seq.puts("<td align = ""center"" nowrap></td>", stat.fp)							|12
+	seq.puts("<td align = ""center"" nowrap><b>" & str$(tot.tds.amnt.inr) & "</b></td>", stat.fp)							|13
+	seq.puts("<td align = ""center"" nowrap><b>" & str$(tot.tds.amnt.inr) & "</b></td>", stat.fp)							|14
+	seq.puts("<td align = ""center"" nowrap><b>" & str$(tot.ptr.amnt.fc) & "</b></td>", stat.fp)							|15
+	seq.puts("<td align = ""center"" nowrap><b>" & str$(tot.ptr.amnt.inr) & "</b></td>", stat.fp)							|16
+	seq.puts("<td align = ""center"" nowrap><b>" & str$(tot.paid.amnt.fc) & "</b></td>", stat.fp)				|17
+	seq.puts("<td align = ""center"" nowrap><b>" & str$(tot.paid.amnt.inr) & "</b></td>", stat.fp)				|18
+	seq.puts("<td align = ""center"" nowrap><b>" & str$(bal.amnt.fc) & "</b></td>", stat.fp)				|19
+	seq.puts("<td align = ""center"" nowrap><b>" & str$(bal.amnt.inr) & "</b></td>", stat.fp)				|20
+	seq.puts("</tr>", stat.fp)
+	seq.puts("</table>", stat.fp)									|RAvi.a.cng.e.10092020
+}
+
+
+
+
+
+
+
+||logic for tax value
+
+function get.tax.value()
+{
+	select tdpur401.*
+	from tdpur401
+	where tdpur401._compnr =:m.lcmp				
+	and tdpur401._index1 = {:orno.f}				
+	and	tdpur401.oltp in (1,4)
+| 	and	tdpur401.item refers to tcibd001
+| 	and	tdpur401.cprj refers to tcmcs052 unref clear
+	selectdo
+		
+		populate.tax.amounts()
+	endselect
+}		
+
+
+function populate.tax.amounts()
+{
+	domain	tcamnt		line.tax.amount.array(1, 1)	based
+	domain	tcamnt		line.base.amount.array(1, 1)	based
+	domain	tccvat		line.tax.code.array(1, 1)	based
+	domain	tctax.indt.l	o.line.indirect.tax.array(1, 1)	based
+	domain	tctax.indt.l	i.duty.type.array(1, 1)		based
+	domain	tcyesno		expensed.tax(1, 1)		based
+	domain	tcmcs.s250m	o.comb.output.set(1)		based
+	domain	tcpvat		o.tax.rates(1,1)		based
+	domain	tcamnt		i.duties.array(1,1)		based
+	domain tctax.seqn 	o.maximum.sequence.number
+	domain tcamnt 		o.claimable.tax.amount
+	domain tcamnt 		o.non.claimable.tax.amount
+	domain tcamnt 		o.total.tax.amount
+	domain tcamnt 		o.sales.tax
+	domain tcmcs.s250m 	o.error.msg mb
+	domain	tcamnt		tmp.rate		
+	domain	tcamnt		temp.1.rate, temp.amnt	
+	
+	
+	tmp.rate = 0					
+	o.kkcess.rate = 0.00	
+	temp.1.rate = 0	
+	rate = 0	
+	temp.amnt = 0
+	tctax.dll9141.determine.aggregate.tax.amounts.per.line( 
+						tdpur401.ccty,				| domain tcccty i.tax.country, 
+						tdpur401.cvat,				| domain tccvat i.aggregate.tax.code, 
+						tdpur401.odat,				| domain tcdate i.tax.date, 
+						tdpur401.oamt,				| domain tcamnt i.order.line.price, 
+						tdpur401.cuva,				| domain tcamnt i.customs.value, 
+						tdpur401.mrpi.l,			| domain tcamnt i.market.retail.price, 
+						0.00,					| domain tcamnt i.retail.sales.price, 
+						0.00,					| domain tcamnt i.tariff.price, 
+						tdpur400.ccur,				| domain tcccur i.price.currency, 
+						tdpur400.ratd,				| domain tcdate i.currency.rate.date, 
+						tdpur400.ratt,				| domain tcrtyp i.currency.exchange.rate.type, 
+						tdpur401.tase.l,			| domain tcpric i.asv.excise, 
+						tdpur401.tasv.l,			| domain tcpric i.asv.vat, 
+						tdpur401.tass.l,			| domain tcpric i.asv.service.tax, 
+						tdpur401.tasg.l,			| domain tcpric i.asv.gst, 
+						tdpur401.ddta,				| domain tcdate i.ship.or.receive.date, 
+						tcyesno.no,				| domain tcyesno i.as.is.sales, 
+						tcyesno.no,				| domain tcyesno i.yesno.flag, 
+						i.duty.type.array,			| ref domain tctax.indt.l i.duty.type.array(,), 
+						i.duties.array,				| ref domain tcamnt i.duties.array(,), 
+						o.tax.rates,				| ref domain tcpvat o.tax.rates(,), 
+						o.maximum.sequence.number,		| ref domain tctax.seqn o.maximum.sequence.number, 
+						line.base.amount.array,			| ref domain tcamnt o.line.base.amount.array(,), 
+						line.tax.amount.array,			| ref domain tcamnt o.line.tax.amount.array(,), 
+						line.tax.code.array,			| ref domain tccvat o.line.tax.code.array(,) fixed, 
+						o.line.indirect.tax.array,		| ref domain tctax.indt.l o.line.indirect.tax.array(,), 
+						expensed.tax,				| ref domain tcyesno o.expensed.tax(,), 
+						o.claimable.tax.amount,			| ref domain tcamnt o.claimable.tax.amount, 
+						o.non.claimable.tax.amount,		| ref domain tcamnt o.non.claimable.tax.amount, 
+						o.total.tax.amount,			| ref domain tcamnt o.total.tax.amount, 
+						o.sales.tax,				| ref domain tcamnt o.sales.tax, 
+						o.comb.output.set,			| ref domain tcmcs.s250m o.comb.output.set() fixed mb, 
+						o.error.msg)				| ref domain tcmcs.s250m o.error.msg mb )
+						
+						
+						
+						all.line.total.tax.amount =all.line.total.tax.amount+ o.total.tax.amount						
+						
+}
+
+
+
+
+
+
+
+function extern domain tfgld.amnt get.tax.amounts()
+{
+	domain	tcamnt		line.tax.amount.array(1, 1)	based
+	domain	tcamnt		line.base.amount.array(1, 1)	based
+	domain	tccvat		line.tax.code.array(1, 1)	based
+	domain	tctax.indt.l	o.line.indirect.tax.array(1, 1)	based
+	domain	tctax.indt.l	i.duty.type.array(1, 1)		based
+	domain	tcyesno		expensed.tax(1, 1)		based
+	domain	tcmcs.s250m	o.comb.output.set(1)		based
+	domain	tcpvat		o.tax.rates(1,1)		based
+	domain	tcamnt		i.duties.array(1,1)		based
+	domain tctax.seqn 	o.maximum.sequence.number
+	domain tcamnt 		o.claimable.tax.amount
+	domain tcamnt 		o.non.claimable.tax.amount
+	domain tcamnt 		o.total.tax.amount
+	domain tcamnt 		o.sales.tax
+	domain tcmcs.s250m 	o.error.msg mb
+	domain	tcamnt		tmp.rate		
+	domain	tcamnt		temp.1.rate, temp.amnt	
+	
+	
+	tmp.rate = 0					
+	o.kkcess.rate = 0.00	
+	temp.1.rate = 0	
+	rate = 0	
+	temp.amnt = 0
+	tctax.dll9141.determine.aggregate.tax.amounts.per.line( 
+						tdpur401.ccty,				| domain tcccty i.tax.country, 
+						tdpur401.cvat,				| domain tccvat i.aggregate.tax.code, 
+						tdpur401.odat,				| domain tcdate i.tax.date, 
+						tdpur406.damt,				| domain tcamnt i.order.line.price, 
+						tdpur401.cuva,				| domain tcamnt i.customs.value, 
+						tdpur401.mrpi.l,			| domain tcamnt i.market.retail.price, 
+						0.00,					| domain tcamnt i.retail.sales.price, 
+						0.00,					| domain tcamnt i.tariff.price, 
+						tdpur400.ccur,				| domain tcccur i.price.currency, 
+						tdpur400.ratd,				| domain tcdate i.currency.rate.date, 
+						tdpur400.ratt,				| domain tcrtyp i.currency.exchange.rate.type, 
+| 						tdpur401.tase.l,			| domain tcpric i.asv.excise, 
+| 						tdpur401.tasv.l,			| domain tcpric i.asv.vat, 
+| 						tdpur401.tass.l,			| domain tcpric i.asv.service.tax, 
+| 						tdpur401.tasg.l,			| domain tcpric i.asv.gst, 
+						tdpur406.damt,			| domain tcpric i.asv.excise, 
+						tdpur406.damt,			| domain tcpric i.asv.vat, 
+						tdpur406.damt,			| domain tcpric i.asv.service.tax, 
+						tdpur406.damt,			| domain tcpric i.asv.gst, 
+						tdpur401.ddta,				| domain tcdate i.ship.or.receive.date, 
+						tcyesno.no,				| domain tcyesno i.as.is.sales, 
+						tcyesno.no,				| domain tcyesno i.yesno.flag, 
+						i.duty.type.array,			| ref domain tctax.indt.l i.duty.type.array(,), 
+						i.duties.array,				| ref domain tcamnt i.duties.array(,), 
+						o.tax.rates,				| ref domain tcpvat o.tax.rates(,), 
+						o.maximum.sequence.number,		| ref domain tctax.seqn o.maximum.sequence.number, 
+						line.base.amount.array,			| ref domain tcamnt o.line.base.amount.array(,), 
+						line.tax.amount.array,			| ref domain tcamnt o.line.tax.amount.array(,), 
+						line.tax.code.array,			| ref domain tccvat o.line.tax.code.array(,) fixed, 
+						o.line.indirect.tax.array,		| ref domain tctax.indt.l o.line.indirect.tax.array(,), 
+						expensed.tax,				| ref domain tcyesno o.expensed.tax(,), 
+						o.claimable.tax.amount,			| ref domain tcamnt o.claimable.tax.amount, 
+						o.non.claimable.tax.amount,		| ref domain tcamnt o.non.claimable.tax.amount, 
+						o.total.tax.amount,			| ref domain tcamnt o.total.tax.amount, 
+						o.sales.tax,				| ref domain tcamnt o.sales.tax, 
+						o.comb.output.set,			| ref domain tcmcs.s250m o.comb.output.set() fixed mb, 
+						o.error.msg)				| ref domain tcmcs.s250m o.error.msg mb )
+						
+						
+						
+						return(o.total.tax.amount)
+						
+}
+
+function domain	tcorno	paym.req(domain	tfgld.btno	i.pyad)					|RAvi.a.s
+{	
+	domain	tcorno	adrq.i
+	domain	tcncmp	curr_comp.pay
+	domain	tcmcs.str6m	i.pyad.str
+	
+	curr_comp.pay = get.compnr()
+	adrq.i = ""
+	i.pyad.str = str$(i.pyad)
+	
+	select	tcemm030.lcmp
+	from	tcemm030
+	where	tcemm030.fcmp = :curr_comp.pay
+	as set with 1 rows
+	selectdo
+		select	tfisg185.adrq:adrq.i
+		from	tfisg185
+		where	tfisg185._index4 = {:i.pyad.str}
+		and	tfisg185._compnr = :tcemm030.lcmp
+		as set with 1 rows
+		selectdo
+		selectempty
+			adrq.i = ""
+		endselect
+	endselect
+	
+	return(adrq.i)
+}
+												|RAvi.a.e

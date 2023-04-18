@@ -1,0 +1,199 @@
+|******************************************************************************
+|* tfisg0113m001  0  VRC B61U a7 isg 
+|* Upload Cashflow Data
+|* Ravi Kumar                    
+|* 2019-12-02
+|******************************************************************************
+|* Main table tfisg013 Cashflow Project Description, Form Type 4
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttfisg013 | Cashflow Project Description
+  table	  ttpisg088
+
+   extern  domain  tccprj           cprj    fixed
+   extern	domain	tcmcs.str40	cacp, eunt
+   extern	domain	tcmcs.str60	dsca
+   extern	domain	tpisg.domex	area
+   extern	long	area.num, type.num
+   extern	domain	tcmcs.str100	file, file.format
+   extern	domain	tfisg.cf.type	type	
+   
+	long			server_file_ptr
+	string			tmp.record(2048)
+	domain	tcmcs.str50	server.tmp.file, local.filename
+	long			ret.num,dd,mm,yy
+	extern	domain	tcorno		ccod
+	extern	domain	tcemm.grid	divn
+	
+   
+   #pragma used dll ottdllbw
+#include <bic_dam> 
+#pragma used dll ottstpapihand
+
+
+|****************************** program section ********************************
+before.program:
+	file.format = "Project, Code As Per CashFlow, Desc, Division for Acc, Area, Type, Contract Code, Divs"
+
+|****************************** group section **********************************
+| choice.print.data:
+| on.choice:
+|    if rprt_open() then
+|        print.error.report()
+|        rprt_close()
+|    else
+|        choice.again()
+|    endif
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+
+functions:
+function extern search()
+{
+	mess("tigenstring", 0, "Select The File . . .")
+	if seq.open.dialog.local( false, "", "","Text Files(*.csv)|*.csv|All File(*.*)|*.*", file ) > 0 then
+		mess("tigenstring", 0, "Success . . .")
+	else
+		mess("tigenstring", 0, "Cancelled . . .")
+	endif
+	display.all()
+}
+
+function extern process()
+{
+	display.all()
+| 	
+	if isspace(file) then
+		mess("tigenstring", 1, "Please Specify a File")
+		return
+	else
+		start.upload.file()
+	endif
+}
+
+function extern start.upload.file()
+{
+| 	local.filename = _get.local.filename()
+| 	server.tmp.file = dte$()&"_"&local.filename
+	server.tmp.file = creat.tmp.file$( bse.tmp.dir$() )
+	
+	if client2server(file, server.tmp.file, false, false, true) = 0 then
+		mess("tigenstring", 0, "File Copy to server:tmp successful !")
+		server_file_ptr = seq.open(server.tmp.file, "r")
+		
+		if server_file_ptr then
+			mess("tigenstring", 0, "Update in Progress . . .")
+			update.receipt.data()
+			seq.close(server_file_ptr)
+			mess("tigenstring", 0, "Update Complete !!")
+		else
+			mess("tigenstring", 1, "ERROR : File Cannot be Opened")
+		endif
+	else
+		mess("tigenstring", 1, "ERROR : Copy Failed")		
+	endif
+}
+
+
+function init.all.variables()
+{
+
+	cprj = ""
+	cacp = ""
+	dsca = ""
+	eunt = ""
+	ccod = ""
+	area = empty
+	area.num = 0
+	type.num = 0
+	type = empty
+	tmp.record = ""
+}
+
+function update.receipt.data()
+{
+	while(not seq.eof(server_file_ptr))
+		mess("tigenstring", 0, "Update in Progress . . .")		
+		init.all.variables()
+		ret.num = seq.gets(tmp.record, 2048, server_file_ptr)
+		if ret.num = 0 then
+		| field sequence                            1, 2, 3, 4, 5
+			ret.num = string.scan(tmp.record, "%s,%s,%s,%s,%f,%f,%s, %s", cprj, cacp, dsca, eunt, area.num, type.num, ccod, divn)
+			if ret.num <> 0 then
+				insert.data()
+				mess("tigenstring", 0, "Update in Progress . . .")
+			endif
+		endif
+	endwhile
+}
+
+function insert.data()
+{
+| 	cprj = str.replace$(cprj, ",", "")
+| 	cacp = str.replace$(cacp, ",", "")
+| 	dsca = str.replace$(dsca, ",", "")
+| 	cprj = str.replace$(cprj, ",", "")
+	cprj = toupper$(cprj)
+	ccod = toupper$(ccod)
+	divn = toupper$(divn)
+	
+	select	tfisg013.*
+	from	tfisg013
+	where	tfisg013._index1 = {:cacp, :cprj}
+	as set with 1 rows
+	selectdo
+	selectempty
+| 		if dal.new.object("tfisg013") = 0 then
+| 			dal.set.field("tfisg013.cprj", cprj)
+| 			dal.set.field("tfisg013.capc", cacp)
+| 			dal.set.field("tfisg013.dsca", dsca)
+| 			dal.set.field("tfisg013.eunt", eunt)
+| 			if area.num = 1 then
+| 				dal.set.field("tfisg013.area", tpisg.domex.domestic)
+| 			else
+| 				dal.set.field("tfisg013.area", tpisg.domex.export)
+| 			endif
+| 			dal.set.field("tfisg013.type", ltoe(type.num))
+| 			if dal.save.object("tfisg013") = 0 then
+| 				commit.transaction()
+| 			else
+| 				abort.transaction()
+| 			endif
+| 		endif
+		
+		tfisg013.cprj = cprj
+		tfisg013.capc = cacp
+		tfisg013.dsca = dsca
+		tfisg013.eunt = eunt
+		if area.num = 1 then
+			tfisg013.area = tpisg.domex.domestic
+		else
+			tfisg013.area = tpisg.domex.export
+		endif
+		tfisg013.type = ltoe(type.num)
+| 		if type.num = 3 then
+| 			select	tpisg088.ccod
+| 			from	tpisg088
+| 			where	tpisg088.cprj = :cprj
+| 			as set with 1 rows
+| 			selectdo
+| 				tfisg013.ccod = tpisg088.ccod
+| 			selectempty
+| 				tfisg013.ccod = ccod
+| 			endselect
+| 		else
+			tfisg013.ccod = ccod
+| 		endif
+		tfisg013.divn = divn
+		tfisg013.udby = logname$
+		tfisg013.udat = utc.num()
+		db.insert(ttfisg013, db.retry)
+		commit.transaction()
+	endselect
+}

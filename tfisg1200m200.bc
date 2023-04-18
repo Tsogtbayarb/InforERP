@@ -1,0 +1,269 @@
+|******************************************************************************
+|* tfisg1200m200  0  VRC B61U a7 isg 
+|* SCB Payments Reconciliation
+|* Ravi Kumar                    
+|* 2021-06-15
+|******************************************************************************
+|* Main table tfisg100 Nonfinalized Transactions, Form Type 4
+|******************************************************************************
+|*
+|* GH615CR000, RAvi Kumar, 26-07-2021
+|* SCB Auto Reconciliation Batch should generate in ID of Akhilesh Garg 
+|****************************** declaration section ***************************
+declaration:
+
+	table   ttfisg100 | Nonfinalized Transactions
+	table	ttfcmg100
+	table	ttfgld100
+	table	ttfisg105
+	
+	extern	domain	tfcmg.cheq	cheq.f, cheq.t
+	extern	domain	tfgld.btno	i.btno
+	extern	domain	tfgld.year	i.year
+	extern	domain	tcmcs.str20	i.label
+	extern	domain	tfgld.ttyp	get.rec.ttyp
+	extern	domain	tfgld.docn	get.rec.docn
+		string	get.rec.docn.str(15)
+	
+	long	ret
+	string	error.msg(500)
+	
+	domain	tcmcs.str16	i.cusr
+	
+	#pragma used dll ottstpapihand
+	#include <bic_dam>
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+choice.create.tran:
+on.choice:
+	generate.reconiliation()
+	
+field.cheq.f:
+when.field.changes:
+	cheq.t = cheq.f
+
+before.zoom:
+	query.extend.where.in.zoom("tfcmg100.bank = " & quoted.string("SCB") & " and tfcmg100.paym = " & quoted.string("RTG") 
+					& " and	tfcmg100.chst = tfcmg.chst.anticipated")
+
+	
+functions:
+function generate.reconiliation()
+{
+	long	flag.found
+	i.cusr = ""
+	flag.found = 0
+	select	tfcmg100.bank,
+		tfcmg100.paym,
+		tfcmg100.cheq,
+		tfcmg100.chst,
+		tfcmg100.typo,
+		tfcmg100.doco,
+		tfcmg100.amnt
+	from	tfcmg100
+| 	where	tfcmg100._index1 inrange {"SCB", "RTG", :cheq.f} and {"SCB", "RTG", :cheq.t}
+| 	where	tfcmg100._index1 = {"SCB", "RTG"}
+	where	tfcmg100._index1 = {"SCB"}
+	and	tfcmg100.paym in ("RTG", "ANP")
+	and	tfcmg100.chst = tfcmg.chst.anticipated
+	selectdo
+		i.cusr = str$(tfcmg100.typo) & " " & str$(tfcmg100.doco)
+		select	tfisg053.hsrn,
+			tfisg053.dsrn,
+			tfisg053.cusr,
+			tfisg053.stat
+		from	tfisg053
+		where	tfisg053.cusr = :i.cusr
+		and	tfisg053.stat = "F1"
+		and	tfisg053.pamt = :tfcmg100.amnt
+		selectdo
+			flag.found = 1
+		endselect
+	endselect
+	if flag.found = 1 then 
+		afs.transaction() 
+		change.batch.userid()
+		message("Process complete, Batch " & str$(i.btno) & " generated")
+	else
+		message("No data to Reconciliation")
+	endif
+	
+}
+
+
+function afs.transaction()
+{
+	if dal.new.object("tfgld100") = 0 then
+		dal.set.field("tfgld100.tedt", date.num())
+		dal.set.field("tfgld100.bref", "SCB Automated Reco")
+		if dal.save.object("tfgld100") = 0 then
+			commit.transaction()
+			i.btno = tfgld100.btno
+			i.year = tfgld100.year
+			insert.data.tfgld101()
+		else
+			abort.transaction()
+		endif
+	endif
+}
+
+function insert.data.tfgld101(	)
+{
+	if dal.new.object("tfgld101") = 0 then
+		dal.set.field("tfgld101.year", i.year)
+		dal.set.field("tfgld101.btno", i.btno)
+		dal.set.field("tfgld101.ttyp", tfcmg100.typo)
+		if dal.save.object("tfgld101") = 0 then
+			commit.transaction()
+			i.cusr = ""
+			select	tfcmg100.bank,
+				tfcmg100.paym,
+				tfcmg100.cheq,
+				tfcmg100.chst,
+				tfcmg100.typo,
+				tfcmg100.doco,
+				tfcmg100.amnt
+			from	tfcmg100
+| 			where	tfcmg100._index1 = {"SCB", "RTG"}
+			where	tfcmg100._index1 = {"SCB"}
+			and	tfcmg100.paym in ("RTG", "ANP")
+			and	tfcmg100.chst = tfcmg.chst.anticipated
+			selectdo
+				i.cusr = str$(tfcmg100.typo) & " " & str$(tfcmg100.doco)
+				select	tfisg053.hsrn,
+					tfisg053.dsrn,
+					tfisg053.cusr,
+					tfisg053.stat
+				from	tfisg053
+				where	tfisg053.cusr = :i.cusr
+				and	tfisg053.stat = "F1"
+				and	tfisg053.pamt = :tfcmg100.amnt
+				selectdo
+					afs.create.reconciliation()
+				endselect
+			endselect
+		else
+			abort.transaction()
+			dal.get.error.message(error.msg)
+		endif
+	endif
+}
+
+function afs.create.reconciliation()
+{
+	string	err.msg(100)
+	long ret_val 
+	domain	tfgld.refr	reference.doc
+	reference.doc = "AutoReco " & str$(tfcmg100.typo) & str$(tfcmg100.doco) & ",Ch" & trim$(str$(tfcmg100.cheq))
+	
+	stpapi.put.field("tfgld1101m000","tfgld100.year",str$(i.year))
+	stpapi.put.field("tfgld1101m000","tfgld100.btno",str$(i.btno))
+	ret = stpapi.find("tfgld1101m000", err.msg)
+	if ret = 1 then
+		stpapi.change.view("tfgld1101m100", err.msg)
+		stpapi.put.field("tfgld1101m100", "tfgld101.year", str$(i.year))	
+		stpapi.put.field("tfgld1101m100", "tfgld101.btno", str$(i.btno))
+		stpapi.put.field("tfgld1101m100", "tfgld101.ttyp", str$(tfcmg100.typo))	
+		ret = stpapi.find("tfgld1101m100", err.msg)
+		if ret = 1 then
+			ret = stpapi.mark("tfgld1101m100", err.msg)
+			if ret = 1 then
+				stpapi.form.command("tfgld1101m100", 5, "enter.transactions", err.msg)
+				stpapi.synchronize.dialog("tfcmg2100s000","add",err.msg)
+				stpapi.put.field("tfcmg2100s000", "tfcmg204.tran", str$(tfcmg.tran.reconc.suppl))
+				stpapi.put.field("tfcmg2100s000", "tfcmg204.ccur", "INR")
+				stpapi.put.field("tfcmg2100s000", "tfcmg204.refr", str$(reference.doc))
+				
+				
+				ret	=	stpapi.insert("tfcmg2100s000", true, err.msg)
+				if	ret = 1	then
+					stpapi.get.field("tfcmg2100s000", "tfcmg204.ttyp", get.rec.ttyp)
+					stpapi.get.field("tfcmg2100s000", "tfcmg204.docn", get.rec.docn.str)
+					get.rec.docn = lval(get.rec.docn.str)
+					stpapi.form.command("tfcmg2100s000", 5, "exec.user.2", err.msg)
+					stpapi.synchronize.dialog("tfcmg2102s000","add",err.msg)
+					stpapi.put.field("tfcmg2102s000", "tfcmg110.tdoc", str$(tfcmg100.bank))
+					stpapi.put.field("tfcmg2102s000", "tfcmg110.tdoc", str$(tfcmg100.typo))
+					stpapi.put.field("tfcmg2102s000", "tfcmg110.pdoc", str$(tfcmg100.doco))
+					ret = stpapi.find("tfcmg2102s000", err.msg)
+					if ret = 1 then
+						ret = stpapi.mark("tfcmg2102s000", err.msg)
+						if ret = 1 then
+							stpapi.form.command("tfcmg2102s000", 2, "tfcmg2103s000", err.msg)
+							stpapi.synchronize.dialog("tfcmg2103s000","add",err.msg)
+| 							stpapi.handle.subproc("tfcmg2100s000", "tfcmg2103s000", "modify")
+							stpapi.put.field("tfcmg2103s000", "bank.stpd", str$(tfcmg.stpd.complete))
+							stpapi.form.command("tfcmg2103s000", 5, "exec.cont.process", err.msg)
+							insert.log()
+						else
+							stpapi.end.session("tfcmg2102s000")
+						endif
+					else
+| 						stpapi.recover("tfcmg2102s000", err.msg)
+						stpapi.end.session("tfcmg2102s000")
+					endif
+				else
+| 					stpapi.recover("tfcmg2100s000", recover.msg)
+					stpapi.end.session("tfcmg2100s000")
+				endif
+				stpapi.end.session("tfcmg2100s000")
+			else
+				stpapi.end.session("tfgld1101m100", err.msg)
+			endif
+		else
+			stpapi.end.session("tfgld1101m100", err.msg)
+		endif
+	else
+		stpapi.end.session("tfgld1101m000", err.msg)
+	endif
+	
+| 	if not isspace(err.msg) then
+| 		message("%s", err.msg)
+| 	endif
+	
+| 	stpapi.end.session("tfcmg2103s000")
+	stpapi.end.session("tfcmg2102s000")
+	stpapi.end.session("tfcmg2100s000")
+	stpapi.end.session("tfgld1101m100")
+	stpapi.end.session("tfgld1101m000")
+| 	change.batch.userid()						|GH615CR000.a
+}
+
+function insert.log()
+{
+	tfisg105.cheq = tfcmg100.cheq
+	tfisg105.typo = tfcmg100.typo
+	tfisg105.doco = tfcmg100.doco
+	tfisg105.ttyp = get.rec.ttyp
+	tfisg105.docn = get.rec.docn
+	tfisg105.btno = i.btno
+	tfisg105.user = logname$
+	tfisg105.ddte = utc.num()
+	db.insert(ttfisg105, db.retry)
+	commit.transaction()
+}
+
+function change.batch.userid()			|GH615CR000.a.s
+{
+	string	err.msg(100)
+	err.msg = ""
+	
+	stpapi.put.field("tfgld1108m000","tfgld100.year", str$(i.year))
+	stpapi.put.field("tfgld1108m000","tfgld100.btno", str$(i.btno))
+	ret = stpapi.find("tfgld1108m000", err.msg)
+	if ret = 1 then
+		stpapi.put.field("tfgld1108m000","tfgld100.btyp", str$(tfgld.btyp.single.user))
+		stpapi.put.field("tfgld1108m000","tfgld100.user", "9479")
+		ret = stpapi.update("tfgld1108m000", true, err.msg)
+	endif
+	stpapi.update("tfgld1108m000", true, err.msg)
+	stpapi.end.session("tfgld1108m000")
+}						|GH615CR000.a.e
+

@@ -1,0 +1,374 @@
+|******************************************************************************
+|* tfisg2400m760  0  VRC B61U a7 isg 
+|* RCM - Data - GSTR Format
+|* Paras Kukreti (TV)
+|* 2020-02-13
+|******************************************************************************
+|* Script Type: 123
+|******************************************************************************
+                                                                                
+|****************************** DECLARATION SECTION ***************************
+declaration:
+
+	table	ttfacp100 | Display Received Purchase Invoices
+	table	ttfisg415
+	table	ttfisg416
+	table	ttfisg409
+	table	ttfisg430
+	table	ttctax940
+	table	ttccom130
+	table	ttcmcs143
+	table	ttcmcs032
+	table	ttcmcs036
+	table	ttcmcs010
+	table	ttccom139
+
+		
+	extern	domain	tfgld.year	year.f
+	extern	domain	tfgld.prod	mnth.f
+	extern	domain	tcmcs.str15	month.desc
+	extern	domain	tcpvat		cgst.rate, sgst.rate, igst.rate, cess.rate
+	extern	domain	tcamnt		cgst.amnt, sgst.amnt, igst.amnt, cess.amnt
+	extern 	domain 	tcmcs.str2	own.code
+	extern	domain	tcnama		own.nama
+	extern	domain	tcpstc		own.zipcode
+	extern	domain	tcdsca		own.ccty
+	extern	domain	tcdsca		own.state
+	extern	domain	tcdsca		own.city
+	extern	domain	tctax.txnb	gstn.c.no
+	extern	domain	tcmcs.str215m	own.address
+		domain	tccom.cadr	g.cadr
+	
+	string	err.file(100), file.name(100), line(2500)
+		long  	stat.fp, ret2
+		
+#pragma used dll ottdllbw 
+#pragma used dll otcmcsdll0036 
+#pragma used dll otcmcsdll0032 
+#pragma used dll otcisgdll0100
+#pragma used dll otfacpdll0055	
+#include "itcisg00001"
+
+#define SKIP.STRING "Purchase from Unregistered Dealer"
+#define GSTR_2_CATEGORY "012"
+
+|****************************** program section ********************************
+before.program:
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+	get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.print.report:	
+on.choice:
+	generate.file()
+		
+
+|****************************** field section *********************************	
+
+field.mnth.f:
+before.zoom:
+	tfisg416.year = year.f
+
+field.month.desc:
+before.display:
+	tcisgdll0100.get.month.description(mnth.f, month.desc)
+
+
+|****************************** function section ******************************
+
+functions:
+
+function generate.file()
+{	
+	err.file = "c:\temp\" & str$(utc.num()) & ".xls"
+	
+	file.name = "c:\temp\" & str$(utc.num())  & ".xls"
+	
+	stat.fp = seq.open(err.file, "w+")
+	
+	generate.header()
+	
+	get.the.data.from.sources()
+	
+	message("Please refer to file %s in C:", file.name)
+	
+	seq.close(stat.fp)
+	ret2 = server2client(err.file,file.name,1)
+	ret2 = app_start(file.name,"c:","","","")
+}
+
+|* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+function generate.header()
+{
+	if stat.fp >0 then
+		
+			line =concat$("	", 
+			sprintf$("Invoice_Date"),			|1
+			sprintf$("Invoice_Number"),			|2
+			sprintf$("Customer_Billing_Name"),		|3
+			sprintf$("Customer_Billing_GSTIN"),		|4
+			sprintf$("State_Place_of_Supply"),		|5
+			sprintf$("Item_Type_G_or_S"),			|6
+			sprintf$("Item_Description"),			|7
+			sprintf$("HSN_SAC_code"),			|8
+			sprintf$("Item_Quantity"),			|9
+			sprintf$("Item_UnitOfMeasurement"),		|10
+			sprintf$("Item_Rate"),				|11
+			sprintf$("Item_Total_Before_Discount"),	|12
+			sprintf$("Item_Taxable_Value"),		|13
+			sprintf$("CGST_Rate"),				|14
+			sprintf$("CGST_Amount"),			|15
+			sprintf$("SGST_Rate"),				|16
+			sprintf$("SGST_Amount"),			|17
+			sprintf$("IGST_Rate"),				|18
+			sprintf$("IGST_Amount"),			|19
+			sprintf$("CESS_Rate"),				|20
+			sprintf$("CESS_Amount"),			|21
+			sprintf$("Is this a Bill of Supply"),		|22
+			sprintf$("Flag_Reverse_Charge"),		|23
+			sprintf$("Type_Nil_Exempt_NonGST"),		|24
+			sprintf$("Original_Invoice_Date"), 		|25
+			sprintf$("Original_Invoice_Number"),		|26
+			sprintf$("Original_Customer_Billing_GSTIN"),	|27
+			sprintf$("GSTIN_eCommerce"),			|28
+			sprintf$("AdvanceReceipt_Date"),		|29
+			sprintf$("AdvanceReceipt_Document_Number"),	|30
+			sprintf$("Adjustment_Amount_of_the_Linked_Advance_Receipt"),|31
+			sprintf$("Flag_Export_GST_Payment"),		|32
+			sprintf$("Export_Shipping_Port_Num"),		|33
+			sprintf$("Export_Shipping_Bill_Number"),	|34
+			sprintf$("Export_Shipping_Bill_Date"),		|35
+			sprintf$("Flag_if_GST_TDS_deducted"),		|36	
+			sprintf$("Supplier_GSTIN"),			|37	
+			sprintf$("Customer_Billing_Address"),		|38	
+			sprintf$("Customer_Billing_City"),		|39	
+			sprintf$("Customer_Billing_State"),		|40	
+			sprintf$("Flag_Cancelled"),			|41
+			sprintf$("Receipt No."),			|42
+			sprintf$("Receipt Line No."),			|43
+			sprintf$("Billing Advice"),			|44
+			sprintf$("Project Code"),			|45
+			sprintf$("Customer Code"),			|46
+			sprintf$("Currency"),				|47			
+			sprintf$("Exchange Rate"),			|48			
+			sprintf$("Billing Value(FC)"),			|49			
+			sprintf$(""))					|Last
+	
+						
+		line = strip$(shiftl$(line))
+		seq.puts(line, stat.fp)
+	endif
+}
+
+|* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+function get.the.data.from.sources()
+{
+	select	tfisg430.*, tfisg409.dsca, tfisg409.code
+	from	tfisg430, tfisg409
+	where	tfisg430._index1 = {:year.f, :mnth.f}
+	and	tfisg430.type refers to tfisg409 UNREF CLEAR
+	selectdo
+		select	tctax940.seqn
+		from	tctax940
+		where	tctax940._index3 = {:tfisg430.regn}
+		as set with 1 rows
+		selectdo
+		selectempty
+			tctax940.seqn = 0
+		endselect
+			
+		|* Own(Isgec) Details
+		get.GSTIN.details(
+				tctax940.seqn,	|* Isgec GSTIN(Company)
+				gstn.c.no,		|* GST No.
+				own.nama,
+				own.ccty,
+				own.zipcode,
+				own.code,
+				own.state,
+				own.city,
+				own.address
+				)
+
+		cgst.amnt = tfisg430.cgst
+		cgst.rate = (cgst.amnt * 100) / tfisg430.assv
+		sgst.amnt = tfisg430.sgst
+		sgst.rate = (sgst.amnt * 100) / tfisg430.assv
+		igst.amnt = tfisg430.igst
+		igst.rate = (igst.amnt * 100) / tfisg430.assv
+		
+		print.detail()	
+	endselect
+}
+
+|* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+function print.detail()
+{
+	line = concat$("	",
+		sprintf$("%D(%02d/%02m/%04Y)", tfisg430.docd),		|1			
+		sprintf$("%s", (tfisg430.ttyp) & "-" & str$(tfisg430.docn)),|2
+		sprintf$("%s", own.nama),				|3
+		sprintf$("%s", tfisg430.regn),				|4
+		sprintf$("%s", own.code),				|5
+		sprintf$("%s", "S"),					|6
+		sprintf$("%s", tfisg409.dsca),				|7
+		sprintf$("%s", tfisg409.code),				|8	
+		sprintf$("%f", "0.00"),				|9
+		sprintf$("%s", "NA"),					|10
+		sprintf$("%f", "0.00"),				|11
+		sprintf$("%f", "0.00"),				|12
+		sprintf$("%f", tfisg430.assv),				|13
+		sprintf$("%f", cgst.rate),				|14
+		sprintf$("%f", cgst.amnt),				|15
+		sprintf$("%f", sgst.rate),				|16
+		sprintf$("%f", sgst.amnt),				|17
+		sprintf$("%f", igst.rate),				|18
+		sprintf$("%f", igst.amnt),				|19
+		sprintf$("%f", cess.rate),				|20
+		sprintf$("%f", cess.amnt),				|21
+		sprintf$("%s", "N"),					|22
+		sprintf$("%s", "Y"),					|23
+		sprintf$("%s", ""),					|24
+		sprintf$("%D(%02d/%02m/%04Y)", 0),			|25
+		sprintf$("%s", ""),					|26
+		sprintf$("%s", ""),					|27
+		sprintf$("%s", ""),					|28
+		sprintf$("%D(%02d/%02m/%04Y)", 0),			|29
+		sprintf$("%s", ""),					|30
+		sprintf$("%f", abs(0.00)),				|31
+		sprintf$("%s", ""),					|32
+		sprintf$("%s", ""),					|33				
+		sprintf$("%s", ""),					|34
+		sprintf$("%D(%02d/%02m/%04Y)", 0),			|35
+		sprintf$("%s", ""),					|36
+		sprintf$("%s", "NA"),					|37
+		sprintf$("%s", ""),					|38
+		sprintf$("%s", ""),					|39
+		sprintf$("%s", ""),					|40
+		sprintf$("%s", ""),					|41
+		sprintf$("%s", ""),					|42
+		sprintf$("%d", 0),					|43
+		sprintf$("%s", ""),					|44
+		sprintf$("%s", ""),					|45
+		sprintf$("%s", ""),					|46
+		sprintf$("%s", ""),					|47			
+		sprintf$("%f", ""),					|48			
+		sprintf$("%f", ""),					|49				
+		sprintf$(""))						|Last
+
+		line = strip$(shiftl$(line))
+		
+		seq.puts(line, stat.fp)
+}
+
+|* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+| function make.dates()
+| {
+| 	domain	tfgld.prod	no.days
+
+| 	on case mnth.f
+| 		
+| 		case 1:
+| 		case 3:
+| 		case 5:
+| 		case 7:
+| 		case 8:
+| 		case 10:
+| 		case 12:
+| 			no.days = 31
+| 		break
+| 		
+| 		case 4:
+| 		case 6:
+| 		case 9:
+| 		case 11:
+| 			no.days = 30
+| 		break
+| 		
+| 		default:
+| 			if (year.f\4) = 0 then
+| 				no.days = 29
+| 			else
+| 				no.days = 28
+| 			endif
+| 		break
+| 			
+| 		endcase
+| 		
+| 	
+| 	idat.f = date.to.num(year.f, mnth.f, 1)
+| 	idat.t = date.to.num(year.f, mnth.f, no.days)
+| }
+
+
+function get.GSTIN.details
+		(
+			domain	tctax.seqn.l	i.seqn.l,	|* Tax Sequence No.
+		ref	domain	tctax.txnb.l	o.txnb.l,	|* Registration No.	
+		ref	domain	tcnama		o.bp.nama,
+		ref	domain	tcdsca		o.ccty.dsca,
+		ref	domain	tcpstc		o.pstc,		|* Zip (Postal) Code
+		ref	domain	tcmcs.str2	o.scod,		|* Statutory State Code
+		ref	domain	tcdsca		o.cste.dsca,	|* State
+		ref	domain	tcdsca		o.city.dsca,	|* City
+		ref	domain	tcmcs.str215m	o.addr.desc	|* Address
+		)
+{	
+	domain	tccom.cadr	temp.cadr
+	
+	o.addr.desc = ""
+	
+	tcisgdll0100.get.financial.company.address.CDF.from.seqn(i.seqn.l, temp.cadr)
+		
+	select	tccom130.nama:o.bp.nama,
+		tccom130.ln01,
+		tccom130.ln02,
+		tccom130.ln03,
+		tccom130.ln04,
+		tccom130.ln05,
+		tccom130.ln06,
+		tccom130.ccty,
+		tccom130.cste,
+		tccom130.ccit,
+		tccom130.pstc:o.pstc,
+		tcmcs010.dsca:o.ccty.dsca,
+		tcmcs143.dsca:o.cste.dsca,
+		tccom139.dsca:o.city.dsca
+	from	tccom130, tcmcs010, tcmcs143, tccom139
+	where	tccom130._index1 = {:temp.cadr}
+	and	tccom130.ccty refers to tcmcs010 UNREF CLEAR
+	and	tccom130.cmba refers to tcmcs143 UNREF CLEAR
+	and	tccom130.cmbb refers to tccom139 UNREF CLEAR
+	selectdo
+		o.addr.desc = 	trim$(tccom130.ln01) & " " &
+				trim$(tccom130.ln02) & " " &
+				trim$(tccom130.ln03) & " " &
+				trim$(tccom130.ln04) & " " &
+				trim$(tccom130.ln05) & " " &
+				trim$(tccom130.ln06)
+		
+		tcisgdll0100.get.statutory.state.code(	tccom130.ccty, 
+							tccom130.cste, 
+							o.scod)	|* Statutory State Code		
+				
+	selectempty
+		o.bp.nama = ""
+		o.pstc = ""
+		o.ccty.dsca = ""
+		o.cste.dsca = ""
+		o.city.dsca = ""
+		o.scod = ""
+		o.addr.desc = ""
+	endselect
+}
+

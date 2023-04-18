@@ -1,0 +1,1387 @@
+|******************************************************************************
+|* tfisg1400m000  0  VRC B61U a7 isg 
+|* GSTR-2 Data - Invoices
+|* merino1                       
+|* 2017-06-27
+|******************************************************************************
+|* Main table tfacp100 Received Purchase Invoices, Form Type 4
+|******************************************************************************
+|* ID : ISGECGST009, IT0386, Saurabh Dubey, 27 June 2017, VRC B61U a7 isg
+|* GSTR-2, Functional : Mrs. Veena(Isgec)
+|* Isgec Onsite Deployment
+|* Merino Services
+|******************************************************************************
+|*
+|* ID ISGEC01058, Priya Jindal, 5/5/2018, VRC B61U a7 isg
+|* Addition of new fields
+|*
+|* ID: ISGEC01095, Bharti Garg, 10-08-2018, VRC B61U a7 isg
+|* Change logic for function make.dates
+|*
+|* ID: ISGEC01100, Sahil Sharma, 18-09-2018, VRC B61U a7 isg
+|* Changes lofic for the date range
+|*
+|* ID: GH267CR561_000, Paras Kukreti, 13-02-2020, VRC B61U a7 isg
+|* For RCM Transactions, New functionality for automatic transactions and 
+|* generate self invoice
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttfacp100 | Display Received Purchase Invoices
+	table	ttpisg122
+	table	ttcmcs143
+	table	ttcmcs010
+	table	ttccom100
+	table	ttccom130
+	table	ttccom139
+	table	ttcisg104
+	table	ttdpur940
+	table	ttdpur406
+	table	ttfacp200
+	table	ttfisg405
+	table	ttfisg407
+	table	ttfisg408
+	table	ttfisg415
+	table	ttfisg416
+	table	ttfisg002
+	table	ttfgld001
+	table	ttfgld018
+	table	ttdisg831   |ISGEC01058.sn
+	table	ttdisg832
+	table	ttpisg039   |ISGEC01058.en
+
+	extern	domain	tcgld.docn      idoc.f
+	extern 	domain 	tcgld.docn      idoc.t
+	extern 	domain 	tfgld.date	invd.f, invd.t    
+	extern 	domain 	tfgld.year	year.f 
+	extern 	domain 	tfgld.prod	mnth.f
+	extern 	domain 	tctran		ityp.t    
+	extern 	domain 	tcncmp		sfcp.f 
+	extern 	domain 	tcncmp		sfcp.t 
+	extern 	domain 	tcmcs.str15	invoice.catg, supply.type, adv.doc, ITC.AVAIL.TYPE
+	extern 	domain 	tcmcs.str10	exp.type
+	extern 	domain 	tcmcs.str1	rcm.appl, imp.inv, goods.or.services, bill.of.supply
+	extern 	domain 	tcmcs.str2	place.of.supply, supp.code, ship.to.code, own.code
+	extern 	domain 	tcmcs.str15	import.sez, month.desc
+	extern 	domain 	tcmcs.str50	purchase.type
+	extern 	domain 	tcibd.sern	str.ninv
+	extern 	domain 	tccom.bpid	bpid.code				|#GH267CR561_000.n
+	extern	domain	tcmcs.str100	supp.nama, ship.to.nama, own.nama, supp.temp.nama	|* Domain Changed as Suppliers from outside ERPLN also included
+	extern	domain	tcpstc		supp.zipcode, ship.to.zipcode, own.zipcode
+	extern	domain	tcdsca		supp.country, ship.to.country, own.ccty
+	extern	domain	tcdsca		supp.state, ship.to.state, own.state
+	extern	domain	tcdsca		supp.city, ship.to.city, own.city
+	extern	domain	tcmcs.str215m	supp.address, ship.to.address, own.address
+	extern	domain	tcfovn		gstn.b.no		|* Supplier GSTIN
+	extern	domain	tcfovn		gstn.s.no		|* Ship To GSTIN
+	extern	domain	tcfovn		gstn.c.no		|* Company(Isgec) GSTIN
+	extern	domain	tcpvat		cgst.rate, sgst.rate, igst.rate, cess.rate
+	extern	domain	tcamnt		cgst.amnt, sgst.amnt, igst.amnt, cess.amnt
+	extern	domain	tcamnt		tot.amnt, assv.val, adv.amth
+	extern	domain	tfgld.date	adv.doc.date
+	extern	domain	tfgld.user	g.user
+	extern	domain	tcmcs.str100	g.user.name
+	extern	domain	tcdate		IR.date, org.IR.date
+	extern	domain	tcibd.sern	ir.number		|ISGEC01058.n
+	extern	domain	tcyesno		phy.wrh			|ISGEC01058.n
+		domain	tcccty		ccty.s, ccty.b, ccty.c
+	 	domain	tcncmp		curr.comp
+		domain	tccprj		temp.cprj
+		domain	tcmcs.str30	get.reas
+		 	boolean		update.flag
+		
+	
+	string	err.file(100), file.name(100), line(2500)
+		long  	stat.fp, ret2
+		
+	#pragma used dll ottdllbw 
+	#pragma used dll otcmcsdll0036 
+	#pragma used dll otcmcsdll0032 
+	#pragma used dll otfacpdll0055	
+	#include "itcisg00001"
+	
+	#define SKIP.STRING "Purchase from Unregistered Dealer"
+
+|****************************** program section ********************************
+before.program:
+	curr.comp = get.compnr()
+	
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+	get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.print.report:	
+on.choice:
+	generate.file()
+	
+choice.generate.records:
+before.choice:
+| 	if year.f < 2017 or mnth.f < 7 then 		|#GC.10.02.2018.o
+	if year.f < 2017 and mnth.f < 7 then 		|#GC.10.02.2018.n
+		message("Month/Year Not Valid for GSTR....")
+		choice.again()
+	endif
+	
+	if GSTR.filed.for.month(year.f, mnth.f) then
+		message("GSTR-2 has already been filed for month %s %d....", month.desc, year.f)
+		choice.again()
+	endif
+	
+	if year.f > 2017 or mnth.f > 7 then	|* As GST was Effective From 01 July 2017
+		if mnth.f = 1 then
+			if not GSTR.filed.for.month(year.f - 1, 12) then
+				message("GSTR-2 has not been filed for previous month....")
+				choice.again()
+			endif
+		else
+			if not GSTR.filed.for.month(year.f, mnth.f - 1) then
+				message("GSTR-2 has not been filed for previous month....")
+				choice.again()
+			endif
+		endif	
+	endif
+	
+	if month.not.freezed() then
+		select	tfisg415.*
+		from	tfisg415 for update
+		where	tfisg415._index1 = {:year.f, :mnth.f}
+		and	tfisg415.appr <> tcyesno.yes
+		selectdo
+			db.delete(ttfisg415, db.retry, e)
+			
+			if e = 0 then
+				commit.transaction()
+			else
+				abort.transaction()
+			endif
+		endselect
+	else
+		message("GSTR-2 Data For the Month %s %d has already been Generated...", month.desc, year.f )
+		choice.again()
+	endif
+	
+on.choice:
+	update.flag = false
+	make.dates()
+	read.main.table()
+	updation.of.new.fields()	|ISGEC01058.n
+	
+after.choice:
+	start.session(MODELESS, "tfisg4515m000", "", "")
+	
+
+
+		
+
+|****************************** field section *********************************	
+
+field.mnth.f:
+before.zoom:
+	tfisg416.year = year.f
+
+field.month.desc:
+before.display:
+	tcisgdll0100.get.month.description(mnth.f, month.desc)
+
+
+|****************************** function section ******************************
+
+functions:
+
+function generate.file()
+{
+	err.file = "c:\temp\" & str$(utc.num()) & ".xls"
+	
+	file.name = "c:\temp\" & str$(utc.num())  & ".xls"
+	
+	stat.fp = seq.open(err.file, "w+")
+	
+	generate.header()
+	
+	select	tfisg415.*
+	from	tfisg415
+	where	tfisg415._index1 = {:year.f, :mnth.f}
+	selectdo
+		print.detail()
+	endselect
+	
+	message("Please refer to file %s in C:", file.name)
+	
+	seq.close(stat.fp)
+	ret2 = server2client(err.file,file.name,1)
+	ret2 = app_start(file.name,"c:","","","")
+}
+
+|* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+function generate.header()
+{
+	if stat.fp >0 then
+		
+			line =concat$("	", 
+			sprintf$("Invoice_Date"),			|1
+			sprintf$("Invoice_Number"),			|2
+			sprintf$("Supplier_Name"),			|3
+			sprintf$("Supplier_GSTIN"),			|4
+			sprintf$("StateCode_Place_of_Supply"),		|5
+			sprintf$("Item_Category"),			|6
+			sprintf$("Item_Description"),			|7
+			sprintf$("HSN_SAC_code"),			|8
+			sprintf$("Item_Quantity"),			|9
+			sprintf$("Item_UnitOfMeasurement"),		|10
+			sprintf$("Item_Rate"),				|11
+			sprintf$("Total_Item_Discount_Amount"),	|12
+			sprintf$("Item_Taxable_Value"),		|13
+			sprintf$("IGST_Rate"),				|14
+			sprintf$("IGST_Amount"),			|15
+			sprintf$("CGST_Rate"),				|16
+			sprintf$("CGST_Amount"),			|17
+			sprintf$("SGST_Rate"),				|18
+			sprintf$("SGST_Amount"),			|19
+			sprintf$("CESS_Rate"),				|20
+			sprintf$("CESS_Amount"),			|21
+			sprintf$("ITC_Availability_type"),		|22
+			sprintf$("CGST_ITC_Available_Amount"),		|23
+			sprintf$("SGST_ITC_Available_Amount"),		|24
+			sprintf$("IGST_ITC_Available_Amount"),		|25
+			sprintf$("CESS_ITC_Available_Amount"),		|26
+			sprintf$("Is_this_a_Bill_of_Supply"),		|27
+			sprintf$("Flag_Reverse_Charge"),		|28
+			sprintf$("Is_this_a_Nil_Rated/Exempt/NonGST_item"),|29
+			sprintf$("Original_Invoice_Date"), 		|30
+			sprintf$("Original_Invoice_Number"),		|31
+			sprintf$("Original_Supplier_GSTIN"),		|32
+			sprintf$("AdvancePayment_Date"),		|33
+			sprintf$("AdvancePayment_Document_Number"),	|34
+			sprintf$("Adjustment_Amount_of_Linked_Advance_Payment"),|35
+			sprintf$("Type_Import_SEZ"),			|36
+			sprintf$("Bill_of_Entry_Port_Code"),		|37
+			sprintf$("Bill_of_entry_Number"),		|38
+			sprintf$("Bill_of_entry_Date"),		|39
+			sprintf$("Recipient_GSTIN"),			|40
+			sprintf$("Supplier_Address"),			|41
+			sprintf$("Supplier_City"),			|42
+			sprintf$("Supplier_State"),			|43
+			sprintf$("Goods_Receipt_Note_number"),		|44
+			sprintf$("Goods_Receipt_Note_Date"),		|45
+			sprintf$("Goods_Receipt_Quantity"),		|46
+			sprintf$("Goods_Receipt_Amount"),		|47
+			sprintf$("Is_this_document_cancelled"),	|48
+			sprintf$("IR No."),				|49
+			sprintf$("IR Date"),				|50
+			sprintf$("Original IR Date"),			|51
+			sprintf$("Enterprise Unit"),			|52
+			sprintf$("Payment Advice"),			|53
+			sprintf$("Source of Bill"),			|54
+			sprintf$("Purchase Type"),			|55
+			sprintf$("Created By"),			|56
+			sprintf$("Name"),				|57
+			sprintf$(""))					|Last
+	
+	
+		line = strip$(shiftl$(line))
+		seq.puts(line, stat.fp)
+	endif
+}
+
+|* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+function read.main.table()
+{	
+	get.ERPLN.IRs()
+	get.NON.ERPLN.IRs()
+}
+
+|* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+function get.ERPLN.IRs()
+{
+	domain	tcmcs.str30	temp.user
+		long		break.flag
+	
+	purchase.type = ""
+	
+	bpid.code = ""								|#GH267CR561_000.n
+| 	select	tfacp100.ninv, tfacp100.ifbp, tfacp100.isup,			|#GH267CR561_000.o
+	select	tfacp100.ninv, tfacp100.ifbp:bpid.code, tfacp100.isup,		|#GH267CR561_000.n
+		tfacp100.invd, tfacp100.ccur, tfacp100.amth,
+		tfacp100.ctyp, tfacp100.cinv, tfacp100.rate,
+		tfacp100.cdf_cprj, tfacp100.cdf_irdt, 
+		tfacp100.cdf_oird, tfacp100.cdf_resn,
+		tfacp100.cdf_user, tccom100.nama:supp.nama,
+		tfisg405.*
+	from	tfacp100, tfisg405, tccom100
+	where	tfacp100.invd inrange :invd.f and :invd.t
+	and	tfacp100.ninv refers to tfisg405 UNREF CLEAR
+	and	tfacp100.ifbp refers to tccom100 UNREF CLEAR
+	selectdo
+		str.ninv = str$(tfacp100.ninv)
+		
+		select	tdpur406.orno, tdpur406.pono
+		from	tdpur406
+		where	tdpur406.dino = :str.ninv
+		and	tdpur406.conf = tcyesno.yes
+		as set with 1 rows
+		selectdo
+			break.flag = 0
+		selectempty
+			break.flag = 1 
+		endselect
+		
+		if break.flag then
+			continue
+		endif
+		
+		get.var(pid, "tfacp100.cdf_cprj", temp.cprj)
+		get.var(pid, "tfacp100.cdf_irdt", IR.date)
+		get.var(pid, "tfacp100.cdf_oird", org.IR.date)
+		get.var(pid, "tfacp100.cdf_user", temp.user)
+		get.var(pid, "tfacp100.cdf_resn", get.reas)
+		
+		temp.user = trim$(temp.user)
+		
+		tt.align.according.domain(temp.user, g.user, "tfgld.user")
+		
+		tcisgdll0100.get.user.name(g.user, g.user.name)
+		
+		select	tfisg407.*
+		from	tfisg407
+		where	tfisg407._index1 = {:tfacp100.ninv}
+		selectdo
+			select	tpisg122.gstn.s
+			from	tpisg122
+			where	tpisg122._index1 = {:temp.cprj}
+			selectdo
+			selectempty
+				tpisg122.gstn.s = 0
+			endselect
+			
+			if not isspace (tfisg407.rcno) then 
+				select	tdpur940.cbln, tdpur940.date
+				from	tdpur940
+				where	tdpur940.rcno = :tfisg407.rcno
+				selectdo
+				selectempty
+					tdpur940.cbln = ""
+					tdpur940.date = 0
+				endselect
+			endif	
+			
+			if tfisg407.qnty = 0.0000 then
+				tfisg407.bval = tfisg407.assv / tfisg407.qnty
+			else
+				tfisg407.bval = tfisg407.assv / 1
+			endif
+			
+			tfisg407.bval = tfisg407.assv / tfisg407.qnty
+			
+			|* Supplier Details
+			get.GSTIN.details(
+					0,
+					tfisg405.gstn.b,	|* Supplier GSTIN
+					gstn.b.no,		|* GST No.
+					supp.temp.nama,
+					ccty.b,			|* Supplier Country
+					supp.country,
+					supp.zipcode,
+					supp.code,
+					supp.state,
+					supp.city,
+					supp.address
+					)
+			bpid.code = ""						|#GH267CR561_000.sn
+			select	b_tctax400.bpid:bpid.code			
+			from	tctax400 b_tctax400
+			where	b_tctax400._index3 = {:tfisg405.gstn.b}
+			selectdo
+			endselect						|#GH267CR561_000.en
+					
+			|* Shipping Details
+			get.GSTIN.details(
+					0,
+					tpisg122.gstn.s,	|* Ship To GSTIN(Consignee)
+					gstn.s.no,		|* GST No.
+					ship.to.nama,
+					ccty.s,
+					ship.to.country,
+					ship.to.zipcode,
+					ship.to.code,
+					ship.to.state,
+					ship.to.city,
+					ship.to.address
+					)
+			
+			|* Own(Isgec) Details
+			get.GSTIN.details(
+					1,
+					tfisg405.gstn.c,	|* Isgec GSTIN(Company)
+					gstn.c.no,		|* GST No.
+					own.nama,
+					ccty.c,
+					own.ccty,
+					own.zipcode,
+					own.code,
+					own.state,
+					own.city,
+					own.address
+					)
+			
+			get.advance.payment.document.and.date()
+			assign.values()
+			
+			tfisg002.grno = ""	|* GR Blanked as not Required
+			tfisg002.grdt = 0
+			insert.update.the.data()
+		selectempty
+			assign.data.where.IR.Ext.not.maintained()
+			insert.update.the.data()
+		endselect
+	endselect
+}
+
+|* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+function get.NON.ERPLN.IRs()
+{
+	domain	tccom.cadr	temp.cadr.l
+	domain	tcmcs.cste	temp.supp.cste
+	domain	tccity		temp.supp.city
+	domain	tcccty		temp.supp.ccty
+	
+	select	tfisg408.* 
+	from	tfisg408
+	where	tfisg408.idat inrange :invd.f and :invd.t
+	and	tfisg408.ninv <> 102246 |* For Now
+	selectdo 
+		ITC.AVAIL.TYPE = (tfisg408.ityp = tpisg.cont.typ.goods) ? "Input":"Input Service"
+		
+		gstn.c.no = tfisg408.gstn.c	
+		gstn.b.no = tfisg408.gstn.b	
+		tfacp100.ninv = tfisg408.ninv
+		tfacp100.invd = tfisg408.idat
+		tfacp100.isup = tfisg408.isup
+		tfisg407.pono =  0
+		tfisg407.idsc = tfisg408.brmk
+		tfisg407.code = tfisg408.code
+		tfisg407.qnty = tfisg408.qnty
+		tfisg407.bval = tfisg408.assv
+		tfisg407.disc = 0.00
+		tfisg002.grno = ""
+		tfisg002.grdt = 0
+		
+		igst.rate = tfisg408.irat
+		igst.amnt = tfisg408.iamt
+		cgst.rate = tfisg408.crat
+		cgst.amnt = tfisg408.camt
+		sgst.rate = tfisg408.srat
+		sgst.amnt = tfisg408.samt
+		cess.rate = tfisg408.cess
+		cess.amnt = tfisg408.cmnt
+		assv.val = tfisg408.assv
+		place.of.supply = tfisg408.posu
+		g.user = tfisg408.ucod
+		g.user.name = tfisg408.unam
+		supp.nama = tfisg408.nama
+		goods.or.services = (tfisg408.ityp = tpisg.cont.typ.goods) ? "G":"S"
+		tfisg407.unit = (tfisg408.ityp = tpisg.cont.typ.goods) ? tfisg407.unit:""
+		tdpur940.date = 0
+		tdpur940.cbln = ""
+		adv.doc.date = 0
+		adv.doc = ""
+		org.IR.date = tfisg408.irdt
+		IR.date = tfisg408.irdt
+		
+		purchase.type = trim$(tfisg408.ptyp)
+		bill.of.supply = "N"
+		
+		bpid.code = ""							|#GH267CR561_000.sn
+		select	tctax400.cadr.l:temp.cadr.l,
+			tctax400.bpid:bpid.code					|#GH267CR561_000.n
+		from	tctax400
+		where	tctax400._index2 = {:tfisg408.gstn.b}
+		selectdo
+		selectempty
+			temp.cadr.l = ""
+		endselect	
+		
+		select	tccom130.ln01, tccom130.ln02,
+			tccom130.ln03, tccom130.ln04,
+			tccom130.ln05, tccom130.ln06,
+			tccom130.ccty:ccty.b,
+			tccom130.cste:temp.supp.cste, 
+			tccom130.ccit:temp.supp.city,
+			tccom139.dsca:supp.city
+		from	tccom130, tccom139
+		where	tccom130._index1 = {:temp.cadr.l}
+		and	tccom130.cmbb refers to tccom139 UNREF CLEAR
+		selectdo
+			supp.address = 	trim$(tccom130.ln01) & " " &
+					trim$(tccom130.ln02) & " " &
+					trim$(tccom130.ln03) & " " &
+					trim$(tccom130.ln04) & " " &
+					trim$(tccom130.ln05) & " " &
+					trim$(tccom130.ln06)
+			
+			tcisgdll0100.get.statutory.state.code(	ccty.b, 
+								temp.supp.cste, 
+								supp.code)	|* Statutory State Code
+		selectempty
+			supp.address = ""
+			supp.city = ""
+			supp.code = ""
+			ccty.b = ""
+		endselect
+		
+		if isspace(tfisg408.ifbp) then
+			supp.address = ""
+		endif
+	
+		if ccty.b <> "IN " and ccty.s = "IN " then
+			imp.inv = "Y"
+		else
+			imp.inv = "N"
+		endif
+			
+		select	tcisg104.txcl
+		from	tcisg104
+		where	tcisg104._index1 = {:tfisg408.ifbp}
+		and	tcisg104.txcl = tcisg.tax.clas.sez
+		selectdo
+		selectempty
+			tcisg104.txcl = empty
+		endselect
+	
+		if tcisg104.txcl = tcisg.tax.clas.sez then
+			import.sez = "SEZ"
+		else
+			if tfisg408.ityp = tpisg.cont.typ.goods then
+				import.sez = (ccty.b = "IN ") ? "":"Import of Goods"
+			else
+				import.sez = (ccty.b = "IN ") ? "":"Import of Services"
+			endif
+		endif
+		insert.update.the.data()
+	endselect
+}
+
+|* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+function assign.values()
+{	
+	assv.val = tfisg407.assv 
+	cgst.rate = tfisg407.crat
+	cgst.amnt = tfisg407.camt
+	sgst.rate = tfisg407.srat
+	sgst.amnt = tfisg407.samt
+	igst.rate = tfisg407.irat
+	igst.amnt = tfisg407.iamt
+	cess.rate = tfisg407.cess
+	cess.amnt = tfisg407.cmnt
+	
+	if	not isspace(temp.cprj) and 
+		tfisg407.ityp = tpisg.cont.typ.services then
+		
+		place.of.supply = ship.to.code
+		
+	else
+		place.of.supply = own.code
+	endif	
+
+	if ccty.b <> "IN " and ccty.s = "IN " then
+		imp.inv = "Y"
+	else
+		imp.inv = "N"
+	endif	
+	
+	goods.or.services = (tfisg407.ityp = tpisg.cont.typ.goods) ? "G":"S"
+	tfisg407.unit = (tfisg407.ityp = tpisg.cont.typ.goods) ? tfisg407.unit:""	|* Blank in case of Goods
+	
+	ITC.AVAIL.TYPE = "Capital Good"
+	
+	if tfisg407.rcma = tcyesno.yes then
+		rcm.appl = "Y"
+	else
+		rcm.appl = "N"
+	endif
+	
+	if tfisg405.invt = tfisg.inv.type.bill.of.supply then
+		bill.of.supply = "Y"
+	else
+		bill.of.supply = "N"
+	endif
+	
+	select	tcisg104.txcl
+	from	tcisg104
+	where	tcisg104._index1 = {:tfacp100.ifbp}
+	selectdo
+	selectempty
+		tcisg104.txcl = empty
+	endselect
+	
+	if tcisg104.txcl = tcisg.tax.clas.sez then
+		import.sez = "SEZ"
+	else
+		if tfisg407.ityp = tpisg.cont.typ.goods then
+			import.sez = (ccty.b = "IN ") ? "":"Import of Goods"
+		else
+			import.sez = (ccty.b = "IN ") ? "":"Import of Services"
+		endif	
+	endif
+	
+	tfisg408.payd = 0
+	tfisg408.ttyp = ""
+	tfisg408.docn = 0
+	tfisg408.comp = 0
+	tfisg408.sour = "ERP"
+}
+
+|* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+function assign.data.where.IR.Ext.not.maintained()
+{
+	select	tdpur401.rnso.l:tfisg405.gstn.c,
+	 	tdpur401.rnsb.l:tfisg405.gstn.b
+	from	tdpur401
+	where	tdpur401._index1 = {:tdpur406.orno, :tdpur406.pono}
+	selectdo
+	selectempty
+		tfisg405.gstn.b = 0
+		tfisg405.gstn.c = 0
+	endselect
+	
+	tpisg122.gstn.s = 0
+	
+	get.GSTIN.details(
+			0,
+			tfisg405.gstn.b,	|* Supplier GSTIN
+			gstn.b.no,		|* GST No.
+			supp.temp.nama,
+			ccty.b,			|* Supplier Country
+			supp.country,
+			supp.zipcode,
+			supp.code,
+			supp.state,
+			supp.city,
+			supp.address
+			)
+			
+	|* Shipping Details
+	get.GSTIN.details(
+			0,
+			tpisg122.gstn.s,	|* Ship To GSTIN(Consignee)
+			gstn.s.no,		|* GST No.
+			ship.to.nama,
+			ccty.s,
+			ship.to.country,
+			ship.to.zipcode,
+			ship.to.code,
+			ship.to.state,
+			ship.to.city,
+			ship.to.address
+			)
+	
+	|* Own(Isgec) Details
+	get.GSTIN.details(
+			1,
+			tfisg405.gstn.c,	|* Isgec GSTIN(Company)
+			gstn.c.no,		|* GST No.
+			own.nama,
+			ccty.c,
+			own.ccty,
+			own.zipcode,
+			own.code,
+			own.state,
+			own.city,
+			own.address
+			)
+			
+	place.of.supply = ""
+	goods.or.services = ""
+	tfisg407.pono =  0
+	tfisg407.idsc =  get.reas
+	tfisg407.code = ""
+	tfisg407.qnty = 0.00
+	tfisg407.unit = ""
+	tfisg407.bval = tfacp100.amth(1)
+	assv.val = tfacp100.amth(1)
+	igst.rate = 0.00
+	igst.amnt = 0.00  
+	cgst.rate = 0.00  
+	cgst.amnt = 0.00  
+	sgst.rate = 0.00  
+	sgst.amnt = 0.00  
+	cess.rate = 0.00  
+	cess.amnt = 0.00  
+	ITC.AVAIL.TYPE = "" 
+	bill.of.supply = ""  
+	rcm.appl = ""
+	import.sez = ""  
+	tdpur940.cbln = "" 
+	tdpur940.date = 0
+	supp.address = ""
+	supp.city = "" 
+	supp.code = "" 
+	tfisg002.grno = "" 
+	tfisg002.grdt = 0
+	tfisg408.payd = 0 
+	tfisg408.sour = "ERP" 
+	tfisg408.type = "" 
+	purchase.type = ""  
+	
+	get.advance.payment.document.and.date()
+}
+|* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+function insert.update.the.data()
+{
+	domain	tcmcs.long	max.srno
+	domain	tcmcs.long	next.srno
+	domain 	tcmcs.long 	year.n, mnth.n, day.n
+	domain 	tfgld.docn	b.ninv
+	
+		boolean		old.IR
+	
+	select	tfisg415.ninv:b.ninv			|* Forcefully put, as lines of some IR were segregated 
+	from	tfisg415				|* in different months before December 2017 as IR Line 
+	where	tfisg415._index3 = {:tfacp100.ninv}	|* was not in picture as of then in table. So skipping those IR
+	and	tfisg415.sour = :tfisg408.sour		|* was required as those IR were taken care manually.
+	and	(tfisg415.year <> :year.f
+			or	tfisg415.mnth <> :mnth.f)
+	selectdo
+		old.IR = true
+	selectempty
+		old.IR = false
+	endselect
+	
+	if old.IR = false then
+		select	max(tfisg415.srno):max.srno
+		from	tfisg415
+		where	tfisg415._index1 = {:year.f, :mnth.f}
+		selectdo
+		selectempty
+			max.srno = 0
+		endselect
+		
+		next.srno = max.srno + 1
+		
+		select	tfisg415.*
+		from	tfisg415
+		where	tfisg415._index1 = {
+					:year.f,
+					:mnth.f,
+					:next.srno
+					} 
+		selectdo
+		selectempty
+			num.to.date(tfacp100.invd, year.n, mnth.n, day.n)
+			
+			if	year.n <> year.f or		 
+				mnth.n <> mnth.f then
+			
+				select	tfisg415.*
+				from	tfisg415
+				where	tfisg415._index3 = {
+							:tfacp100.ninv, 
+							:tfisg407.pono,
+							:tfisg408.sour
+							}
+				selectdo
+				selectempty
+					tfisg415.year = year.f
+					tfisg415.mnth = mnth.f
+					tfisg415.srno = next.srno
+					tfisg415.invd = tfacp100.invd
+					tfisg415.isup = tfacp100.isup
+					tfisg415.snam = supp.nama
+					tfisg415.bpid = bpid.code		|#GH267CR561_000.n
+					tfisg415.fovn.b = toupper$(gstn.b.no)	
+					tfisg415.posu = place.of.supply
+					tfisg415.icat = goods.or.services
+					tfisg415.idsc = tfisg407.idsc 
+					tfisg415.code = tfisg407.code
+					tfisg415.iqty = tfisg407.qnty
+					tfisg415.unit = tfisg407.unit
+					tfisg415.irat = tfisg407.bval
+					tfisg415.disc = 0.00
+					tfisg415.itax = assv.val
+					tfisg415.igrt = igst.rate
+					tfisg415.igmt = igst.amnt
+					tfisg415.cgrt = cgst.rate
+					tfisg415.cgmt = cgst.amnt
+					tfisg415.sgrt = sgst.rate
+					tfisg415.sgmt = sgst.amnt
+					tfisg415.csrt = cess.rate
+					tfisg415.csmt = cess.amnt
+					tfisg415.itct = ITC.AVAIL.TYPE
+					tfisg415.itcg = cgst.amnt
+					tfisg415.itsg = sgst.amnt
+					tfisg415.itig = igst.amnt
+					tfisg415.itcs = cess.amnt
+					tfisg415.bosu = bill.of.supply
+					tfisg415.rcma = rcm.appl
+					tfisg415.ngst = ""
+					tfisg415.oidt = 0
+					tfisg415.oinv = ""
+					tfisg415.ogst = ""
+					tfisg415.adat = adv.doc.date
+					tfisg415.adoc = adv.doc
+					tfisg415.aamt = adv.amth
+					tfisg415.isez = import.sez
+					tfisg415.bprt = ""
+					tfisg415.cbln = tdpur940.cbln
+					tfisg415.bldt = tdpur940.date
+					tfisg415.fovn.c = toupper$(gstn.c.no)
+					tfisg415.sadd = supp.address
+					tfisg415.scit = supp.city
+					tfisg415.sste = supp.code
+					tfisg415.grno = tfisg002.grno
+					tfisg415.grdt = tfisg002.grdt
+					tfisg415.grqt = 0.00
+					tfisg415.grmt = 0.00
+					tfisg415.cdac = ""
+					tfisg415.ninv = tfacp100.ninv
+					tfisg415.ipon = tfisg407.pono
+					tfisg415.irdt = IR.date
+					tfisg415.oird = org.IR.date
+					tfisg415.eunt = ""
+					tfisg415.payd = tfisg408.payd
+					tfisg415.sour = tfisg408.sour
+					tfisg415.type = tfisg408.type
+					tfisg415.vtyp = toupper$(tfisg408.ttyp)
+					tfisg415.vdoc = tfisg408.docn
+					tfisg415.comp = tfisg408.comp
+					tfisg415.ptyp = purchase.type
+					tfisg415.irnt = ""
+					tfisg415.ucod = g.user
+					tfisg415.unam = g.user.name
+					tfisg415.frez = tcyesno.no
+					tfisg415.appr = tcyesno.no
+				endselect
+			else
+				tfisg415.year = year.f
+				tfisg415.mnth = mnth.f
+				tfisg415.srno = next.srno
+				tfisg415.invd = tfacp100.invd
+				tfisg415.isup = tfacp100.isup
+				tfisg415.snam = supp.nama
+				tfisg415.bpid = bpid.code			|#GH267CR561_000.n
+				tfisg415.fovn.b = toupper$(gstn.b.no)	
+				tfisg415.posu = place.of.supply
+				tfisg415.icat = goods.or.services
+				tfisg415.idsc = tfisg407.idsc 
+				tfisg415.code = tfisg407.code
+				tfisg415.iqty = tfisg407.qnty
+				tfisg415.unit = tfisg407.unit
+				tfisg415.irat = tfisg407.bval
+				tfisg415.disc = 0.00
+				tfisg415.itax = assv.val
+				tfisg415.igrt = igst.rate
+				tfisg415.igmt = igst.amnt
+				tfisg415.cgrt = cgst.rate
+				tfisg415.cgmt = cgst.amnt
+				tfisg415.sgrt = sgst.rate
+				tfisg415.sgmt = sgst.amnt
+				tfisg415.csrt = cess.rate
+				tfisg415.csmt = cess.amnt
+				tfisg415.itct = ITC.AVAIL.TYPE
+				tfisg415.itcg = cgst.amnt
+				tfisg415.itsg = sgst.amnt
+				tfisg415.itig = igst.amnt
+				tfisg415.itcs = cess.amnt
+				tfisg415.bosu = bill.of.supply
+				tfisg415.rcma = rcm.appl
+				tfisg415.ngst = ""
+				tfisg415.oidt = 0
+				tfisg415.oinv = ""
+				tfisg415.ogst = ""
+				tfisg415.adat = adv.doc.date
+				tfisg415.adoc = adv.doc
+				tfisg415.aamt = adv.amth
+				tfisg415.isez = import.sez
+				tfisg415.bprt = ""
+				tfisg415.cbln = tdpur940.cbln
+				tfisg415.bldt = tdpur940.date
+				tfisg415.fovn.c = toupper$(gstn.c.no)
+				tfisg415.sadd = supp.address
+				tfisg415.scit = supp.city
+				tfisg415.sste = supp.code
+				tfisg415.grno = tfisg002.grno
+				tfisg415.grdt = tfisg002.grdt
+				tfisg415.grqt = 0.00
+				tfisg415.grmt = 0.00
+				tfisg415.cdac = ""
+				tfisg415.ninv = tfacp100.ninv
+				tfisg415.ipon = tfisg407.pono
+				tfisg415.irdt = IR.date
+				tfisg415.oird = org.IR.date
+				tfisg415.eunt = ""
+				tfisg415.payd = tfisg408.payd
+				tfisg415.sour = tfisg408.sour
+				tfisg415.type = tfisg408.type
+				tfisg415.vtyp = toupper$(tfisg408.ttyp)
+				tfisg415.vdoc = tfisg408.docn
+				tfisg415.comp = tfisg408.comp
+				tfisg415.ptyp = purchase.type
+				tfisg415.irnt = ""
+				tfisg415.ucod = g.user
+				tfisg415.unam = g.user.name
+				tfisg415.frez = tcyesno.no
+				tfisg415.appr = tcyesno.no
+			endif	
+			
+			db.insert(ttfisg415, db.skip.dupl, e)
+			
+			if e = 0 then
+				commit.transaction()
+			else
+				abort.transaction()
+			endif
+		endselect
+	endif	
+}
+
+|* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+function print.detail()
+{	
+	line = concat$("	",
+		sprintf$("%D(%02d/%02m/%04Y)", tfisg415.invd),		|1			
+		sprintf$("%s", tfisg415.isup),				|2
+		sprintf$("%s", trim$(tfisg415.snam)),			|3
+		sprintf$("%s", trim$(tfisg415.fovn.b)),		|4
+		sprintf$("%s", tfisg415.posu),				|5
+		sprintf$("%s", tfisg415.icat),				|6
+		sprintf$("%s", trim$(tfisg415.idsc)),			|7
+		sprintf$("%s", trim$(tfisg415.code)),			|8	
+		sprintf$("%f", tfisg415.iqty),				|9
+		sprintf$("%s", tfisg415.unit),				|10
+		sprintf$("%f", tfisg415.irat),				|11
+		sprintf$("%f", tfisg415.disc),				|12
+		sprintf$("%f", tfisg415.itax),				|13
+		sprintf$("%f", tfisg415.igrt),				|14
+		sprintf$("%f", tfisg415.igmt),				|15
+		sprintf$("%f", tfisg415.cgrt),				|16
+		sprintf$("%f", tfisg415.cgmt),				|17
+		sprintf$("%f", tfisg415.sgrt),				|18
+		sprintf$("%f", tfisg415.sgmt),				|19
+		sprintf$("%f", tfisg415.csrt),				|20
+		sprintf$("%f", tfisg415.csmt),				|21
+		sprintf$("%s", tfisg415.itct),				|22
+		sprintf$("%f", tfisg415.itcg),				|23
+		sprintf$("%f", tfisg415.itsg),				|24
+		sprintf$("%f", tfisg415.itig),				|25
+		sprintf$("%s", tfisg415.itcs),				|26
+		sprintf$("%s", tfisg415.bosu),				|27
+		sprintf$("%s", tfisg415.rcma),				|28
+		sprintf$("%s", tfisg415.ngst),				|29
+		sprintf$("%D(%02d/%02m/%04Y)", tfisg415.oidt),		|30
+		sprintf$("%s", tfisg415.oinv),				|31
+		sprintf$("%s", tfisg415.ogst),				|32
+		sprintf$("%D(%02d/%02m/%04Y)", tfisg415.adat),		|33
+		sprintf$("%s", tfisg415.adoc),				|34
+		sprintf$("%f", abs(tfisg415.aamt)),			|35
+		sprintf$("%s", tfisg415.isez),				|36
+		sprintf$("%s", tfisg415.bprt),				|37
+		sprintf$("%s", tfisg415.cbln),				|38
+		sprintf$("%u(%02d/%02m/%04Y)", tfisg415.bldt),		|39
+		sprintf$("%s", trim$(tfisg415.fovn.c)),		|40
+		sprintf$("%s", trim$(tfisg415.sadd)),			|41
+		sprintf$("%s", tfisg415.scit),				|42
+		sprintf$("%s", tfisg415.sste),				|43
+		sprintf$("%s", tfisg415.grno),				|44
+		sprintf$("%D(%02d/%02m/%04Y)", tfisg415.grdt),		|45
+		sprintf$("%f", tfisg415.grqt),				|46
+		sprintf$("%f", tfisg415.grmt),				|47
+		sprintf$("%s", tfisg415.cdac),				|48
+		sprintf$("%s", tfisg415.ninv),				|49
+		sprintf$("%u(%02d/%02m/%04Y)", tfisg415.irdt),		|50
+		sprintf$("%u(%02d/%02m/%04Y)", tfisg415.oird),		|51
+		sprintf$("%s", tfisg415.eunt),				|52
+		sprintf$("%s", tfisg415.payd),				|53
+		sprintf$("%s", tfisg415.sour),				|54
+		sprintf$("%s", tfisg415.ptyp),				|55
+		sprintf$("%s", tfisg415.ucod),				|56
+		sprintf$("%s", tfisg415.unam),				|57
+		sprintf$(""))						|Last
+
+		line = strip$(shiftl$(line))
+		
+		seq.puts(line, stat.fp)
+}
+
+|* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+function get.GSTIN.details
+		(
+			domain	tcsrnb		i.reg.flag,	|* Flag(if BP GSTIN Seq. or Own GSTIN Seq.)
+			domain	tctax.seqn.l	i.seqn.l,	|* Tax Sequence No.
+		ref	domain	tctax.txnb.l	o.txnb.l,	|* Registration No.	
+		ref	domain	tcmcs.str100	o.bp.nama,
+		ref	domain	tcccty		o.ccty,
+		ref	domain	tcdsca		o.ccty.dsca,
+		ref	domain	tcpstc		o.pstc,		|* Zip (Postal) Code
+		ref	domain	tcmcs.str2	o.scod,		|* Statutory State Code
+		ref	domain	tcdsca		o.cste.dsca,	|* State
+		ref	domain	tcdsca		o.city.dsca,	|* City
+		ref	domain	tcmcs.str215m	o.addr.desc	|* Address
+		)
+{	
+	domain	tccom.cadr	temp.cadr
+	
+	o.addr.desc = ""
+	
+	if i.reg.flag = 0 then
+		select	tctax400.cadr.l:temp.cadr,
+			tctax400.fovn:o.txnb.l
+		from	tctax400
+		where	tctax400._index3 = {:i.seqn.l}
+		selectdo
+		selectempty
+			temp.cadr = ""
+			o.txnb.l = ""
+		endselect	
+	else
+		tctax.dll9140.get.own.reg.number.based.on.seq(i.seqn.l, o.txnb.l)
+		tcisgdll0100.get.financial.company.address.CDF.from.seqn(i.seqn.l, temp.cadr)
+	endif
+		
+	select	tccom130.nama:o.bp.nama,
+		tccom130.ln01,
+		tccom130.ln02,
+		tccom130.ln03,
+		tccom130.ln04,
+		tccom130.ln05,
+		tccom130.ln06,
+		tccom130.ccty,
+		tccom130.cste,
+		tccom130.ccit,
+		tccom130.pstc:o.pstc,
+		tcmcs010.dsca:o.ccty.dsca,
+		tcmcs143.dsca:o.cste.dsca,
+		tccom139.dsca:o.city.dsca
+	from	tccom130, tcmcs010, tcmcs143, tccom139
+	where	tccom130._index1 = {:temp.cadr}
+	and	tccom130.ccty refers to tcmcs010 UNREF CLEAR
+	and	tccom130.cmba refers to tcmcs143 UNREF CLEAR
+	and	tccom130.cmbb refers to tccom139 UNREF CLEAR
+	selectdo
+		o.addr.desc = 	trim$(tccom130.ln01) & " " &
+				trim$(tccom130.ln02) & " " &
+				trim$(tccom130.ln03) & " " &
+				trim$(tccom130.ln04) & " " &
+				trim$(tccom130.ln05) & " " &
+				trim$(tccom130.ln06)
+		
+		o.ccty = tccom130.ccty		
+		
+		tcisgdll0100.get.statutory.state.code(	tccom130.ccty, 
+							tccom130.cste, 
+							o.scod)	|* Statutory State Code		
+				
+	selectempty
+		o.bp.nama = ""
+		o.pstc = ""
+		o.ccty.dsca = ""
+		o.cste.dsca = ""
+		o.city.dsca = ""
+		o.scod = ""
+		o.addr.desc = ""
+		o.ccty = ""
+	endselect
+}
+
+|* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+function get.advance.payment.document.and.date()
+{
+	domain	tcncmp		switch.comp
+	
+	domain	tfgld.ttyp	temp.ttyp.loop.01, temp.ttyp.loop.02, temp.ttyp.loop.03
+	domain	tfgld.docn	temp.docn.loop.01, temp.docn.loop.02, temp.docn.loop.03
+	domain	tfgld.lino	temp.line.loop.02, temp.line.loop.03
+	
+	if not isspace(temp.cprj) then
+		tppdm.dll0600.get.financial.company(temp.cprj, switch.comp)
+	else
+		|tcemm.dll0030.get.enterprise.unit.financial.company(tfisg405.eunt, switch.comp)
+		switch.comp = curr.comp
+	endif
+
+	switch.to.company(switch.comp)
+	
+	select	tfacp200.tdoc:temp.ttyp.loop.01,
+		tfacp200.docn:temp.docn.loop.01,
+		tfacp200.amth(1):adv.amth
+	from	tfacp200
+	where	tfacp200._index2 = {
+				:tfacp100.ifbp, 
+				:tfacp100.ctyp, 
+				:tfacp100.cinv
+				}
+	and	tfacp200.tpay = tfacp.tpay.assignment
+	selectdo
+		select	tfacp200.ttyp:temp.ttyp.loop.02,
+			tfacp200.ninv:temp.docn.loop.02,
+			tfacp200.line:temp.line.loop.02
+		from	tfacp200
+		where	tfacp200._index2 = {:tfacp100.ifbp}
+		and	tfacp200.tdoc = :temp.ttyp.loop.01
+		and	tfacp200.docn = :temp.docn.loop.01
+		and	tfacp200.ttyp <> :tfacp100.ctyp
+		selectdo
+			select	tfacp200.ttyp:temp.ttyp.loop.03,
+				tfacp200.ninv:temp.docn.loop.03,
+				tfacp200.line:temp.line.loop.03
+			from	tfacp200
+			where	tfacp200._index2 = {:tfacp100.ifbp}
+			and	tfacp200.payt = :temp.ttyp.loop.02
+			and	tfacp200.payd = :temp.docn.loop.02
+			and	tfacp200.payl = :temp.line.loop.02
+			selectdo
+			selectempty
+				temp.ttyp.loop.03 = ""
+				temp.docn.loop.03 = 0
+			endselect
+		selectempty
+			temp.ttyp.loop.03 = ""
+			temp.docn.loop.03 = 0
+		endselect
+	selectempty
+		temp.ttyp.loop.03 = ""
+		temp.docn.loop.03 = 0
+		adv.amth = 0.00
+	endselect
+	
+	adv.doc = temp.ttyp.loop.03 & " " & str$(temp.docn.loop.03)	|* Advance Document
+	
+	select	tfacp200.docd:adv.doc.date
+	from	tfacp200
+	where	tfacp200._index2 = {
+				:tfacp100.ifbp, 
+				:temp.ttyp.loop.03, 
+				:temp.docn.loop.03, 
+				:temp.line.loop.03
+				}
+	and	tfacp200.tdoc = ""
+	and	tfacp200.docn = 0
+	selectdo
+	selectempty
+		adv.doc.date = 0
+	endselect
+							
+	switch.to.company(curr.comp)	
+}
+
+|* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+function make.dates()
+{
+	domain	tfgld.prod	no.days
+
+	on case mnth.f
+		
+		case 1:
+		case 3:
+		case 5:
+		case 7:
+		case 8:
+		case 10:
+		case 12:
+			no.days = 31
+		break
+		
+		case 4:
+		case 6:
+		case 9:
+		case 11:
+			no.days = 30
+		break
+		
+		default:
+			if (year.f\4) = 0 then
+				no.days = 29
+			else
+				no.days = 28
+			endif
+		break
+			
+		endcase
+		
+	
+| 	if year.f = 2017 and (mnth.f - 3) < 7 then	|* As GST was Effective from 01 July 2017			|#ISGEC01095.so
+| 		invd.f = date.to.num(2017, 07, 1)	|* For Now Only
+| 	else
+| 		on case mnth.f				|* If Month is Less than "January", "February", "March"
+| 		case 1:					|* Last 3 months records to be considered.
+| 			invd.f = date.to.num(year.f - 1, 10, 1)
+| 			break
+| 		case 2:
+| 			invd.f = date.to.num(year.f - 1, 11, 1)
+| 			break
+| 		case 3:
+| 			invd.f = date.to.num(year.f - 1, 12, 1)
+| 			break	
+| 		case 4:					|* For Other Months
+| 		case 5:	
+| 		case 6:	
+| 		case 7:	
+| 		case 8:	
+| 		case 9:	
+| 		case 10:	
+| 		case 11:	
+| 		case 12:	
+| 			invd.f = date.to.num(year.f, mnth.f - 3, 1)
+| 			break	
+| 		endcase
+| 	endif											|#ISGEC01095.eo
+	invd.f = 0	
+	
+	if year.f = 2017 and mnth.f < 7 then				|#ISGEC01095.sn
+		invd.f = date.to.num(2017, 07, 1)
+	else
+| 		invd.f = date.to.num(year.f - 1, mnth.f, 1)		|#ISGEC01100.o
+		select	tfisg110.fidt:invd.f				|#ISGEC01100.sn
+		from	tfisg110
+		where	tfisg110._index1 = {:year.f,:mnth.f}
+		selectdo
+		selectempty
+			invd.f = 0
+		endselect						|#ISGEC01100.en
+	endif								|#ISGEC01095.en
+	
+	
+	invd.t = date.to.num(year.f, mnth.f, no.days)
+}
+
+|* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+function long month.not.freezed()
+{
+	domain	tcyesno	bind.freeze
+	
+	select	tfisg415.frez:bind.freeze
+	from	tfisg415
+	where	tfisg415._index1 = {:year.f, :mnth.f}
+	as set with 1 rows
+	selectdo
+	selectempty
+		bind.freeze = empty
+	endselect
+	
+	if bind.freeze <> tcyesno.yes then
+		return(1)
+	endif
+	
+	return(0)
+}
+
+|* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+function long GSTR.filed.for.month
+			(
+				domain	tfgld.year	i.year.no,
+				domain	tfgld.prod	i.month.no
+			)
+{
+	domain	tcyesno	bind.appr
+	
+	select	tfisg415.appr:bind.appr
+	from	tfisg415
+	where	tfisg415._index1 = {:i.year.no, :i.month.no}
+	as set with 1 rows
+	selectdo
+	selectempty
+		bind.appr = empty
+	endselect
+	
+	if bind.appr = tcyesno.yes then
+		return(1)
+	endif
+	
+	return(0)
+}
+
+function updation.of.new.fields()			|ISGEC01058.sn
+{
+	db.retry.point()
+	
+	select	tfisg415.*
+	from	tfisg415 for update
+	where	tfisg415._index1= {:year.f,:mnth.f}
+| 	and	tfisg415.sour = "ERP"
+	selectdo
+		if trim$(tfisg415.sour) = "ERP" then
+			
+			ir.number = str$(tfisg415.ninv)
+			tdisg832.edrn = ""
+			tdisg831.stat = empty
+			tpisg039.ityp = ""
+			tpisg039.idoc = 0
+			
+			select	tdpur406.rcno,tdpur406.rseq
+			from	tdpur406
+			where	tdpur406.dino = :ir.number
+			as set with 1 rows
+			selectdo
+				select	tdisg832.edrn
+				from	tdisg832
+				where	tdisg832._index4 = {:tdpur406.rcno,:tdpur406.rseq}
+				selectdo
+					select	tdisg831.stat,tdisg831.edrn
+					from	tdisg831
+					where	tdisg831._index1 = {:tdisg832.edrn}
+					selectdo
+						select	tpisg039.ityp,tpisg039.idoc
+						from	tpisg039
+						where	tpisg039._index2 = {:tdisg831.edrn}
+						selectdo
+						selectempty
+							tpisg039.ityp = ""
+							tpisg039.idoc = 0
+						endselect
+					selectempty
+						tdisg831.stat = empty
+						tpisg039.ityp = ""
+						tpisg039.idoc = 0
+					endselect
+				selectempty
+					tdisg832.edrn = ""
+					tdisg831.stat = empty
+					tpisg039.ityp = ""
+					tpisg039.idoc = 0
+				endselect
+			selectempty
+				tdisg832.edrn = ""
+				tdisg831.stat = empty
+				tpisg039.ityp = ""
+				tpisg039.idoc = 0
+			endselect
+			tfisg415.edrn = tdisg832.edrn
+			tfisg415.stat = tdisg831.stat
+			tfisg415.ityp = tpisg039.ityp
+			tfisg415.idoc = tpisg039.idoc
+			
+		else
+			tfisg415.bpid = bpid.code				|#GH267CR561_000.n
+			tfisg415.edrn = ""
+			tfisg415.stat = empty
+			tfisg415.ityp = ""
+			tfisg415.idoc = 0
+		endif
+	
+		db.update(ttfisg415,db.retry,e)
+		
+	endselect
+	
+	if e = 0 then
+		commit.transaction()
+	else
+		abort.transaction()
+	endif		
+
+}							|ISGEC01058.en

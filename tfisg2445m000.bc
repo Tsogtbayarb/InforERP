@@ -1,0 +1,591 @@
+|******************************************************************************
+|* tfisg2445m000  0  VRC B61U a7 isg 
+|* Print Unmatched Receipt
+|* Ravi Kumar                    
+|* 2020-05-28
+|******************************************************************************
+|* Main table tfacp245 Receipts, Form Type 4
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttfacp245 | Receipts
+  table	ttccom100
+  table	ttdpur406
+  table	ttdpur401
+  table	ttclct200
+  table	twhinh936
+  table	ttcmcs036
+  table	ttctax941
+  table	ttcmcs032
+  table	ttfacp935
+  table	ttcemm030
+
+   extern  domain  tccom.bpid	bpid.f, bpid.t
+   extern  domain  whinh.shpm	rcno.f, rcno.t
+   extern  domain  tfgld.date	rcdt.f, rcdt.t
+   extern  domain  tcdate	rcdt.f.utc, rcdt.t.utc
+   extern	domain	tcamnt	basic.amnt, gross.amnt, rep.ot.amnt, rep.exc.amnt, line.amnt, v.eces,
+				r.eces.per, v.cess, r.cess.per, r.kk.cess.amnt, r.kk.cess.per, temp.cgst.amnt,
+				r.cgst.per, rep.sgst.amnt, r.sgst.per, temp.igst.amnt, r.igst.per, cess.amnt,
+				r.gst.cess.per, rep.st.amnt, r.vat.per
+   long	stat.fp, ret1
+	extern	string file.name(100), file_name(100), line(5000)
+	
+	domain	tcncmp			fin_comp, curr_comp
+	extern	domain	tcbool		service.tax
+	
+#include<bic_desktop>
+#include<bic_text>
+	
+|****************************** program section ********************************
+before.program:
+	curr_comp = get.compnr()
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+choice.generate:
+on.choice:
+       generate.data()
+
+|****************************** field section *********************************
+field.rcdt.f:
+when.field.changes:
+   rcdt.t = rcdt.f
+
+field.bpid.f:
+when.field.changes:
+   bpid.t = bpid.f
+   
+field.rcno.f:
+when.field.changes:
+   rcno.t = rcno.f
+
+|****************************** function section ******************************
+
+functions:
+function generate.data()
+{
+	file_name = bse.tmp.dir$() & str$(utc.num()) & ".xls"
+	file.name = "c:\temp\" & str$(utc.num())  & ".xls"			
+	stat.fp = seq.open(file_name, "w+")
+	
+	generate.header()
+	read.main.table()
+	seq.close(stat.fp)
+	
+	ret1 = server2client(file_name,file.name,1)
+	ret1 = app_start(file.name,"d:","","","")
+}
+
+function generate.header()
+{
+	if stat.fp >0 then
+			line =concat$("	", 
+			sprintf$("Receipt No"),			|1
+			sprintf$("Receipt Line"),		|2
+			sprintf$("IR NO."),			|3
+			sprintf$("PO NO."),			|4
+			sprintf$("PO Line"),			|5
+			sprintf$("Fin Comp"),			|6
+			sprintf$("Supplier"),			|7
+			sprintf$("Supplier Name"),		|8
+			sprintf$("Receipt Amount(Basic)"),	|9
+			sprintf$("Receipt Amount(Gross)"),	|10
+			sprintf$("Receipt Date"),		|11
+			sprintf$(""))				|Last
+		line = strip$(shiftl$(line))
+		seq.puts(line, stat.fp)
+	endif
+}
+
+
+function read.main.table()
+{
+	convert.date.to.utc()
+	
+	select	tcemm030.fcmp
+	from	tcemm030
+	where	tcemm030.lcmp = :curr_comp
+	selectdo
+		select	tfacp245.rcno,
+			tfacp245.rseq,
+			tfacp245.shpm,
+			tfacp245.orno,
+			tfacp245.pono,
+			tfacp245.sqnb,
+			tfacp245.fcpo,
+			tfacp245.otbp, 
+			tfacp245.rdat,
+			tccom100.nama,
+			tdpur406.orno,
+			tdpur406.rcno,
+			tdpur406.rseq,
+			tdpur406.pono,
+			tdpur406.sqnb
+		from	tfacp245, tccom100, tdpur406
+		where	tfacp245.otbp inrange :bpid.f and :bpid.t
+		and	tfacp245.rcno inrange :rcno.f and :rcno.t
+		and	tfacp245.rdat inrange :rcdt.f.utc and :rcdt.t.utc
+		and	tdpur406.rcno = tfacp245.rcno
+		and	tdpur406.rseq = tfacp245.rseq
+		and	tdpur406.orno = tfacp245.orno
+		and	tdpur406.pono = tfacp245.pono
+		and	tdpur406.sqnb = tfacp245.sqnb
+		and	tfacp245._compnr = :tcemm030.fcmp
+		and	tdpur406._compnr = :curr_comp
+		and	tfacp245.otbp refers to tccom100
+		selectdo
+			select	tfacp251.rcno,
+				tfacp251.rseq
+			from	tfacp251
+			where	tfacp251.rcno = :tdpur406.rcno
+			and	tfacp251.rseq = :tdpur406.rseq
+			and	tfacp251.orno = :tdpur406.orno
+			and	tfacp251.pono = :tdpur406.pono
+			and	tfacp251.sqnb = :tdpur406.sqnb
+			and	tfacp251._compnr = :tcemm030.fcmp
+			selectdo
+			selectempty
+				initialize()
+				basic.amnt = basic.amount(tfacp245.rcno, tfacp245.rseq)
+				gross.amnt = gross.amount(tfacp245.rcno, tfacp245.rseq)
+				print.detail()
+			endselect
+		endselect
+	endselect
+}
+
+function initialize()
+{
+	basic.amnt = 0
+	gross.amnt = 0
+	rep.ot.amnt = 0
+	rep.exc.amnt = 0
+	line.amnt = 0
+	v.eces = 0
+	r.eces.per = 0
+	v.cess = 0
+	r.cess.per = 0
+	r.kk.cess.amnt = 0
+	r.kk.cess.per = 0
+	temp.cgst.amnt = 0
+	r.cgst.per = 0
+	rep.sgst.amnt = 0
+	r.sgst.per = 0
+	temp.igst.amnt = 0
+	r.igst.per = 0
+	cess.amnt = 0
+	r.gst.cess.per = 0
+	rep.st.amnt = 0
+	r.vat.per = 0
+	service.tax = false
+}
+
+function print.detail()
+{	
+	line = concat$("	",
+		sprintf$("%s", tfacp245.rcno),						|1	Receipt No		
+		sprintf$("%s", str$(tfacp245.rseq)),					|2	Receipt Line
+		sprintf$("%s", trim$(tfacp245.shpm)),					|3	IR NO.
+		sprintf$("%s", trim$(tfacp245.orno)),					|4	PO NO.
+		sprintf$("%s", str$(tfacp245.pono)),					|5	PO Line
+		sprintf$("%s", str$(tfacp245.fcpo)),					|6	Fin Comp
+		sprintf$("%s", tfacp245.otbp),						|7	Supplier
+		sprintf$("%s", tccom100.nama),						|8	Supplier Name
+		sprintf$("%f", basic.amnt),						|9	Receipt Amount(Basic)
+		sprintf$("%f", gross.amnt),						|10	Receipt Amount(Gross)
+		sprintf$("%u(%02d/%02m/%04Y)", tfacp245.rdat),				|11	Receipt Date
+		sprintf$(""))								|Last
+
+		line = strip$(shiftl$(line))
+		
+		seq.puts(line, stat.fp)
+}
+
+function convert.date.to.utc()
+{
+	long your.time, ret
+	your.time = 107604
+	
+	ret = local.to.utc(rcdt.f, 19080, rcdt.f.utc)
+	ret = local.to.utc(rcdt.t, your.time, rcdt.t.utc)
+}
+
+
+function domain	tcamnt	basic.amount(	domain	whinh.shpm	i.rcno,
+					domain	tcpono		i.rcln)
+{
+	domain	tcamnt	return.basic.amnt
+	return.basic.amnt = 0
+	
+	select	tdpur406.orno,
+		tdpur406.pono,
+		tdpur406.sqnb,
+		tdpur406.qiap
+	from	tdpur406
+	where	tdpur406._index2 = {:i.rcno, :i.rcln}
+	as set with 1 rows
+	selectdo
+		select	tdpur401.pric
+		from	tdpur401
+		where	tdpur401._index1 = {:tdpur406.orno, :tdpur406.pono, :tdpur406.sqnb}
+		as set with 1 rows
+		selectdo
+			return.basic.amnt = tdpur406.qiap * tdpur401.pric
+		endselect
+	endselect
+	
+	return(return.basic.amnt)
+}
+
+function domain tcamnt gross.amount(	domain	whinh.shpm	i.rcno,
+					domain	tcpono		i.rcln)
+{
+	domain	tcamnt	return.gross.amnt
+	return.gross.amnt = 0
+	
+	select	tdpur406.orno,
+		tdpur406.pono,
+		tdpur406.sqnb,
+		tdpur406.qiap,
+		tdpur406.conf,
+		tdpur406.rcno,
+		tdpur406.rseq
+	from	tdpur406
+	where	tdpur406._index2 = {:i.rcno, :i.rcln}
+	as set with 1 rows
+	selectdo
+		select	tdpur401.pric,
+			tdpur401.tass.l,
+			tdpur401.tase.l,
+			tdpur401.tasg.l,
+			tdpur401.qoor,
+			tdpur401.gsta.l,
+			tdpur401.ccty,
+			tdpur401.cvat,
+			tcmcs065.comp:fin_comp,
+			tdpur400.cofc
+		from	tdpur401, tcmcs065, tdpur400
+		where	tdpur401._index1 = {:tdpur406.orno, :tdpur406.pono, :tdpur406.sqnb}
+		and	tdpur401.orno = tdpur400.orno
+		and	tdpur400.cofc refers to tcmcs065 Unref Clear
+		selectdo
+			service.tax = false
+			calculate_freight()
+			get.tax.rate(tdpur401.ccty, tdpur401.cvat)
+			if	service.tax	then
+				if	tdpur401.qoor <> 0	then
+					line.amnt = (tdpur401.tass.l/tdpur401.qoor) * tdpur406.qiap
+				else
+					line.amnt = 0
+				endif
+			else
+				if	tdpur401.qoor <> 0	then
+					line.amnt = (tdpur401.tase.l/tdpur401.qoor) * tdpur406.qiap
+				else
+					line.amnt = 0
+				endif
+				
+				if tdpur401.tasg.l <> 0.00 and tdpur401.gsta.l = tcyesno.yes then
+					line.amnt = (tdpur401.tasg.l/tdpur401.qoor) * tdpur406.qiap
+				endif
+			endif
+			v.eces =  ( (line.amnt * r.eces.per) / 100 )
+			v.cess = (v.eces * r.cess.per) / 100 
+			r.kk.cess.amnt = (line.amnt * r.kk.cess.per) / 100
+			temp.cgst.amnt = (line.amnt * r.cgst.per) / 100
+			rep.sgst.amnt = (line.amnt * r.sgst.per) / 100
+			temp.igst.amnt = (line.amnt * r.igst.per) / 100 
+			cess.amnt = (line.amnt * r.gst.cess.per) / 100
+			
+			rep.exc.amnt = rep.exc.amnt + (v.eces + v.cess + r.kk.cess.amnt)  + temp.igst.amnt 
+			
+			if tdpur401.gsta.l = tcyesno.yes then				
+				rep.st.amnt = temp.cgst.amnt
+			else								
+				rep.st.amnt = ((line.amnt ) * r.vat.per) / 100 
+			endif
+			
+			if	tdpur406.conf = tcyesno.yes	then
+				get.tax.from.tfacp935()
+			else	
+				get.tax.from.whinh936()
+			endif	
+
+			return.gross.amnt = (rep.ot.amnt + rep.exc.amnt + rep.st.amnt + rep.sgst.amnt) + (tdpur406.qiap * tdpur401.pric) + cess.amnt
+		endselect
+	endselect
+		
+	return(return.gross.amnt)
+}
+
+function calculate_freight()						|rep.ot.amnt
+{
+	domain tcamnt	additional.amount
+	
+	select 	tclct200.lcos, 
+		sum(tclct200.lcam):additional.amount
+	from	tclct200
+	where	tclct200._index1 = {21, 100, :tdpur406.rcno, :1}
+	group by tclct200.lcos
+	wherebind(1, str$(tdpur406.rseq))
+	selectdo
+		select	tclct115.dsca 
+		from	tclct115
+		where	tclct115._index1 = {:tclct200.lcos}
+		selectdo
+		endselect
+		rep.ot.amnt = rep.ot.amnt + additional.amount
+	endselect
+}
+
+function get.tax.from.whinh936()		
+{
+	domain	tcamnt	amount
+	
+	rep.exc.amnt = 0
+	rep.st.amnt = 0
+	rep.sgst.amnt = 0.00	
+	cess.amnt = 0.00	
+	
+	switch.to.company(fin_comp)		
+	select	sum(whinh936.aamt):amount, 
+		whinh936.rcno,
+		whinh936.taxc,
+		whinh936.pvat
+	from	whinh936
+	where	whinh936._index1 = {:tdpur406.rcno, :tdpur406.rseq}
+	group by whinh936.rcno, whinh936.taxc, whinh936.pvat
+	selectdo	
+		select	tcmcs036.indt.l,tcmcs036.dsca
+		from	tcmcs036
+		where	tcmcs036._index1 = {"IN", :whinh936.taxc}
+		selectdo
+			on case etol(tcmcs036.indt.l)
+			case 1:				|Service
+			case 4:				|Basic Excise Duty
+			case 9:				|Basic Custom Duty	
+			case 10:			|Countervailing Duty
+			case 14:			|ECess CVD
+			case 15:			|ECess on Custom
+			case 16:			|Ecess on Service
+			case 17:			|Ecess on Excise
+			case 19:			|SHE Cess on CVD
+			case 20:			|SHE Cess on Excise
+			case 21:			|SHE Cess on Service
+			case 22:			|SHE Cess on Custom
+			case 42:			|IGST		
+				rep.exc.amnt = rep.exc.amnt + amount
+				break
+			case 40:			|SGST	
+			case 43:			|UTGST	
+				rep.sgst.amnt = rep.sgst.amnt + amount	
+				break	
+			case 44:			|GST CESS			
+				cess.amnt = cess.amnt + amount		
+				break	
+									
+			case 2:				|Local Sales Tax	
+			case 3:				|Central Sales Tax
+			case 26:			|VAT
+			case 30:			|Not Applicable
+			case 41:			|CGST	
+				rep.st.amnt = rep.st.amnt + amount
+			endcase
+		endselect
+	endselect
+	switch.to.company(curr_comp)		
+}
+
+function get.tax.rate(domain tcccty i.ccty, 				|r.eces.per, r.cess.per
+		      domain tccvat i.cvat)
+{
+	domain	tcpvat	gst.pvat
+	
+	r.eces.per = 0 
+	r.cess.per = 0
+	r.gst.cess.per = 0
+	r.vat.per = 0
+	r.kk.cess.per = 0	
+	r.cgst.per = 0		
+	r.sgst.per = 0	
+	gst.pvat = 0	
+	r.igst.per = 0	
+	
+	select	tctax941.*
+	from	tctax941
+	where	tctax941._index1 = {:i.ccty, :i.cvat}
+	and	tctax941.type = {20}
+	selectdo
+		select 	tcmcs036.*
+		from 	tcmcs036
+		where	tcmcs036._index1 = {:tctax941.ccty, :tctax941.cvat}
+		selectdo
+			if tcmcs036.indt.l = tctax.indt.l.bed or
+				tcmcs036.indt.l = tctax.indt.l.service	 then
+				select	tcmcs032.*
+				from 	tcmcs032
+				where	tcmcs032._index1 = {:tcmcs036.ccty, :tcmcs036.cvat}
+				and	tcmcs032.edat <= :tdpur406.ddte			  
+				order by tcmcs032._index1 desc
+				as set with 1 rows
+				selectdo
+					r.eces.per = tcmcs032.pvat
+				endselect
+				
+				if	tcmcs036.indt.l = tctax.indt.l.service	then
+					service.tax = true
+				endif	
+			endif
+			
+			if tcmcs036.indt.l = tctax.indt.l.kk.cess then	
+				select 	tcmcs032.*
+				from 	tcmcs032
+				where	tcmcs032._index1 = {:tcmcs036.ccty, :tcmcs036.cvat}
+				and	tcmcs032.edat <= :tdpur406.ddte			  
+				order by tcmcs032._index1 desc
+				as set with 1 rows
+				selectdo
+					r.kk.cess.per = tcmcs032.pvat
+				endselect
+			endif				
+			
+			if tcmcs036.indt.l = tctax.indt.l.e.cess.excise or
+			   tcmcs036.indt.l = tctax.indt.l.hse.cess.excise or
+			   tcmcs036.indt.l = tctax.indt.l.e.cess.service or		 
+			   tcmcs036.indt.l = tctax.indt.l.hse.cess.servic then 
+				select 	tcmcs032.*
+				from 	tcmcs032
+				where	tcmcs032._index1 = {:tcmcs036.ccty, :tcmcs036.cvat}
+				and	tcmcs032.edat <= :tdpur406.ddte	
+				order by tcmcs032._index1 desc
+				as set with 1 rows
+				selectdo
+					r.cess.per = r.cess.per + tcmcs032.pvat
+				endselect
+			endif
+			
+			if tcmcs.dll0036.tax.code.is.of.type.gst(tcmcs036.ccty, tcmcs036.cvat) then 
+				if not tcmcs.dll0032.get.tax.rate.l(	tcmcs036.ccty, 
+									tcmcs036.cvat,
+									gst.pvat) 	then
+				else
+					gst.pvat = 0.00
+				endif
+				
+				on case tcmcs036.indt.l
+				case tctax.indt.l.cgst:
+					r.cgst.per = r.cgst.per + gst.pvat
+					r.igst.per = 0.00
+					break
+					
+				case tctax.indt.l.sgst:
+				case tctax.indt.l.utgst:
+					r.sgst.per = r.sgst.per + gst.pvat
+					r.igst.per = 0.00
+					break	
+				
+				case tctax.indt.l.igst:
+					r.igst.per = r.igst.per + gst.pvat
+					r.cgst.per = 0.00
+					r.sgst.per = 0.00
+					break	
+								
+				case tctax.indt.l.gstcess:
+					r.gst.cess.per = r.gst.cess.per + gst.pvat
+					break
+								
+				endcase
+					
+			endif
+					
+			if tcmcs036.indt.l = tctax.indt.l.vat  or
+			tcmcs036.indt.l = tctax.indt.l.cst	or
+			tcmcs036.indt.l = tctax.indt.l.lst	or
+			tcmcs036.indt.l	= tctax.indt.l.n.a or tcmcs036.indt.l = tctax.indt.l.sb.cess then  
+				select 	tcmcs032.*
+				from 	tcmcs032
+				where	tcmcs032._index1={:tcmcs036.ccty,:tcmcs036.cvat}
+				and	tcmcs032.edat <= :tdpur406.ddte				  
+				order by tcmcs032._index1 desc
+				as set with 1 rows
+				selectdo
+					r.vat.per = r.vat.per + tcmcs032.pvat
+				endselect
+			endif
+		endselect
+	endselect
+	
+}
+
+function get.tax.from.tfacp935()
+{
+	domain	tcamnt	amount
+	
+	rep.exc.amnt = 0
+	rep.sgst.amnt = 0
+	rep.st.amnt = 0
+	cess.amnt = 0		
+	
+	switch.to.company(fin_comp)	
+	
+	select	tfacp935.ccty,
+		tfacp935.cvat, 
+		sum(tfacp935.vamt):amount
+	from	tfacp935
+	where	tfacp935.rcno = :tdpur406.rcno
+	and	tfacp935.rseq = :tdpur406.rseq
+	and	tfacp935.orno = :tdpur406.orno		
+	and	tfacp935.pono = :tdpur406.pono		
+	and	tfacp935.sqnb = :tdpur406.sqnb		
+	group by tfacp935.ccty, tfacp935.cvat
+	selectdo
+		select	tcmcs036.indt.l,tcmcs036.dsca
+		from	tcmcs036
+		where	tcmcs036._index1 = {:tfacp935.ccty, :tfacp935.cvat}
+		selectdo
+			on case etol(tcmcs036.indt.l)
+			case 1:				|Service
+			case 4:				|Basic Excise Duty
+			case 9:				|Basic Custom Duty	
+			case 10:			|Countervailing Duty
+			case 14:			|ECess CVD
+			case 15:			|ECess on Custom
+			case 16:			|Ecess on Service
+			case 17:			|Ecess on Excise
+			case 19:			|SHE Cess on CVD
+			case 20:			|SHE Cess on Excise
+			case 21:			|SHE Cess on Service
+			case 22:			|SHE Cess on Custom
+			case 28:			|Krishi Kalyan Cess	
+			case 42:			|IGST		
+				rep.exc.amnt = rep.exc.amnt + amount
+				break
+			case 40:			|SGST		
+			case 43:			|UTGST		
+				rep.sgst.amnt = rep.sgst.amnt + amount
+				break								
+			case 2:				|Local Sales Tax	
+			case 3:				|Central Sales Tax
+			case 26:			|VAT
+			case 27:			|Swatchh Bharat Cess
+			case 41:			|CGST	
+				rep.st.amnt = rep.st.amnt + amount
+				break
+			case 44:			|GST CESS	
+				cess.amnt = cess.amnt + amount 			
+				break					
+			case 30:			|Not Applicable
+				rep.st.amnt = rep.st.amnt + amount
+			endcase
+		endselect
+	endselect
+	switch.to.company(curr_comp)	
+}

@@ -1,0 +1,116 @@
+|******************************************************************************
+|* tfisg2100m200  0  VRC B61U a7 isg 
+|* Update Project PO in tfacp200
+|* Ravi Kumar                    
+|* 2020-08-05
+|******************************************************************************
+|* Main table tfacp200 Open Items (Purchase Invoices &amp; Payments), Form Type 4
+|******************************************************************************
+|*
+|* GH575CR874, RAvi Kumar, 25-06-2021
+|* Modification in Utility to update Project and PO in PTF Documents 
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttfacp200 | Open Items (Purchase Invoices &amp; Payments)
+  table	ttfacp251
+  table	ttdpur401
+  
+	extern  domain  tfgld.docn       ninv.f, ninv.t, ninv.imp
+	extern  domain  tfgld.ttyp       ttyp, ttyp.imp
+	extern	domain	tcsess	calling.session
+|    extern domain	tcorno	cdf.orno
+|    extern	domain	tccprj	cdf.cprj
+
+|****************************** program section ********************************
+before.program:
+	ttyp = "PTR"
+	import("prog.name$",calling.session)
+	import("tfacp200.ttyp", ttyp.imp)
+	import("tfacp200.ninv", ninv.imp)
+	
+	if calling.session = "tfacp2520m000" then
+| 		if ttyp.imp = "PTR" then				|GH575CR874.o
+		if ttyp.imp = "PTR" or ttyp.imp = "PTF" then		|GH575CR874.n
+			ttyp = ttyp.imp
+			ninv.f = ninv.imp
+			ninv.t = ninv.imp
+		else
+			message("This is not a PTR/PTF Document")	|GH575CR874.a
+			exit()
+		endif
+	endif
+
+field.ninv.f:
+when.field.changes:
+	ninv.t = ninv.f
+	
+before.zoom:
+	query.extend.where.in.zoom("tfgld018.ttyp = " & quoted.string(ttyp))
+
+field.ninv.t:
+before.zoom:
+	query.extend.where.in.zoom("tfgld018.ttyp = " & quoted.string(ttyp))
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+
+functions:
+function extern process()
+{
+	domain	tcncmp	curr_comp, log.comp
+	
+	curr_comp = get.compnr()
+	
+	select	tcemm030.lcmp:log.comp
+	from	tcemm030
+	where	tcemm030.fcmp = {:curr_comp}
+	as set with 1 rows
+	selectdo
+	endselect
+	
+	select	tfacp200.ttyp,
+		tfacp200.ninv,
+		tfacp200.cdf_prno,
+		tfacp200.cdf_cprj
+	from	tfacp200 for update
+	where	(tfacp200.ttyp = "PTR" or tfacp200.ttyp = "PTF")			|GH575CR874.a
+	and	tfacp200.tpay = tfacp.tpay.invoice
+	and	tfacp200.ttyp = :ttyp
+	and	tfacp200.ninv inrange :ninv.f and :ninv.t
+	and	(tfacp200.cdf_prno = "" or tfacp200.cdf_cprj = "" or tfacp200.cdf_prno = "0")
+	selectdo
+| 		get.var(pid, "tfacp200.cdf_prno", cdf.orno)
+| 		get.var(pid, "tfacp200.cdf_cprj", cdf.cprj)
+| 		if isspace(cdf.orno) or isspace(cdf.cprj) then
+			select	tfacp251.orno,
+				tfacp251.pono,
+				tfacp251.sqnb
+			from	tfacp251
+			where	tfacp251.ityp = :tfacp200.ttyp
+			and	tfacp251.idoc = :tfacp200.ninv
+			selectdo
+				select	tdpur401.cprj
+				from	tdpur401
+				where	tdpur401._index1 = {:tfacp251.orno, :tfacp251.pono, :tfacp251.sqnb}
+				and	tdpur401._compnr = :log.comp
+				as set with 1 rows
+				selectdo
+				endselect
+			endselect
+			
+	| 		tfacp200.cdf_prno = tfacp251.orno
+	| 		tfacp200.cdf_cprj = tdpur401.cprj
+			put.var(pid, "tfacp200.cdf_prno", tfacp251.orno)
+			put.var(pid, "tfacp200.cdf_cprj", tdpur401.cprj)
+			db.update(ttfacp200, db.retry)
+			commit.transaction()
+| 		endif
+	endselect
+	
+	message("Process Completed")
+}

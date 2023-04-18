@@ -1,0 +1,233 @@
+|******************************************************************************
+|* tfisg2400m4600  0  VRC B61U a7 isg 
+|* Print Tax Invoice Under Reverse Charge
+|* Paras Kukreti(TV)                       
+|* 2020-02-13	
+|******************************************************************************
+|* Main table tfacp200 Open Items (Purchase Invoices &amp; Payments), Form Type 4
+|******************************************************************************
+	
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttfacp200 | Open Items (Purchase Invoices &amp; Payments)
+	table  	ttfisg430
+	table  	ttfgld018
+	table  	ttccom130
+	table  	ttctax940
+	table  	ttpisg122
+	table  	ttdpur401
+
+	extern	domain	tcncmp		comp.f
+	extern	domain	tfgld.docn	docn.f
+	extern 	domain 	tfgld.docn      docn.t
+	extern 	domain 	tfgld.ttyp      ttyp.f    
+	extern	domain 	tfgld.ttyp      ttyp.t    
+	extern	domain 	tctax.txnb	gstn.c.no    
+	extern	domain 	tcfovn		gstn.b.no  
+	
+	extern	domain	tcnama		own.nama, supp.nama
+	extern	domain	tcmcs.str100m	own.ln01, supp.ln01
+	extern	domain	tcmcs.str100m	own.ln02, supp.ln02
+	extern	domain	tctelp		own.telp, supp.telp
+	extern	domain	tctefx		own.tefx, supp.tefx
+	extern	domain	tccom.cadr	own.cadr, supp.cadr
+	extern	domain	tcdsca		own.ccty, supp.ccty
+	extern	domain	tcmcs.cste		own.cste, supp.cste
+	extern	domain	tcdsca		own.cste.dsca, supp.cste.dsca
+	extern	domain	tcdsca		o.stad.desc
+	extern	domain	tccprj		o.cprj
+	extern	domain	tcmcs.str2	gstn.c.scod, gstn.b.scod
+	extern	domain	tcmcs.str15	invoice.no
+				
+	extern	domain	tcamnt		tot.amnt, assv.val
+	extern	domain	tcpvat		cgst.rate, sgst.rate, igst.rate
+	extern	domain	tcamnt		cgst.amnt, sgst.amnt, igst.amnt
+	extern	domain	tfgld.amnt	rate
+	extern	domain	tcsrnb		o.srno
+		domain	tcncmp		curr.comp
+		domain	tcccty		ccty.s
+		domain	tcmcs.cste	cste.s
+	
+#pragma used dll otctaxdll9140.l
+#pragma used dll otcisgdll0100
+
+|****************************** program section ********************************
+	
+before.program:	
+	curr.comp = get.compnr()
+	import("tfisg430.comp", tfisg430.comp)
+	import("tfisg430.docn", tfisg430.docn)
+	import("tfisg430.ttyp", tfisg430.ttyp)
+	
+	comp.f = tfisg430.comp
+	ttyp.f = tfisg430.ttyp
+	ttyp.t = tfisg430.ttyp
+	docn.f = tfisg430.docn
+	docn.t = tfisg430.docn
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+	get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.cont.process:
+on.choice:
+	execute(print.data)
+
+choice.print.data:
+on.choice:
+	if rprt_open() then
+		read.main.table()
+		rprt_close()
+	else
+		choice.again()
+	endif
+
+
+|****************************** field section *********************************
+
+field.comp.f:
+before.input:
+	comp.f = curr.comp
+	
+
+field.ttyp.f:
+when.field.changes:
+	ttyp.t = ttyp.f
+	
+
+field.docn.f:
+before.zoom:
+	tfgld018.ttyp = ttyp.f
+	
+when.field.changes:
+	docn.t = docn.f
+	
+	
+field.docn.t:
+before.zoom:
+	tfgld018.ttyp = ttyp.f
+
+
+|****************************** function section ******************************
+
+functions:
+
+function read.main.table()
+{	
+	tot.amnt = 0.00
+	o.srno = 0
+
+	select	tfisg430.*, tfisg409.dsca, tfisg409.code
+	from	tfisg430, tfisg409
+	where	tfisg430._index2 inrange {
+					:comp.f, 
+					:ttyp.f, 
+					:docn.f
+					} and
+					
+					{
+					:comp.f,
+					:ttyp.t,
+					:docn.t
+					}
+	and	tfisg430.type refers to tfisg409 UNREF CLEAR
+	selectdo
+		invoice.no = tfisg430.ttyp & " " & trim$(str$(tfisg430.docn))
+		get.addresses.and.related.data()
+		
+		assv.val = tfisg430.assv
+		gstn.c.no = tfisg430.regn
+		
+		cgst.amnt = tfisg430.cgst
+		cgst.rate = (cgst.amnt * 100) / assv.val
+		sgst.amnt = tfisg430.sgst
+		sgst.rate = (sgst.amnt * 100) / assv.val
+		igst.amnt = tfisg430.igst
+		igst.rate = (igst.amnt * 100) / assv.val
+		
+		o.stad.desc = own.cste.dsca
+		
+		tot.amnt = tot.amnt + (assv.val + cgst.amnt + sgst.amnt + igst.amnt)
+		
+		rprt_send()	
+	endselect
+}
+
+
+function get.addresses.and.related.data()
+{
+	select	tctax940.seqn
+	from	tctax940
+	where	tctax940._index3 = {:tfisg430.regn}
+	as set with 1 rows
+	selectdo
+	selectempty
+		tctax940.seqn = 0
+	endselect
+		
+	tcisgdll0100.get.financial.company.address.CDF.from.seqn(tctax940.seqn, own.cadr)
+					
+	get.address.details(	own.cadr, 
+				own.nama,
+				own.ln01,
+				own.ln02,
+				own.telp,
+				own.tefx,
+				own.ccty,
+				own.cste	|* State
+				)
+				
+
+
+	tcisgdll0100.get.state.description(	own.ccty, 
+						own.cste, 
+						own.cste.dsca
+						)
+	
+	tcisgdll0100.get.statutory.state.code(	own.ccty, 
+						own.cste, 
+						gstn.c.scod	|* Company(Isgec) State Code
+						)
+}
+
+
+function get.address.details		
+			(
+				domain	tccom.cadr	i.cadr,
+			ref	domain	tcnama		o.nama,
+			ref	domain	tcmcs.str100m	o.ln01,
+			ref	domain	tcmcs.str100m	o.ln02,
+			ref	domain	tctelp		o.telp,
+			ref	domain	tctefx		o.tefx,
+			ref	domain	tcccty		o.ccty,
+			ref	domain	tcmcs.cste	o.cste
+			)
+{
+	select	tccom130.nama:o.nama,
+		tccom130.ln01:o.ln01,				
+		tccom130.ln02:o.ln02,				
+		tccom130.telp:o.telp,
+		tccom130.tefx:o.tefx,
+		tccom130.ccty:o.ccty,
+		tccom130.cste:o.cste
+	from	tccom130
+	where	tccom130._index1 = {:i.cadr}
+	selectdo
+	selectempty
+		o.nama = ""
+		o.ln01 = ""
+		o.ln02 = ""
+		o.telp = ""
+		o.tefx = ""
+		o.ccty = ""
+		o.cste = ""
+	endselect	
+}
+
+

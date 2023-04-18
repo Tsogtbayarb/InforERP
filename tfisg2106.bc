@@ -1,0 +1,147 @@
+|******************************************************************************
+|* tfisg2106  0  VRC B61U a7 isg
+|* Assign Unallocated/Advance Payments to Invoices
+|* tv0001
+|* 2020-10-22
+|******************************************************************************
+|* Main table tfcmg206
+|******************************************************************************
+
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttfcmg206
+  extern domain tfgld.amnt  amnt, pamt, old.pamnt, v.bali, or.amnt, amnt1, prv.amnt, tot.amnt, old.fld.value
+  extern domain tcccur  ccur
+  extern domain tfgld.year i.year
+  extern domain tfgld.btno btno
+  extern domain tccom.bpid i.bpid
+  extern domain tcncmp i.curr.comp
+  extern domain tfgld.ninv i.ninv, o.ninv
+  extern domain tfgld.ttyp i.ttyp, o.ttyp
+  extern domain tcmcs.str1 found
+  long int.amnt
+
+|****************************** program section ********************************
+before.program:
+old.pamnt=0
+prv.amnt=0
+  import("tfgld018.year", i.year)
+  import("i.btno", btno)
+  import("i.bpid.nama", i.bpid)
+  import("curr.comp", i.curr.comp)
+  import("ttyp",i.ttyp)
+  import("doco",i.ninv)
+  import("tfisg231.balc", amnt)
+  import("tfcmg206.iamt", tfcmg206.amnt)
+  tfcmg206.type = ltoe(2)
+  disable.fields("tfcmg206.amnt")
+  int.amnt = 1
+  import("tfcmg206.amnt", tfcmg206.amnt)
+  o.ttyp = ""
+  o.ninv = 0
+
+  query.extend.where("tfcmg206.ttyp = " & quoted.string(i.ttyp) & "and tfcmg206.ninv = " & str$(i.ninv))
+
+before.display.object:
+        if int.amnt = 1 then
+                tfcmg206.amnt = 0
+                int.amnt = 0
+                tfcmg206.type = ltoe(2)
+                refresh.parent(1)
+        endif
+
+|****************************** group section **********************************
+
+choice.end.program:
+before.choice:
+        found = ""
+        o.ttyp = tfcmg206.ttyp
+        o.ninv = tfcmg206.ninv
+        if(ask.enum("tfisgq001", tcyesno.yes) = tcyesno.yes) then
+        found = "Y"
+        endif
+        export("found",found)
+        export("o.ttyp", o.ttyp)
+        export("o.ninv", o.ninv)
+|****************************** field section **********************************
+field.tfcmg206.type:
+before.field:
+        set.enum.values.for.field("tfcmg206.type",tfcmg.rcpt.no,tfcmg.rcpt.automatic,tfcmg.rcpt.manual)
+
+after.input:
+
+        if tfcmg206.type = ltoe(3) then
+                enable.fields("tfcmg206.amnt",actual.occ)
+                tfcmg206.amnt = 0
+                tfcmg206.amti = 0
+                update.occ()
+                 execute(update.db)
+        else
+
+
+        if tfcmg206.type = ltoe(1) then      |1 auto.
+                disable.fields("tfcmg206.amnt",actual.occ)
+
+                select  sum(tfcmg206.amnt):prv.amnt
+                from    tfcmg206
+                where   tfcmg206._index1 = {:i.year, :btno, "AAP", :i.bpid, :i.curr.comp, :i.ttyp, :i.ninv}
+                selectdo
+                endselect
+                amnt1 = abs(amnt)
+                if tfcmg206.amnt <> 0  then
+
+                        prv.amnt  = prv.amnt - tfcmg206.amnt
+                endif
+                if (amnt1-prv.amnt) <= tfcmg206.bali then
+
+                        tfcmg206.amnt = (amnt1-prv.amnt)
+                        tfcmg206.amti = (amnt1-prv.amnt)
+                else
+                        tfcmg206.amnt = tfcmg206.bali
+                        tfcmg206.amti = tfcmg206.bali
+                endif
+        update.occ()
+         execute(update.db)
+         disable.fields("tfcmg206.amnt",actual.occ)
+        endif
+        if tfcmg206.type = ltoe(2) then
+                disable.fields("tfcmg206.amnt",actual.occ)
+                tfcmg206.amnt = 0
+                tfcmg206.amti = 0
+                update.occ()
+                 execute(update.db)
+                 disable.fields("tfcmg206.amnt",actual.occ)
+
+        endif
+        endif
+
+field.tfcmg206.amnt:
+
+when.field.changes:
+        amnt1 = abs(amnt)
+                select  sum(tfcmg206.amnt):prv.amnt
+                from    tfcmg206
+                where   tfcmg206._index1 = {:i.year, :btno, "AAP", :i.bpid, :i.curr.comp, :i.ttyp, :i.ninv}
+                selectdo
+                endselect
+
+                if tfcmg206.amnt > tfcmg206.bali or tfcmg206.amnt > (amnt1-prv.amnt) then
+                        message("Amount Value can not be more than Balance Amount or Remaining Amount")
+                        tfcmg206.amnt = 0
+                        tfcmg206.amti = 0
+                        update.occ()
+                        execute(update.db)
+                        choice.again()
+                else
+                        tfcmg206.amti = tfcmg206.amnt
+                        prv.amnt = tfcmg206.amnt
+                        disable.fields("tfcmg206.amnt",actual.occ)
+                endif
+                update.occ()
+         execute(update.db)
+         disable.fields("tfcmg206.amnt",actual.occ)
+
+
+|************************************* function *********************************************8
+
