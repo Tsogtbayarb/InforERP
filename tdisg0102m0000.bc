@@ -1,0 +1,561 @@
+|******************************************************************************
+|* tdisg0102m000  0  VRC B61U a7 live
+|* PO
+|* Tools                         
+|* 2014-03-24
+|******************************************************************************
+|* Main table tdisg002 Bill of Material, Form Type 1
+|******************************************************************************
+| IDENT  ISG001017  Ankit Sharma 24/03/2014 VRC B61U a7 live     
+| IDENT  ISG001023  Manish Manchanda 29/03/2014 VRC B61U a7 live
+| ****************************************************************************
+| IDENT ISGEC001166, GAURAV GUPTA, 26-02-2015, VRC B61U a7 live
+|******************************************************************************
+|* ID: PATCH001007,	Incident:5663,	Sujeet Kumar,	2015-03-11
+|* Functional: Mrs. Mamata
+|*****************************************************************************
+|* ID:IDSGEC001182, Mani sharma, Incident:34808, Mani sharma, 06-06-2015
+|* Functional: Mrs. Mamta
+|*****************************************************************************
+|* ID : ISGECMOD002, IT0386, Saurabh Dubey, 11 December 2017, VRC B61U a7 isg
+|* Planned Delivery Field Added and further Logic
+|****************************** declaration section ***************************
+declaration:
+#ident "@(#)ISG001023	Manish Manchanda 29/03/2014 VRC B61U a7 live"
+#include <bic_4gl2>
+
+	table	ttdisg002 | Bill of Material
+	table	ttcisg004	
+	table	ttdpur401
+	table	ttdpur402
+	table	ttdpur400
+	table	ttdpur202
+	table	ttdpur200
+	table	ttccom001
+	table	tbpmdm001
+	
+
+	extern	domain	tcorno	orno
+	extern	domain	tcpono	pono				|ISG001023.sn
+	extern	domain	tcsrnb	seqn
+	extern	domain	tcpric	pric.t
+	extern	domain	tcamnt	amnt.t
+	extern	domain	tcqiv1	wght.t				|ISG001023.en
+	extern	domain	tcpono	o.revn
+	extern	domain	tfgld.date	g.pldt, rqno.pldt, temp.pldt	|#ISGECMOD002.sn
+	extern	domain	tcmcs.long	variance
+	extern	domain	tcmcs.str1	label.1
+	
+		domain	tcrqno	o.rqno
+		domain	tcpono	o.pono			|#ISGECMOD002.en
+	
+#include "itdisgdll0003"
+#include  <bic_cmf>
+#pragma used dll ottdllbw 
+#pragma used dll otdpurdll4002
+|****************************** program section ********************************
+
+before.program:
+	import("tdpur401.orno",orno)
+	import("tdpur401.pono",pono)				|ISG001023.sn
+	import("tdpur401.sqnb",seqn)			
+	query.extension = "tdisg002._index1 = {:orno,:pono}"	|ISG001023.en
+	inputfield.invisible("tdisg002.item.segment.1")
+								|#ISGECMOD002.sn
+	o.rqno = "" 
+	o.pono = 0
+	tdpur.dll4002.get.purchase.order.line.linked.requisition.data(	orno,
+									pono,
+									seqn,
+									o.rqno,	|* ref Requisition
+									o.pono)	|* ref Requisition Line
+								|#ISGECMOD002.en
+								
+
+before.display.object:	
+	set.command.enable.disable()
+	select	tdpur400.hdst 
+	from	tdpur400
+	where	tdpur400._index1 = {:tdisg002.orno}
+	and	tdpur400.hdst not in (5,35)
+	as set with 1 rows
+	selectdo
+		disable.commands(add.set,modify.set,mark.delete,global.copy,global.delete,"freeze",
+			"indent.bom","cont.select.all","update","unfreeze")
+	selectempty
+		enable.commands(add.set,modify.set,mark.delete,global.copy,global.delete,"freeze",
+			"indent.bom","cont.select.all","update","unfreeze")
+	endselect
+
+|****************************** group section **********************************
+group.1:
+init.group:
+   get.screen.defaults()
+	select	tdpur400.hdst 
+	from	tdpur400
+	where	tdpur400._index1 = {:tdisg002.orno}
+	and	tdpur400.hdst not in (5,35)
+	as set with 1 rows
+	selectdo
+		disable.commands(add.set,modify.set,mark.delete,global.copy,global.delete,
+			"freeze","indent.bom","cont.select.all","update","unfreeze")
+	selectempty
+		enable.commands(add.set,modify.set,mark.delete,global.copy,global.delete,
+			"freeze","indent.bom","cont.select.all","update","unfreeze")
+	endselect
+|****************************** Choice Section ********************************
+
+choice.freeze:
+on.choice:
+	check.for.mail()				|ISGEC001166.N	
+	update_tdisg002()
+| 	update_tcisg004()
+	delete_from_tdisg002()
+	
+			
+after.choice:
+	commit.transaction()
+choice.cont.bom.lines:
+on.choice:
+	select 	tdpur401.cprj,
+		tdpur401.cspa,
+		tdpur401.item,
+		tdpur401.orno,
+		tdpur401.pono,
+		tdpur401.sqnb
+	from	tdpur401
+	where	tdpur401._index1 = {:tdisg002.orno,:tdisg002.pono}
+	as set with 1 rows
+	selectdo
+	endselect
+	
+	BILL_OF_MATERIAL(tdpur401.cprj,tdpur401.cspa,tdpur401.item,401,
+			orno,tdpur401.orno,tdpur401.pono,0)	
+	commit.transaction()		
+choice.mark.delete:
+before.choice:
+	select 	tdpur401.cprj,
+		tdpur401.cspa,
+		tdpur401.item
+	from	tdpur401
+	where	tdpur401._index1 = {:tdisg002.orno,:tdisg002.pono}|,:tdisg002.sqnb}
+	as set with 1 rows
+	selectdo
+	endselect
+	
+	if tcisgdll0003.get.max.revision(tdpur401.cprj,tdpur401.cspa,tdpur401.item) then
+| 		UPDATE_STATUS(tdpur401.cprj,tdpur401.cspa,tdpur401.item,o.revn,tdisg004.sern,orno)
+		UPDATE_STATUS(tdpur401.cprj, tdpur401.cspa, tdpur401.item, tdisg002.item, orno)
+		tcisgdll0003.remove.link.order(tdpur401.cprj,tdpur401.cspa,tdpur401.item,
+| 				tdisg002.sern,tdisg.item.order,tdisg002.orno,tdisg002.pono)
+				tdisg002.item,tdisg.item.order,tdisg002.orno,tdisg002.pono)
+	endif
+
+choice.cont.select.all:
+on.choice:
+	BILL_OF_MATERIAL_SELECT_ALL_LINES(002,tdisg002.orno,tdisg002.pono)
+after.choice:
+	commit.transaction()
+	
+choice.unfreeze:
+on.choice:
+	tcisgdll0003.unfreeze.po.child.item(tdisg002.orno, tdisg002.pono)
+	commit.transaction()
+	
+choice.indent.bom:
+on.choice:
+	tcisgdll0003.populate.indent.bom(tdisg002.orno, tdisg002.pono)
+	commit.transaction()
+	
+choice.update:
+on.choice:
+	tcisgdll0003.update.bom.from.item.release(tdisg002.orno, tdisg002.pono)
+	commit.transaction()
+		|#ISGECMOD002.sn
+choice.copy.date:
+before.choice:
+	if ask.enum("tcbod00003", tcokca.cancel, "This Will Copy the Date in All Lines. ") <> tcokca.ok then
+		choice.again()
+	endif
+	
+	if g.pldt = 0 then
+		message("Planned Delivery Date is Empty...")
+		choice.again()
+	endif
+
+on.choice:
+	select	tdisg002.pldt
+	from	tdisg002 for update
+	where	tdisg002._index1 = {:orno, :pono}
+	and	tdisg002.stat <> tcyesno.yes
+	selectdo
+		tdisg002.pldt =  g.pldt
+		db.update(ttdisg002, db.retry, e)
+		
+		if e = 0 then
+			commit.transaction()
+		else
+			abort.transaction()
+		endif
+	endselect
+
+choice.copy.indent.date:
+on.choice:
+	select	tdisg002.item
+	from	tdisg002 for update
+	where	tdisg002._index1 = {:orno, :pono}
+	and	tdisg002.stat <> tcyesno.yes
+	selectdo
+		temp.pldt = get.indent.planned.delivery.date()
+		tdisg002.pldt =  temp.pldt
+		db.update(ttdisg002, db.retry, e)
+		
+		if e = 0 then
+			commit.transaction()
+		else
+			abort.transaction()
+		endif
+	endselect
+
+		|#ISGECMOD002.en
+|****************************** Field Section ********************************
+						|#ISGECMOD002.sn
+field.rqno.pldt:
+before.display:
+	rqno.pldt = get.indent.planned.delivery.date()
+	
+field.variance:
+before.display:
+	variance = tdisg002.pldt - rqno.pldt	|#ISGECMOD002.en
+
+field.tdisg002.orno:
+before.field:
+	tdisg002.orno = orno
+
+field.tdisg002.pono:
+before.field:
+	tdisg002.pono = pono
+field.tdisg002.amnt:						
+before.display:
+	tdisg002.amnt = tdisg002.pric * tdisg002.qnty		
+
+field.wght.t:
+before.display:
+	select	sum(tdisg002.wght):wght.t,sum(tdisg002.amnt):amnt.t
+	from	tdisg002
+	where	tdisg002._index1 = {:orno, :pono}
+	selectdo
+	selectempty
+		wght.t = 0
+		amnt.t = 0
+	endselect		
+	if wght.t <> 0 then
+		pric.t = amnt.t / wght.t
+	else
+		pric.t = 0
+	endif
+	
+| 	if	not amnt.t = 0 then
+| 		pric.t = amnt.t / wght.t
+| 	else
+| 		pric.t = 0 
+| 	endif
+	
+								|ISG001023.en
+
+|****************************** function Section ********************************
+functions:
+function update_tdisg002()
+{
+| 	db.retry.point()
+	select	tdisg002.stat, tdisg002.slct
+	from	tdisg002 for update
+|	where	tdisg002._index1 = {:tdisg002.orno,:tdisg002.pono,:tdisg002.sqnb}	|ISG001023.o
+	where	tdisg002._index1 = {:orno, :pono}					|ISG001023.sn
+	and	tdisg002.slct	 = {tcyesno.yes}					|ISG001023.en
+	selectdo
+		dal.change.object("tdisg002")
+		dal.set.field("tdisg002.stat",tcyesno.yes)
+		dal.save.object("tdisg002")
+| 		tdisg002.stat = tcyesno.yes
+| 		db.update(ttdisg002,db.retry,e) 
+| 		if 	not e then
+| 			commit.transaction()
+| 		endif
+	endselect	
+}
+
+function delete_from_tdisg002()
+{
+| 	db.retry.point()
+| 	select tdisg002.sern,tdisg002.item,tdisg002.desc,tdisg002.qnty,tdisg002.quom,tdisg002.wght,tdisg002.slct,tdisg002.stat
+	select tdisg002.item, tdisg002.desc, tdisg002.qnty, tdisg002.quom,
+		tdisg002.wght, tdisg002.slct, tdisg002.stat
+	from	tdisg002 for update
+|	where	tdisg002._index1 = {:tdisg002.orno,:tdisg002.pono,:tdisg002.sqnb}	|ISG001023.o
+	where	tdisg002._index1 = {:orno, :pono}					|ISG001023.n	
+	and	tdisg002.slct = {tcyesno.no}
+	selectdo
+		tcisgdll0003.remove.po.child.item(orno, pono, tdisg002.item)
+		db.delete(ttdisg002, db.retry, e)
+	endselect
+| 	if	not e then
+| 		commit.transaction()
+| 	endif
+}
+
+function update_tcisg004()
+{
+	db.retry.point()
+	select	tdisg002.*								|ISG001023.sn
+	from	tdisg002 
+	where	tdisg002._index1 = {:orno,:pono}
+	and	tdisg002.stat	 = {tcyesno.yes}
+	selectdo									|ISG001023.en
+		select 	tdpur401.cprj,tdpur401.cspa,tdpur401.item
+		from	tdpur401
+| 		where	tdpur401._index1 = {:tdisg002.orno,:tdisg002.pono,:tdisg002.sqnb}
+		where	tdpur401._index1 = {:tdisg002.orno,:tdisg002.pono}
+		as set with 1 rows
+		selectdo
+			select 	tcisg004.orno
+			from	tcisg004 for update
+			where	tcisg004._index1  = {:tdpur401.cprj,:tdpur401.cspa,:tdpur401.item}
+| 			and	tcisg004.srno = {:tdisg002.sern}
+			and	tcisg004.item = {:tdisg002.item}
+			selectdo
+				tcisg004.orno = tcyesno.yes
+				db.update(ttcisg004,db.retry,e)
+				if	not e then
+					commit.transaction()
+				endif
+			endselect	
+		endselect	
+	endselect
+}
+
+
+function extern boolean modify.set.is.allowed()
+{
+	if tdisg002.stat =  tcyesno.yes then
+		return(false)
+	else
+		return(true)
+	endif
+	return(false)
+}
+
+function extern boolean mark.delete.is.allowed()
+{	
+	if tdisg002.stat =  tcyesno.yes then
+		return(false)
+	else
+		return(true)
+	endif
+	return(false)
+}
+
+function set.command.enable.disable()
+{
+	if	tdisg002.stat = tcyesno.yes	then
+		disable.commands("cont.bom.lines", "cont.select.all", "freeze")
+		enable.commands("unfreeze")
+	else	
+		enable.commands("cont.bom.lines", "cont.select.all", "freeze")
+		disable.commands("unfreeze")
+	endif	
+}
+
+						|ISGEC001166.sn
+function check.for.mail()
+{
+	long chk.flag
+	
+	chk.flag = 0
+	select	tdisg002.*
+	from	tdisg002
+	where	tdisg002._index1 = {:tdisg002.orno,:tdisg002.pono}
+	selectdo
+		if tdisg002.slct = tcyesno.no then
+			chk.flag = 1
+			break
+		endif
+	endselect
+	
+	if chk.flag = 1 then
+		send.email.alert()
+	endif
+	
+}
+
+function long send.email.alert()
+{
+	string tmp.file(200),line(1000)
+	long fp
+	domain tcemno	emno.code
+	domain	tfgld.user	user.code
+	
+	long    message.ID
+        long    to.ID
+        long    attachment.ID
+        long    ret
+
+        domain ttcmf.prov service       
+                        |Infor ERP Enterprise eMessage Connector service for 
+                        |transporting messages
+        long stat       |Variable to hold return values
+        long mid        |CMF message id
+	
+| 	select 	tdpur200.* 
+| 	from 	tdpur200
+| 	where 	tdpur200._index1 = {:tdpur202.rqno}
+| 	as set with 1 rows
+| 	selectdo
+| 	endselect
+	
+	select	tdpur400.ccon,tccom001.nama
+	from	tdpur400,tccom001
+	where	tdpur400._index1 = {:tdisg002.orno}
+	and	tdpur400.ccon refers to tccom001
+	selectdo
+	endselect
+	
+	select	tdpur402.*
+	from	tdpur402
+	where	tdpur402._index1 = {:tdisg002.orno,:tdisg002.pono}
+	selectdo
+		select 	tdpur200.* 
+		from 	tdpur200
+		where 	tdpur200._index1 = {:tdpur402.rqno}
+		as set with 1 rows
+		selectdo
+		endselect
+	endselect
+	
+	tmp.file = creat.tmp.file$(bse.tmp.dir$())
+	fp = seq.open(tmp.file,"w+")
+	if fp <=0 then
+		dal.set.error.message("@ Temp file can not be created")
+		return(1)
+	endif
+
+	line = ""
+| 	line = strip$(line) & " Buyer " & tccom001.nama & " has made Purchase Order No. " & tdisg002.orno & chr$(13)&chr$(10)	|#PATCH001007.o
+									|#PATCH001007.sn
+	line = strip$(line) & " Buyer " & strip$(shiftl$(tccom001.nama)) & 
+^			" has made Purchase Order No. " & tdisg002.orno & 
+^			" against your PR number " & tdpur200.rqno & " but did not order all the child items in order " & chr$(13)&chr$(10)
+^			
+									|#PATCH001007.en
+| 	seq.write(line,len(line),fp)
+| 	line = strip$(line) & " against your PR number " & tdpur200.rqno & " but did not order all the child items in order " & chr$(13)&chr$(10)	|#PATCH001007.o
+| 	seq.write(line,len(line),fp)
+	line = strip$(line) & " Following Child items left out in Purchase order need to be re-indented for ordering" & chr$(13)&chr$(10)
+	seq.write(line,len(line),fp)
+	line = "" & chr$(13)&chr$(10)			|#PATCH001007.n
+	seq.write(line,len(line),fp)			|#PATCH001007.n	
+	
+	select	tdisg002.*
+	from	tdisg002
+	where	tdisg002._index1 = {:tdisg002.orno,:tdisg002.pono}
+	and	tdisg002.slct = tcyesno.no
+	selectdo
+		line = "Child item :" & tdisg002.item & " Qty : " & str$(tdisg002.qnty) & chr$(13)&chr$(10)
+		seq.write(line,len(line),fp)
+	endselect
+	
+	ret = seq.close(fp)
+	
+	user.code = logname$
+	select 	bpmdm001.mail,tccom001.nama 
+	from 	tccom001,bpmdm001
+	where 	tccom001._index4 = {:user.code}
+	and	tccom001.emno refers to bpmdm001
+	as set with 1 rows
+	selectdo
+	selectempty
+		bpmdm001.mail = ""
+	endselect
+	
+	if isspace(bpmdm001.mail) then
+		dal.set.error.message("@ Email ID for user " & user.code & " Not maintained")
+		return(1)
+	endif		
+	|******* Email Header
+        message.ID = cmf.create()
+| 	line = "ALERT : INDENT CONVERT " & tdpur202.rqno 			|#PATCH001007.o
+	line = "ALERT : CHILD ITEMS LEFT TO BE RE-INDENTED " & tdpur202.rqno 	|#PATCH001007.n
+        ret = cmf.setClass(message.ID, "CMF.NOTE.EMAIL")
+        ret = cmf.setSubject(message.ID,line)
+	
+	|******** from ID
+	to.ID = cmf.createRecipient(message.ID, ttcmf.role.from)  
+	ret = cmf.setRecipientName(to.ID,tccom001.nama)
+        ret = cmf.setRecipientAddress(to.ID, bpmdm001.mail)	
+	ret = cmf.setRecipientType(to.ID, "SMTP")
+ 
+	|******** to ID
+	select 	bpmdm001.mail,tccom001.nama 
+	from 	tccom001,bpmdm001
+	where 	tccom001._index1 = {:tdpur200.remn}
+	and	tccom001.emno refers to bpmdm001
+	as set with 1 rows
+	selectdo
+	selectempty
+		bpmdm001.mail = ""
+	endselect
+	
+	if isspace(bpmdm001.mail) then
+		dal.set.error.message("@ Email ID for Buyer " & tdpur200.remn & " Not maintained")
+		return(1)
+	else
+		to.ID = cmf.createRecipient(message.ID, ttcmf.role.to)  
+		ret = cmf.setRecipientName(to.ID,tccom001.nama)
+		ret = cmf.setRecipientAddress(to.ID, bpmdm001.mail)	
+		ret = cmf.setRecipientResponsibility(to.ID, "TRUE")		
+		ret = cmf.setRecipientType(to.ID, "SMTP")
+	endif		
+	
+	|********* Mail Body
+	attachment.ID = cmf.createAttachment(message.ID)
+	ret = cmf.setAttachmentBody(attachment.ID,ttyeno.yes)
+	ret = cmf.setAttachmentMIME(attachment.ID,"text/plain")                       
+	ret = cmf.setAttachmentFileName(attachment.ID,tmp.file,"abc.txt")
+
+
+	|*********  Send mail
+        if message.ID <>0 then
+                stat = cmf.startService("SMTP",2)
+                if stat<>0 then
+                        dal.set.error.message("@ Message could not be sent "&
+                                "(Infor ERP Enterprise eMessage Connector"&
+                                " service did not start)")
+                        return(1)
+                endif
+                stat = cmf.send(message.ID,"SMTP")
+                if stat<>0 then
+                        dal.set.error.message("@ Message could not be sent "& "(Infor ERP Enterprise eMessage Connector "&
+                                "service refused message)")
+                        cmf.stopService("SMTP",2)
+                        return(1)
+                endif
+                stat = cmf.stopService("SMTP",2)
+        endif
+	return(0)
+}
+										|ISGEC001166.en
+										
+function domain tfgld.date get.indent.planned.delivery.date()
+{
+	domain	tfgld.date	o.pldt
+	
+	select	tdisg003.pldt:o.pldt
+	from	tdisg003
+	where	tdisg003._index1 = {:o.rqno, :o.pono, :tdisg002.item}
+	selectdo
+	selectempty
+		o.pldt = 0
+	endselect
+	
+	return(o.pldt)
+}

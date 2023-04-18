@@ -1,0 +1,162 @@
+|******************************************************************************
+|* tcmsl1113  0  VRC B61U a7 live
+|* Maintain Item Group fro BP Request
+|* Tools                         
+|* 2014-03-19
+|******************************************************************************
+|* Main table tcmsl113 , Form Type 1
+|******************************************************************************
+|* ID ISGEC016012, Manish Manchanda, 2016-08-09                                                                                
+|* Modifications - filter not working                                                                                
+|*     
+|* GH669.22022022, Utam kumar singh
+|* Update Item Purchases vs BP when Item group is added in Vendor approval
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttcmsl113 | 
+	table	ttcmsl111
+	
+	domain	tccom.bpid	v.bpid
+	domain	tcmcs.str13	v.sess
+	domain	tcorno		v.rqno
+	domain	tcncmp		v.comp
+	domain	tccitg		v.citg
+	string	str(300)
+	long	ret		|GH669.22022022
+	
+	#include<bic_dam>
+|****************************** program section ********************************
+before.program:
+	v.bpid	=	""
+	v.rqno	=	""
+	v.comp	=	0
+	v.sess	=	""
+	
+	import("prog.name$",v.sess)
+	on	case	v.sess
+		case	"tccom4500m000":
+		case	"tccom4100s000":
+		import("tccom100.bpid",v.bpid)
+		select	tcmsl113.bpid,
+			tcmsl113.rqno:v.rqno,			|#ISGEC016012.n
+			tcmsl113.comp:v.comp			|#ISGEC016012.n
+		from	tcmsl113
+		where	tcmsl113._index2	=	{:v.bpid}
+		selectdo
+		selectempty
+			select	tcmsl111.rqno
+			from	tcmsl111
+			where	tcmsl111.bpid	=	{:v.bpid}
+			as	set with 1 rows
+			selectdo
+				update.supplier()
+				delete.old.records()
+			endselect
+		endselect
+		query.extension	=	"tcmsl113._index2 = '"&v.bpid&"'"
+		break
+	case	"tcmsl1111m000":
+		import("tcmsl111.rqno", v.rqno)
+		import("tcmsl111.comp", v.comp)
+		select	tcmsl113.bpid:v.bpid					|#ISGEC016012.sn
+		from	tcmsl113
+		where	tcmsl113._index1	=	{:v.rqno,:v.comp}
+		as	set with 1 rows
+		selectdo
+		endselect							|#ISGEC016012.en
+		str	=	"tcmsl113._index1 = '"&v.rqno&"'  and tcmsl113.comp = "&str$(v.comp)
+		query.extension	=	"tcmsl113._index1 = '"&v.rqno&"' and tcmsl113.comp = "&str$(v.comp)
+		break
+	endcase
+
+after.form.read:
+		enable.save.on.occ.change()
+
+before.display.object:
+	v.citg = tcmsl113.citg
+after.update.db.commit:									|GH669.22022022.add.strt
+	if v.sess = "tccom4100s000" then
+		select	tdipu010.*
+		from	tdipu010
+		where	tdipu010._index2 = {:tcmsl113.bpid, :tcmsl113.bpid, :tcmsl113.citg}
+		selectdo
+		selectempty
+			ret = tcmsldll0100.ItemPurchaseBusinessPartner(tcmsl113.citg,	
+									tcmsl113.bpid,
+									tcmsl113.bpid,
+									0,
+									tcmsl113.exdt
+									)
+			if ret <> 0 then
+				show.dal.messages(MSG.ALL)
+			else
+				commit.transaction()	
+			endif							
+		endselect		
+	endif										|GH669.22022022.add.end
+
+|****************************** group section **********************************
+group.2:
+init.group:
+	if	not	isspace(v.rqno)	then
+		tcmsl113.rqno	=	v.rqno
+		tcmsl113.comp	=	v.comp
+		tcmsl113.bpid	=	v.bpid	|#ISGEC016012.n
+	endif
+	if	not	isspace("v.bpid")	then
+		tcmsl113.bpid	=	v.bpid
+		tcmsl113.rqno	=	v.rqno	|#ISGEC016012.n
+		tcmsl113.comp	=	v.comp	|#ISGEC016012.n
+	endif
+|****************************** field section **********************************
+
+field.tcmsl113.sern:
+	before.field:
+	tcmsl113.sern = actual.occ
+	
+|****************************** function section *******************************	
+functions:
+
+function	update.supplier()
+{
+	select	tcmsl113.*
+	from	tcmsl113	
+	where	tcmsl113._index1	=	{:tcmsl111.rqno}
+	selectdo
+		tcmsl113.rqno	=	tcmsl111.rqno
+		tcmsl113.comp	=	tcmsl113.comp
+		tcmsl113.bpid	=	v.bpid
+		tcmsl113.sern	=	tcmsl113.sern
+		tcmsl113.citg	=	tcmsl113.citg
+		tcmsl113.item	=	tcmsl113.item
+		tcmsl113.mocn	=	tcmsl113.mocn
+		tcmsl113.size	=	tcmsl113.size
+		tcmsl113.exdt	=	tcmsl113.exdt
+		db.insert(ttcmsl113,db.skip.dupl,e)
+		commit.transaction()
+	endselect
+}
+
+function	delete.old.records()
+{
+	db.retry.point()
+	
+	select	a_tcmsl113.bpid
+	from	tcmsl113	a_tcmsl113
+	where	a_tcmsl113._index1	=	{:tcmsl111.rqno}
+	and	a_tcmsl113.bpid		<>	""
+	as	set with 1 rows
+	selectdo
+		select	tcmsl113.*
+		from	tcmsl113	for	update
+		where	tcmsl113._index1	=	{:tcmsl111.rqno}
+		and	tcmsl113.bpid		=	""
+		selectdo
+			db.delete(ttcmsl113,db.retry,e)
+			commit.transaction()
+		endselect
+	endselect
+}
+	
+|****************************** END OF CODE ************************************	

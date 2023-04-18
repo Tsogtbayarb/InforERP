@@ -1,0 +1,203 @@
+|******************************************************************************
+|* tdisg0146m000  0  VRC B61U a7 isg 
+|* Custom Invoice Debit/Credit Note Lines
+|* Ravi Kumar                    
+|* 2020-10-21
+|******************************************************************************
+|* Main table tdisg046 Custom Invoice Debit/Credit Note Lines, Form Type 1
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttdisg046 | Custom Invoice Debit/Credit Note Lines
+  table   ttdisg045
+  table   ttdisg831
+  table   ttppin020
+  table   twhisg312
+	
+	domain	tcorno	i.edrn
+	extern	domain	tcamnt	tot.amnt, bill.amnt, crdr.amnt, bal.amnt
+	extern	domain	tcqiv1	bill.pqty, crdr.qnty, bal.qnty
+	extern	domain	tcmcs.str300m	hsnc.dsca, dbks.dsca
+
+|****************************** program section ********************************
+before.program:
+	fattr.total.line = true
+	
+on.display.total.line:
+	select	sum(tdisg046.amnt):tot.amnt
+	from	tdisg046
+	where	tdisg046._index1 = {:tdisg046.rqno}
+	selectdo
+	selectempty
+		tot.amnt = 0
+	endselect
+	
+	display.total.fields("tdisg046.amnt", tot.amnt)
+
+
+|****************************** group section **********************************
+|****************************** choice section **********************************
+choice.print.history:
+on.choice:
+	print.report()
+
+|****************************** field section **********************************
+field.tdisg046.rcno:
+before.zoom:
+	i.edrn = get.erno()
+	query.extend.where.in.zoom("tdisg832._index1 = " & quoted.string(i.edrn))
+	
+field.tdisg046.rcln:
+before.zoom:
+	i.edrn = get.erno()
+	query.extend.where.in.zoom("tdisg832.edrn = " & quoted.string(i.edrn) & " and tdisg832.rcno = " & quoted.string(tdisg046.rcno))
+		
+field.hsnc.dsca:
+before.display:
+| 	select	tcisg124.desc:hsnc.dsca
+| 	from	tcisg124
+| 	where	tcisg124._index1 = {tcisg.item.typ.hsn, :tdisg046.hsnc}
+| 	as set with 1 rows
+| 	selectdo
+| 	selectempty
+| 		hsnc.dsca = ""
+| 	endselect
+	
+	i.edrn = get.erno()
+	select	tdisg832.desc:hsnc.dsca
+	from	tdisg832
+	where	tdisg832._index1 = {:i.edrn, :tdisg046.rcno, :tdisg046.rcln}
+	as set with 1 rows
+	selectdo
+	selectempty
+		hsnc.dsca = ""
+	endselect
+	
+field.dbks.dsca:
+before.display:
+| 	select	tdisg801.dsca:dbks.dsca
+| 	from	tdisg801
+| 	where	tdisg801._index1 = {:tdisg046.dbks}
+| 	as set with 1 rows
+| 	selectdo
+| 	selectempty
+| 		dbks.dsca = ""
+| 	endselect
+	i.edrn = get.erno()
+	select	tdisg832.tfds:dbks.dsca
+	from	tdisg832
+	where	tdisg832._index1 = {:i.edrn, :tdisg046.rcno, :tdisg046.rcln}
+	as set with 1 rows
+	selectdo
+	selectempty
+		dbks.dsca = ""
+	endselect
+	
+field.tdisg046.nins:
+before.zoom:
+	select	tdisg831.cprj, 
+		tdisg831.ofbp
+	from	tdisg831
+	where	tdisg831._index2 = {:tdisg045.invn}
+	selectdo
+	selectempty
+		tdisg831.cprj = ""
+		tdisg831.ofbp = ""
+	endselect
+	
+	select 	whisg312.cspa
+	from	whisg312
+	where	whisg312._index1 = {:tdisg046.rcno, :tdisg046.rcln}
+	as set with 1 rows
+	selectdo
+	endselect
+
+	tppin020.cprj = tdisg831.cprj
+	tppin020.ofbp = tdisg831.ofbp
+	tppin020.cspa = whisg312.cspa
+	
+functions:
+function domain	tcorno	get.erno()
+{
+	select	tdisg045.rqno,
+		tdisg045.invn
+	from	tdisg045
+	where	tdisg045._index1 = {:tdisg046.rqno}
+	as set with 1 rows
+	selectdo
+	endselect
+	
+	select	tdisg831.edrn
+	from	tdisg831
+	where	tdisg831._index2 = {:tdisg045.invn}
+	as set with 1 rows
+	selectdo
+	selectempty
+		tdisg831.edrn = ""
+	endselect
+	return(tdisg831.edrn)
+}
+
+function print.report()
+{
+	long	brp_id1, flag.bill.val
+	flag.bill.val = 0
+	bill.amnt = 0
+	bill.pqty = 0
+	crdr.qnty = 0
+	crdr.amnt = 0
+	bal.qnty = 0
+	bal.amnt = 0
+	
+	brp_id1 = brp.open( "rtdisg044601000", "D", 0 )
+	
+	select	tdisg046.*
+	from	tdisg046
+	where	tdisg046.rcno = :tdisg046.rcno
+	and	tdisg046.rcln = :tdisg046.rcln
+	selectdo
+		flag.bill.val = flag.bill.val + 1
+		select	tdisg045.*
+		from	tdisg045
+		where	tdisg045._index1 = {:tdisg046.rqno}
+		as set with 1 rows
+		selectdo
+			select	tdisg831.edrn
+			from	tdisg831
+			where	tdisg831._index2 = {:tdisg045.invn}
+			as set with 1 rows
+			selectdo
+				if flag.bill.val = 1 then
+					select	tdisg832.bivl:bill.amnt,
+						tdisg832.pqty:bill.pqty
+					from	tdisg832
+					where	tdisg832._index1 = {:tdisg831.edrn, :tdisg046.rcno, :tdisg046.rcln}
+					as set with 1 rows
+					selectdo
+					endselect
+				else
+					bill.amnt = bal.amnt
+					bill.pqty = bal.qnty
+				endif
+				
+				crdr.qnty = tdisg046.qnty
+				crdr.amnt = tdisg046.amnt
+				
+				if tdisg045.note = tdisg.notes.credit then
+					bal.qnty = bill.pqty - crdr.qnty
+					bal.amnt = bill.amnt - crdr.amnt
+				else
+					bal.qnty = bill.pqty + crdr.qnty
+					bal.amnt = bill.amnt + crdr.amnt
+				endif
+			endselect
+		endselect
+		
+		brp.ready(brp_id1)
+	endselect	
+		
+	brp.close(brp_id1)
+}
+

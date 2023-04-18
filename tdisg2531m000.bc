@@ -1,0 +1,413 @@
+|******************************************************************************
+|* tdisg2531m000  0  VRC B61U a7 isg 
+|* Approval Request Form
+|* merino1                       
+|* 2019-08-09
+|******************************************************************************
+|* Main table tdisg231 Request From, Form Type 1
+|******************************************************************************
+|* ID: ISGEC01196, Arun Chauhan, 07-08-2019, VRC B61U a7 isg
+|* Tolerrance to be handeled in sanction
+|* NEW Development                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+  
+	table	ttdisg231 | Request From
+	table	ttdisg232
+	table	ttpisg012
+	table 	ttpisg011
+  
+  
+	extern	domain	tcccur		a,b	
+		domain	tclogn		login.id
+		domain	tcccty		o.reas
+		domain	tcamnt		tot.limit,tot.tran.amnt
+		domain	tcamnt		o.avai
+|****************************** program section ********************************
+before.program:
+	login.id = logname$
+	query.extend.where("tdisg231.stat = tdisg.rqno.pending.for.app")
+
+|****************************** choice section **********************************	
+	
+choice.approve.data:													 
+before.choice:
+	select sum(tdisg229.amnt):tot.limit
+	from	tdisg229
+	where	tdisg229._index1 = {:login.id}
+	selectdo
+	endselect
+	
+	select sum(tdisg232.amnt):tot.tran.amnt
+	from	tdisg232
+	where	tdisg232._index1 = {:tdisg231.rqno,:tdisg231.rcno}
+	selectdo
+	selectempty
+		tot.tran.amnt = 0.00
+	endselect
+	
+	if tot.limit < tot.tran.amnt then
+		message("Transfer Amount Cannot Be More Than Approver Limit")
+		choice.again()
+	endif
+	
+	select tdisg232.cprj,
+		tdisg232.vers
+	from	tdisg232
+	where	tdisg232._index1 = {:tdisg231.rqno,:tdisg231.rcno}
+	selectdo
+		select	tpisg012.avai:o.avai
+		from	tpisg012
+		where	tpisg012._index1 = {:tdisg232.cprj}
+		and 	tpisg012.elem = "99210000"
+		as set with 1 rows
+		selectdo
+		selectempty
+			o.avai = 0.00
+		endselect
+	selectempty
+		o.avai = 0.00
+	endselect
+	
+	if tot.tran.amnt > o.avai then
+		message("Total Transfer Amount Should Be Less Than Available Amount in Contigency - V Element In Sanction")
+		choice.again()
+	endif
+		
+	
+on.choice:
+
+	if transfer.of.Sanction.from.Contingency.V.Element() then
+		select	tdisg231.stat
+		from	tdisg231  for update
+		where	tdisg231._index1 = {:tdisg231.rqno,:tdisg231.rcno}
+		and 	tdisg231.stat = tdisg.rqno.pending.for.app
+		selectdo
+			tdisg231.stat = tdisg.rqno.approved
+			tdisg231.apby  = logname$
+			tdisg231.apdt  = utc.num()
+			db.update(ttdisg231,db.retry,e)
+			commit.transaction()
+		endselect
+		message("Updation Successfull")
+	else
+		message("Updation Failed !")
+	endif
+		
+
+
+choice.reject.data:
+on.choice:
+	reject_data()
+
+choice.end.program:
+before.choice:
+	refresh.parent(-1)
+	
+choice.abort.program:
+before.choice:
+	refresh.parent(-1)
+
+choice.update.db:
+after.choice:
+refresh.parent(-1)
+
+|****************************** function section ********************************
+functions:
+
+function reject_data()
+{
+	db.retry.point()
+	select	tdisg231.stat
+	from	tdisg231  for update
+	where	tdisg231._index1 = {:tdisg231.rqno,:tdisg231.rcno}
+	and 	tdisg231.stat = tdisg.rqno.pending.for.app
+	selectdo
+		tdisg231.stat = tdisg.rqno.created
+		db.update(ttdisg231,db.retry,e)
+		commit.transaction()
+	endselect
+	
+}
+
+function boolean transfer.of.Sanction.from.Contingency.V.Element()
+{
+	domain	tccprj		v.cprj
+	domain	tcorno		v.vers
+	long ret.val
+	v.cprj = ""
+	v.vers = ""
+	select	tdisg231.stat,
+		tdisg231.rqno,
+		tdisg231.rcno
+	from	tdisg231 
+	where	tdisg231._index1 = {:tdisg231.rqno,:tdisg231.rcno}
+	and 	tdisg231.stat = tdisg.rqno.pending.for.app
+	as set with 1 rows
+	selectdo
+		select	tpisg011.cprj,
+			tpisg011.vers
+		from	tdisg232,tpisg011
+		where	tdisg232._index1 = {:tdisg231.rqno,:tdisg231.rcno}
+		and 	tpisg011._index1 = {tdisg232.cprj}
+		and 	tpisg011.act1 = tpisg.sanction.approved
+		as set with 1 rows
+		selectdo
+			if not Check.Contingency.V.Element(tpisg011.cprj,tpisg011.vers) then
+				message("Please Maintain the Contigency-V Element for This Project")
+				choice.again()
+			endif
+			
+			tpisgdll0011.Sanction_History(
+							tpisg011.cprj,
+							tpisg011.vers)
+			tpisgdll0011.Revise_Sanction_Control(
+							tpisg011.cprj,			|Project
+							tpisg011.vers,			|Version
+							tpisg.sanction.trans.from.cont,	|Activity
+							tpisg.sanction.free,		|Approval Activity
+							"008",				|Reason Code
+							0.1)				|Incremnt By
+			
+			select	tpisg011.cprj,	
+				tpisg011.vers		|Latest Version
+			from	tpisg011
+			where	tpisg011._index1 = {:tpisg011.cprj}
+			as set with 1 rows
+			selectdo
+				select	tdisg232.*
+				from	tdisg232 
+				where	tdisg232._index1 = {:tdisg231.rqno,:tdisg231.rcno}
+				selectdo
+					
+					ret.val = Contingency.V.Element.update.in.sanction(
+										tpisg011.cprj,
+										tpisg011.vers,
+										tdisg232.cspa,
+										tdisg232.amnt) 
+										
+												
+				endselect
+											
+				if ret.val = 0 then
+					
+					ret.val = subrtact.value.in.contigency.V.element(
+										tpisg011.cprj,
+										tpisg011.vers
+										)
+					ret.val = update.version.in.tdisg232()
+					initialize.fields()
+					if not ret.val then
+						if tpisgdll0011.Update_Sanction_Status(
+								tpisg011.cprj,
+								tpisg011.vers,
+								tpisg.sanction.trans.from.cont,
+								tpisg.sanction.trans.from.cont,
+								tpisg.sanction.free,
+								tpisg.sanction.approved) then
+								abort.transaction()
+						endif
+					endif
+				endif
+			endselect
+			
+		selectempty
+			message("Current Sanction Status Is Not Approved ! ")
+			choice.again()
+		endselect
+	endselect			
+	return(true)
+}
+
+function boolean Check.Contingency.V.Element(
+					domain	tccprj		i.cprj,	|Project
+					domain	tcorno		i.vers	|Version
+					)
+				
+{
+	select	tpisg012.cprj
+	from	tpisg012
+	where	tpisg012._index1 = {:i.cprj,:i.vers,"99210000"}
+	selectdo 
+	selectempty
+		return(false)
+	endselect
+	return(true)
+	
+}
+
+function long Contingency.V.Element.update.in.sanction(
+					domain	tccprj		i.cprj,		|Project
+					domain	tcorno		i.vers,		|Version
+					domain	tppdm.cspa	i.elem,		|Element
+					domain	tcamnt		i.amnt		|Transfer Amount
+					)
+{			
+	domain	tppdm.cspa	v.cspa
+	long c_ret
+	v.cspa = ""
+	
+	select	a_tpisg012.cspa:v.cspa,
+		a_tpisg012.avai,
+		a_tpisg012.totl,
+		a_tpisg012.amnt
+	from	tpisg012 a_tpisg012  for update
+	where	a_tpisg012._index1 = {:i.cprj,:i.vers,:i.elem}
+	and	a_tpisg012.levl in(3,4)
+	as set with 1 rows
+	selectdo
+		if tpisg012.levl  = 4 then
+			select	b_tpisg012.cspa:v.cspa
+			from	tpisg012 b_tpisg012 
+			where	b_tpisg012._index1 = {:i.cprj,:i.vers,:v.cspa}
+			and	b_tpisg012.levl = 3
+			as set with 1 rows
+			selectdo
+			endselect
+		endif
+		
+		tpisg012.avai = tpisg012.avai + i.amnt
+		tpisg012.totl = tpisg012.totl + i.amnt
+		c_ret = db.update(ttpisg012, db.retry)
+		if not c_ret then
+			commit.transaction()
+		else
+			abort.transaction()
+		endif
+
+		select	c_tpisg012.cspa:v.cspa,
+			c_tpisg012.avai,
+			c_tpisg012.totl,
+			c_tpisg012.aamt
+		from	tpisg012 c_tpisg012  for update
+		where	c_tpisg012._index1 = {:i.cprj,:i.vers,:v.cspa}
+		and	c_tpisg012.levl = 2
+		selectdo
+			tpisg012.avai = tpisg012.avai + i.amnt
+			tpisg012.totl = tpisg012.totl + i.amnt
+			tpisg012.aamt = tpisg012.aamt + i.amnt
+			c_ret = db.update(ttpisg012, db.retry)
+			if not c_ret then
+				commit.transaction()
+			else
+				abort.transaction()
+			endif
+
+			select	d_tpisg012.cspa:v.cspa,
+				d_tpisg012.avai,
+				d_tpisg012.totl,
+				d_tpisg012.aamt
+			from	tpisg012 d_tpisg012 for update
+			where	d_tpisg012._index1 = {:i.cprj,:i.vers,:v.cspa}
+			and	d_tpisg012.levl = 1
+			as set with 1 rows
+			selectdo
+				tpisg012.avai = tpisg012.avai + i.amnt
+				tpisg012.totl = tpisg012.totl + i.amnt
+				tpisg012.aamt = tpisg012.aamt + i.amnt
+				
+				c_ret = db.update(ttpisg012, db.retry)
+				
+				if not c_ret then
+					commit.transaction()
+				else
+					abort.transaction()
+				endif
+			endselect
+		endselect
+	selectempty
+		v.cspa = ""
+	endselect
+	return(0)
+		
+}	
+
+function  long subrtact.value.in.contigency.V.element(
+					domain	tccprj		i.cprj,		|Project
+					domain	tcorno		i.vers		|Version
+					)
+{
+
+	
+	domain	tppdm.cspa	v.cspa
+	long c_ret
+	v.cspa = ""	
+	select	aa_tpisg012.cspa:v.cspa,
+		aa_tpisg012.avai,
+		aa_tpisg012.totl,
+		aa_tpisg012.amnt
+	from	tpisg012 aa_tpisg012  for update
+	where	aa_tpisg012._index1 = {:i.cprj,:i.vers,"99210000"}
+	and	aa_tpisg012.levl = 2
+	selectdo
+		tpisg012.avai = tpisg012.avai - tot.tran.amnt
+		tpisg012.totl = tpisg012.totl - tot.tran.amnt
+		tpisg012.amnt = tpisg012.amnt - tot.tran.amnt
+		c_ret = db.update(ttpisg012, db.retry)
+		if not c_ret then
+			commit.transaction()
+		else
+			abort.transaction()
+		endif
+
+		select	cc_tpisg012.cspa:v.cspa,
+			cc_tpisg012.avai,
+			cc_tpisg012.totl,
+			cc_tpisg012.aamt
+		from	tpisg012 cc_tpisg012  for update
+		where	cc_tpisg012._index1 = {:i.cprj,:i.vers,:v.cspa}
+		and	cc_tpisg012.levl = 1
+		selectdo
+			tpisg012.avai = tpisg012.avai - tot.tran.amnt
+			tpisg012.totl = tpisg012.totl - tot.tran.amnt
+			tpisg012.aamt = tpisg012.aamt - tot.tran.amnt
+			c_ret = db.update(ttpisg012, db.retry)
+			if not c_ret then
+				commit.transaction()
+			else
+				abort.transaction()
+			endif
+		endselect
+	endselect
+	return(0)
+}
+
+
+function	initialize.fields()
+{
+	select	tpisg011.aref,
+		tpisg011.adte,
+		tpisg011.armk,
+		tpisg011.aapr,
+		tpisg011.cprj,
+		tpisg011.vers
+	from	tpisg011	for	update
+	where	tpisg011._index1	=	{:tpisg011.cprj,:tpisg011.vers}
+	selectdo
+		tpisg011.aref = ""								
+		tpisg011.adte = 0
+		tpisg011.armk = ""
+		tpisg011.aapr = ""
+		
+		db.update(ttpisg011, db.retry, e)
+		if	not	e	then
+			commit.transaction()
+		else
+			abort.transaction()
+		endif
+	endselect
+}
+
+function long update.version.in.tdisg232()
+{
+	select	tdisg232.vers
+	from	tdisg232 for update
+	where	tdisg232._index1 = {:tdisg231.rqno,:tdisg231.rcno}
+	selectdo
+		tdisg232.vers = tpisg011.vers
+		db.update(ttdisg232, db.retry,e)
+	endselect
+	commit.transaction()
+	return(0)
+}

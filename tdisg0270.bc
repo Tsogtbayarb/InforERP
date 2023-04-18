@@ -1,0 +1,341 @@
+|******************************************************************************
+|* tdisg027  0  VRC B61U a7 isg 
+|* Dal Delivery Challan Line
+|* merino1
+|* 18-02-23 [10:38]
+|******************************************************************************
+|* Script Type: DAL
+|******************************************************************************
+|*ID:ISGEC018001, Manwendra singh,18-02-23,VRC B61U a7 isg  
+|*New Development
+|*
+|* ID:ISGEC018001, Dharmendra Singh, 06-08-2018
+|*
+|* ID: ISGEC01170,Prasanna Bhuyan, 07-03-2019, VRC B61U a7 isg
+|* Delete table "tpisg030" when next PO and next PO Line is changed and receipt status is not confirmed
+|******************************************************************************
+#include <bic_dal2>
+	table 	ttdisg026 |Delivery Challan
+	table 	ttdisg027 |Delivery Challan line
+	table	ttdpur400 |Purchase Order
+	table	ttdpur401 |Purchase Order Lines
+	table	twhisg312 |Purchase Receipt
+	table	ttcmcs003
+	table	ttdisg030	|#ISGEC01170.n
+	
+	extern domain	tccprj	cprj1
+	domain	tcorno	old.foco		|#ISGEC01170.sn
+	domain	tcpono	old.focp		
+		long 	ret			|#ISGEC01170.en
+		
+|************************ Object Hooks ****************************************
+function extern long before.open.object.set()
+{
+	return(0)
+}
+
+function extern long before.save.object(long type)
+{
+	on case type									|#ISGEC01170.sn
+	case DAL_UPDATE:
+			with.old.object.values.do(get.old.po.details, old.foco, old.focp)	
+			
+			if old.foco <> tdisg027.foco or old.focp <> tdisg027.focp then
+				select	tdisg030.*
+				from	tdisg030 for update
+				where	tdisg030._index2 = {:tdisg027.rcno,:tdisg027.recl}
+				selectdo
+					select	whinh310.stat
+					from	whinh310
+					where	whinh310._index1 = {:tdisg030.rcno}
+					and	whinh310.stat <> whinh.rhst.confirmed
+					selectdo
+						ret = dal.destroy.object("tdisg030")
+						if	ret <> 0	then
+							return(DALHOOKERROR)
+						endif
+					endselect
+				endselect
+			endif
+		break
+	endcase									|#ISGEC01170.en
+	
+	select	whisg312.*
+	from	whisg312 for update
+	where	whisg312._index1 = {:tdisg027.rcno,:tdisg027.recl}
+	selectdo
+| 		whisg312.sele = tcyesno.yes
+| 		whisg312.inrq = tdisg027.dech
+		whisg312.delv = tdisg027.dech
+		whisg312.dese = tcyesno.yes
+		db.update(twhisg312, db.retry, e)
+	endselect
+								|#ISGEC018001.sn
+	tdisg027.foco = tdisg027.focot
+	tdisg027.focp = tdisg027.focpt
+	return(0)						|#ISGEC018001.en
+}
+
+function extern boolean method.is.allowed(long type)
+{
+	domain	tcpono		val.flag
+	
+	val.flag = 0
+
+	select tdisg026.flag:val.flag
+	from	tdisg026
+	where	tdisg026._index1 = {:tdisg027.dech}
+	selectdo
+	endselect
+	
+	on case type
+	case DAL_NEW:
+		if val.flag = 1	then
+			return(false)
+		endif
+		break
+	case DAL_UPDATE:
+		if val.flag = 1	then
+			return(false)
+		endif
+		break
+	case DAL_DESTROY:
+		if val.flag = 1	then
+			return(false)
+		endif
+		break
+	endcase
+	return(true)
+}
+
+function extern long after.save.object(long type)
+{
+| 	select	whisg312.sele
+| 	from	whisg312 for update
+| 	where	whisg312._index1 = {:tdisg027.rcno,:tdisg027.recl}
+| 	selectdo
+| 		whisg312.sele = tcyesno.yes
+| 		whisg312.inrq = tdisg027.dech
+| 		db.update(twhisg312, db.retry, e)
+| 	endselect
+	return(0)
+}
+
+function extern long after.destroy.object()
+{
+	select	whisg312.sele
+	from	whisg312 for update
+	where	whisg312._index1 = {:tdisg027.rcno,:tdisg027.recl}
+	selectdo
+		whisg312.sele = tcyesno.no
+		whisg312.inrq = ""
+		db.update(twhisg312, db.retry, e)
+	endselect
+	return(0)
+}
+|************************ Field Hooks ********************************************
+
+function extern boolean tdisg027.srpo.is.mandatory()
+{
+	return(true)
+}
+
+function extern boolean tdisg027.srpl.is.mandatory()
+{
+	return(true)
+}
+
+| function extern boolean tdisg027.rcno.is.mandatory()
+| {
+| 	return(true)
+| }
+							|#ISGEC018001.so
+| function extern boolean tdisg027.foco.is.mandatory()
+| {
+| 	return(true)
+| }
+							|#ISGEC018001.eo
+							|#ISGEC018001.sn
+function extern boolean tdisg027.focot.is.mandatory()
+{
+	return(true)
+}
+							|#ISGEC018001.en
+							|#ISGEC018001.so
+| function extern boolean tdisg027.focp.is.mandatory()
+| {
+| 	return(true)
+| }
+							|#ISGEC018001.eo
+							|#ISGEC018001.sn
+function extern boolean tdisg027.focpt.is.mandatory()
+{
+	return(true)
+}
+							|#ISGEC018001.en
+function extern boolean tdisg027.srpo.is.valid()
+{
+	if not srpoValid() then
+							|#ISGEC018001.sn
+		dal.set.error.message("@PO not found under Project %s",cprj1)
+							|# ISGEC018001.en
+		return(dalhookerror)
+		return(false)
+	endif
+	return(true)
+}
+
+function extern boolean tdisg027.srpl.is.valid()
+{
+	if not srplValid() then
+		return(false)
+	endif
+	return(true)
+}
+
+function extern boolean tdisg027.rcno.is.valid()
+{
+	if not  rcnoValid() then
+		return(false)
+	endif
+	return(true)
+}
+								|#ISGEC018001.so
+| function extern boolean tdisg027.foco.is.valid()
+| {
+| 	if trim$(tdisg027.srpo) = trim$(tdisg027.foco) then
+| 		dal.set.error.message("@Source PO cannot be same as next vendor PO")
+| 		return(false)
+| 	endif
+| 	return(true)
+| }
+								|#ISGEC018001.eo
+								|#ISGEC018001.sn
+
+function extern boolean tdisg027.focot.is.valid()
+{
+	if trim$(tdisg027.srpo) = trim$(tdisg027.focot) then
+		dal.set.error.message("@Source PO cannot be same as next vendor PO")
+		return(false)
+	endif
+	return(true)
+}
+								|#ISGEC018001.en
+								|#ISGEC018001.so
+| function extern boolean tdisg027.focp.is.valid()
+| {
+| 	if not  focpValid() then
+| 		return(false)
+| 	endif
+| 	return(true)
+| }
+								|#ISGEC018001.eo
+								|#ISGEC018001.sn
+function extern boolean tdisg027.focpt.is.valid()
+{
+	if not  focpValid() then
+		return(false)
+	endif
+	return(true)
+}
+								|#ISGEC018001.eo
+|************************ functions ***********************************************
+
+function boolean srpoValid()
+{
+	if not isspace(tdisg027.srpo) then
+		cprj1 = get.cprj()
+		select	tdpur401.orno, tcmcs003.cwar
+		from	tdpur401,tcmcs003
+		where	tdpur401._index1 = {:tdisg027.srpo}
+| 		and	tdpur401.cprj = :cprj1
+		and	tdpur401.cwar refers to tcmcs003
+| 		and	tcmcs003.cdf_vewr = tcyesno.yes
+		selectdo
+		selectempty	
+			return(false)
+		endselect
+	endif
+	return (true)
+}
+
+function boolean srplValid()
+{
+	if not isspace(tdisg027.srpl) then
+		select	tdpur401.pono	
+		from	tdpur401
+		where	tdpur401._index1 = {:tdisg027.srpo,:tdisg027.srpl}
+		selectdo
+		selectempty	
+			return(false)
+		endselect
+	endif
+	return (true)
+}
+
+function boolean rcnoValid()
+{
+	if not isspace(tdisg027.rcno) then
+		select	whisg312.rcno	
+		from	whisg312
+		where	whisg312._index1 = {:tdisg027.rcno}
+		selectdo
+		selectempty	
+			return(false)
+		endselect
+	endif
+	return (true)
+}
+
+function boolean focoValid()
+{
+	if not isspace(tdisg027.foco) then
+		cprj1 = get.cprj()
+		select	tdpur401.orno,tcmcs003.cwar
+		from	tdpur401, tcmcs003
+		where	tdpur401._index1 = {:tdisg027.foco}
+		and	tdpur401.cprj = :cprj1
+		and	tdpur401.cwar refers to tcmcs003
+		and	tcmcs003.cdf_vewr = tcyesno.yes
+		selectdo
+		selectempty	
+			return(false)
+		endselect
+	endif
+	return (true)
+}
+
+function boolean focpValid()
+{
+	if not isspace(tdisg027.focpt) then
+		select	tdpur401.pono	
+		from	tdpur401
+		where	tdpur401._index1 = {:tdisg027.focot,:tdisg027.focpt}
+		selectdo
+		selectempty	
+			return(false)
+		endselect
+		endif
+	return (true)
+}
+
+function domain tccprj get.cprj()
+{
+	select	tdisg026.proj
+	from	tdisg026
+	where	tdisg026._index1 = {:tdisg027.dech}
+	selectdo
+	selectempty
+		tdisg026.proj = ""
+	endselect
+	return(tdisg026.proj)
+}
+
+function get.old.po.details(						|#ISGEC01170.sn
+				ref domain	tcorno	o.orno,
+				ref domain	tcpono	o.pono
+								)
+{
+	o.orno = tdisg027.foco
+	o.pono = tdisg027.focp
+}									|#ISGEC01170.en		

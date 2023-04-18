@@ -1,0 +1,245 @@
+|******************************************************************************
+|* tdisg2225m000  0  VRC B61U a7 isg 
+|* Upload Price Annexure
+|* Ravi Kumar                    
+|* 2021-01-04
+|******************************************************************************
+|* Main table tdisg225 Upload Price Annexure, Form Type 4
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttdisg225
+
+	extern	domain	tcmcs.str132m	file  , file.format
+	long			server_file_ptr
+	string			tmp.record(2048)
+	domain	tcmcs.str50	server.tmp.file, local.filename
+	long			ret.num, dd, mm, yy, i
+	
+
+	string		err.file(100), file.name(100), line4(3000)
+	long		ret2, stat.fp
+	extern	domain	tcorno		i.po.orno
+	extern	domain	tdpur.hdst	i.po.hdst
+	extern	domain	tcmcs.str100m	file.label
+	
+|---------------------------Input Variables -------------------------------------
+	extern	domain	tcorno	i.orno
+	extern	domain	tcpono	i.revn
+	extern	domain	tcpono	i.pono
+	extern	domain	tcpono	i.anxr
+	extern	domain	tcitem	i.item
+	extern	domain	tcdsca	i.dsca
+	extern	domain	tcqrd1	i.qoor
+	extern	domain	tccuni	i.cuni
+	extern	domain	tcpric	i.rate
+	
+   
+	#pragma used dll ottdllbw
+	#include <bic_dam> 
+	#pragma used dll ottstpapihand
+
+
+|****************************** program section ********************************
+before.program:
+| 	file.format = "PO. No, Revision No., Line No, Annexture Line No., Item Code, Item Name, Quantity, Unit, Rate, Value"
+	file.label = "Select .CSV file"
+	import("tdpur400.hdst", i.po.hdst)
+	if i.po.hdst = tdpur.hdst.created then
+	else
+		if i.po.hdst <> tdpur.hdst.modified then
+			message("PO should be in Modified or Created State")
+			end()
+		endif
+	endif
+	
+	
+
+|****************************** group section **********************************
+| choice.print.data:
+| on.choice:
+|    if rprt_open() then
+|        print.error.report()
+|        rprt_close()
+|    else
+|        choice.again()
+|    endif
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+
+functions:
+function extern search()
+{
+	mess("tigenstring", 0, "Select The File . . .")
+	if seq.open.dialog.local( false, "", "","Text Files(*.csv)|*.csv|All File(*.*)|*.*", file ) > 0 then
+		mess("tigenstring", 0, "Success . . .")
+	else
+		mess("tigenstring", 0, "Cancelled . . .")
+	endif
+	display.all()
+}
+
+function extern process()
+{
+	display.all()
+| 	
+	if isspace(file) then
+		mess("tigenstring", 1, "Please Specify a File")
+		return
+	else
+		start.upload.file()
+	endif
+	message("Process Complete")
+}
+
+function extern start.upload.file()
+{
+	server.tmp.file = creat.tmp.file$( bse.tmp.dir$() )
+	
+	if client2server(file, server.tmp.file, false, false, true) = 0 then
+		mess("tigenstring", 0, "File Copy to server:tmp successful !")
+		server_file_ptr = seq.open(server.tmp.file, "r")
+		
+		if server_file_ptr then
+			mess("tigenstring", 0, "Update in Progress . . .")
+			insert.PO.price.annexture()
+			seq.close(server_file_ptr)
+			mess("tigenstring", 0, "Update Complete !!")
+		else
+			mess("tigenstring", 1, "ERROR : File Cannot be Opened")
+		endif
+	else
+		mess("tigenstring", 1, "ERROR : Copy Failed")		
+	endif
+}
+
+
+function init.all.variables()
+{
+	tmp.record = ""
+	i.orno = ""
+	i.revn = 0
+	i.pono = 0
+	i.anxr = 0
+	i.item = ""
+	i.dsca = ""
+	i.qoor = 0
+	i.cuni = ""
+	i.rate = 0
+}
+
+function insert.PO.price.annexture()
+{
+	i = 0
+	while(not seq.eof(server_file_ptr))
+		mess("tigenstring", 0, "Update in Progress . . .")		
+		init.all.variables()
+		ret.num = seq.gets(tmp.record, 2048, server_file_ptr)
+		if ret.num = 0 then
+			i = i + 1
+		| field sequence                            1, 2, 3, 4, 5, 6, 7
+			ret.num = string.scan(tmp.record, "%s,%d,%s,%s,%f,%s,%f", 
+						i.orno, i.pono, i.item, i.dsca, i.qoor, i.cuni, i.rate)
+			if ret.num <> 0 then
+				if i <> 1 then
+					insert.data()
+				endif
+				mess("tigenstring", 0, "Update in Progress . . .")
+			endif
+		endif
+	endwhile
+}
+
+function insert.data()
+{
+	select	tdmsl400.vrsn:i.revn
+	from	tdmsl400
+	where	tdmsl400._index1 = {:i.orno}
+	order by tdmsl400.vrsn desc
+	as set with 1 rows
+	selectdo
+	selectempty
+		i.revn = 0
+	endselect
+	
+	if i = 2 then
+		select	tdisg225.*
+		from	tdisg225 for update
+		where	tdisg225._index1 = {:i.orno, :i.revn}
+		selectdo
+			db.delete(ttdisg225, db.retry)
+			commit.transaction()
+		endselect
+	endif
+	
+	select	tdisg225.anxr
+	from	tdisg225
+	where	tdisg225._index1 = {:i.orno, :i.revn, :i.pono}
+	order by tdisg225.anxr desc
+	as set with 1 rows
+	selectdo
+		i.anxr = tdisg225.anxr + 1
+	selectempty
+		i.anxr = 1
+	endselect
+	i.item = "         " & i.item
+	
+	select	tdisg225.*
+	from	tdisg225
+	where	tdisg225._index1 = {:i.orno, :i.revn, :i.pono, :i.anxr}
+	as set with 1 rows
+	selectdo
+	selectempty
+		if dal.new.object("tdisg225") = 0 then
+			dal.set.field("tdisg225.orno", i.orno)
+			dal.set.field("tdisg225.revn", i.revn)
+			dal.set.field("tdisg225.pono", i.pono)
+			dal.set.field("tdisg225.anxr", i.anxr)
+			dal.set.field("tdisg225.item", i.item)
+			dal.set.field("tdisg225.dsca", i.dsca)
+			dal.set.field("tdisg225.qoor", i.qoor)
+			dal.set.field("tdisg225.cuni", i.cuni)
+			dal.set.field("tdisg225.rate", i.rate)
+			if dal.save.object("tdisg225") = 0 then
+				commit.transaction()
+			else
+				abort.transaction()
+			endif
+		endif	
+	endselect
+}
+
+function extern open.template()
+{
+	err.file = bse.tmp.dir$() & str$(utc.num()) & ".xls"
+	
+	file.name = "c:\temp\" & str$(utc.num())  & ".xls"
+	
+	stat.fp = seq.open(err.file, "w+")
+	if stat.fp > 0 then
+ 		seq.seek(0, 0, stat.fp)
+	endif
+	
+	line4 =	concat$("	",
+		sprintf$("PO No."),							
+		sprintf$("Line No."),						
+		sprintf$("Item Code(Not linked with ERP Item Master)"),							
+		sprintf$("Item Name"),						
+		sprintf$("Quantity"),							
+		sprintf$("Unit"),			
+		sprintf$("Rate"))					
+		
+		
+	line4 = strip$(shiftl$(line4))		
+	seq.puts(line4, stat.fp)
+
+	seq.close(stat.fp)
+	ret2 = server2client(err.file,file.name,1)
+	ret2 = app_start(file.name,"c:","","","")
+}
+

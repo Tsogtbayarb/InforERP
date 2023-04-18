@@ -1,0 +1,4750 @@
+|******************************************************************************
+|* tcmsl1111m000  0  VRC B61U a7 dev 
+|* Maintain Business Partner Easy Entry
+|* sujeet
+|* 14-02-14 [11:35]
+|******************************************************************************
+|* Script Type: 123
+|******************************************************************************
+|******************************************************************************
+|* IDENT ISG001009 , Manish Kumar, IT0303, 13-02-2014,VRC B61U a2 mil
+|* Modifications according to fp7
+|******************************************************************************
+|* ISGEC001143, Ankit Sharma,IT0302, 17-01-2015,B61U a7 isg 
+|* Modifications
+|******************************************************************************
+|* ID: ISGEC001167, IT0327, Ritu Shrivastava, 27-02-2015, 	VRC B61U a7 isg
+|* Modifications
+|* 
+|* ID: PATCH001028,	Sujeet Kumar,	2015-03-16
+|* Functional: Mrs. Mamta Upadhyay
+|*
+|* PATCH001047, Dharmendra, 24-03-2015
+
+|* IDENT ISGEC015021, Shilpa Janardanan, 18/06/2015, VRC B61u a7 isg
+|* Change in label of Fax no  to Contact Person
+|*
+|* ID ISGEC015086, Manish Manchanda, 2016-02-20
+|* Session added in specific
+|*
+|* ID : ISGEC017006, IT0386, Saurabh Dubey, 12 May 2017, VRC B61U a7 isg
+|* Modification related to GST
+|* Check for Blank Tax No.
+|* Isgec Onsite Deployment
+|*
+|* ID : ISGECMOD005, IT0386, Saurabh Dubey, 09 January 2018, VRC B61U a7 isg
+|* Checks for BP GSTIN
+|*
+|* GH401CR723, RAvi Kumar, 21-09-2020
+|* TDS shall be made a by default value in Tax Classification field
+|* 
+|* GH612CR939, RAvi Kumar, 21-07-2021
+|* Modifications in BP Creation Request and BP Master for MSME
+|*
+|* GH624CR942, RAvi Kumar, 10-08-2021
+|* CR942- Print  BP Remarks in email alerts of BP Creation Request session 
+|*
+|* GH649.10112021, Utam Kumar Singh
+|* Start and End dates should be blank when BP is created through supplier approval request
+|****************************** declaration section ***************************
+declaration:
+#include <bic_dam>
+#include <bic_text>
+	table	ttcmsl111 | Business Partner Easy Entry
+	table	ttcmsl010 | Business Partner Defaults
+	table	ttcmcs050 | First Free Number
+	table	ttcmsl112 | Roles By User
+	table	ttccom001 | Employee
+	table	ttcmcs004 | Routes
+	table   ttccom130
+	table   ttcmcs010
+	table   ttccom000
+	table   ttccom110
+	table   ttccom120
+	table   ttccom145
+	table ttdsls012 | 
+	table ttdpur012 |
+	
+	table	ttccom999			|ISG001006.sn
+	table	ttcmcs050
+	table	ttcmcs051			
+	table	ttpmsl000			|ISG001006.en
+	table	ttcmsl113
+	table	ttccom139			|#ISGEC001143.sn
+	table	ttcmsl115			
+	table	ttcmsl116			
+	table	ttcmsl117			
+	table	ttcmsl118			
+	table	ttccom120			|#ISGEC001143.en
+	table	tbpmdm001
+	table  ttccom100
+	table  ttcmsl114 
+	table	ttcisg102 | Supplier wise Projects			|#ISGEC015086.n
+	table	ttcisg103
+	table	ttcisg104
+| 	table	ttcisg101 | BP Item Group			|#ISGEC015086.n
+	
+	extern domain tcnama		enam,comp.name1,comp.name2,comp.name3,comp.name4,comp.name5
+	extern domain tcdsca		rdes,sdes,ctds
+	extern domain tfgld.user	v_user
+	extern domain tcmcs.long	ret
+	extern domain tcyesno		vryn,ackx,insp,chin,tax_applicable, reg.unreg.flag
+	extern domain	tcyesno		dem1,dem2
+	extern domain tcdate		efdt,exdt
+	extern domain tcclan		clan
+	extern domain tcccur		curr,currency 
+	extern domain tcicod		icod
+	extern domain tccinm		cinm
+	extern domain tfacr.ficu	cfcg
+	extern domain tfacp.fisu	cfsg
+	extern domain tcmcs.crat	crat
+	extern domain tcccp.ccal	ccal
+	extern domain tcfcrt		bcfr, mcfr
+	extern domain tccom.scqq	sscq,scqq
+	extern domain tcrtyp		prtp,rtyp
+	extern domain tccom.chak	chak
+	extern domain tdscon		scon
+	extern domain tccom.coaf	coaf
+	extern domain tcncmp		switch.comp,bcmp1,bcmp2,bcmp3,bcmp4,bcmp5
+	extern domain tcmcs.int		i
+	extern domain tccom.bpid	bp_id
+	extern domain tcbprl		bp_role
+	extern domain tccom.cadr	address_code
+	extern domain tccom.ccnt	contact_code
+	extern domain tcmcs.int	slno
+	extern domain	tcmcs.long	brp_id,var,var1
+	extern string			error_msg(1000)			|ISG001006.n
+	extern domain tcmcs.str30	function_name
+	extern domain tcmcs.str20	desc 
+	Extern domain	tccwar		old.defc
+	Extern domain	tcncmp		curr.comp
+	Extern	domain	tcmcs.str50	remk
+	extern domain	tcyesno		buy.from,ship.from,invoice.from,pay.from	|#ISGEC001143.sn
+	extern domain	tcmcs.str1	reject						
+	extern domain	tcccty		ccty						|#ISGEC001143.en
+	extern	domain	tcmcs.str18	v.catg						|#ISGEC015086.n	
+	
+	long				year,month,day,yy,mm,dd,hh1,hh,mn1,mn,ss1,ss
+	extern domain	tfgld.date	curr_date,eff_date
+
+	long error.found, ret.val.dal, bp.name.flag
+	
+		long	ret_val	,ret1 ,ret2					|ISG001006.sn
+		domain	tcorno	order.no
+		domain	tccom.bpid	o.business.partner, temp.bpid
+		domain	tccom.cadr	o.address,
+					b.address,s.address,i.address,p.address	|#ISGEC001143.n
+		domain	tccom.ccnt	o.ccnt,
+					b.ccnt,i.ccnt,s.ccnt,p.ccnt		|#ISGEC001143.n
+		domain	tccom.ccnt	o.fcod					|ISG001006.en
+		
+		domain	tcrqno		g.rqno
+		domain tcyesno		approve.reject				|# PATCH001047.sn
+| 		domain	tcmcs.str100	approver.remarks(1), o.err.msg		|GH624CR942.old
+		domain	tcmcs.str100	o.err.msg				|GH624CR942.new
+		string	line1(5000), 	approver.remarks(5000, 1000)		|GH624CR942.a
+	#include               <bic_cmf>
+	#pragma used dll ottdllbw 						
+	#pragma used dll otcisgdll0100	|#ISGECMOD005.n						
+										|# PATCH001047.en
+|****************************** program section ********************************
+| after.form.read:
+| 	enable.save.on.occ.change()
+	
+before.program:
+	curr.comp = get.compnr()
+	o.business.partner = ""
+	o.address = ""
+	o.ccnt = ""
+	b.address = ""									|#ISGEC001143.sn
+	s.address = ""
+	i.address = ""
+	p.address = ""
+	b.ccnt = ""
+	s.ccnt = ""
+	i.ccnt = ""
+	p.ccnt = ""									|#ISGEC001143.en
+	v.catg	=	"Not Applicable"					|#ISGEC015086.n	
+	
+	
+	tcmsl111.prst = tccom.prst.active
+	
+	ret1 = tcmcs.dll0095.read.parm("tccom999")			|ISG001006.n
+	ret2 = tcmcs.dll0095.read.parm("tpmsl000")			|ISG001006.n
+	
+	set.synchronized.dialog("tcmsl1111m000")
+	slno=1
+
+	select 	tcmsl112.* from 	tcmsl112
+	where	tcmsl112._index1=:logname$
+	selectdo
+		if tcmsl112.crtr = tcyesno.no and tcmsl112.appr = tcyesno.no then
+			message("Not Authorized to Run Session")
+			exit()
+		else									|#ISGEC001167.sn
+ 			if tcmsl112.crtr = tcyesno.yes and tcmsl112.appr = tcyesno.no then
+ 				tcmsl111.rsnc = ""
+ 				disable.fields("tcmsl111.rsnc")
+				disable.fields("tcmsl111.aprk")
+ 			else if tcmsl112.crtr = tcyesno.no and tcmsl112.appr = tcyesno.yes then
+ 				enable.fields("tcmsl111.rsnc")
+				enable.fields("tcmsl111.aprk")
+ 			endif
+ 			endif
+											|#ISGEC001167.en
+		endif
+		
+	
+	selectempty
+		message("Not Authorized to Run Session")
+		exit()
+	endselect
+	
+
+before.display.object:
+	if tcmsl112.crtr=tcyesno.yes then
+		disable.commands("approve")
+		disable.commands("reject")					|#ISGEC001143.n
+		disable.fields("tcmsl111.bpid")
+| 		disable.fields("tcmsl111.cadr")					|#ISGEC001167.o				
+| 		disable.fields("tcmsl111.ccnt")					|#ISGEC001167.o
+		disable.fields("tcmsl111.fcod")
+		disable.fields("tcmsl111.rsnc")				|#ISGEC001167.n
+		disable.fields("tcmsl111.aprk")
+		tcmsl111.rsnc = ""						|#ISGEC001167.n
+		if etol(tcmsl111.stat) > 1 and tcmsl112.appr = tcyesno.no  then
+			disable.commands(modify.set,mark.delete)
+		else
+			enable.commands(modify.set,mark.delete)		|ISG001006.n
+		endif
+	else
+		if tcmsl112.appr=tcyesno.yes and etol(tcmsl111.stat) = 1 then
+			disable.commands(modify.set,mark.delete)
+		else
+			enable.commands(modify.set,mark.delete)		|ISG001006.n
+		endif
+		
+		if tcmsl112.appr=tcyesno.yes and etol(tcmsl111.stat) > 1 then		|#ISGEC001167.sn
+			enable.fields("tcmsl111.rsnc")
+			enable.fields("tcmsl111.aprk")		
+		endif									|#ISGEC001167.en
+	endif
+	
+	disable.fields(tcmsl111.cprj)						|#ISGEC001143.sn
+| 	if etol(tcmsl111.stat) <>2 then						
+| 		disable.group(5)							
+| 		
+| 		disable.commands("buyfrom")						
+| 		disable.commands("shipfrom")
+| 		disable.commands("invoicefrom")				
+| 		disable.commands("payfrom")						
+| 	else
+		enable.group(5)							
+		
+| 		enable.commands("buyfrom")						
+| 		enable.commands("shipfrom")
+| 		enable.commands("invoicefrom")				
+| 		enable.commands("payfrom")
+| 	endif	
+	
+| 	if buy.from = tcyesno.yes then						|#ISGEC001167.o
+	if tcmsl111.bybp = tcyesno.yes then					|#ISGEC001167.n
+		disable.commands("buyfrom")
+	else
+		enable.commands("buyfrom")
+	endif		
+
+| 	if ship.from = tcyesno.yes then						|#ISGEC001167.o
+	if tcmsl111.shbp = tcyesno.yes then					|#ISGEC001167.n
+		disable.commands("shipfrom")
+	else
+		enable.commands("shipfrom")
+	endif
+
+| 	if invoice.from = tcyesno.yes then					|#ISGEC001167.o
+	if tcmsl111.inbp = tcyesno.yes then					|#ISGEC001167.n
+		disable.commands("invoicefrom")
+	else
+		enable.commands("invoicefrom")
+	endif			
+
+| 	if pay.from = tcyesno.yes then						|#ISGEC001167.o
+	if tcmsl111.pybp = tcyesno.yes then					|#ISGEC001167.n
+		disable.commands("payfrom")
+	else
+		enable.commands("payfrom")
+	endif										|#ISGEC001143.en
+	
+| 	enable.disable.taxs()		|#ISGEC001167.n		|# PATCH001047.o
+	
+after.form.read:
+	enable.save.on.occ.change()
+	set.enum.values.for.field("tcmsl111.reqt",tcreqt.prjs, tcreqt.na)	|#ISGEC015086.n
+
+before.new.object:
+	tcmsl111.bpid = tccom999.srbp
+	disable.fields(tcmsl111.cprj)							|#ISGEC001143.sn
+| 	if etol(tcmsl111.stat) <>2 then						
+| 		disable.group(5)							
+| 		disable.commands("buyfrom")						
+| 		disable.commands("shipfrom")
+| 		disable.commands("invoicefrom")				
+| 		disable.commands("payfrom")						
+| 	else
+		enable.group(5)							
+		enable.commands("buyfrom")						
+		enable.commands("shipfrom")
+		enable.commands("invoicefrom")				
+		enable.commands("payfrom")
+| 		disable.fields(tcmsl111.cprj)
+| 	endif										|#ISGEC001143.en
+
+	tcmsl111.sbpc = "TDS"								|GH401CR723.a
+|****************************** Group section *********************************
+Group.2:
+init.group:
+	tcmsl111.bpid = tccom999.ngbp
+
+	ret = create.extra.toolbar(							|RAvi.a.21102019
+			"attachment",	"tcgen:activate")
+
+|****************************** main.table.io section ******************************************************************
+
+main.table.io:
+before.write:
+	
+	if not isspace(tcmsl111.gstn) and  tcmsl111.txcl = tcisg.tax.clas.nreg  then			
+		message("GST Tax Classification Cannot be Unregistered Since GSTIN is Available...")
+		skip.io("")
+	endif
+	
+	
+	tcmsl111.rqdt = date.num()
+	tcmsl111.user = logname$
+	tcmsl111.cron = utc.num()
+	tcmsl111.comp = get.compnr()
+	tcmsl111.cron = utc.num()
+	if not isspace(tcmsl111.rqno) then		
+		order.no = tpmsl000.srrq					|ISG001006.sn
+		ret_val  = tcmcs.dll0050.check.and.generate.order.number(
+					3,			| Action 3 for Check And Generate
+					order.no, 		| Ref Series/Order No.Generated
+					tpmsl000.ngrq, 		| Number Group
+					9,		 	| Lenght
+					tcmsl111.rqno		| Table Field
+					)
+				
+		if ret_val = 0 then
+			tcmsl111.rqno = order.no
+		else
+			show.dal.messages(MSG.ALL)
+		endif								|ISG001006.en
+	endif
+	enable.group(5)								|#ISGEC001143.sn
+	enable.commands("buyfrom")						
+	enable.commands("shipfrom")
+	enable.commands("invoicefrom")				
+	enable.commands("payfrom")						|#ISGEC001143.en
+	
+after.read:
+	if tcmsl111.stat=tcstat.create then
+		disable.commands("approve")
+		disable.commands("reject")					|#ISGEC001143.n
+	endif
+	if tcmsl111.stat=tcstat.send then
+		disable.commands("send_for_approval")
+		dem1=tcyesno.yes
+	endif
+	if tcmsl111.stat=tcstat.approve then
+		disable.commands("send_for_approval")
+		disable.commands("approve",modify.set)
+		disable.commands("reject")						|#ISGEC001143.sn					
+		disable.group(5)							
+		disable.commands("buyfrom")						
+		disable.commands("shipfrom")
+		disable.commands("invoicefrom")				
+		disable.commands("payfrom")					|#ISGEC001143.en
+
+		dem1=tcyesno.yes
+		dem2=tcyesno.yes
+	endif
+	cust_sup_grp()
+
+						|#ISGEC015086.sn
+after.write:									
+	if	tcmsl111.reqt	=	tcreqt.prjs	then
+		if	not	isspace(tcmsl111.rqno)	then
+			if	check.bp.item.group()	then
+				message("Mandatory to maintain projects for supplier.")
+			endif
+		endif
+	endif
+after.rewrite:
+	if	tcmsl111.reqt	=	tcreqt.prjs	then
+		if	not	isspace(tcmsl111.rqno)	then
+			if	check.bp.item.group()	then
+				message("Mandatory to maintain projects for supplier.")
+			endif
+		endif
+	endif
+						|#ISGEC015086.en
+
+before.rewrite:
+	if etol(tcmsl111.stat) < 2 then
+		tcmsl111.user = logname$
+		tcmsl111.cron = date.num()
+		tcmsl111.rsnc = ""				|#ISGEC001167.n
+	endif
+|************************************field section**************************************************************************************************
+field.tcmsl111.stat:
+after.field:
+| 	enable.commands(modify.set) |by sambit
+	if tcmsl111.stat=tcstat.approve then
+		disable.commands("send_for_approval","approve",modify.set)
+		disable.commands("reject")					|#ISGEC001143.n
+	endif
+
+field.tcmsl111.rqno:						|******** Request Number **********|
+before.input:									|ISG001006.sn
+	tcmsl111.rqno = tpmsl000.srrq
+check.input:
+| 	select	tpmsl000.srrq
+| 	from	tpmsl000
+| 	where	tpmsl000.srrq = :tcmsl111.rqno(1;4)
+| 	selectdo
+| 	selectempty
+| |		if tpmsl000.srrq <> tcmsl111.rqno then
+| 			message("Please Select Another Series")
+| 			set.input.error("",e)
+| |		endif
+| 	endselect		
+	
+before.zoom:
+	tcmcs050.nrgr = tpmsl000.ngrq						|ISG001006.en
+
+field.tcmsl111.nama:							|******** Name **********|
+check.input:
+	if  isspace(tcmsl111.nama) then
+		message("Name should not be blank")
+		set.input.error("",e)
+	endif
+	
+after.input:
+	tcmsl111.anam=tcmsl111.nama
+				|#ISGEC017006.sn
+	bp.name.flag = 1
+	
+	if same.name.bp.exists() then
+	endif
+	
+	bp.name.flag = 0
+				|#ISGEC017006.en
+
+
+field.tcmsl111.defc:							|******* Business Partner Defaults *******|
+check.input:
+	if etol(tcmsl111.stat) > 1 then
+		if tcmsl112.appr = tcyesno.yes and isspace(tcmsl111.defc) then
+			message("Business Partner Defaults should not be blank")
+			set.input.error("",e)
+		endif
+	endif	
+
+after.field:
+	on.old.occ(get.old.defc)
+	if old.defc <> tcmsl111.defc then
+		select 	tcmsl010.* 
+		from 	tcmsl010 
+		where	tcmsl010._index1 = {:tcmsl111.defc}
+		selectdo
+			tcmsl111.bprl = tcmsl010.bprl
+			if tcmsl010.bprl = tcbprl.customer or tcmsl010.bprl = tcbprl.both then
+				tcmsl111.ccur = tcmsl010.cucr
+				tcmsl111.sotp = tcmsl010.sotp
+				tcmsl111.cpay = tcmsl010.cpay
+				tcmsl111.crlr = tcmsl010.crlr
+			endif
+			if tcmsl010.bprl = tcbprl.supplier or tcmsl010.bprl = tcbprl.both then
+				tcmsl111.scur = tcmsl010.scur
+				tcmsl111.potp = tcmsl010.potp
+				tcmsl111.spay = tcmsl010.spay
+			endif
+			if tcmsl010.bprl= tcbprl.supplier then
+				tcmsl111.ccur = ""
+				tcmsl111.sotp = ""
+				tcmsl111.cpay = ""
+				tcmsl111.crlr = 0
+			endif
+			if tcmsl010.bprl= tcbprl.customer then
+				tcmsl111.scur = ""
+				tcmsl111.potp = ""
+				tcmsl111.spay = ""
+			endif
+			
+		endselect
+		cust_sup_grp()
+	endif
+
+field.tcmsl111.bprl:									|******** Business Partner Role *******|
+check.input:										| BP code mendatory for approver
+	if etol(tcmsl111.stat) > 1 then
+		if tcmsl112.appr = tcyesno.yes and isspace(tcmsl111.bprl) then
+			message("Business Partner Role should not be blank")
+			set.input.error("",e)
+		endif
+	endif	
+field.tcmsl111.cbtp:									|******** Business Partner Type ****|
+check.input:
+	
+when.field.changes:									|#ISGEC001143.sn
+		tcmsl111.fovn = ""
+		tcmsl111.pefd = 0
+		tcmsl111.pexd = 0
+		tcmsl111.fov2 = ""
+		tcmsl111.eefd = 0
+		tcmsl111.eexd = 0
+		tcmsl111.fov3 = ""
+		tcmsl111.vefd = 0
+		tcmsl111.vexd = 0
+		tcmsl111.fov5 = ""
+		tcmsl111.cefd = 0
+		tcmsl111.cexd = 0
+		tcmsl111.fov6 = ""
+		tcmsl111.sefd = 0
+		tcmsl111.sexd = 0
+		tcmsl111.gstn = ""	|#ISGEC017006.sn
+		tcmsl111.gfdf = 0
+		tcmsl111.gfdt = 0
+		tcmsl111.sexd = 0
+		tcmsl111.cprt = 0	|#ISGEC017006.en
+											|#ISGEC001143.en
+| 		enable.disable.taxs()			|#ISGEC001167.n		|# PATCH001047.o
+	
+		
+field.tcmsl111.cadr:									|********* Address Code ***********|
+before.input:								|ISG001006.sn
+	tcmsl111.cadr = tccom999.srad
+before.zoom:
+	tcmcs050.nrgr = tccom999.ngad					|ISG001006.en
+	
+check.input:										| Address code mendatory for Approver
+	if etol(tcmsl111.stat) > 1 then
+		if tcmsl112.appr = tcyesno.yes and isspace(tcmsl111.cadr) then
+			message("Address Code should not be blank")
+			set.input.error("",e)
+		endif
+		
+		select	tccom130.*
+		from	tccom130
+		where	tccom130._index1 = {:tcmsl111.cadr}
+		selectdo
+			select tccom100.cadr from tccom100
+			where tccom100._index4 = {:tcmsl111.cadr}
+			as set with 1 rows
+			selectdo
+				message("Address Code is already used, choose another Address Code")
+				set.input.error("",e)
+			endselect
+		endselect
+	endif
+after.input:
+	if not isspace(tcmsl111.cadr) then
+		select	tccom130.nama
+		from	tccom130
+		where	tccom130._index1 = {:tcmsl111.cadr}
+		selectdo
+			tcmsl111.anam = tccom130.nama
+		endselect
+	endif
+field.tcmsl111.anam:									|********** Name **********|
+check.input:										| Name mendatory for all cases
+	if isspace(tcmsl111.anam) then
+		message("Address Name should not be blank")
+		set.input.error("",e)
+	endif
+field.tcmsl111.ccty:									|****** Country ***********|
+check.input:										| Country Mendatory for all cass
+	if isspace(tcmsl111.ccty) then
+		message("Country should not be blank")
+		set.input.error("",e)
+	endif
+	
+when.field.changes:									|#ISGEC001143.sn
+		tcmsl111.fovn = ""
+		tcmsl111.pefd = 0
+		tcmsl111.pexd = 0
+		tcmsl111.fov2 = ""
+		tcmsl111.eefd = 0
+		tcmsl111.eexd = 0
+		tcmsl111.fov3 = ""
+		tcmsl111.vefd = 0
+		tcmsl111.vexd = 0
+		tcmsl111.fov5 = ""
+		tcmsl111.cefd = 0
+		tcmsl111.cexd = 0
+		tcmsl111.fov6 = ""
+		tcmsl111.sefd = 0
+		tcmsl111.sexd = 0
+		
+| 		enable.disable.taxs()			|#ISGEC001167.n		|# PATCH001047.o
+		
+after.input:
+		ccty = tcmsl111.ccty
+											|#ISGEC001143.en
+field.tcmsl111.pstc:									|********* ZIP Code *********|
+before.zoom:
+	query.extend.where.in.zoom("tccom136.ccty=" & quoted.string(tcmsl111.ccty))
+check.input:
+	select tcmcs010.ppcd
+	from   tcmcs010
+	where  tcmcs010._index1 = {:tcmsl111.ccty}
+	selectdo
+	endselect
+
+	if len(strip$(shiftl$(tcmsl111.pstc))) <> tcmcs010.ppcd then 
+		message("Length of ZIP code/postal code is not suitable for country %s , minimal length is %d ",tcmsl111.ccty,tcmcs010.ppcd)
+		set.input.error("",e)
+	else
+	
+| after.input:
+	if not isspace(tcmsl111.pstc) then
+		select 	tccom136.* 
+		from 	tccom136
+		where 	tccom136._index1 = {:tcmsl111.ccty,:tcmsl111.pstc}
+		selectdo
+		selectempty
+			message("ZIP Code not found",e)
+			set.input.error("",e)
+		endselect
+	endif
+	endif
+	
+field.tcmsl111.cste:									|********* State **********|
+before.zoom:										| State Mendatory for all cases
+	query.extend.where.in.zoom("tcmcs143.ccty=" & quoted.string(tcmsl111.ccty))
+check.input:
+	if isspace(tcmsl111.cste) then
+		message("State should not be blank")
+		set.input.error("",e)
+	endif
+
+when.field.changes:
+	select	tcmcs143.dsca:sdes
+	from	tcmcs143
+	where	tcmcs143.cste = {:tcmsl111.cste}
+	selectdo
+	endselect
+
+field.sdes:
+before.display:
+	select	tcmcs143.dsca:sdes
+	from	tcmcs143
+	where	tcmcs143.cste = {:tcmsl111.cste}
+	selectdo
+	endselect
+	
+field.tcmsl111.ccit:									|********** City *************|
+before.zoom:										| city Mendatory for all cases
+	query.extend.where.in.zoom("tcmcs143.ccty=" & quoted.string(tcmsl111.ccty) & " AND " & "tccom139.cste=" & quoted.string(tcmsl111.cste))
+check.input:
+	if isspace(tcmsl111.ccit) then
+		message("City should not be blank")
+		set.input.error("",e)
+	endif
+
+when.field.changes:
+| 	select	tccom139.dsca:ctds							|#ISGEC001143.so
+| 	from	tccom139
+| 	where	tccom139.city = {:tcmsl111.ccit}
+| 	selectdo
+| 	endselect									|#ISGEC001143.eo
+
+	select	tccom139.dsca								|#ISGEC001143.sn
+	from	tccom139
+	where	tccom139.city = {:tcmsl111.ccit}
+	selectdo
+		tcmsl111.cdes = tccom139.dsca
+	endselect									|#ISGEC001143.en
+
+| field.ctds:										|#ISGEC001143.so
+| before.display:
+| 	select	tccom139.dsca:ctds
+| 	from	tccom139
+| 	where	tccom139.city = {:tcmsl111.ccit}
+| 	selectdo
+| 	endselect									|#ISGEC001143.eo
+
+field.tcmsl111.cdes:									|#ISGEC001143.sn
+before.display:
+	select	tccom139.dsca								
+	from	tccom139
+	where	tccom139.city = {:tcmsl111.ccit}
+	selectdo
+		tcmsl111.cdes = tccom139.dsca
+	endselect									|# ISGEC001143.en
+
+	
+	
+
+field.tcmsl111.namc:									|********** Address ************|
+check.input:
+	if etol(tcmsl111.stat) > 1 then
+		if tcmsl112.appr = tcyesno.yes and isspace(tcmsl111.namc) then
+			message("Street should not be blank")
+			set.input.error("",e)
+		endif
+	endif	
+											|#ISGEC001143.so
+| field.tcmsl111.ln01:									|********** Address Line1 **********|
+| check.input:
+| 	if etol(tcmsl111.stat) > 1 then
+| 		if tcmsl112.appr = tcyesno.yes and isspace(tcmsl111.ln01) then
+| 			message("Address Line1 should not be blank")
+| 			set.input.error("",e)
+| 		endif
+| 	endif										|#ISGEC001143.eo
+											|ISGEC001143.sn
+field.tcmsl111.telp:									|********** Telephone ***************|
+check.input:
+	if isspace(tcmsl111.telp) then
+		message("Telephone should not be blank")
+		set.input.error("",e)
+	endif
+
+field.tcmsl111.info:
+check.input:
+	if isspace(tcmsl111.info) then
+		message("Email should not be blank")
+		set.input.error("",e)
+	endif
+											|#ISGEC001143.en
+field.tcmsl111.ccur:									|************ Customer Currency ************|
+check.input:
+	if etol(tcmsl111.stat) > 1 then
+		if tcmsl112.appr = tcyesno.yes and (tcmsl111.bprl = tcbprl.customer or tcmsl111.bprl = tcbprl.both) and isspace(tcmsl111.ccur) then
+			message("Customer Currency should not be blank")
+			set.input.error("",e)
+		endif
+	endif	
+field.tcmsl111.cpay:									|*********** Customer Terms of Payment ************|
+check.input:
+	if etol(tcmsl111.stat) > 1 then
+		if tcmsl112.appr = tcyesno.yes and (tcmsl111.bprl = tcbprl.customer or tcmsl111.bprl = tcbprl.both) and isspace(tcmsl111.cpay) then
+			message("Customer Terms of Payment should not be blank")
+			set.input.error("",e)
+		endif
+	endif	
+field.tcmsl111.osrp:									|******** External Sales Rep. *************|
+check.input:
+field.tcmsl111.ccra:									|************** Credit Analyst ************|
+check.input:
+field.tcmsl111.cpls:									|************ Customer Price List *************|
+check.input:
+	if not isspace(tcmsl111.cpls) and etol(tcmsl111.stat) > 1 then
+		if tcmsl112.appr = tcyesno.yes and (tcmsl111.bprl = tcbprl.customer or tcmsl111.bprl = tcbprl.both) and isspace(tcmsl111.cpls) then
+			message("Price List should not be blank")
+			set.input.error("",e)
+		endif
+	endif	
+field.tcmsl111.scur:									|******** Supplier Currency *************|
+check.input:
+	if etol(tcmsl111.stat) > 1 then
+		if tcmsl112.appr = tcyesno.yes and (tcmsl111.bprl = tcbprl.supplier or tcmsl111.bprl = tcbprl.both) and isspace(tcmsl111.scur) then
+			message("Supplier Currency should not be blank")
+			set.input.error("",e)
+		endif
+	endif	
+	handle.tax.fields.enable.disable()				|#ISGEC015086.n
+field.tcmsl111.spay:									|************ Terms of Payment **************|
+check.input:
+	if etol(tcmsl111.stat) > 1 then
+		if tcmsl112.appr = tcyesno.yes and (tcmsl111.bprl = tcbprl.supplier or tcmsl111.bprl = tcbprl.both) and isspace(tcmsl111.spay) then
+			message("Terms of Payment should  not be blank")
+			set.input.error("",e)
+		endif
+	endif	
+	|GT.14072014.so
+| field.tcmsl111.sdec:									|********* Terms of Delivery **********|
+| check.input:
+| 	if etol(tcmsl111.stat) > 1 then
+| 		if tcmsl112.appr = tcyesno.yes and (tcmsl111.bprl = tcbprl.supplier or tcmsl111.bprl = tcbprl.both) and isspace(tcmsl111.sdec) then
+| 			message("Terms of Delivery should  not be blank")
+| 			set.input.error("",e)
+| 		endif
+| 	endif
+	|GT.14072014.eo
+field.tcmsl111.ccnt:									|********** Contact Code ***************|
+before.input:							|ISG001006.sn
+	tcmsl111.ccnt = tccom999.srcn
+before.zoom:
+	tcmcs050.nrgr = tccom999.ngcn				|ISG001006.en
+check.input:
+	select 	tccom140.* 
+	from 	tccom140
+	where 	tccom140._index1 = {:tcmsl111.ccnt}
+	selectdo
+		message("Contact Code is already used, choose another Contact Code")
+		set.input.error("",e)
+	endselect
+
+field.tcmsl111.fcod:						|********** Contact Code ***************|
+before.input:					|ISG001006.sn
+	tcmsl111.fcod = tccom999.srcn
+before.zoom:
+	tcmcs050.nrgr = tccom999.ngcn		|ISG001006.en
+check.input:
+	select 	tccom140.* 
+	from 	tccom140
+	where 	tccom140._index1 = {:tcmsl111.fcod}
+	selectdo
+		message("Contact Code is already used, choose another Contact Code")
+		set.input.error("",e)
+	endselect
+	
+field.tcmsl111.bpid:									|*********Business Partner ID***********|
+| before.input:								|ISG001006.sn
+| before.field:								|ISG001006.sn
+| 	tcmsl111.bpid = tccom999.srbp
+before.zoom:
+	tcmcs050.nrgr = tccom999.ngbp					|ISG001006.en
+check.input:
+	if	update.status = ADD.SET then
+		select 	tccom100.* 
+		from 	tccom100
+		where 	tccom100._index1 = {:tcmsl111.bpid}
+		selectdo
+			message("Business Partner is already used, choose another Business Partner")
+			set.input.error("",e)
+		endselect
+	endif	
+field.tcmsl111.sndr:									|********* One time bp************|
+when.field.changes:
+	if tcmsl111.sndr = tcyesno.yes then
+		tcmsl111.subc = tcyesno.no
+		disable.fields("tcmsl111.subc")
+	else
+		enable.fields("tcmsl111.subc")
+	endif
+	
+field.tcmsl111.subc:									|******** Subcontracting************|
+when.field.changes:
+	if tcmsl111.subc = tcyesno.yes then
+		tcmsl111.sndr = tcyesno.no
+		disable.fields("tcmsl111.sndr")
+	else
+		enable.fields("tcmsl111.sndr")
+	endif
+
+field.tcmsl111.ccon:									|********* Buyer ******************|
+when.field.changes:
+	select	tccom001.nama:enam
+	from	tccom001
+	where	tccom001._index1 = {:tcmsl111.ccon}
+	selectdo
+	endselect
+	
+field.tcmsl111.crte:									|********** Routes *****************|
+when.field.changes:
+	select	tcmcs004.dsca:rdes
+	from	tcmcs004
+	where	tcmcs004._index1 = {:tcmsl111.crte}
+	selectdo
+	endselect
+
+field.rdes:
+before.display:
+	select	tcmcs004.dsca:rdes
+	from	tcmcs004
+	where	tcmcs004._index1 = {:tcmsl111.crte}
+	selectdo
+	endselect
+	
+field.tcmsl111.lcnt:									|********** Logistics Contact **********|
+after.field:
+	cont_enable_disable()
+	
+field.tcmsl111.fcnt:									|********** financial Contact **********|
+after.field:
+	fin_cont_enable_disable()	
+	
+| field.tcmsl111.bcmp:							|ISG001009.so	|********* Target Company **************|
+| check.input:
+| 	if etol(tcmsl111.stat) > 1 then
+| 		if tcmsl112.appr = tcyesno.yes and 
+| 			tcmsl111.bcmp(1) = 0 and
+| 			tcmsl111.bcmp(2) = 0 and
+| 			tcmsl111.bcmp(3) = 0 and
+| 			tcmsl111.bcmp(4) = 0 and
+| 			tcmsl111.bcmp(5) = 0 then
+| 			message("Company should not be blank")
+| 			set.input.error("",e)
+| 		endif
+| 	endif	
+| field.comp.name1:	
+| before.display:
+| 	bcmp1 = tcmsl111.bcmp(1)
+| 	
+| 	select tccom000.nama
+| 	from   tccom000
+| 	where  tccom000._index1 = {0,:bcmp1}
+| 	selectdo
+| 		comp.name1 = tccom000.nama
+| 	selectempty
+| 		comp.name1 = ""
+| 	endselect		
+
+| field.comp.name2:	
+| before.display:
+| 	bcmp2 = tcmsl111.bcmp(2)
+| 	
+| 	select tccom000.nama
+| 	from   tccom000
+| 	where  tccom000._index1 = {0,:bcmp2}
+| 	selectdo
+| 		comp.name2 = tccom000.nama
+| 	selectempty
+| 		comp.name2 = ""
+| 	endselect
+| 	
+| field.comp.name3:	
+| before.display:
+| 	bcmp3 = tcmsl111.bcmp(3)
+| 	
+| 	select tccom000.nama
+| 	from   tccom000
+| 	where  tccom000._index1 = {0,:bcmp3}
+| 	selectdo
+| 		comp.name3 = tccom000.nama
+| 	selectempty
+| 		comp.name3 = ""
+| 	endselect
+
+| field.comp.name4:	
+| before.display:
+| 	bcmp4 = tcmsl111.bcmp(4)
+| 	
+| 	select tccom000.nama
+| 	from   tccom000
+| 	where  tccom000._index1 = {0,:bcmp4}
+| 	selectdo
+| 		comp.name4 = tccom000.nama
+| 	selectempty
+| 		comp.name4 = ""
+| 	endselect
+| 	
+| field.comp.name5:	
+| before.display:
+| 	bcmp1 = tcmsl111.bcmp(5)
+| 	
+| 	select tccom000.nama
+| 	from   tccom000
+| 	where  tccom000._index1 = {0,:bcmp5}
+| 	selectdo
+| 		comp.name5 = tccom000.nama
+| 	selectempty
+| 		comp.name5 = ""
+| 	endselect							|ISG001009.eo
+	
+| field.tcmsl111.taxa:							|#ISGEC001167.so
+| after.field:
+| 	enable.disale.taxa()						|#ISGEC001167.eo
+
+field.tcmsl111.fovn:
+after.field:
+	if isspace(tcmsl111.fovn) then
+		disable.fields("tcmsl111.pefd")
+		disable.fields("tcmsl111.pexd")
+	else
+		enable.fields("tcmsl111.pefd")
+		enable.fields("tcmsl111.pexd")
+	endif
+check.input:
+	if tcmsl111.taxa = tcyesno.yes then							|#ISGEC001143.sn
+		if 	ccty = "IN"
+		and	(tcmsl111.cbtp = "FAB" or tcmsl111.cbtp = "CON"
+			or tcmsl111.cbtp = "LOG" or tcmsl111.cbtp = "SUP") then
+			message("tcmsl111001",1)
+			|* PAN No. is mandatory.
+			set.input.error("",e)
+		endif
+	endif											|#ISGEC001143.en
+	
+	if not isspace(tcmsl111.fovn) then 								
+		select	tcmsl111.rqno:g.rqno
+		from	tcmsl111
+		where	tcmsl111._index1 <> {:tcmsl111.rqno, :tcmsl111.comp}
+		and	tcmsl111.fovn = :tcmsl111.fovn
+		as set with 1 rows
+		selectdo
+			message("This PAN No. is already used.Please Enter another PAN No.")				
+			set.input.error("",e)
+		endselect
+		
+	endif			
+	
+	if not isspace(tcmsl111.fovn) then					|GH612CR939.a.s
+		if not isspace(tcmsl111.gstn) then
+			if trim$(tcmsl111.fovn) <> trim$(tcmsl111.gstn(3; 10)) then
+				message("PAN No. and GSTIN not match")
+				set.input.error("", e)
+			endif
+		endif
+| 	else
+| 		message("PAN No. cannot be blank")
+| 		set.input.error("", e)
+	endif									|GH612CR939.a.e
+
+field.tcmsl111.pefd:										|#ISGEC001143.sn
+check.input:
+	if tcmsl111.taxa = tcyesno.yes then
+		if 	ccty = "IN"
+		and	(tcmsl111.cbtp = "FAB" or tcmsl111.cbtp = "CON"
+			or tcmsl111.cbtp = "LOG" or tcmsl111.cbtp = "SUP") then
+			message("tcmsl111002",1)
+			|* PAN No. effective date is mandatory
+			set.input.error("",e)
+		endif
+	endif
+
+field.tcmsl111.pexd:
+check.input:
+	if tcmsl111.taxa = tcyesno.yes then
+		if 	ccty = "IN"
+		and	(tcmsl111.cbtp = "FAB" or tcmsl111.cbtp = "CON"
+			or tcmsl111.cbtp = "LOG" or tcmsl111.cbtp = "SUP") then
+			message("tcmsl111003",1)
+			|* PAN No. expiry date is mandatory
+			set.input.error("",e)
+		endif
+	endif											|#ISGEC001143.en
+
+field.tcmsl111.fov1:
+after.field:
+	if isspace(tcmsl111.fov1) then
+		disable.fields("tcmsl111.tefd")
+		disable.fields("tcmsl111.texd")
+	else
+		enable.fields("tcmsl111.tefd")
+		enable.fields("tcmsl111.texd")
+	endif
+check.input:
+	if not isspace(tcmsl111.fov1) then
+		select	tcmsl111.rqno:g.rqno
+		from	tcmsl111
+		where	tcmsl111._index1 <> {:tcmsl111.rqno, :tcmsl111.comp}
+		and	tcmsl111.fov1 = :tcmsl111.fov1
+		as set with 1 rows
+		selectdo
+			message("This TAN No. is already used.Please Enter another TAN No.")
+			set.input.error("",e)
+		endselect
+	endif
+	
+field.tcmsl111.fov2:
+after.field:
+	if isspace(tcmsl111.fov2) then
+		disable.fields("tcmsl111.eefd")
+		disable.fields("tcmsl111.eexd")
+	else
+		enable.fields("tcmsl111.eefd")
+		enable.fields("tcmsl111.eexd")
+	endif
+check.input:
+	if not isspace(tcmsl111.fov2) then
+		select	tcmsl111.rqno:g.rqno
+		from	tcmsl111
+		where	tcmsl111._index1 <> {:tcmsl111.rqno, :tcmsl111.comp}
+		and	tcmsl111.fov2 = :tcmsl111.fov2
+		as set with 1 rows
+		selectdo
+			message("This Excise No. is already used.Please Enter another Excise No.")
+			set.input.error("",e)
+		endselect
+	endif	
+	
+	if tcmsl111.taxa = tcyesno.yes then								|#ISGEC001143.sn
+		if 	ccty = "IN" and	tcmsl111.cbtp = "FAB" then
+			message("tcmsl111004",1)
+			|* Excise No. is mandatory
+			set.input.error("",e)
+		endif
+	endif		
+
+field.tcmsl111.eefd:
+check.input:
+	if tcmsl111.taxa = tcyesno.yes then
+		if 	ccty = "IN" and	tcmsl111.cbtp = "FAB" then
+			message("tcmsl111005",1)
+			|* Excise No. effective date is mandatory
+			set.input.error("",e)
+		endif
+	endif
+
+field.tcmsl111.eexd:
+check.input:
+	if tcmsl111.taxa = tcyesno.yes then
+		if 	ccty = "IN" and	tcmsl111.cbtp = "FAB" then
+			message("tcmsl111006",1)
+			|* Excise No. expiry date is mandatory
+			set.input.error("",e)
+		endif
+	endif												|#ISGEC001143.en
+
+field.tcmsl111.fov3:
+after.field:
+	if isspace(tcmsl111.fov3) then
+		disable.fields("tcmsl111.vefd")
+		disable.fields("tcmsl111.vexd")
+	else
+		enable.fields("tcmsl111.vefd")
+		enable.fields("tcmsl111.vexd")
+	endif
+	
+check.input:
+	if not isspace(tcmsl111.fov3) then
+		select	tcmsl111.rqno:g.rqno
+		from	tcmsl111
+		where	tcmsl111._index1 <> {:tcmsl111.rqno, :tcmsl111.comp}
+		and	tcmsl111.fov3 = :tcmsl111.fov3
+		as set with 1 rows
+		selectdo
+			message("This VAT No. is already used.Please Enter another VAT No.")
+			set.input.error("",e)
+		endselect
+	endif	
+	
+	if tcmsl111.taxa = tcyesno.yes then								|#ISGEC001143.sn
+		if 	ccty = "IN" and	(tcmsl111.cbtp = "FAB" or tcmsl111.cbtp = "SUP") then
+			message("tcmsl111007",1)
+			|* VAT No.is mandatory
+			set.input.error("",e)
+		endif
+	endif
+	
+field.tcmsl111.vefd:	
+check.input:
+	if tcmsl111.taxa = tcyesno.yes then								
+		if 	ccty = "IN" and	(tcmsl111.cbtp = "FAB" or tcmsl111.cbtp = "SUP") then
+			message("tcmsl111008",1)
+			|* VAT No. effective date is mandatory
+			set.input.error("",e)
+		endif
+	endif
+	
+field.tcmsl111.vexd:	
+check.input:
+	if tcmsl111.taxa = tcyesno.yes then								
+		if 	ccty = "IN" and	(tcmsl111.cbtp = "FAB" or tcmsl111.cbtp = "SUP") then
+			message("tcmsl111009",1)
+			|* VAT No. expiry date is mandatory
+			set.input.error("",e)
+		endif
+	endif												|#ISGEC001143.en
+	
+			|#ISGEC017006.sn
+field.tcmsl111.gstn:
+after.field:
+	if isspace(tcmsl111.gstn) then
+		disable.fields("tcmsl111.gfdf")
+		disable.fields("tcmsl111.gfdt")
+	else
+		enable.fields("tcmsl111.gfdf")
+		enable.fields("tcmsl111.gfdt")
+	endif
+	
+check.input:
+	if not isspace(tcmsl111.gstn) then				
+		select	tctax400.bpid:temp.bpid
+		from	tctax400
+		where	tctax400._index2 = {:tcmsl111.gstn}
+		as set with 1 rows
+		selectdo
+			message("Same GSTIN Exist Against Business Partner %s", temp.bpid)		
+			set.input.error("", e)
+		endselect
+	endif
+	
+	if tcmsl111.txcl = tcisg.tax.clas.reg then
+		if not isspace(tcmsl111.gstn) then					|GH612CR939.a.s
+			if not isspace(tcmsl111.fovn) then
+				if trim$(tcmsl111.fovn) <> trim$(tcmsl111.gstn(3; 10)) then
+					message("PAN No. and GSTIN not match")
+					set.input.error("", e)
+				endif
+			endif
+		else
+			message("GSTIN cannot be blank")
+			set.input.error("", e)
+		endif									|GH612CR939.a.e
+	endif
+
+after.input:
+	if not isspace(tcmsl111.gstn) then
+		to.field("tcmsl111.txcl")
+	endif
+	
+
+field.tcmsl111.txcl:
+before.input:
+	set.enum.values.for.field("tcmsl111.txcl", tcisg.tax.clas.comp, tcisg.tax.clas.reg, tcisg.tax.clas.nreg)  
+	
+check.input:
+	if not isspace(tcmsl111.gstn) then									
+		if tcmsl111.txcl = tcisg.tax.clas.nreg  then
+			message("GST Tax Classification Cannot be Unregistered Since GSTIN is Available...")
+			set.input.error("", e)
+		endif
+	else
+		if tcmsl111.txcl <> tcisg.tax.clas.nreg  then
+			message("GST Tax Classification Should be Unregistered as GSTIN is Not Available...")
+			set.input.error("", e)
+		endif
+	endif
+	
+after.input:
+	to.field("tcmsl111.gfdf")
+		
+field.tcmsl111.gfdf:	
+check.input:
+	if tcmsl111.gfdf = 0 and not isspace(tcmsl111.gstn) then								
+		message("GST Effective Date is Mandatory")
+		set.input.error("", e)
+	endif
+	
+field.tcmsl111.gfdt:	
+check.input:
+	if tcmsl111.gfdt < tcmsl111.gfdf then
+		message("GST Expiry Date Cannot be Less than GST Effective Date... ")
+		set.input.error("", e)
+	endif
+	
+field.tcmsl111.cprt:
+before.input:
+	if isspace(tcmsl111.gstn) then
+		attr.input = false
+	else
+		attr.input = true
+	endif
+	
+check.input:
+	if tcmsl111.cprt < 0 or tcmsl111.cprt > 10 then
+		message("GST Compliance Rating Can Only be Between 0 To 10...")
+		set.input.error("", e)
+	endif
+				|#ISGEC017006.en
+	
+field.tcmsl111.fov4:
+after.field:
+	if isspace(tcmsl111.fov4) then
+		disable.fields("tcmsl111.lefd")
+		disable.fields("tcmsl111.lexd")
+	else
+		enable.fields("tcmsl111.lefd")
+		enable.fields("tcmsl111.lexd")
+	endif
+check.input:
+	if not isspace(tcmsl111.fov4) then
+		select	tcmsl111.rqno:g.rqno
+		from	tcmsl111
+		where	tcmsl111._index1 <> {:tcmsl111.rqno, :tcmsl111.comp}
+		and	tcmsl111.fov4 = :tcmsl111.fov4
+		as set with 1 rows
+		selectdo
+			message("This LST No. is already used.Please Enter another LST No.")
+			set.input.error("",e)
+		endselect
+	endif
+	
+	
+field.tcmsl111.fov5:
+after.field:
+	if isspace(tcmsl111.fov5) then
+		disable.fields("tcmsl111.cefd")
+		disable.fields("tcmsl111.cexd")
+	else
+		enable.fields("tcmsl111.cefd")
+		enable.fields("tcmsl111.cexd")
+	endif
+	
+check.input:
+	if not isspace(tcmsl111.fov5) then
+		select	tcmsl111.rqno:g.rqno
+		from	tcmsl111
+		where	tcmsl111._index1 <> {:tcmsl111.rqno, :tcmsl111.comp}
+		and	tcmsl111.fov5 = :tcmsl111.fov5
+		as set with 1 rows
+		selectdo
+			message("This CST No. is already used.Please Enter another CST No.")
+			set.input.error("",e)
+		endselect
+	endif
+	
+	if tcmsl111.taxa = tcyesno.yes then								|#ISGEC001143.sn						
+		if 	ccty = "IN" and	(tcmsl111.cbtp = "FAB" or tcmsl111.cbtp = "SUP") then
+			message("tcmsl111010",1)
+			|* CST No.is mandatory
+			set.input.error("",e)
+		endif
+	endif	
+	
+field.tcmsl111.cefd:
+check.input:
+	if tcmsl111.taxa = tcyesno.yes then								
+		if 	ccty = "IN" and	(tcmsl111.cbtp = "FAB" or tcmsl111.cbtp = "SUP") then
+			message("tcmsl111011",1)
+			|* CST No. effective date is mandatory
+			set.input.error("",e)
+		endif
+	endif
+
+field.tcmsl111.cexd:
+check.input:
+	if tcmsl111.taxa = tcyesno.yes then								
+		if 	ccty = "IN" and	(tcmsl111.cbtp = "FAB" or tcmsl111.cbtp = "SUP") then
+			message("tcmsl111012",1)
+			|* CST No. expiry date is mandatory
+			set.input.error("",e)
+		endif
+	endif												|#ISGEC001143.en
+
+field.tcmsl111.fov6:
+after.field:
+	if isspace(tcmsl111.fov6) then
+		disable.fields("tcmsl111.sefd")
+		disable.fields("tcmsl111.sexd")
+	else
+		enable.fields("tcmsl111.sefd")
+		enable.fields("tcmsl111.sexd")
+	endif
+
+check.input:
+	if not isspace(tcmsl111.fov6) then
+		select	tcmsl111.rqno:g.rqno
+		from	tcmsl111
+		where	tcmsl111._index1 <> {:tcmsl111.rqno, :tcmsl111.comp}
+		and	tcmsl111.fov6 = :tcmsl111.fov6
+		as set with 1 rows
+		selectdo
+			message("This Service No. is already used.Please Enter another Service No.")
+			set.input.error("",e)
+		endselect
+	endif
+	
+	if tcmsl111.taxa = tcyesno.yes then								|#ISGEC001143.sn
+		if 	ccty = "IN" and	(tcmsl111.cbtp = "CON" or tcmsl111.cbtp = "LOG") then
+			message("tcmsl111013",1)
+			|* Service Tax No.is mandatory
+			set.input.error("",e)
+		endif
+	endif
+	
+field.tcmsl111.sefd:
+check.input:
+	if tcmsl111.taxa = tcyesno.yes then								
+		if 	ccty = "IN" and	(tcmsl111.cbtp = "CON" or tcmsl111.cbtp = "LOG") then
+			message("tcmsl111014",1)
+			|* Service Tax No. effective date is mandatory
+			set.input.error("",e)
+		endif
+	endif
+	
+field.tcmsl111.sexd:
+check.input:
+	if tcmsl111.taxa = tcyesno.yes then								
+		if 	ccty = "IN" and	(tcmsl111.cbtp = "CON" or tcmsl111.cbtp = "LOG") then
+			message("tcmsl111015",1)
+			|* Service Tax No. expiry date is mandatory
+			set.input.error("",e)
+		endif
+	endif
+
+field.tcmsl111.fov7:
+check.input:
+	if not isspace(tcmsl111.fov7) then
+		select	tcmsl111.rqno:g.rqno
+		from	tcmsl111
+		where	tcmsl111._index1 <> {:tcmsl111.rqno, :tcmsl111.comp}
+		and	tcmsl111.fov7 = :tcmsl111.fov7
+		as set with 1 rows
+		selectdo
+			message("This PF No. is already used.Please Enter another PF No.")
+			set.input.error("",e)
+		endselect
+	endif
+field.tcmsl111.fov8:
+check.input:
+	if not isspace(tcmsl111.fov8) then
+		select	tcmsl111.rqno:g.rqno
+		from	tcmsl111
+		where	tcmsl111._index1 <> {:tcmsl111.rqno, :tcmsl111.comp}
+		and	tcmsl111.fov8 = :tcmsl111.fov8
+		as set with 1 rows
+		selectdo
+			message("This Insurance No. is already used.Please Enter another PAN No.")
+			set.input.error("",e)
+		endselect
+	endif
+field.tcmsl111.prst:
+before.field:
+| 	set.enum.valuesset.enum.values.for.field("tcmsl111.prst",tccom.prst.active)
+	set.enum.values.for.field("tcmsl111.prst",tccom.prst.active)
+	
+field.tcmsl111.bpef:
+before.input:
+	utc.to.date(utc.num(),year,month,day,hh,mn,ss)
+	curr_date = date.to.num(year,month,day)
+	utc.to.date(tcmsl111.bpef,yy,mm,dd,hh1,mn1,ss1)
+	eff_date = date.to.num(yy,mm,dd)
+	tcmsl111.bpef = utc.num()
+check.input:
+	if eff_date < curr_date then
+		message("BP Effective Date must be greater than or equal to Current Date ")
+		set.input.error("",e)
+	endif
+field.tcmsl111.bpex:
+check.input:
+	if tcmsl111.bpex < tcmsl111.bpef then
+		message("BP Epiry Date must be greater than Effective Date ")
+		set.input.error("",e)
+	endif
+	
+| field.buy.from:											|ISGEC001143.sn		|#ISGEC001167.o
+field.tcmsl111.bybp:											|#ISGEC001167.n
+when.field.changes:
+	if buy.from = tcyesno.yes then
+		disable.commands("buyfrom")
+	else
+		enable.commands("buyfrom")
+	endif		
+
+| field.ship.from:											|#ISGEC001167.o
+field.tcmsl111.shbp:											|#ISGEC001167.n
+when.field.changes:
+	if ship.from = tcyesno.yes then
+		disable.commands("shipfrom")
+	else
+		enable.commands("shipfrom")
+	endif
+
+| field.invoice.from:											|#ISGEC001167.o											
+field.tcmsl111.inbp:											|#ISGEC001167.n											
+when.field.changes:
+	if invoice.from = tcyesno.yes then
+		disable.commands("invoicefrom")
+	else
+		enable.commands("invoicefrom")
+	endif			
+
+| field.pay.from:											|#ISGEC001167.o										
+field.tcmsl111.pybp:											|#ISGEC001167.n										
+when.field.changes:
+	if pay.from = tcyesno.yes then
+		disable.commands("payfrom")
+	else
+		enable.commands("payfrom")
+	endif											
+	
+field.tcmsl111.reqt:
+when.field.changes:
+	if tcmsl111.reqt = tcreqt.prjs then
+		enable.fields("tcmsl111.cprj")
+	else
+| 		tcmsl111.sndr = tcyesno.yes							|#ISGEC015086.o
+		disable.fields("tcmsl111.cprj")
+	endif	
+	
+
+field.tcmsl111.cprj:
+before.display:
+	if tcmsl111.reqt = tcreqt.prjs then
+		enable.fields("tcmsl111.cprj")
+	else
+		disable.fields("tcmsl111.cprj")
+	endif
+													|ISGEC001143.en
+							|#ISGEC015086.sn
+field.tcmsl111.fov9:
+after.input:
+	if	isspace(tcmsl111.fov9)	then
+		disable.commands("tcmsl111.naef")
+		disable.commands("tcmsl111.naxd")
+	else
+		enable.commands("tcmsl111.naef")
+		enable.commands("tcmsl111.naxd")
+	endif
+	display("tcmsl111.naef")
+	display("tcmsl111.naxd")
+							|#ISGEC015086.en	
+|********************************************************************************choice section***********************************************************************************************
+choice.print.data:
+on.choice:
+| if rprt_open() then				|ISG001009.o  	Blocked For Now
+	runafs()
+| 	rprt_close()				|ISG001009.o	Blocked For Now
+| endif						|ISG001009.n
+	
+choice.send_for_approval:
+before.choice:
+					|#ISGECMOD005.sn
+	if tcmsl111.txcl = tcisg.tax.clas.nreg then
+		reg.unreg.flag = tcyesno.yes
+	else
+		reg.unreg.flag = tcyesno.no
+	endif
+	
+	if tcisgdll0100.validate.GSTIN(	tcmsl111.ccty,
+					tcmsl111.cste,
+					tcmsl111.gstn,
+					reg.unreg.flag,
+					o.err.msg) then
+					
+		message("%s", o.err.msg)
+		choice.again()
+	endif				|#ISGECMOD005.en
+	
+	select 	tcmsl113.*
+	from	tcmsl113
+	where	tcmsl113._index1 = {:tcmsl111.rqno,:tcmsl111.comp}
+	selectdo
+	selectempty
+		mess("tcmsl111016",1)
+		choice.again()
+	endselect	
+								|# PATCH001047.sn
+	if not check_for_taxes() then
+		choice.again()
+	endif	
+								|# PATCH001047.en
+								|#ISGEC015086.sn
+| 	select	tcisg101.*
+| 	from	tcisg101
+| 	where	tcisg101._index2	=	{:tcmsl111.rqno}
+| 	selectdo
+| 	selectempty
+| 		message("Please maintain BP Item group.")
+| 		choice.again()
+| 	endselect
+
+	if	tcmsl111.reqt	=	tcreqt.prjs	and
+		not	isspace(tcmsl111.rqno)		then
+		if	check.bp.item.group()	then
+			message("Mandatory to maintain projects for supplier.")
+			choice.again()
+		endif
+	endif
+								|#ISGEC015086.en
+on.choice:
+	select	tcmsl111.*
+	from 	tcmsl111
+	for 	update
+	where 	tcmsl111.rqno = :tcmsl111.rqno
+	selectdo
+		tcmsl111.stat = tcstat.send
+		tcmsl111.sapd = utc.num()
+		db.update(ttcmsl111,db.retry,e)
+		commit.transaction()
+		if tcmsl112.appr = tcyesno.yes then
+			enable.commands("approve")
+			enable.commands("reject")					|#ISGEC001143.sn
+| 			enable.group(5)							
+| 			enable.commands("buyfrom")						
+| 			enable.commands("shipfrom")
+| 			enable.commands("invoicefrom")				
+| 			enable.commands("payfrom")					|#ISGEC001143.en				
+		endif
+	endselect
+	refresh.parent(-1)
+	execute(find.data)
+	
+choice.approve:
+before.choice:
+| 	tcmsl111.bcmp(1) = tcmsl111.comp		|ISG001009.o
+				|#ISGEC017006.sn
+	if trim$(tcmsl111.creg) = "MDU" or trim$(tcmsl111.creg) = "MIU" or
+		trim$(tcmsl111.creg) = "NMS" or trim$(tcmsl111.creg) = "SMU" then	|GH612CR939.a
+	else
+		message("Enter valid MSME Category(In Area Field)")
+		choice.again()
+	endif
+	
+	if same.name.bp.exists() then
+		if ask.enum("tcbod00003", tcyesno.no, ".") = tcyesno.no then
+			choice.again()
+		endif
+	endif
+				|#ISGEC017006.en
+	
+	check.all.input()
+	check.mst.data.for.all.comp()
+on.choice:
+| 	insert_tccom120()		|#PATCH001028.o						|#ISGEC001143.n
+									|# PATCH001047.sn
+	approve.reject = tcyesno.yes
+	if send.email.alert() then
+		message("Sending Email Failed")
+	endif	
+									|# PATCH001047.en
+	execute(print.data)
+	refresh.parent(-1)
+	execute(find.data)
+	
+	
+choice.mark.occur:
+after.choice:
+	check_user()
+	check_record()
+	
+choice.reject:									|#ISGEC001143.sn
+before.choice:
+	if isspace(tcmsl111.rsnc) then
+		message("Enter Rejection Remarks.")
+		choice.again()
+	endif
+	
+on.choice:
+								|# PATCH001047.sn
+	approve.reject = tcyesno.no
+	if send.email.alert() then
+		message("Sending Email Failed")
+	endif		
+								|# PATCH001047.en
+								
+	disable.commands("approve")
+	enable.commands("send_for_approval")
+	select	tcmsl111.*
+	from 	tcmsl111
+	for 	update
+	where 	tcmsl111.rqno = :tcmsl111.rqno
+	selectdo
+		tcmsl111.stat = tcstat.create
+		tcmsl111.rsnc = ""						|#ISGEC001167.n
+		db.update(ttcmsl111,db.retry,e)
+		commit.transaction()
+	endselect
+	refresh.parent(-1)
+	execute(find.data)	
+	
+choice.buyfrom:
+on.choice:
+	start.session(SINGLE_OCC,"tcmsl1115m000","tcmsl1111m000","tcmsl115.rqno")
+
+choice.shipfrom:
+on.choice:
+	start.session(MODAL,"tcmsl1116m000","","")
+	
+choice.invoicefrom:
+on.choice:
+	start.session(MODAL,"tcmsl1117m000","","")
+
+choice.payfrom:
+on.choice:
+	start.session(MODAL,"tcmsl1118m000","","")
+										|#ISGEC001143.en
+										
+choice.attachment:								|RAvi.a.21102019
+on.choice:
+	Get_Attachment()
+	
+field.tcmsl111.creg:									|GH612CR939.a.s
+check.input:
+	if trim$(tcmsl111.creg) = "MDU" or trim$(tcmsl111.creg) = "MIU" or
+		trim$(tcmsl111.creg) = "NMS" or trim$(tcmsl111.creg) = "SMU" then
+	else
+		message("Enter valid MSME Category")
+		choice.again()
+	endif										|GH612CR939.a.e
+|******************************************************function section********************************************************
+
+functions:		
+function check_user()
+{
+	v_user=logname$
+	select	tcmsl112.*
+	from 	tcmsl112 
+	where	tcmsl112._index1 = :v_user
+	selectdo
+		if tcmsl112.crtr = tcyesno.no then
+			disable.commands(ADD.SET)
+		else
+			enable.commands(ADD.SET)
+		endif
+	endselect
+}
+
+function check_record()
+{
+	if tcmsl111.stat=tcstat.approve then
+		disable.commands(MARK.DELETE)
+	endif
+}
+
+function cust_sup_grp()
+{
+	if tcmsl111.bprl = tcbprl.customer then
+		disable.group(7)
+		enable.group(6)
+	endif
+	if tcmsl111.bprl = tcbprl.supplier then
+		disable.group(6)
+		enable.group(7)
+	endif
+	if tcmsl111.bprl = tcbprl.both then
+		enable.group(6)
+		enable.group(7)
+	endif
+	if tcmsl111.bprl = tcbprl.none then
+		disable.group(6)
+		disable.group(7)
+	endif
+}
+
+function cont_enable_disable()
+{
+	if tcmsl111.lcnt = tcyesno.no then
+		disable.fields("tcmsl111.init")
+		disable.fields("tcmsl111.inse")
+		disable.fields("tcmsl111.surn")
+		disable.fields("tcmsl111.chrn")
+		disable.fields("tcmsl111.teln")
+		disable.fields("tcmsl111.mail")
+	else
+		enable.fields("tcmsl111.init")
+		enable.fields("tcmsl111.inse")
+		enable.fields("tcmsl111.surn")
+		enable.fields("tcmsl111.chrn")
+		enable.fields("tcmsl111.teln")
+		enable.fields("tcmsl111.mail")
+	endif
+}
+
+function fin_cont_enable_disable()
+{
+	if tcmsl111.fcnt = tcyesno.no then
+		disable.fields("tcmsl111.fini")
+		disable.fields("tcmsl111.fnam")
+		disable.fields("tcmsl111.fmid")
+		disable.fields("tcmsl111.fsur")
+		disable.fields("tcmsl111.ftel")
+		disable.fields("tcmsl111.fmai")
+	else
+		enable.fields("tcmsl111.fini")
+		enable.fields("tcmsl111.fnam")
+		enable.fields("tcmsl111.fmid")
+		enable.fields("tcmsl111.fsur")
+		enable.fields("tcmsl111.ftel")
+		enable.fields("tcmsl111.fmai")
+	endif
+}
+
+function	check.mst.data.for.all.comp()
+{
+| 	for i = 1 to 5 step 1				|ISG001009.so
+| 		switch.comp = tcmsl111.bcmp(i)
+| 	if (switch.comp) <> 0 then			|ISG001009.eo
+
+	if tcmsl111.comp <> 0 then			|ISG001009.n
+		if not isspace(tdsls012.cofc)	then
+			select	tdsls012.cofc	
+			from	tdsls012
+			where	tdsls012._compnr = :tcmsl111.comp	|ISG001009.n
+| 			where	tdsls012._compnr = :switch.comp		|ISG001009.o
+			and	tdsls012._index1 = {:tcmsl111.cofc}
+			as set with 1 rows
+			selectdo				
+			selectempty
+				message("Sales Office not found in comapny %s",switch.comp)
+				choice.again()
+			endselect
+		endif	
+		
+		if not isspace(tcmsl111.cpls)	then
+			select	tcmcs034.cplt	
+			from	tcmcs034
+			where	tcmcs034._compnr = :tcmsl111.comp	|ISG001009.n
+| 			where	tcmcs034._compnr = :switch.comp		|ISG001009.o
+			and	tcmcs034._index1 = {:tcmsl111.cpls}
+			as set with 1 rows
+			selectdo				
+			selectempty
+				message("Sales Price List not found in comapny %s",switch.comp)
+				choice.again()
+			endselect
+		endif	
+
+		if not isspace(tcmsl111.sofc)	then
+			select	tdpur012.cofc	
+			from	tdpur012
+			where	tdpur012._compnr = :tcmsl111.comp	|ISG001009.n
+| 			where	tdpur012._compnr = :switch.comp		|ISG001009.o
+			and	tdpur012._index1 = {:tcmsl111.sofc}
+			as set with 1 rows
+			selectdo				
+			selectempty
+				message("Purchase Office not found in comapny %s",switch.comp)
+				choice.again()
+			endselect
+		endif	
+		
+		if not isspace(tcmsl111.cplp)	then
+			select	tcmcs034.cplt	
+			from	tcmcs034
+			where	tcmcs034._compnr = :tcmsl111.comp	|ISG001009.n
+| 			where	tcmcs034._compnr = :switch.comp		|ISG001009.o
+			and	tcmcs034._index1 = {:tcmsl111.cplp}
+			as set with 1 rows
+			selectdo				
+			selectempty
+				message("Purchase Price List not found in comapny %s",switch.comp)
+				choice.again()
+			endselect
+		endif		
+	endif	
+| 	endfor			
+	
+}
+
+function enable.disale.taxa()
+{
+	if tcmsl111.taxa = tcyesno.yes then
+		enable.fields("tcmsl111.fovn")
+		enable.fields("tcmsl111.fov1")
+		enable.fields("tcmsl111.fov2")
+		enable.fields("tcmsl111.fov3")
+		enable.fields("tcmsl111.fov4")
+		enable.fields("tcmsl111.fov5")
+		enable.fields("tcmsl111.fov6")
+		enable.fields("tcmsl111.gstn")		|#ISGEC017006.n
+| 		enable.fields("tcmsl111.fov7")
+| 		enable.fields("tcmsl111.fov8")
+	else
+		disable.fields("tcmsl111.fovn")
+		disable.fields("tcmsl111.fov1")
+		disable.fields("tcmsl111.fov2")
+		disable.fields("tcmsl111.fov3")
+		disable.fields("tcmsl111.fov4")
+		disable.fields("tcmsl111.fov5")
+		disable.fields("tcmsl111.fov6")
+		disable.fields("tcmsl111.gstn")	|#ISGEC017006.n
+| 		disable.fields("tcmsl111.fov7")
+| 		disable.fields("tcmsl111.fov8")
+	endif
+	
+}
+function get.old.defc()
+{
+	old.defc = tcmsl111.defc
+}
+
+
+function runafs()
+{
+
+| 	error.found = 1					|ISG001006.o
+|************ Address And Contact Creation******************************
+	select 	tcmsl010.* 
+	from 	tcmsl010 
+	where	tcmsl010._index1 = {:tcmsl111.defc}
+	selectdo
+		coaf = tcmsl010.coaf
+		ccal = tcmsl010.ccal
+| 		for i = 1 to 5 step 1
+| 		switch.comp = tcmsl111.bcmp(i)
+| 			if (switch.comp) <> 0 then
+				address_code = tcmsl111.cadr					
+| 				switch.to.company(switch.comp)
+				select	tccom130.cadr
+				from	tccom130
+				where	tccom130._index1={:address_code}
+				selectdo
+				selectempty
+					|*****ISG001006.sn********
+					ret = tcmsldll0100.CreateAddress(
+							tcmsl111.cadr,
+							tcmsl111.anam,
+							tcmsl111.namb,				|#ISGEC001143.n							
+							tcmsl111.namc,		
+							tcmsl111.namd,				|#ISGEC001143.n		
+							tcmsl111.pstc,		
+							tcmsl111.ccty,
+							tcmsl111.cste,
+							tcmsl111.ccit,
+							tcmsl111.namf,				|#ISGEC001143.n
+							tcmsl111.cdes,				|#ISGEC001143.n			
+							tcmsl111.telp,
+							tcmsl111.tefx,
+							tcmsl111.info,
+							tcmsl111.webs,
+							tcmsl111.smsa,
+							tcmsl111.ln01,	
+							tcmsl111.ln02,	
+							tcmsl111.ln03,
+							"",
+							coaf,
+							ccal,
+							empty,			|Email Address Type
+							tcmsl111.crte,
+							o.address
+							)
+					if ret<> 0 then
+						show.dal.messages(MSG.ALL)
+						remk = "Address Creation : " & tcmsl111.cadr
+						rprt_send()
+					endif
+					|******ISG001006.en
+				endselect
+				
+| 				if buy.from = tcyesno.yes or ship.from =tcyesno.yes			|#ISGEC001143.sn	|#ISGEC001167.so
+| 				or invoice.from = tcyesno.yes or pay.from = tcyesno.yes then		
+| 					if buy.from = tcyesno.no then								|#ISGEC001167.eo
+				if tcmsl111.bybp = tcyesno.yes or tcmsl111.shbp = tcyesno.yes					|#ISGEC001167.sn
+				or tcmsl111.inbp = tcyesno.yes or tcmsl111.pybp = tcyesno.yes then
+					if tcmsl111.bybp = tcyesno.no then							|#ISGEC001167.en
+						select	tcmsl115.*
+						from	tcmsl115
+						where	tcmsl115._index1 = {:tcmsl111.rqno}
+						selectdo
+| 						selectempty
+							select	tccom130.cadr
+							from	tccom130
+							where	tccom130._index1={:tcmsl115.cadr}
+							selectdo
+							selectempty
+								ret = tcmsldll0100.CreateAddress(
+										tcmsl115.cadr,
+										tcmsl115.anam,
+										tcmsl115.nama,										
+										tcmsl115.namc,		
+										tcmsl115.namd,					
+										tcmsl115.pstc,		
+										tcmsl115.ccty,
+										tcmsl115.cste,
+										tcmsl115.ccit,
+										tcmsl115.namf,				
+										tcmsl115.cdes,							
+										tcmsl115.telp,
+										tcmsl115.tefx,
+										tcmsl115.info,
+										tcmsl115.webs,
+										"",
+										"",	
+										"",	
+										"",
+										"",
+										coaf,
+										ccal,
+										empty,			|Email Address Type
+										"",
+										b.address
+										)
+								if ret<> 0 then
+									show.dal.messages(MSG.ALL)
+									remk = "Address Creation : " & tcmsl115.cadr
+									rprt_send()
+								endif
+							endselect
+						endselect
+					else
+						b.address = o.address	
+					endif	
+					
+| 					if ship.from = tcyesno.no then				|#ISGEC001167.o
+					if tcmsl111.shbp = tcyesno.no then				|#ISGEC001167.n
+						select	tcmsl116.*
+						from	tcmsl116
+						where	tcmsl116._index1 = {:tcmsl111.rqno}
+						selectdo
+| 						selectempty
+							select	tccom130.cadr
+							from	tccom130
+							where	tccom130._index1={:tcmsl116.cadr}
+							selectdo
+							selectempty
+								ret = tcmsldll0100.CreateAddress(
+										tcmsl116.cadr,
+										tcmsl116.anam,
+										tcmsl116.nama,										
+										tcmsl116.namc,		
+										tcmsl116.namd,					
+										tcmsl116.pstc,		
+										tcmsl116.ccty,
+										tcmsl116.cste,
+										tcmsl116.ccit,
+										tcmsl116.namf,				
+										tcmsl116.cdes,							
+										tcmsl116.telp,
+										tcmsl116.tefx,
+										tcmsl116.info,
+										tcmsl116.webs,
+										"",
+										"",	
+										"",	
+										"",
+										"",
+										coaf,
+										ccal,
+										empty,			|Email Address Type
+										"",
+										s.address
+										)
+								if ret<> 0 then
+									show.dal.messages(MSG.ALL)
+									remk = "Address Creation : " & tcmsl116.cadr
+									rprt_send()
+								endif
+							endselect
+						endselect
+					else
+						s.address = o.address
+					endif
+					
+| 					if invoice.from = tcyesno.no then			|#ISGEC001167.o
+					if tcmsl111.inbp = tcyesno.no then			|#ISGEC001167.n
+						select	tcmsl117.*
+						from	tcmsl117
+						where	tcmsl117._index1 = {:tcmsl111.rqno}
+						selectdo
+| 						selectempty
+							select	tccom130.cadr
+							from	tccom130
+							where	tccom130._index1={:tcmsl117.cadr}
+							selectdo
+							selectempty
+								ret = tcmsldll0100.CreateAddress(
+										tcmsl117.cadr,
+										tcmsl117.anam,
+										tcmsl117.nama,										
+										tcmsl117.namc,		
+										tcmsl117.namd,					
+										tcmsl117.pstc,		
+										tcmsl117.ccty,
+										tcmsl117.cste,
+										tcmsl117.ccit,
+										tcmsl117.namf,				
+										tcmsl117.cdes,							
+										tcmsl117.telp,
+										tcmsl117.tefx,
+										tcmsl117.info,
+										tcmsl117.webs,
+										"",
+										"",	
+										"",	
+										"",
+										"",
+										coaf,
+										ccal,
+										empty,			|Email Address Type
+										"",
+										i.address
+										)
+								if ret<> 0 then
+									show.dal.messages(MSG.ALL)
+									remk = "Address Creation : " & tcmsl117.cadr
+									rprt_send()
+								endif
+							endselect
+						endselect
+					else
+						i.address = o.address
+					endif	
+					
+| 					if pay.from = tcyesno.no then			|#ISGEC001167.o
+					if tcmsl111.pybp = tcyesno.no then		|#ISGEC001167.n
+						select	tcmsl118.*
+						from	tcmsl118
+						where	tcmsl118._index1 = {:tcmsl111.rqno}
+						selectdo
+| 						selectempty
+							select	tccom130.cadr
+							from	tccom130
+							where	tccom130._index1={:tcmsl118.cadr}
+							selectdo
+							selectempty
+								ret = tcmsldll0100.CreateAddress(
+										tcmsl118.cadr,
+										tcmsl118.anam,
+										tcmsl118.nama,										
+										tcmsl118.namc,		
+										tcmsl118.namd,					
+										tcmsl118.pstc,		
+										tcmsl118.ccty,
+										tcmsl118.cste,
+										tcmsl118.ccit,
+										tcmsl118.namf,				
+										tcmsl118.cdes,							
+										tcmsl118.telp,
+										tcmsl118.tefx,
+										tcmsl118.info,
+										tcmsl118.webs,
+										"",
+										"",	
+										"",	
+										"",
+										"",
+										coaf,
+										ccal,
+										empty,			|Email Address Type
+										"",
+										p.address
+										)
+								if ret<> 0 then
+									show.dal.messages(MSG.ALL)
+									remk = "Address Creation : " & tcmsl118.cadr
+									rprt_send()
+								endif
+							endselect
+						endselect
+					else
+						p.address = o.address
+					endif	
+				else
+| 					if buy.from = tcyesno.no then				|#ISGEC001167.o
+					if tcmsl111.bybp = tcyesno.no then				|#ISGEC001167.n
+						select	tcmsl115.*
+						from	tcmsl115
+						where	tcmsl115._index1 = {:tcmsl111.rqno}
+						selectdo
+| 						selectempty
+							select	tccom130.cadr
+							from	tccom130
+							where	tccom130._index1={:tcmsl115.cadr}
+							selectdo
+							selectempty
+								ret = tcmsldll0100.CreateAddress(
+										tcmsl115.cadr,
+										tcmsl115.anam,
+										tcmsl115.nama,										
+										tcmsl115.namc,		
+										tcmsl115.namd,					
+										tcmsl115.pstc,		
+										tcmsl115.ccty,
+										tcmsl115.cste,
+										tcmsl115.ccit,
+										tcmsl115.namf,				
+										tcmsl115.cdes,							
+										tcmsl115.telp,
+										tcmsl115.tefx,
+										tcmsl115.info,
+										tcmsl115.webs,
+										"",
+										"",	
+										"",	
+										"",
+										"",
+										coaf,
+										ccal,
+										empty,			|Email Address Type
+										"",
+										b.address
+										)
+								if ret<> 0 then
+									show.dal.messages(MSG.ALL)
+									remk = "Address Creation : " & tcmsl115.cadr
+									rprt_send()
+								endif
+							endselect
+						endselect
+					else
+						b.address = o.address	
+					endif	
+					
+| 					if ship.from = tcyesno.no then		|#ISGEC001167.o
+					if tcmsl111.shbp = tcyesno.no then		|#ISGEC001167.n
+						select	tcmsl116.*
+						from	tcmsl116
+						where	tcmsl116._index1 = {:tcmsl111.rqno}
+						selectdo
+| 						selectempty
+							select	tccom130.cadr
+							from	tccom130
+							where	tccom130._index1={:tcmsl116.cadr}
+							selectdo
+							selectempty
+								ret = tcmsldll0100.CreateAddress(
+										tcmsl116.cadr,
+										tcmsl116.anam,
+										tcmsl116.nama,										
+										tcmsl116.namc,		
+										tcmsl116.namd,					
+										tcmsl116.pstc,		
+										tcmsl116.ccty,
+										tcmsl116.cste,
+										tcmsl116.ccit,
+										tcmsl116.namf,				
+										tcmsl116.cdes,							
+										tcmsl116.telp,
+										tcmsl116.tefx,
+										tcmsl116.info,
+										tcmsl116.webs,
+										"",
+										"",	
+										"",	
+										"",
+										"",
+										coaf,
+										ccal,
+										empty,			|Email Address Type
+										"",
+										s.address
+										)
+								if ret<> 0 then
+									show.dal.messages(MSG.ALL)
+									remk = "Address Creation : " & tcmsl116.cadr
+									rprt_send()
+								endif
+							endselect
+						endselect
+					else
+						s.address = o.address
+					endif	
+					
+| 					if invoice.from = tcyesno.no then			|#ISGEC001167.o
+					if tcmsl111.inbp = tcyesno.no then			|#ISGEC001167.n
+						select	tcmsl117.*
+						from	tcmsl117
+						where	tcmsl117._index1 = {:tcmsl111.rqno}
+						selectdo
+| 						selectempty
+							select	tccom130.cadr
+							from	tccom130
+							where	tccom130._index1={:tcmsl117.cadr}
+							selectdo
+							selectempty
+								ret = tcmsldll0100.CreateAddress(
+										tcmsl117.cadr,
+										tcmsl117.anam,
+										tcmsl117.nama,										
+										tcmsl117.namc,		
+										tcmsl117.namd,					
+										tcmsl117.pstc,		
+										tcmsl117.ccty,
+										tcmsl117.cste,
+										tcmsl117.ccit,
+										tcmsl117.namf,				
+										tcmsl117.cdes,							
+										tcmsl117.telp,
+										tcmsl117.tefx,
+										tcmsl117.info,
+										tcmsl117.webs,
+										"",
+										"",	
+										"",	
+										"",
+										"",
+										coaf,
+										ccal,
+										empty,			|Email Address Type
+										"",
+										i.address
+										)
+								if ret<> 0 then
+									show.dal.messages(MSG.ALL)
+									remk = "Address Creation : " & tcmsl117.cadr
+									rprt_send()
+								endif
+							endselect
+						endselect
+					else
+						i.address = o.address
+					endif	
+					
+| 					if pay.from = tcyesno.no then			|#ISGEC001167.o
+					if tcmsl111.pybp = tcyesno.no then			|#ISGEC001167.n
+						select	tcmsl118.*
+						from	tcmsl118
+						where	tcmsl118._index1 = {:tcmsl111.rqno}
+						selectdo
+| 						selectempty
+							select	tccom130.cadr
+							from	tccom130
+							where	tccom130._index1={:tcmsl118.cadr}
+							selectdo
+							selectempty
+								ret = tcmsldll0100.CreateAddress(
+										tcmsl118.cadr,
+										tcmsl118.anam,
+										tcmsl118.nama,										
+										tcmsl118.namc,		
+										tcmsl118.namd,					
+										tcmsl118.pstc,		
+										tcmsl118.ccty,
+										tcmsl118.cste,
+										tcmsl118.ccit,
+										tcmsl118.namf,				
+										tcmsl118.cdes,							
+										tcmsl118.telp,
+										tcmsl118.tefx,
+										tcmsl118.info,
+										tcmsl118.webs,
+										"",
+										"",	
+										"",	
+										"",
+										"",
+										coaf,
+										ccal,
+										empty,			|Email Address Type
+										"",
+										p.address
+										)
+								if ret<> 0 then
+									show.dal.messages(MSG.ALL)
+									remk = "Address Creation : " & tcmsl118.cadr
+									rprt_send()
+								endif
+							endselect
+						endselect
+					else
+						p.address = o.address
+					endif	
+				endif									|#ISGEC001143.en
+| 			endif
+| 			switch.to.company(tcmsl111.comp)
+| 		endfor
+	endselect
+	contact_code = tcmsl111.ccnt
+	if not isspace(contact_code)	then	
+| 		for i = 1 to 5 step 1
+| 		switch.comp = tcmsl111.bcmp(i)
+| 			if (switch.comp) <> 0 then
+				contact_code = tcmsl111.ccnt
+| 				switch.to.company(switch.comp)
+				select	tccom140.ccnt
+				from	tccom140
+				where	tccom140._index1={:contact_code}
+				selectdo
+				selectempty
+					ret = tcmsldll0100.CreateContact(		|ISG001006.sn
+							tcmsl111.ccnt,
+							tcmsl111.init,
+							tcmsl111.chrn,
+							tcmsl111.inse,
+							tcmsl111.surn,
+							tcmsl111.telp,
+							tcmsl111.info,
+							o.ccnt
+							)				
+					if ret<> 0 then
+						show.dal.messages()
+						remk = "Contact Creation : " & tcmsl111.ccnt
+						rprt_send()
+					endif						|ISG001006.en
+				endselect
+				
+| 				if buy.from = tcyesno.yes or ship.from =tcyesno.yes			|#ISGEC001143.sn	|#ISGEC001167.so
+| 				or invoice.from = tcyesno.yes or pay.from = tcyesno.yes then	
+| 					if buy.from = tcyesno.no then								|#ISGEC001167.eo
+				if tcmsl111.bybp = tcyesno.yes or tcmsl111.shbp = tcyesno.yes					|#ISGEC001167.sn
+				or tcmsl111.inbp = tcyesno.yes or tcmsl111.pybp = tcyesno.yes then
+					if tcmsl111.bybp = tcyesno.no then							|#ISGEC001167.en
+							select	tcmsl115.*
+							from	tcmsl115
+							where	tcmsl115._index1 = {:tcmsl111.rqno}
+							selectdo
+								select	tccom140.ccnt
+								from	tccom140
+								where	tccom140._index1={:tcmsl115.ccnt}
+								selectdo
+								selectempty
+									ret = tcmsldll0100.CreateContact(		
+											tcmsl115.ccnt,
+											"",
+											"",
+											"",
+											"",
+											tcmsl115.telp,
+											tcmsl115.info,
+											b.ccnt
+											)				
+									if ret<> 0 then
+										show.dal.messages()
+										remk = "Contact Creation : " & tcmsl115.ccnt
+										rprt_send()
+									endif						
+								endselect
+							endselect
+						else
+							b.ccnt = o.ccnt
+						endif
+
+| 						if ship.from = tcyesno.no then					|#ISGEC001167.o
+						if tcmsl111.shbp = tcyesno.no then					|#ISGEC001167.n
+							select	tcmsl116.*
+							from	tcmsl116
+							where	tcmsl116._index1 = {:tcmsl111.rqno}
+							selectdo
+								select	tccom140.ccnt
+								from	tccom140
+								where	tccom140._index1={:tcmsl116.ccnt}
+								selectdo
+								selectempty
+									ret = tcmsldll0100.CreateContact(		
+											tcmsl116.ccnt,
+											"",
+											"",
+											"",
+											"",
+											tcmsl116.telp,
+											tcmsl116.info,
+											s.ccnt
+											)				
+									if ret<> 0 then
+										show.dal.messages()
+										remk = "Contact Creation : " & tcmsl116.ccnt
+										rprt_send()
+									endif						
+								endselect
+							endselect
+						else
+							s.ccnt = o.ccnt
+						endif
+						
+| 						if invoice.from = tcyesno.no then					|#ISGEC001167.o
+						if tcmsl111.inbp = tcyesno.no then					|#ISGEC001167.n
+							select	tcmsl117.*
+							from	tcmsl117
+							where	tcmsl117._index1 = {:tcmsl111.rqno}
+							selectdo
+								select	tccom140.ccnt
+								from	tccom140
+								where	tccom140._index1={:tcmsl117.ccnt}
+								selectdo
+								selectempty
+									ret = tcmsldll0100.CreateContact(		
+											tcmsl117.ccnt,
+											"",
+											"",
+											"",
+											"",
+											tcmsl117.telp,
+											tcmsl117.info,
+											i.ccnt
+											)				
+									if ret<> 0 then
+										show.dal.messages()
+										remk = "Contact Creation : " & tcmsl117.ccnt
+										rprt_send()
+									endif						
+								endselect
+							endselect
+						else
+							i.ccnt = o.ccnt
+						endif
+						
+| 						if pay.from = tcyesno.no then					|#ISGEC001167.o
+						if tcmsl111.pybp = tcyesno.no then					|#ISGEC001167.n
+							select	tcmsl118.*
+							from	tcmsl118
+							where	tcmsl118._index1 = {:tcmsl111.rqno}
+							selectdo
+								select	tccom140.ccnt
+								from	tccom140
+								where	tccom140._index1={:tcmsl118.ccnt}
+								selectdo
+								selectempty
+									ret = tcmsldll0100.CreateContact(		
+											tcmsl118.ccnt,
+											"",
+											"",
+											"",
+											"",
+											tcmsl118.telp,
+											tcmsl118.info,
+											p.ccnt
+											)				
+									if ret<> 0 then
+										show.dal.messages()
+										remk = "Contact Creation : " & tcmsl118.ccnt
+										rprt_send()
+									endif						
+								endselect
+							endselect
+						else
+							p.ccnt = o.ccnt
+						endif
+					else
+| 						if buy.from = tcyesno.no then							|#ISGEC001167.o
+						if tcmsl111.bybp = tcyesno.no then							|#ISGEC001167.n
+						select	tcmsl115.*
+						from	tcmsl115
+						where	tcmsl115._index1 = {:tcmsl111.rqno}
+						selectdo
+							select	tccom140.ccnt
+							from	tccom140
+							where	tccom140._index1={:tcmsl115.ccnt}
+							selectdo
+							selectempty
+								ret = tcmsldll0100.CreateContact(		
+										tcmsl115.ccnt,
+										"",
+										"",
+										"",
+										"",
+										tcmsl115.telp,
+										tcmsl115.info,
+										b.ccnt
+										)				
+								if ret<> 0 then
+									show.dal.messages()
+									remk = "Contact Creation : " & tcmsl115.ccnt
+									rprt_send()
+								endif						
+							endselect
+						endselect
+					else
+						b.ccnt = o.ccnt
+					endif
+
+| 					if ship.from = tcyesno.no then					|#ISGEC001167.o
+					if tcmsl111.shbp = tcyesno.no then					|#ISGEC001167.n
+						select	tcmsl116.*
+						from	tcmsl116
+						where	tcmsl116._index1 = {:tcmsl111.rqno}
+						selectdo
+							select	tccom140.ccnt
+							from	tccom140
+							where	tccom140._index1={:tcmsl116.ccnt}
+							selectdo
+							selectempty
+								ret = tcmsldll0100.CreateContact(		
+										tcmsl116.ccnt,
+										"",
+										"",
+										"",
+										"",
+										tcmsl116.telp,
+										tcmsl116.info,
+										s.ccnt
+										)				
+								if ret<> 0 then
+									show.dal.messages()
+									remk = "Contact Creation : " & tcmsl116.ccnt
+									rprt_send()
+								endif						
+							endselect
+						endselect
+					else
+						s.ccnt = o.ccnt
+					endif
+					
+| 					if invoice.from = tcyesno.no then					|#ISGEC001167.o
+					if tcmsl111.inbp = tcyesno.no then					|#ISGEC001167.n
+						select	tcmsl117.*
+						from	tcmsl117
+						where	tcmsl117._index1 = {:tcmsl111.rqno}
+						selectdo
+							select	tccom140.ccnt
+							from	tccom140
+							where	tccom140._index1={:tcmsl117.ccnt}
+							selectdo
+							selectempty
+								ret = tcmsldll0100.CreateContact(		
+										tcmsl117.ccnt,
+										"",
+										"",
+										"",
+										"",
+										tcmsl117.telp,
+										tcmsl117.info,
+										i.ccnt
+										)				
+								if ret<> 0 then
+									show.dal.messages()
+									remk = "Contact Creation : " & tcmsl117.ccnt
+									rprt_send()
+								endif						
+							endselect
+						endselect
+					else
+						i.ccnt = o.ccnt
+					endif
+					
+| 					if pay.from = tcyesno.no then					|#ISGEC001167.o
+					if tcmsl111.pybp = tcyesno.no then					|#ISGEC001167.n
+						select	tcmsl118.*
+						from	tcmsl118
+						where	tcmsl118._index1 = {:tcmsl111.rqno}
+						selectdo
+							select	tccom140.ccnt
+							from	tccom140
+							where	tccom140._index1={:tcmsl118.ccnt}
+							selectdo
+							selectempty
+								ret = tcmsldll0100.CreateContact(		
+										tcmsl118.ccnt,
+										"",
+										"",
+										"",
+										"",
+										tcmsl118.telp,
+										tcmsl118.info,
+										p.ccnt
+										)				
+								if ret<> 0 then
+									show.dal.messages()
+									remk = "Contact Creation : " & tcmsl118.ccnt
+									rprt_send()
+								endif						
+							endselect
+						endselect
+					else
+						p.ccnt = o.ccnt
+					endif
+				endif									|#ISGEC001143.en
+
+| 			endif
+| 			switch.to.company(tcmsl111.comp)
+| 		endfor
+	endif
+|**********BP and BP Role Creation******************************
+	select 	tcmsl010.* 
+	from 	tcmsl010 
+	where	tcmsl010._index1 = {:tcmsl111.defc}
+	selectdo
+| 		efdt = tcmsl010.efdt
+		efdt = tcmsl111.bpef
+| 		exdt = tcmsl010.exdt
+		exdt = tcmsl111.bpex
+		clan = tcmsl010.clan
+		curr = tcmsl010.ccur
+		icod = tcmsl010.icod
+		ccal = tcmsl010.ccal
+		
+		if tcmsl010.bprl = tcbprl.customer or tcmsl010.bprl = tcbprl.both then
+			
+			cinm = tcmsl010.cinm
+			cfcg = tcmsl010.cfcg
+			crat = tcmsl010.crat
+			mcfr = tcmsl010.mcfr
+			chak = tcmsl010.chak
+			scon = tcmsl010.scon
+			scqq = tcmsl010.scqq
+			rtyp = tcmsl010.rtyp
+			chin = tcmsl010.chin
+		endif
+		if tcmsl010.bprl = tcbprl.supplier or tcmsl010.bprl = tcbprl.both then
+			
+			cfsg = tcmsl010.sfcg
+			vryn = tcmsl010.vryn
+			bcfr = tcmsl010.bcfr
+			ackx = tcmsl010.ackx
+			sscq = tcmsl010.sscq
+			insp = tcmsl010.insp
+			prtp = tcmsl010.prtp			
+		endif
+| 		for i = 1 to 5 step 1
+| 		switch.comp = tcmsl111.bcmp(i)
+| 			if (switch.comp) <> 0 then
+				bp_id = tcmsl111.bpid
+				bp_role = tcmsl111.bprl
+				tax_applicable = tcmsl111.taxa
+| 				switch.to.company(switch.comp)
+				select	tccom100.bpid
+				from	tccom100
+				for	update
+				where	tccom100._index1 = {:bp_id}
+				selectdo
+					if bp_role = tcbprl.customer or bp_role = tcbprl.both then
+						select	tccom110.ofbp
+						from	tccom110
+						for	update
+						where	tccom110.ofbp = :bp_id
+						selectdo
+						selectempty
+| 							if buy.from = tcyesno.yes then			|#ISGEC001143.n	|#ISGEC001167.o
+							if tcmsl111.bybp = tcyesno.yes then			|#ISGEC001167.n	
+								ret = tcmsldll0100.sold.to.bp.roles(	|ISG001006.sn
+									o.business.partner,	|Customer Code
+									efdt,			|Start Date
+									exdt,			|End Date
+									tcmsl111.cbrn,		|Line of Business
+									tcmsl111.cbtp,		|Business Partner Type
+									tcmsl111.crep,		|Internal Sales Representative
+									tcmsl111.creg,		|Area
+									o.address,		|Address
+									o.ccnt,			|Contact
+									tcmsl111.cpls,		|Sales Price List	
+									tcmsl111.cofc,		|Sales Office
+									tcmsl111.sotp,		|Sales Order Type
+									tcmsl111.osno,		|Our Supplier No.
+									tcmsl111.cdec,		|Delivery Terms
+									ccal,			|Calender Code
+									mcfr,			|Rate Determiner
+									chak,			|EDI Order Change
+									scon,			|Shiping Constraints
+									scqq,			|Schedule Qty
+									tcmsl111.prst,		|BP status
+									tcmsl111.osrp		|External Sale Rep
+									)
+								if ret<> 0 then
+									show.dal.messages(MSG.ALL)
+									remk = "Sold to BP Creation : " & o.business.partner
+									rprt_send()
+								endif				|ISG001006.en
+							else							|#ISGEC001143.sn
+									ret = tcmsldll0100.sold.to.bp.roles(	
+									o.business.partner,	|Customer Code
+									efdt,			|Start Date
+									exdt,			|End Date
+									tcmsl111.cbrn,		|Line of Business
+									tcmsl111.cbtp,		|Business Partner Type
+									tcmsl111.crep,		|Internal Sales Representative
+									tcmsl111.creg,		|Area
+									b.address,		|Address
+									b.ccnt,			|Contact
+									tcmsl111.cpls,		|Sales Price List	
+									tcmsl111.cofc,		|Sales Office
+									tcmsl111.sotp,		|Sales Order Type
+									tcmsl111.osno,		|Our Supplier No.
+									tcmsl111.cdec,		|Delivery Terms
+									ccal,			|Calender Code
+									mcfr,			|Rate Determiner
+									chak,			|EDI Order Change
+									scon,			|Shiping Constraints
+									scqq,			|Schedule Qty
+									tcmsl111.prst,		|BP status
+									tcmsl111.osrp		|External Sale Rep
+									)
+								if ret<> 0 then
+									show.dal.messages(MSG.ALL)
+									remk = "Sold to BP Creation : " & o.business.partner
+									rprt_send()
+								endif				
+							endif							|#ISGEC001143.en
+						endselect
+						
+						select	tccom111.stbp
+						from	tccom111
+						for	update
+						where	tccom111.stbp = :bp_id
+						selectdo
+						selectempty
+| 							if ship.from = tcyesno.yes then			|#ISGEC001143.n		|#ISGEC001167.o
+							if tcmsl111.shbp = tcyesno.yes then					|#ISGEC001167.n
+								|******ISG001006.sn*****
+								ret = tcmsldll0100.ship.to.bp.roles(
+									o.business.partner,	|Ship To BP
+									efdt,			|Start Date
+									exdt,			|End Date
+									o.address,		|Address
+									o.ccnt,		|Contact
+									tcmsl111.cbtp,		|Business Partner Type
+									ccal			|Calender
+									)
+								if ret<> 0 then
+									show.dal.messages(MSG.ALL)
+									remk = "Ship to BP Creation : " & o.business.partner
+									rprt_send()
+								endif
+								|*******ISG001006.en*****
+							else							|#ISGEC001143.sn
+								ret = tcmsldll0100.ship.to.bp.roles(
+								o.business.partner,	|Ship To BP
+								efdt,			|Start Date
+								exdt,			|End Date
+								s.address,		|Address
+								s.ccnt,		|Contact
+								tcmsl111.cbtp,		|Business Partner Type
+								ccal			|Calender
+								)
+								if ret<> 0 then
+									show.dal.messages(MSG.ALL)
+									remk = "Ship to BP Creation : " & o.business.partner
+									rprt_send()
+								endif
+							endif							|#ISGEC001143.en
+						endselect
+						
+						select	tccom112.itbp
+						from	tccom112
+						for	update
+						where	tccom112.itbp = :bp_id
+						selectdo
+						selectempty
+| 							if invoice.from = tcyesno.yes then			|#ISGEC001143.n		|#ISGEC001167.o
+							if tcmsl111.inbp = tcyesno.yes then						|#ISGEC001167.n
+								|*******ISG001006.sn************
+								ret = tcmsldll0100.invoice.to.bp.roles(
+									o.business.partner,	|Invoice To BP
+									efdt,			|Start Date
+									exdt,			|End Date
+									tcmsl111.cbtp,		|Business Partner Type
+									o.address,		|Address
+									o.ccnt,		|Contact
+									tcmsl111.ccur,		|Currency	
+									cfcg,			|Financial Customer Group	
+									crat,			|Credit Rating
+									tcmsl111.cpay,		|payment Terms
+									tcmsl111.cbpc,
+									cinm,			|Invoicing Method
+									tcmsl111.crlr,		|Credit Limit
+									tcmsl111.ccra,		|Credit Analyst
+									rtyp,			|Exchange Rate Type
+									chin			|Charge Interest
+									)
+								if ret <> 0 then
+									show.dal.messages(MSG.ALL)
+									remk = "Invoice to BP Creation : " & o.business.partner
+									rprt_send()
+								endif
+								|*********ISG001006.en************
+							else								|#ISGEC001143.sn
+								ret = tcmsldll0100.invoice.to.bp.roles(
+									o.business.partner,	|Invoice To BP
+									efdt,			|Start Date
+									exdt,			|End Date
+									tcmsl111.cbtp,		|Business Partner Type
+									i.address,		|Address
+									i.ccnt,		|Contact
+									tcmsl111.ccur,		|Currency	
+									cfcg,			|Financial Customer Group	
+									crat,			|Credit Rating
+									tcmsl111.cpay,		|payment Terms
+									tcmsl111.cbpc,
+									cinm,			|Invoicing Method
+									tcmsl111.crlr,		|Credit Limit
+									tcmsl111.ccra,		|Credit Analyst
+									rtyp,			|Exchange Rate Type
+									chin			|Charge Interest
+									)
+								if ret <> 0 then
+									show.dal.messages(MSG.ALL)
+									remk = "Invoice to BP Creation : " & o.business.partner
+									rprt_send()
+								endif
+							endif								|#ISGEC001143.en
+						endselect
+						
+						select	tccom114.pfbp
+						from	tccom114
+						for	update
+						where	tccom114.pfbp = :bp_id
+						selectdo
+						selectempty	
+| 							if pay.from = tcyesno.yes then					|#ISGEC001143.n		|#ISGEC001167.o
+							if tcmsl111.pybp = tcyesno.yes then								|#ISGEC001167.n
+								|**********ISG001006.sn*******
+								ret = tcmsldll0100.pay.by.bp.roles(
+									o.business.partner,	|Pay By BP
+									efdt,			|Start Date
+									exdt,			|End Date
+									tcmsl111.cbtp,		|Business Partner Type
+									o.address,		|Address
+									o.ccnt,		|Contact
+									tcmsl111.ccur,		|Currency
+									rtyp			|Exchange Rate Type
+									)
+								if ret<> 0 then
+									show.dal.messages(MSG.ALL)
+									remk = "Pay By BP Creation : " & o.business.partner
+									rprt_send()
+								endif
+								|**********ISG001006.en*******
+							else								|#ISGEC001143.sn
+								ret = tcmsldll0100.pay.by.bp.roles(
+									o.business.partner,	|Pay By BP
+									efdt,			|Start Date
+									exdt,			|End Date
+									tcmsl111.cbtp,		|Business Partner Type
+									p.address,		|Address
+									p.ccnt,		|Contact
+									tcmsl111.ccur,		|Currency
+									rtyp			|Exchange Rate Type
+									)
+								if ret<> 0 then
+									show.dal.messages(MSG.ALL)
+									remk = "Pay By BP Creation : " & o.business.partner
+									rprt_send()
+								endif
+							endif								|#ISGEC001143.en
+						endselect
+					endif
+					if bp_role=tcbprl.supplier or bp_role=tcbprl.both then
+						select	tccom120.otbp
+						from	tccom120
+						for	update
+						where	tccom120.otbp = :bp_id
+						selectdo
+						selectempty
+| 							if buy.from = tcyesno.yes then					|#ISGEC001143.n		|#ISGEC001167.o
+							if tcmsl111.bybp = tcyesno.yes then								|#ISGEC001167.n
+								|********ISG001006.sn***********
+								ret = tcmsldll0100.buy.from.bp.roles(
+									o.business.partner,	|Buy From BP
+									efdt,			|Start Date
+									exdt,			|End Date
+									tcmsl111.cbrn,		|Line of Business
+									o.address,		|Address
+									o.ccnt,			|Contact
+									tcmsl111.cbtp,		|Business Partner Type
+									tcmsl111.creg,		|Area
+									tcmsl111.sofc,		|Sales Price List	
+									tcmsl111.potp,		|Sales Office
+									tcmsl111.cdec,		|Delivery Terms
+									tcmsl111.ocus,		|Our Customer No.
+									tcmsl111.cplp,		|Purchase Price List
+									tcmsl111.prst,		|BP status
+									vryn,			|Vendor Rating
+									ccal,			|Calender Code
+									bcfr,			|Rate Determiner
+									ackx,			|Price Purchase Order By
+									sscq,			|Qty Quality
+									tcmsl111.ccon,		|Buyer
+									tcmsl111.reqt,		|Request Type		|#PATCH001028.sn
+									tcmsl111.cprj,		|Project		|#PATCH001028.en
+									tcmsl111.sndr		|One Time BP		|#ISGEC015086.n
+									)
+								if ret<> 0 then
+									show.dal.messages(MSG.ALL)
+									remk = "Buy From BP Creation : " & o.business.partner
+									rprt_send()
+								else
+| 									insert_tccom120(o.business.partner)		|#PATCH001028.n
+								endif
+								|*********ISG001006.en*******
+							else								|#ISGEC001143.sn
+									ret = tcmsldll0100.buy.from.bp.roles(
+									o.business.partner,	|Buy From BP
+									efdt,			|Start Date
+									exdt,			|End Date
+									tcmsl111.cbrn,		|Line of Business
+									b.address,		|Address
+									b.ccnt,			|Contact
+									tcmsl111.cbtp,		|Business Partner Type
+									tcmsl111.creg,		|Area
+									tcmsl111.sofc,		|Sales Price List	
+									tcmsl111.potp,		|Sales Office
+									tcmsl111.cdec,		|Delivery Terms
+									tcmsl111.ocus,		|Our Customer No.
+									tcmsl111.cplp,		|Purchase Price List
+									tcmsl111.prst,		|BP status
+									vryn,			|Vendor Rating
+									ccal,			|Calender Code
+									bcfr,			|Rate Determiner
+									ackx,			|Price Purchase Order By
+									sscq,			|Qty Quality
+									tcmsl111.ccon,		|Buyer
+									tcmsl111.reqt,		|Request Type		|#PATCH001028.sn
+									tcmsl111.cprj,		|Project		|#PATCH001028.en
+									tcmsl111.sndr		|One Time BP		|#ISGEC015086.n
+									)
+								if ret<> 0 then
+									show.dal.messages(MSG.ALL)
+									remk = "Buy From BP Creation : " & o.business.partner
+									rprt_send()
+								endif
+							endif								|#ISGEC001143.en
+						endselect
+						
+						select	tccom121.sfbp
+						from	tccom121
+						for	update
+						where	tccom121.sfbp = :bp_id
+						selectdo
+						selectempty	
+| 							if ship.from = tcyesno.yes then				|#ISGEC001143.n		|#ISGEC001167.o
+							if tcmsl111.shbp = tcyesno.yes then						|#ISGEC001167.n
+								|******ISG001006.sn**********
+								ret = tcmsldll0100.ship.from.bp.roles(
+									o.business.partner,	|Ship From BP
+									efdt,			|Start Date
+									exdt,			|End Date
+									o.address,		|Address
+									o.ccnt,			|Contact
+									tcmsl111.cbtp,		|Business Partner Type
+									insp,			|Inspection
+									vryn,			|Vendor Rating
+									ccal			|Calender Code
+									)
+								if ret<> 0 then
+									show.dal.messages(MSG.ALL)
+									remk = "Ship From BP Creation : " & o.business.partner
+									rprt_send()
+								endif
+								|******ISG001006.en**********
+							else								|#ISGEC001143.sn
+									ret = tcmsldll0100.ship.from.bp.roles(
+									o.business.partner,	|Ship From BP
+									efdt,			|Start Date
+									exdt,			|End Date
+									s.address,		|Address
+									s.ccnt,			|Contact
+									tcmsl111.cbtp,		|Business Partner Type
+									insp,			|Inspection
+									vryn,			|Vendor Rating
+									ccal			|Calender Code
+									)
+								if ret<> 0 then
+									show.dal.messages(MSG.ALL)
+									remk = "Ship From BP Creation : " & o.business.partner
+									rprt_send()
+								endif
+							endif								|#ISGEC001143.en
+						endselect
+						
+						select	tccom122.ifbp
+						from	tccom122
+						for	update
+						where	tccom122.ifbp = :bp_id
+						selectdo
+						selectempty
+| 							if invoice.from = tcyesno.yes then				|#ISGEC001143.n		|#ISGEC001167.o
+							if tcmsl111.inbp = tcyesno.yes then							|#ISGEC001167.n
+								|**********ISG001006.sn*****
+								ret = tcmsldll0100.invoice.from.bp.roles(
+									o.business.partner,	|Invoice From BP
+									efdt,			|Start Date
+									exdt,			|End Date
+									o.address,		|Address
+									o.ccnt,			|Contact
+									tcmsl111.cbtp,		|Business Partner Type
+									tcmsl111.ccur,		|Currency	
+									cfsg,			|Financial Supplier Group
+									tcmsl111.crlr,		|Credit Limit	
+									tcmsl111.spay,		|payment Terms
+									tcmsl111.sbpc,		|BP Tax Classification
+									tcmsl111.subc,		|Subcontracting
+									vryn,			|Vendor Rating		
+									prtp			|Exchage Rate Type
+									)
+								if ret<> 0 then
+									show.dal.messages(MSG.ALL)
+									remk = "Invoice from BP Creation :"& o.business.partner
+									rprt_send()
+								endif
+								|***********ISG001006.en********
+							else								|#ISGEC001143.sn
+									ret = tcmsldll0100.invoice.from.bp.roles(
+									o.business.partner,	|Invoice From BP
+									efdt,			|Start Date
+									exdt,			|End Date
+									i.address,		|Address
+									i.ccnt,			|Contact
+									tcmsl111.cbtp,		|Business Partner Type
+									tcmsl111.ccur,		|Currency	
+									cfsg,			|Financial Supplier Group
+									tcmsl111.crlr,		|Credit Limit	
+									tcmsl111.spay,		|payment Terms
+									tcmsl111.sbpc,		|BP Tax Classification
+									tcmsl111.subc,		|Subcontracting
+									vryn,			|Vendor Rating		
+									prtp			|Exchage Rate Type
+									)
+								if ret<> 0 then
+									show.dal.messages(MSG.ALL)
+									remk = "Invoice from BP Creation :"& o.business.partner
+									rprt_send()
+								endif
+							endif								|#ISGEC001143.en
+						endselect
+						
+						select	tccom124.ptbp
+						from	tccom124
+						for	update
+						where	tccom124.ptbp = :bp_id
+						selectdo
+						selectempty
+| 							if pay.from = tcyesno.yes then					|#ISGEC001143.n	|#ISGEC001167.o
+							if tcmsl111.pybp = tcyesno.yes then							|#ISGEC001167.n
+								|*****ISG001006.sn*****
+								ret = tcmsldll0100.pay.to.bp.roles(
+									o.business.partner,	|Pay To BP
+									efdt,			|Start Date
+									exdt,			|End Date
+									o.address,		|Address
+									o.ccnt,			|Contact
+									tcmsl111.cbtp,		|Business Partner Type
+									tcmsl111.scur,		|Currency
+									vryn,			|Vendor Rating
+									prtp			|Exchage Rate Type
+									)
+								if ret<> 0 then
+									show.dal.messages()
+									remk = "Pay to BP Creation :"& o.business.partner
+									rprt_send()
+								endif	
+								|********ISG001006.en*****
+							else								|#ISGEC001143.sn
+								ret = tcmsldll0100.pay.to.bp.roles(
+									o.business.partner,	|Pay To BP
+									efdt,			|Start Date
+									exdt,			|End Date
+									p.address,		|Address
+									p.ccnt,			|Contact
+									tcmsl111.cbtp,		|Business Partner Type
+									tcmsl111.scur,		|Currency
+									vryn,			|Vendor Rating
+									prtp			|Exchage Rate Type
+									)
+								if ret<> 0 then
+									show.dal.messages()
+									remk = "Pay to BP Creation :"& o.business.partner
+									rprt_send()
+								endif	
+							endif								|#ISGEC001143.en		
+						endselect
+					endif
+					if tax_applicable = tcyesno.yes then
+						select	tctax400.bpid
+						from	tctax400
+						for	update
+						where	tctax400.bpid = :bp_id
+						selectdo
+						selectempty							
+							|*******ISG001006.sn*********
+							if not isspace(tcmsl111.fovn) then
+								ret = tcmsldll0100.registration.no.by.bp(
+									o.business.partner,	|Business partner
+									tcmsl111.ccty,		|Country
+	| 								efdt,			|Effective Date
+									tcmsl111.pefd,		|Effective Date
+									tcmsl111.cste,		|State/Province
+									tcmsl111.catg,		|Category
+									tcmsl111.fovn,		|Tax Number
+									o.address
+									)
+								if ret <> 0 then
+									show.dal.messages(MSG.ALL)
+									remk = "PAN Registration Creation : " & tcmsl111.fovn
+									rprt_send()
+								endif
+							endif
+							
+							if not isspace(tcmsl111.fov1) then
+								ret = tcmsldll0100.registration.no.by.bp(
+									o.business.partner,	|Business partner
+									tcmsl111.ccty,		|Country
+									efdt,			|Effective Date
+									tcmsl111.cste,		|State/Province
+									tcmsl111.cat1,		|Category
+									tcmsl111.fov1,		|Tax Number
+									o.address
+									)
+								if ret <> 0 then
+									show.dal.messages(MSG.ALL)
+									remk = " PAN Registration 
+^											Creation : " & tcmsl111.fov1
+									rprt_send()
+								endif
+							endif
+							if not isspace(tcmsl111.fov2) then
+								ret = tcmsldll0100.registration.no.by.bp(
+									o.business.partner,	|Business partner
+									tcmsl111.ccty,		|Country
+									efdt,			|Effective Date
+									tcmsl111.cste,		|State/Province
+									tcmsl111.cat2,		|Category
+									tcmsl111.fov2,		|Tax Number
+									o.address
+									)
+							endif
+							if not isspace(tcmsl111.fov3) then
+								ret = tcmsldll0100.registration.no.by.bp(
+									o.business.partner,	|Business partner
+									tcmsl111.ccty,		|Country
+									efdt,			|Effective Date
+									tcmsl111.cste,		|State/Province
+									tcmsl111.cat3,		|Category
+									tcmsl111.fov3,		|Tax Number
+									o.address
+									)
+							endif
+							if not isspace(tcmsl111.fov4) then
+								ret = tcmsldll0100.registration.no.by.bp(
+									o.business.partner,	|Business partner
+									tcmsl111.ccty,		|Country
+									efdt,			|Effective Date
+									tcmsl111.cste,		|State/Province
+									tcmsl111.cat4,		|Category
+									tcmsl111.fov4,		|Tax Number
+									o.address
+									)
+							endif
+							if not isspace(tcmsl111.fov5) then
+								ret = tcmsldll0100.registration.no.by.bp(
+									o.business.partner,	|Business partner
+									tcmsl111.ccty,		|Country
+									efdt,			|Effective Date
+									tcmsl111.cste,		|State/Province
+									tcmsl111.cat5,		|Category
+									tcmsl111.fov5,		|Tax Number
+									o.address		|Address code
+									)
+							endif
+							
+							if not isspace(tcmsl111.fov7) then
+								ret = tcmsldll0100.registration.no.by.bp(
+									o.business.partner,	|Business partner
+									tcmsl111.ccty,		|Country
+									efdt,			|Effective Date
+									tcmsl111.cste,		|State/Province
+									tctax.catg.l.n.a,	|Category
+									tcmsl111.fov7,		|Tax Number
+									o.address		|Address code
+									)
+							endif
+							
+							if not isspace(tcmsl111.fov8) then
+								ret = tcmsldll0100.registration.no.by.bp(
+									o.business.partner,	|Business partner
+									tcmsl111.ccty,		|Country
+									efdt,			|Effective Date
+									tcmsl111.cste,		|State/Province
+									tctax.catg.l.n.a,	|Category
+									tcmsl111.fov8,		|Tax Number
+									o.address		|Address code
+									)
+							endif
+													|#ISGEC015086.sn
+							if not isspace(tcmsl111.fov9) then
+								ret = tcmsldll0100.registration.no.by.bp(
+									o.business.partner,	|Business partner
+									tcmsl111.ccty,		|Country
+									efdt,			|Effective Date
+									tcmsl111.cste,		|State/Province
+									tctax.catg.l.n.a,	|Category
+									tcmsl111.fov9,		|Tax Number
+									o.address		|Address code
+									)
+							endif						
+													|#ISGEC015086.en
+							|*******ISG001006.en*********
+							
+											|#ISGEC017006.sn
+							if not isspace(tcmsl111.gstn) then
+								dal.new.object("tcisg103")
+								dal.set.field("tcisg103.bpid", o.business.partner)
+								dal.set.field("tcisg103.ccty", tcmsl111.ccty)
+								dal.set.field("tcisg103.scty", tcmsl111.cste)
+								dal.set.field("tcisg103.efdt", tcmsl111.gfdf)
+								dal.set.field("tcisg103.exdt", tcmsl111.gfdt)
+								dal.set.field("tcisg103.fovn", tcmsl111.gstn)
+								dal.set.field("tcisg103.ogst", tcmsl111.gstn)
+								dal.set.field("tcisg103.cprt", tcmsl111.cprt)
+								
+								ret.val.dal = dal.save.object("tcisg103")
+								
+								if ret.val.dal = 0 then
+									commit.transaction()
+								else
+									abort.transaction()
+									show.dal.messages(MSG.ALL)
+								endif
+							endif
+											|#ISGEC017006.en
+						endselect
+					endif
+					
+					
+					
+				selectempty
+					if bp_role = tcbprl.customer or bp_role = tcbprl.both then
+						currency = tcmsl111.ccur
+					else
+						currency = tcmsl111.scur
+					endif
+
+					tcmsl111.prst = tccom.prst.active
+					
+					ret = tcmsldll0100.Create.bp(					|ISG001006.sn
+						tcmsl111.bpid,		|Business Partner Series
+						tcmsl111.nama,		|Name
+						efdt,			| Start Date
+						exdt,			| End Date
+						clan,			| Language
+						currency,		| Currency
+						icod,			| I Code
+						tcmsl111.sndr,		| One Time BP enum
+						o.ccnt,			| Contact Code
+						tcmsl111.bprl,		| BP Role
+						o.address,			| Address Code
+						tcmsl111.prst,		| BP Status
+						tcmsl111.aprk,		| Approve remarks		|# PATCH001047.n	
+						tcmsl111.prty,		| Project Type			|#ISGEC015086.n
+						tcmsl111.reqt,		| Request Type			|#ISGEC015086.n
+						o.business.partner	| Ref BP Code
+						)					|ISG001006.en
+											|#ISGEC015086.sn
+					if	not	isspace(o.business.partner)	then
+						update.bp.in.supplier.wise.project()
+					endif
+											|#ISGEC015086.en
+					if ret<>0 then
+						show.dal.messages(MSG.ALL)
+						remk = "BP General Creation : " & tcmsl111.bpid
+						rprt_send()
+					endif
+					if ret = 0 then
+						if tcmsl111.bprl=tcbprl.customer or tcmsl111.bprl=tcbprl.both then		
+| 							if buy.from = tcyesno.yes then			|#ISGEC001143.n		|#ISGEC001167.o
+							if tcmsl111.bybp = tcyesno.yes then					|#ISGEC001167.n
+								ret = tcmsldll0100.sold.to.bp.roles(	|ISG001006.sn
+									o.business.partner,|Customer Code
+									efdt,			|Start Date
+									exdt,			|End Date
+									tcmsl111.cbrn,		|Line of Business
+									tcmsl111.cbtp,		|Business Partner Type
+									tcmsl111.crep,		|Internal Sales Representative
+									tcmsl111.creg,		|Area
+									o.address,		|Address
+									o.ccnt,			|Contact
+									tcmsl111.cpls,		|Sales Price List	
+									tcmsl111.cofc,		|Sales Office
+									tcmsl111.sotp,		|Sales Order Type
+									tcmsl111.osno,		|Our Supplier No.
+									tcmsl111.cdec,		|Delivery Terms
+									ccal,			|Calender Code
+									mcfr,			|Rate Determiner
+									chak,			|EDI Order Change
+									scon,			|Shiping Constraints
+									scqq,			|Schedule Qty
+									tcmsl111.prst,		|BP status
+									tcmsl111.osrp		|External Sale Rep
+									)			
+								if ret<> 0 then
+									show.dal.messages(MSG.ALL)
+									remk = "Sold to BP Creation : " & o.business.partner
+									rprt_send()
+								endif			|ISG001006.en
+							else						|#ISGEC001143.sn	
+								ret = tcmsldll0100.sold.to.bp.roles(	
+									o.business.partner,|Customer Code
+									efdt,			|Start Date
+									exdt,			|End Date
+									tcmsl111.cbrn,		|Line of Business
+									tcmsl111.cbtp,		|Business Partner Type
+									tcmsl111.crep,		|Internal Sales Representative
+									tcmsl111.creg,		|Area
+									b.address,		|Address
+									b.ccnt,			|Contact
+									tcmsl111.cpls,		|Sales Price List	
+									tcmsl111.cofc,		|Sales Office
+									tcmsl111.sotp,		|Sales Order Type
+									tcmsl111.osno,		|Our Supplier No.
+									tcmsl111.cdec,		|Delivery Terms
+									ccal,			|Calender Code
+									mcfr,			|Rate Determiner
+									chak,			|EDI Order Change
+									scon,			|Shiping Constraints
+									scqq,			|Schedule Qty
+									tcmsl111.prst,		|BP status
+									tcmsl111.osrp		|External Sale Rep
+									)			
+								if ret<> 0 then
+									show.dal.messages(MSG.ALL)
+									remk = "Sold to BP Creation : " & o.business.partner
+									rprt_send()
+								endif	
+							endif						
+| 							if ship.from = tcyesno.yes then		|#ISGEC001143.en	|#ISGEC001167.o
+							if tcmsl111.shbp = tcyesno.yes then				|#ISGEC001167.n
+								|*****|ISG001006.sn
+								ret = tcmsldll0100.ship.to.bp.roles(
+										o.business.partner,	|Ship To BP
+										efdt,			|Start Date
+										exdt,			|End Date
+										o.address,		|Address
+										o.ccnt,		|Contact
+										tcmsl111.cbtp,		|Business Partner Type
+										ccal			|Calender
+										)
+								if ret<> 0 then
+									show.dal.messages(MSG.ALL)
+									remk = "Ship to BP Creation : " & o.business.partner
+									rprt_send()
+								endif
+								|******ISG001006.en*********
+							else						|#ISGEC001143.sn
+								ret = tcmsldll0100.ship.to.bp.roles(
+										o.business.partner,	|Ship To BP
+										efdt,			|Start Date
+										exdt,			|End Date
+										s.address,		|Address
+										s.ccnt,		|Contact
+										tcmsl111.cbtp,		|Business Partner Type
+										ccal			|Calender
+										)
+								if ret<> 0 then
+									show.dal.messages(MSG.ALL)
+									remk = "Ship to BP Creation : " & o.business.partner
+									rprt_send()
+								endif	
+							endif	
+| 							if invoice.from = tcyesno.yes then		|#ISGEC001143.en	|#ISGEC001167.o
+							if tcmsl111.inbp = tcyesno.yes then					|#ISGEC001167.n
+								|*******ISG001006.sn************
+								ret = tcmsldll0100.invoice.to.bp.roles(
+									o.business.partner,	|Invoice To BP
+									efdt,			|Start Date
+									exdt,			|End Date
+									tcmsl111.cbtp,		|Business Partner Type
+									o.address,		|Address
+									o.ccnt,			|Contact
+									tcmsl111.ccur,		|Currency	
+									cfcg,			|Financial Customer Group	
+									crat,			|Credit Rating
+									tcmsl111.cpay,		|payment Terms
+									tcmsl111.cbpc,
+									cinm,			|Invoicing Method
+									tcmsl111.crlr,		|Credit Limit
+									tcmsl111.ccra,		|Credit Analyst
+									rtyp,			|Exchange Rate Type
+									chin			|Charge Interest
+									)
+								if ret<> 0 then
+									show.dal.messages(MSG.ALL)
+									remk = "Invoice to BP Creation : " & o.business.partner
+									rprt_send()
+								endif
+							else						|#ISGEC001143.sn
+								ret = tcmsldll0100.invoice.to.bp.roles(
+									o.business.partner,	|Invoice To BP
+									efdt,			|Start Date
+									exdt,			|End Date
+									tcmsl111.cbtp,		|Business Partner Type
+									i.address,		|Address
+									i.ccnt,			|Contact
+									tcmsl111.ccur,		|Currency	
+									cfcg,			|Financial Customer Group	
+									crat,			|Credit Rating
+									tcmsl111.cpay,		|payment Terms
+									tcmsl111.cbpc,
+									cinm,			|Invoicing Method
+									tcmsl111.crlr,		|Credit Limit
+									tcmsl111.ccra,		|Credit Analyst
+									rtyp,			|Exchange Rate Type
+									chin			|Charge Interest
+									)
+								if ret<> 0 then
+									show.dal.messages(MSG.ALL)
+									remk = "Invoice to BP Creation : " & o.business.partner
+									rprt_send()
+								endif
+							endif	
+| 							if pay.from = tcyesno.yes then			|#ISGEC001143.en	|#ISGEC001167.o
+							if tcmsl111.pybp = tcyesno.yes then						|#ISGEC001167.n
+								ret = tcmsldll0100.pay.by.bp.roles(
+									o.business.partner,	|Pay By BP
+									efdt,			|Start Date
+									exdt,			|End Date
+									tcmsl111.cbtp,		|Business Partner Type
+									o.address,		|Address
+									o.ccnt,		|Contact
+									tcmsl111.ccur,		|Currency
+									rtyp			|Exchange Rate Type
+									)
+								if ret<> 0 then
+									show.dal.messages(MSG.ALL)
+									remk = "Pay By BP Creation : " & o.business.partner
+									rprt_send()
+								endif
+								|********ISG001006.en******
+							else						|#ISGEC001143.sn
+								ret = tcmsldll0100.pay.by.bp.roles(
+									o.business.partner,	|Pay By BP
+									efdt,			|Start Date
+									exdt,			|End Date
+									tcmsl111.cbtp,		|Business Partner Type
+									p.address,		|Address
+									p.ccnt,		|Contact
+									tcmsl111.ccur,		|Currency
+									rtyp			|Exchange Rate Type
+									)
+								if ret<> 0 then
+									show.dal.messages(MSG.ALL)
+									remk = "Pay By BP Creation : " & o.business.partner
+									rprt_send()
+								endif
+							endif						|#ISGEC001143.en
+						endif
+						if tcmsl111.bprl=tcbprl.supplier or tcmsl111.bprl=tcbprl.both then
+| 							if buy.from = tcyesno.yes then			|#ISGEC001143.n		|#ISGEC001167.o
+							if tcmsl111.bybp = tcyesno.yes then						|#ISGEC001167.n
+								ret= tcmsldll0100.buy.from.bp.roles(
+									o.business.partner,	|Buy From BP
+									efdt,			|Start Date
+									exdt,			|End Date
+									tcmsl111.cbrn,		|Line of Business
+									o.address,		|Address
+									o.ccnt,			|Contact
+									tcmsl111.cbtp,		|Business Partner Type
+									tcmsl111.creg,		|Area
+									tcmsl111.sofc,		|Sales Price List	
+									tcmsl111.potp,		|Sales Office
+									tcmsl111.cdec,		|Delivery Terms
+									tcmsl111.ocus,		|Our Customer No.
+									tcmsl111.cplp,		|Purchase Price List
+									tcmsl111.prst,		|BP status
+									vryn,			|Vendor Rating
+									ccal,			|Calender Code
+									bcfr,			|Rate Determiner
+									ackx,			|Price Purchase Order By
+									sscq,			|Qty Quality
+									tcmsl111.ccon,		|Buyer
+									tcmsl111.reqt,		|Request Type		|#PATCH001028.sn
+									tcmsl111.cprj,		|Project		|#PATCH001028.en
+									tcmsl111.sndr		|One Time BP		|#ISGEC015086.n
+								)	
+								if ret<> 0 then
+									show.dal.messages(MSG.ALL)
+									remk = "Buy From BP Creation : " & o.business.partner
+									rprt_send()
+								endif
+							else							|#ISGEC001143.sn	
+								ret= tcmsldll0100.buy.from.bp.roles(
+									o.business.partner,	|Buy From BP
+									efdt,			|Start Date
+									exdt,			|End Date
+									tcmsl111.cbrn,		|Line of Business
+									b.address,		|Address
+									b.ccnt,			|Contact
+									tcmsl111.cbtp,		|Business Partner Type
+									tcmsl111.creg,		|Area
+									tcmsl111.sofc,		|Sales Price List	
+									tcmsl111.potp,		|Sales Office
+									tcmsl111.cdec,		|Delivery Terms
+									tcmsl111.ocus,		|Our Customer No.
+									tcmsl111.cplp,		|Purchase Price List
+									tcmsl111.prst,		|BP status
+									vryn,			|Vendor Rating
+									ccal,			|Calender Code
+									bcfr,			|Rate Determiner
+									ackx,			|Price Purchase Order By
+									sscq,			|Qty Quality
+									tcmsl111.ccon,		|Buyer
+									tcmsl111.reqt,		|Request Type		|#PATCH001028.sn
+									tcmsl111.cprj,		|Project		|#PATCH001028.en
+									tcmsl111.sndr		|One Time BP		|#ISGEC015086.n
+								)	
+								if ret<> 0 then
+									show.dal.messages(MSG.ALL)
+									remk = "Buy From BP Creation : " & o.business.partner
+									rprt_send()
+								else
+| 									insert_tccom120(o.business.partner)
+								endif
+							endif							
+							
+| 							if ship.from = tcyesno.yes then			|#ISGEC001143.en	|#ISGEC001167.o
+							if tcmsl111.shbp = tcyesno.yes then						|#ISGEC001167.n
+								ret = tcmsldll0100.ship.from.bp.roles(
+									o.business.partner,	|Ship From BP
+									efdt,			|Start Date
+									exdt,			|End Date
+									o.address,		|Address
+									o.ccnt,			|Contact
+									tcmsl111.cbtp,		|Business Partner Type
+									insp,			|Inspection
+									vryn,			|Vendor Rating
+									ccal			|Calender Code
+									)
+								if ret<> 0 then
+									show.dal.messages(MSG.ALL)
+									remk = "Ship From BP Creation : " & o.business.partner
+									rprt_send()
+								endif
+							else							|#ISGEC001143.sn
+								ret = tcmsldll0100.ship.from.bp.roles(
+									o.business.partner,	|Ship From BP
+									efdt,			|Start Date
+									exdt,			|End Date
+									s.address,		|Address
+									s.ccnt,			|Contact
+									tcmsl111.cbtp,		|Business Partner Type
+									insp,			|Inspection
+									vryn,			|Vendor Rating
+									ccal			|Calender Code
+									)
+								if ret<> 0 then
+									show.dal.messages(MSG.ALL)
+									remk = "Ship From BP Creation : " & o.business.partner
+									rprt_send()
+								endif
+							endif
+							
+| 							if invoice.from = tcyesno.yes then			|#ISGEC001143.en	|#ISGEC001167.o
+							if tcmsl111.inbp = tcyesno.yes then						|#ISGEC001167.n
+								ret = tcmsldll0100.invoice.from.bp.roles(
+									o.business.partner,	|Invoice From BP
+									efdt,			|Start Date
+									exdt,			|End Date
+									o.address,		|Address
+									o.ccnt,			|Contact
+									tcmsl111.cbtp,		|Business Partner Type
+									tcmsl111.ccur,		|Currency	
+									cfsg,			|Financial Supplier Group
+									tcmsl111.crlr,		|Credit Limit	
+									tcmsl111.spay,		|payment Terms
+									tcmsl111.sbpc,		|BP Tax Classification
+									tcmsl111.subc,		|Subcontracting
+									vryn,			|Vendor Rating		
+									prtp			|Exchage Rate Type
+									)
+								if ret<> 0 then
+									show.dal.messages(MSG.ALL)
+									remk = "Invoice from BP Creation :"& o.business.partner
+									rprt_send()
+								endif
+							else							|#ISGEC001143.sn
+								ret = tcmsldll0100.invoice.from.bp.roles(
+								o.business.partner,	|Invoice From BP
+								efdt,			|Start Date
+								exdt,			|End Date
+								i.address,		|Address
+								i.ccnt,			|Contact
+								tcmsl111.cbtp,		|Business Partner Type
+								tcmsl111.ccur,		|Currency	
+								cfsg,			|Financial Supplier Group
+								tcmsl111.crlr,		|Credit Limit	
+								tcmsl111.spay,		|payment Terms
+								tcmsl111.sbpc,		|BP Tax Classification
+								tcmsl111.subc,		|Subcontracting
+								vryn,			|Vendor Rating		
+								prtp			|Exchage Rate Type
+								)
+								if ret<> 0 then
+									show.dal.messages(MSG.ALL)
+									remk = "Invoice from BP Creation :"& o.business.partner
+									rprt_send()
+								endif	
+							endif
+
+| 							if pay.from = tcyesno.yes then					|#ISGEC001143.en 	|#ISGEC001167.o
+							if tcmsl111.pybp = tcyesno.yes then							 	|#ISGEC001167.n
+								ret = tcmsldll0100.pay.to.bp.roles(
+									o.business.partner,	|Pay To BP
+									efdt,			|Start Date
+									exdt,			|End Date
+									o.address,		|Address
+									o.ccnt,		|Contact
+									tcmsl111.cbtp,		|Business Partner Type
+									tcmsl111.scur,		|Currency
+									vryn,			|Vendor Rating
+									prtp			|Exchage Rate Type
+									)
+								if ret<> 0 then
+									show.dal.messages(MSG.ALL)
+									remk = "Pay to BP Creation :"& o.business.partner
+									rprt_send()
+								endif
+							else								|#ISGEC001143.sn
+								ret = tcmsldll0100.pay.to.bp.roles(
+								o.business.partner,	|Pay To BP
+								efdt,			|Start Date
+								exdt,			|End Date
+								p.address,		|Address
+								p.ccnt,		|Contact
+								tcmsl111.cbtp,		|Business Partner Type
+								tcmsl111.scur,		|Currency
+								vryn,			|Vendor Rating
+								prtp			|Exchage Rate Type
+								)
+								if ret<> 0 then
+									show.dal.messages(MSG.ALL)
+									remk = "Pay to BP Creation :"& o.business.partner
+									rprt_send()
+								endif
+							endif	
+						endif
+						if ret = 0 then			
+							if tax_applicable = tcyesno.yes then
+								if	not	isspace(tcmsl111.fovn)	then	|#ISGEC015086.n
+									ret = tcmsldll0100.registration.no.by.bp(
+										o.business.partner,	|Business partner
+										tcmsl111.ccty,		|Country
+										efdt,			|Effective Date
+										tcmsl111.cste,		|State/Province
+										tcmsl111.catg,		|Category
+										tcmsl111.fovn,		|Tax Number
+										o.address
+										)
+									else	
+													|#ISGEC017006.sn
+										if isspace(tcmsl111.fov9) then
+											tcmsl111.fov9 = "N.A"
+										endif
+													|#ISGEC017006.en
+													
+													|#ISGEC015086.sn
+									ret = tcmsldll0100.registration.no.by.bp(
+										o.business.partner,	|Business partner
+										tcmsl111.ccty,		|Country
+										efdt,			|Effective Date
+										tcmsl111.cste,		|State/Province
+										tctax.catg.l.n.a,	|Category
+										tcmsl111.fov9,		|Tax Number
+										o.address
+										)	
+								endif						|#ISGEC015086.en
+								if ret<> 0 then
+									show.dal.messages(MSG.ALL)
+									remk = "PAN Registration Creation : "& tcmsl111.fovn
+									rprt_send()
+								endif
+								if not isspace(tcmsl111.fov1) then
+									ret = tcmsldll0100.registration.no.by.bp(
+										o.business.partner,	|Business partner
+										tcmsl111.ccty,		|Country
+										efdt,			|Effective Date
+										tcmsl111.cste,		|State/Province
+										tcmsl111.cat1,		|Category
+										tcmsl111.fov1,		|Tax Number
+										o.address
+										)
+									if ret <> 0 then
+										show.dal.messages(MSG.ALL)
+										remk = " TAN Registration Creation :
+^												" & tcmsl111.fov1
+										rprt_send()
+									endif
+								endif
+								if not isspace(tcmsl111.fov2) then
+									ret = tcmsldll0100.registration.no.by.bp(
+										o.business.partner,	|Business partner
+										tcmsl111.ccty,		|Country
+										efdt,			|Effective Date
+										tcmsl111.cste,		|State/Province
+										tcmsl111.cat2,		|Category
+										tcmsl111.fov2,		|Tax Number
+										o.address
+										)
+								endif
+								if not isspace(tcmsl111.fov3) then
+									ret = tcmsldll0100.registration.no.by.bp(
+										o.business.partner,	|Business partner
+										tcmsl111.ccty,		|Country
+										efdt,			|Effective Date
+										tcmsl111.cste,		|State/Province
+										tcmsl111.cat3,		|Category
+										tcmsl111.fov3,		|Tax Number
+										o.address
+										)
+								endif
+								if not isspace(tcmsl111.fov4) then
+									ret = tcmsldll0100.registration.no.by.bp(
+										o.business.partner,	|Business partner
+										tcmsl111.ccty,		|Country
+										efdt,			|Effective Date
+										tcmsl111.cste,		|State/Province
+										tcmsl111.cat4,		|Category
+										tcmsl111.fov4,		|Tax Number
+										o.address
+										)
+								endif
+								if not isspace(tcmsl111.fov5) then
+									ret = tcmsldll0100.registration.no.by.bp(
+										o.business.partner,	|Business partner
+										tcmsl111.ccty,		|Country
+										efdt,			|Effective Date
+										tcmsl111.cste,		|State/Province
+										tcmsl111.cat5,		|Category
+										tcmsl111.fov5,		|Tax Number
+										o.address		|Address code
+										)
+								endif
+								
+
+
+								|*******ISG001006.en*********
+
+
+																			|#ISGEC017006.sn
+								if not isspace(tcmsl111.gstn) then
+									dal.new.object("tcisg103")
+									dal.set.field("tcisg103.bpid", o.business.partner)
+									dal.set.field("tcisg103.ccty", tcmsl111.ccty)
+									dal.set.field("tcisg103.scty", tcmsl111.cste)
+									dal.set.field("tcisg103.efdt", tcmsl111.gfdf)
+									dal.set.field("tcisg103.exdt", tcmsl111.gfdt)
+									dal.set.field("tcisg103.fovn", tcmsl111.gstn)
+									dal.set.field("tcisg103.ogst", tcmsl111.gstn)
+									dal.set.field("tcisg103.cprt", tcmsl111.cprt)
+									
+									ret.val.dal = dal.save.object("tcisg103")
+									
+									if ret.val.dal = 0 then
+										commit.transaction()
+									else
+										abort.transaction()
+										show.dal.messages(MSG.ALL)
+									endif
+								endif
+												|#ISGEC017006.en
+
+							endif
+						endif
+
+						
+					endif	
+							|GT.04072014.sn
+					select	tcmsl113.citg,tcmsl113.exdt
+					from	tcmsl113
+| 					where	tcmsl113._index1 = {:tcmsl111.rqno,:tcmsl111.comp}	|MM.o
+					where	tcmsl113._index1 = {:tcmsl111.rqno,:tcmsl111.comp,:o.business.partner}	|MM.n
+					selectdo	|GT.04072014.en
+| 						if not isspace(tcmsl111.citg) then
+						if not isspace(tcmsl113.citg) then
+							if not tcmsldll0100.ItemPurchaseBusinessPartner(
+| 								tcmsl111.citg,			|Item Group	|GT.04072014.o
+								tcmsl113.citg,			|Item Group	|GT.04072014.n
+								o.business.partner,		|Buy From Business Partner 
+								o.business.partner,		|Ship From Business Partner 
+								efdt,				|Effective Date	
+| 								tcmsl111.exdt			|Expiry Date	|GT.04072014.o
+								tcmsl113.exdt			|Expiry Date	|GT.04072014.n
+								) then
+								show.dal.messages(MSG.ALL)
+							endif
+						endif
+					endselect	
+				endselect
+| 			endif
+| 			switch.to.company(tcmsl111.comp)
+| 		endfor	
+	endselect
+	
+	if ret = 0 then
+		contact_code = tcmsl111.fcod
+		if not isspace(contact_code)	then	
+| 			for i = 1 to 5 step 1
+| 			switch.comp = tcmsl111.bcmp(i)
+| 				if (switch.comp) <> 0 then
+					contact_code = tcmsl111.fcod
+| 					switch.to.company(switch.comp)
+					select	tccom140.ccnt
+					from	tccom140
+					where	tccom140._index1={:contact_code}
+					selectdo
+					selectempty
+						ret = tcmsldll0100.CreateContact(	|ISG001006.sn
+							tcmsl111.fcod,
+							tcmsl111.fini,
+							tcmsl111.fnam,
+							tcmsl111.fmid,
+							tcmsl111.fsur,
+							tcmsl111.ftel,
+							tcmsl111.fmai,
+							o.fcod
+							)			
+						if ret<> 0 then
+							show.dal.messages(MSG.ALL)
+							remk = "Contact Creation : " & tcmsl111.fcod
+							rprt_send()
+						endif					|ISG001006.en
+					endselect
+| 				endif
+| 				switch.to.company(tcmsl111.comp)
+| 			endfor
+		endif
+		
+		insert.tccom145()
+		
+		if ret = 0 then
+			select	tcmsl111.*
+			from	tcmsl111
+			for 	update
+			where	tcmsl111.rqno = :tcmsl111.rqno
+			selectdo
+				tcmsl111.bpid = o.business.partner			|ISG001006.sn
+				tcmsl111.cadr = o.address
+				tcmsl111.ccnt = o.ccnt
+				tcmsl111.fcod = o.fcod					|ISG001006.en
+				tcmsl111.stat = tcstat.approve
+				tcmsl111.apon = utc.num()
+				tcmsl111.apby = logname$
+				db.update(ttcmsl111,db.retry,e)
+				commit.transaction()
+				dem2=tcyesno.yes
+				disable.commands("approve")
+			endselect
+			
+| 			if buy.from = tcyesno.no then					|#ISGEC001143.sn	|#ISGEC001167.o
+			if tcmsl111.bybp = tcyesno.no then								|#ISGEC001167.n
+				select	tcmsl115.*
+				from	tcmsl115
+				for 	update
+				where	tcmsl115._index1 = :tcmsl111.rqno
+				selectdo
+					tcmsl115.cadr = b.address
+					tcmsl115.ccnt = b.ccnt
+					db.update(ttcmsl115,db.retry,e)
+					commit.transaction()
+				endselect
+			else
+				select	tcmsl115.*
+				from	tcmsl115
+				for 	update
+				where	tcmsl115._index1 = :tcmsl111.rqno
+				selectdo
+				selectempty
+					tcmsl115.rqno = tcmsl111.rqno
+					tcmsl115.cadr = o.address
+					tcmsl115.anam = tcmsl111.anam
+					tcmsl115.nama = tcmsl111.namb
+					tcmsl115.namc = tcmsl111.namc
+					tcmsl115.namd = tcmsl111.namd
+					tcmsl115.ccit = tcmsl111.ccit
+					tcmsl115.cdes = tcmsl111.cdes
+					tcmsl115.namf = tcmsl111.namf
+					tcmsl115.cste = tcmsl111.cste
+					tcmsl115.ccty = tcmsl111.ccty
+					tcmsl115.pstc = tcmsl111.pstc
+					tcmsl115.telp = tcmsl111.telp
+					tcmsl115.tefx = tcmsl111.tefx
+					tcmsl115.info = tcmsl111.info
+					tcmsl115.webs = tcmsl111.webs
+					tcmsl115.ccnt = o.ccnt
+| 					db.update(ttcmsl115,db.retry,e)		|#ISGEC001167.o
+					db.insert(ttcmsl115,db.retry,e)	|#ISGEC001167.n
+					commit.transaction()
+				endselect	
+			endif	
+			
+| 			if ship.from = tcyesno.no then					|#ISGEC001167.o
+			if tcmsl111.shbp = tcyesno.no then					|#ISGEC001167.n
+				select	tcmsl116.*
+				from	tcmsl116
+				for 	update
+				where	tcmsl116._index1 = :tcmsl111.rqno
+				selectdo
+					tcmsl116.cadr = s.address
+					tcmsl116.ccnt = s.ccnt
+					db.update(ttcmsl116,db.retry,e)
+					commit.transaction()
+				endselect
+			else
+				select	tcmsl116.*
+				from	tcmsl116
+				for 	update
+				where	tcmsl116._index1 = :tcmsl111.rqno
+				selectdo
+				selectempty
+					tcmsl116.rqno = tcmsl111.rqno
+					tcmsl116.cadr = o.address
+					tcmsl116.anam = tcmsl111.anam
+					tcmsl116.nama = tcmsl111.namb
+					tcmsl116.namc = tcmsl111.namc
+					tcmsl116.namd = tcmsl111.namd
+					tcmsl116.ccit = tcmsl111.ccit
+					tcmsl116.cdes = tcmsl111.cdes
+					tcmsl116.namf = tcmsl111.namf
+					tcmsl116.cste = tcmsl111.cste
+					tcmsl116.ccty = tcmsl111.ccty
+					tcmsl116.pstc = tcmsl111.pstc
+					tcmsl116.telp = tcmsl111.telp
+					tcmsl116.tefx = tcmsl111.tefx
+					tcmsl116.info = tcmsl111.info
+					tcmsl116.webs = tcmsl111.webs
+					tcmsl116.ccnt = o.ccnt
+| 					db.update(ttcmsl116,db.retry,e)		|#ISGEC001167.o
+					db.insert(ttcmsl116,db.retry,e)		|#ISGEC001167.n
+					commit.transaction()
+				endselect	
+			endif	
+			
+| 			if invoice.from = tcyesno.no then					|#ISGEC001167.o
+			if tcmsl111.inbp = tcyesno.no then					|#ISGEC001167.n
+				select	tcmsl117.*
+				from	tcmsl117
+				for 	update
+				where	tcmsl117._index1 = :tcmsl111.rqno
+				selectdo
+					tcmsl117.cadr = i.address
+					tcmsl117.ccnt = i.ccnt
+					db.update(ttcmsl117,db.retry,e)
+					commit.transaction()
+				endselect
+			else
+				select	tcmsl117.*
+				from	tcmsl117
+				for 	update
+				where	tcmsl117._index1 = :tcmsl111.rqno
+				selectdo
+				selectempty
+					tcmsl117.rqno = tcmsl111.rqno
+					tcmsl117.cadr = o.address
+					tcmsl117.anam = tcmsl111.anam
+					tcmsl117.nama = tcmsl111.namb
+					tcmsl117.namc = tcmsl111.namc
+					tcmsl117.namd = tcmsl111.namd
+					tcmsl117.ccit = tcmsl111.ccit
+					tcmsl117.cdes = tcmsl111.cdes
+					tcmsl117.namf = tcmsl111.namf
+					tcmsl117.cste = tcmsl111.cste
+					tcmsl117.ccty = tcmsl111.ccty
+					tcmsl117.pstc = tcmsl111.pstc
+					tcmsl117.telp = tcmsl111.telp
+					tcmsl117.tefx = tcmsl111.tefx
+					tcmsl117.info = tcmsl111.info
+					tcmsl117.webs = tcmsl111.webs
+					tcmsl117.ccnt = o.ccnt
+| 					db.update(ttcmsl117,db.retry,e)		|#ISGEC001167.o
+					db.insert(ttcmsl117,db.retry,e)		|#ISGEC001167.n
+					commit.transaction()
+				endselect	
+			endif	
+			
+| 			if ship.from = tcyesno.no then					|#ISGEC001167.o
+			if tcmsl111.shbp = tcyesno.no then					|#ISGEC001167.n
+				select	tcmsl118.*
+				from	tcmsl118
+				for 	update
+				where	tcmsl118._index1 = :tcmsl111.rqno
+				selectdo
+					tcmsl118.cadr = p.address
+					tcmsl118.ccnt = p.ccnt
+					db.update(ttcmsl118,db.retry,e)
+					commit.transaction()
+				endselect
+			else
+				select	tcmsl118.*
+				from	tcmsl118
+				for 	update
+				where	tcmsl118._index1 = :tcmsl111.rqno
+				selectdo
+				selectempty
+					tcmsl118.rqno = tcmsl111.rqno
+					tcmsl118.cadr = o.address
+					tcmsl118.anam = tcmsl111.anam
+					tcmsl118.nama = tcmsl111.namb
+					tcmsl118.namc = tcmsl111.namc
+					tcmsl118.namd = tcmsl111.namd
+					tcmsl118.ccit = tcmsl111.ccit
+					tcmsl118.cdes = tcmsl111.cdes
+					tcmsl118.namf = tcmsl111.namf
+					tcmsl118.cste = tcmsl111.cste
+					tcmsl118.ccty = tcmsl111.ccty
+					tcmsl118.pstc = tcmsl111.pstc
+					tcmsl118.telp = tcmsl111.telp
+					tcmsl118.tefx = tcmsl111.tefx
+					tcmsl118.info = tcmsl111.info
+					tcmsl118.webs = tcmsl111.webs
+					tcmsl118.ccnt = o.ccnt
+| 					db.update(ttcmsl118,db.retry,e)		|#ISGEC001167.o
+					db.insert(ttcmsl118,db.retry,e)		|#ISGEC001167.n
+					commit.transaction()
+				endselect	
+			endif	
+				
+			
+														|#ISGEC001143.en
+			message("Process Completed for Business Partner %s",o.business.partner)|ISG001006.n
+| 			message("Process Completed for Business Partner %s",tcmsl111.bpid)	|ISG001006.o
+		else										|ISG001006.sn
+			show.dal.messages(MSG.ALL)
+		endif
+	else											
+		show.dal.messages(MSG.ALL)							|ISG001006.en
+	endif
+	
+				|#ISGEC017006.sm
+	if not isspace(tcmsl111.gstn) then
+		select	tcisg104.*
+		from	tcisg104
+		where	tcisg104._index1 = {:o.business.partner}
+		selectdo
+		selectempty
+			tcisg104.bpid = o.business.partner
+			tcisg104.txcl = tcmsl111.txcl
+			
+			db.insert(ttcisg104, db.retry, e)
+			
+			if e = 0 then
+				commit.transaction()
+			else
+				abort.transaction()
+			endif
+		endselect
+	endif
+				|#ISGEC017006.en
+}
+
+
+
+function insert.tccom145()
+{
+	var = 0
+	var1 = 0
+	
+	select tccom110.ofbp
+	from   tccom110
+	where  tccom110._index1 = {:o.business.partner}		|ISG001006.n
+	selectdo
+		var = 1
+	selectempty
+		var = 2
+	endselect
+
+	if var = 2 then
+		select tccom120.otbp
+		from   tccom120
+		where  tccom120._index1 = {:o.business.partner}	|ISG001006.n
+		selectdo
+			var1 = 1
+		selectempty
+			var1 = 2
+		endselect
+	endif
+	
+	if var = 1 then
+		if not isspace(tcmsl111.fcod) then
+			select tccom145.*
+			from   tccom145
+			where  tccom145._index1 = {:o.business.partner,:o.fcod}	|ISG001006.n
+			selectdo
+			selectempty				
+				ret = CreateContactByBusinessPartner(			|ISG001006.sn
+						o.business.partner,
+						o.fcod,
+						tcyesno.yes,
+						tcyesno.yes,
+						tcyesno.yes,
+						tcyesno.yes,
+						tcyesno.no,
+						tcyesno.no,
+						tcyesno.no,
+						tcyesno.no
+						)					|ISG001006.en
+			endselect
+		endif	
+	endif	
+	if var1 = 1 then
+		if not isspace(tcmsl111.fcod) then
+			select tccom145.*
+			from   tccom145
+			where  tccom145._index1 = {:o.business.partner,:o.fcod}	|ISG001006.n
+			selectdo
+			selectempty
+				ret = CreateContactByBusinessPartner(			|ISG001006.sn
+						o.business.partner,
+						o.fcod,
+						tcyesno.no,
+						tcyesno.no,
+						tcyesno.no,
+						tcyesno.no,
+						tcyesno.yes,
+						tcyesno.yes,
+						tcyesno.yes,
+						tcyesno.yes
+						)					|ISG001006.en
+			endselect
+		endif	
+	endif	
+}	
+
+| function insert_tccom120()			|#PATCH001028.o						|#ISGEC001143.sn
+function insert_tccom120(domain tccom.bpid	i.bpid)									|#ISGEC001143.sn
+{
+							|#PATCH001028.sn
+| 	select 	tcmsl111.bpid
+| 	from	tcmsl111
+| 	where	tcmsl111._index1 = {:tcmsl111.rqno}
+| 	as set with 1 rows
+| 	selectdo
+| 	endselect
+| 							|#PATCH001028.en
+	
+	
+	on case tcmsl111.reqt
+	case	tcreqt.otbp:
+| 		select	tccom120.otbp				|#PATCH001028.o
+		select	tccom120.cdf_rtyp				|#PATCH001028.n
+		from	tccom120 for update
+| 		where	tccom120._index1 = {:tcmsl111.bpid}
+		where	tccom120._index1 = {:i.bpid}
+		selectdo
+			put.var(pid,"tccom120.cdf_rtyp","One Time BP")
+| 			put.var(pid,"tccom120.cdf_cprj",tcmsl111.cprj)
+			db.update(ttccom120,db.retry,e)
+			commit.transaction()
+		endselect
+		break
+	case 	tcreqt.prjs:
+| 		select	tccom120.otbp				|#PATCH001028.o
+		select	tccom120.cdf_cprj,				|#PATCH001028.n
+			tccom120.cdf_rtyp			|#PATCH001028.n
+		from	tccom120 for update
+| 		where	tccom120._index1 = {:tcmsl111.bpid}
+		where	tccom120._index1 = {:i.bpid}
+		selectdo
+			put.var(pid,"tccom120.cdf_rtyp","Project")
+			put.var(pid,"tccom120.cdf_cprj",tcmsl111.cprj)
+			db.update(ttccom120,db.retry,e)
+			commit.transaction()
+		endselect	
+		break
+	case 	tcreqt.na:
+| 		select	tccom120.otbp				|#PATCH001028.o
+		select	tccom120.cdf_cprj,			|#PATCH001028.n
+			tccom120.cdf_rtyp			|#PATCH001028.n
+		from	tccom120 for update
+| 		where	tccom120._index1 = {:tcmsl111.bpid}
+		where	tccom120._index1 = {:i.bpid}
+		selectdo
+			put.var(pid,"tccom120.cdf_rtyp","NA")
+			put.var(pid,"tccom120.cdf_cprj","")
+			db.update(ttccom120,db.retry,e)
+			commit.transaction()
+		endselect	
+		break
+	endcase	
+}												|#ISGEC001143.en
+												
+												|#ISGEC001167.sn
+function enable.disable.taxs()
+{
+		
+	if strip$(tcmsl111.ccty) = "IN" then
+		if strip$(tcmsl111.cbtp) = "CON" then
+			enable.fields("tcmsl111.fovn")	|PAN
+			enable.fields("tcmsl111.pefd")
+			enable.fields("tcmsl111.pexd")
+			disable.fields("tcmsl111.fov1")	|TAN
+			disable.fields("tcmsl111.tefd")
+			disable.fields("tcmsl111.texd")
+			disable.fields("tcmsl111.fov2")	|Excise		
+			disable.fields("tcmsl111.eefd")
+			disable.fields("tcmsl111.eexd")
+			disable.fields("tcmsl111.fov3")|VAT
+			disable.fields("tcmsl111.vefd")
+			disable.fields("tcmsl111.vexd")
+			disable.fields("tcmsl111.fov4")|LST
+			disable.fields("tcmsl111.lefd")
+			disable.fields("tcmsl111.lexd")
+			disable.fields("tcmsl111.fov5")|CST
+			disable.fields("tcmsl111.cefd")
+			disable.fields("tcmsl111.cexd")
+			enable.fields("tcmsl111.fov6")|Service
+			enable.fields("tcmsl111.sefd")
+			enable.fields("tcmsl111.sexd")
+		else if strip$(tcmsl111.cbtp) = "FAB" then
+			enable.fields("tcmsl111.fovn")	|PAN
+			enable.fields("tcmsl111.pefd")
+			enable.fields("tcmsl111.pexd")
+			disable.fields("tcmsl111.fov1")	|TAN
+			disable.fields("tcmsl111.tefd")
+			disable.fields("tcmsl111.texd")
+			enable.fields("tcmsl111.fov2")	|Excise			
+			enable.fields("tcmsl111.eefd")
+			enable.fields("tcmsl111.eexd")
+			enable.fields("tcmsl111.fov3")|VAT
+			enable.fields("tcmsl111.vefd")
+			enable.fields("tcmsl111.vexd")
+			disable.fields("tcmsl111.fov4")|LST
+			disable.fields("tcmsl111.lefd")
+			disable.fields("tcmsl111.lexd")
+			enable.fields("tcmsl111.fov5")|CST
+			enable.fields("tcmsl111.cefd")
+			enable.fields("tcmsl111.cexd")
+			disable.fields("tcmsl111.fov6")|Service
+			disable.fields("tcmsl111.sefd")
+			disable.fields("tcmsl111.sexd")
+		else if strip$(tcmsl111.cbtp) = "LOG" then
+			enable.fields("tcmsl111.fovn")	|PAN
+			enable.fields("tcmsl111.pefd")
+			enable.fields("tcmsl111.pexd")
+			disable.fields("tcmsl111.fov1")	|TAN
+			disable.fields("tcmsl111.tefd")
+			disable.fields("tcmsl111.texd")
+			disable.fields("tcmsl111.fov2")	|Excise		
+			disable.fields("tcmsl111.eefd")
+			disable.fields("tcmsl111.eexd")
+			disable.fields("tcmsl111.fov3")|VAT
+			disable.fields("tcmsl111.vefd")
+			disable.fields("tcmsl111.vexd")
+			disable.fields("tcmsl111.fov4")|LST
+			disable.fields("tcmsl111.lefd")
+			disable.fields("tcmsl111.lexd")
+			disable.fields("tcmsl111.fov5")|CST
+			disable.fields("tcmsl111.cefd")
+			disable.fields("tcmsl111.cexd")
+			enable.fields("tcmsl111.fov6")|Service
+			enable.fields("tcmsl111.sefd")
+			enable.fields("tcmsl111.sexd")
+		else if strip$(tcmsl111.cbtp) = "SUP" then
+			enable.fields("tcmsl111.fovn")	|PAN
+			enable.fields("tcmsl111.pefd")
+			enable.fields("tcmsl111.pexd")
+			disable.fields("tcmsl111.fov1")	|TAN
+			disable.fields("tcmsl111.tefd")
+			disable.fields("tcmsl111.texd")
+			disable.fields("tcmsl111.fov2")	|Excise		
+			disable.fields("tcmsl111.eefd")
+			disable.fields("tcmsl111.eexd")
+			enable.fields("tcmsl111.fov3")|VAT
+			enable.fields("tcmsl111.vefd")
+			enable.fields("tcmsl111.vexd")
+			disable.fields("tcmsl111.fov4")|LST
+			disable.fields("tcmsl111.lefd")
+			disable.fields("tcmsl111.lexd")
+			enable.fields("tcmsl111.fov5")|CST
+			enable.fields("tcmsl111.cefd")
+			enable.fields("tcmsl111.cexd")
+			disable.fields("tcmsl111.fov6")|Service
+			disable.fields("tcmsl111.sefd")
+			disable.fields("tcmsl111.sexd")
+		endif
+		endif
+		endif
+		endif
+	else
+		disable.fields("tcmsl111.fovn")	|PAN
+		disable.fields("tcmsl111.pefd")
+		disable.fields("tcmsl111.pexd")
+		disable.fields("tcmsl111.fov1")	|TAN
+		disable.fields("tcmsl111.tefd")
+		disable.fields("tcmsl111.texd")
+		disable.fields("tcmsl111.fov2")	|Excise		
+		disable.fields("tcmsl111.eefd")
+		disable.fields("tcmsl111.eexd")
+		disable.fields("tcmsl111.fov3")|VAT
+		disable.fields("tcmsl111.vefd")
+		disable.fields("tcmsl111.vexd")
+		disable.fields("tcmsl111.fov4")|LST
+		disable.fields("tcmsl111.lefd")
+		disable.fields("tcmsl111.lexd")
+		disable.fields("tcmsl111.fov5")|CST
+		disable.fields("tcmsl111.cefd")
+		disable.fields("tcmsl111.cexd")
+		disable.fields("tcmsl111.fov6")|Service
+		disable.fields("tcmsl111.sefd")
+		disable.fields("tcmsl111.sexd")
+		disable.fields("tcmsl111.gstn")
+		disable.fields("tcmsl111.gfdf")
+		disable.fields("tcmsl111.gfdt")
+		disable.fields("tcmsl111.cprt")
+	endif
+}
+												|#ISGEC001167.en
+							|# PATCH001047.sn
+function boolean check_for_taxes()
+{	
+	if	strip$(tcmsl111.scur)	=	"INR"	then		|#ISGEC015086.n
+		if strip$(tcmsl111.ccty) = "IN" then
+			if strip$(tcmsl111.cbtp) = "CON" then
+				if isspace(tcmsl111.fovn) or tcmsl111.pefd = 0 or tcmsl111.pexd = 0 then
+					message("Enter values for the PAN No. related field.")
+					return(false)
+				endif	
+				
+				if isspace(tcmsl111.fov6) or tcmsl111.sefd = 0 or tcmsl111.sexd = 0 then
+					message("Enter values for the SERVICE related field.")
+					return(false)				
+				endif	
+			else if strip$(tcmsl111.cbtp) = "FAB" then
+				if isspace(tcmsl111.fovn) or tcmsl111.pefd = 0 or tcmsl111.pexd = 0 then
+					message("Enter values for the PAN No. related field.")
+					return(false)				
+				endif	
+				
+				if isspace(tcmsl111.fov2) or tcmsl111.eefd = 0 or tcmsl111.eexd = 0 then
+					message("Enter values for the EXCISE related field.")
+					return(false)
+				endif	
+				
+				if isspace(tcmsl111.fov3) or tcmsl111.vefd = 0 or tcmsl111.vexd = 0 then
+					message("Enter values for the VAT related field.")
+					return(false)
+				endif
+
+				if isspace(tcmsl111.fov5) or tcmsl111.cefd = 0 or tcmsl111.cexd = 0 then
+					message("Enter values for the CST related field.")
+					return(false)
+				endif	
+			else if strip$(tcmsl111.cbtp) = "LOG" then
+				if isspace(tcmsl111.fovn) or tcmsl111.pefd = 0 or tcmsl111.pexd = 0 then
+					message("Enter values for the PAN No. related field.")
+					return(false)
+				endif	
+
+				if isspace(tcmsl111.fov6) or tcmsl111.sefd = 0 or tcmsl111.sexd = 0 then
+					message("Enter values for the SERVICE related field.")
+					return(false)
+				endif	
+			else if strip$(tcmsl111.cbtp) = "SUP" then
+				if isspace(tcmsl111.fovn) or tcmsl111.pefd = 0 or tcmsl111.pexd = 0 then
+					message("Enter values for the PAN No. related field.")
+					return(false)
+				endif	
+
+				if isspace(tcmsl111.fov3) or tcmsl111.vefd = 0 or tcmsl111.vexd = 0 then
+					message("Enter values for the VAT related field.")
+					return(false)
+				endif
+
+				if isspace(tcmsl111.fov5) or tcmsl111.cefd = 0 or tcmsl111.cexd = 0 then
+					message("Enter values for the CST related field.")
+					return(false)
+				endif	
+			endif
+			endif
+			endif
+			endif
+		endif
+	endif						|#ISGEC015086.n
+	return(true)
+}
+
+function long send.email.alert()			
+{
+	string tmp.file(200),line(500)
+	long fp,srno
+	domain	tclogn	user.id
+	long    message.ID
+        long    to.ID
+        long    attachment.ID
+        long    ret
+
+        domain ttcmf.prov service       
+                        |Infor ERP Enterprise eMessage Connector service for 
+                        |transporting messages
+        long stat       |Variable to hold return values
+        long mid        |CMF message id
+	
+	tmp.file = creat.tmp.file$(bse.tmp.dir$())
+	fp = seq.open(tmp.file,"w+")
+	if fp <=0 then
+		message("Temp file can not be created")
+		return(1)
+	endif
+	
+	select tcmsl114.dsca
+	from   tcmsl114
+	where  tcmsl114._index1 = {:tcmsl111.rsnc}
+	selectdo
+	endselect
+	
+	
+	line = ""
+	if approve.reject = tcyesno.yes then
+| 		ret = text.to.buf("tcmsl111.aprk", language$, 1, approver.remarks)		|GH624CR942.a.s
+		line1 = ""						
+		ret = text.to.buf("tcmsl111.aprk", language$, 100, approver.remarks)	
+		if ret then				
+			for i = 1 to ret
+				approver.remarks(1, i) = str.replace$(approver.remarks(1, i), "	", " ")		
+				line1 = trim$(line1) & "	" & approver.remarks(1, i)
+			endfor
+		endif										|GH624CR942.a.e
+		
+		line = strip$(line) & "Your BP Creation Request No. " & tcmsl111.rqno & " has been Approved with the "
+| 		line = strip$(line) & " following remarks " & strip$(shiftl$(approver.remarks(1,1))) & chr$(13) & chr$(10)	|GH624CR942.old
+		line = strip$(line) & " following remarks " & strip$(shiftl$(line1)) & chr$(13) & chr$(10)			|GH624CR942.new	
+	else
+		line = strip$(line) & "Your BP Creation Request No. " & tcmsl111.rqno & " has been Rejected with the "
+| 		line = strip$(line) & " following remarks " & strip$(shiftl$(tcmsl111.rsnc)) & chr$(13) & chr$(10)
+		line = strip$(line) & " following remarks " & strip$(shiftl$(tcmsl114.dsca)) & chr$(13) & chr$(10)		|temp.mani
+	endif
+	seq.write(line,len(line),fp)
+	ret = seq.close(fp)
+	
+	user.id = logname$
+	
+	select 	bpmdm001.mail,tccom001.nama 
+	from 	tccom001,bpmdm001
+	where 	tccom001._index4 = {:user.id}
+	and	tccom001.emno refers to bpmdm001
+	as set with 1 rows
+	selectdo
+	selectempty
+		bpmdm001.mail = ""
+	endselect
+	
+	if isspace(bpmdm001.mail) then
+		message("Email ID for Approver/Rejector " & tcmsl111.user & " Not maintained")
+		return(1)
+	endif		
+	|******* Email Header
+        message.ID = cmf.create()
+	
+	if approve.reject = tcyesno.yes then
+		line = "BP Creation Request No. " & str$(tcmsl111.rqno) & " Approved"
+	else
+		line = "BP Creation Request No. " & str$(tcmsl111.rqno) & " Rejected"
+	endif
+        ret = cmf.setClass(message.ID, "CMF.NOTE.EMAIL")
+        ret = cmf.setSubject(message.ID,line)
+	
+	|******** from ID
+	to.ID = cmf.createRecipient(message.ID, ttcmf.role.from)  
+	ret = cmf.setRecipientName(to.ID,tccom001.nama)
+        ret = cmf.setRecipientAddress(to.ID, bpmdm001.mail)	
+	ret = cmf.setRecipientType(to.ID, "SMTP")
+ 
+	|******** to ID
+	select 	bpmdm001.mail,tccom001.nama 
+	from 	tccom001,bpmdm001
+	where 	tccom001._index4 = {:tcmsl111.user}
+	and	tccom001.emno refers to bpmdm001
+| 	and	bpmdm001.mail <> ""
+	selectdo
+		to.ID = cmf.createRecipient(message.ID, ttcmf.role.to)  
+		ret = cmf.setRecipientName(to.ID,tccom001.nama)
+		ret = cmf.setRecipientAddress(to.ID, bpmdm001.mail)	
+		ret = cmf.setRecipientResponsibility(to.ID, "TRUE")		
+		ret = cmf.setRecipientType(to.ID, "SMTP")
+	selectempty
+		message("Email ID for Approver/Rejector not maintained" )
+		return(1)
+	endselect
+	
+	|********* Mail Body
+	attachment.ID = cmf.createAttachment(message.ID)
+	ret = cmf.setAttachmentBody(attachment.ID,ttyeno.yes)
+	ret = cmf.setAttachmentMIME(attachment.ID,"text/plain")                       
+	ret = cmf.setAttachmentFileName(attachment.ID,tmp.file,"abc.txt")
+
+
+	|*********  Send mail
+        if message.ID <>0 then
+                stat = cmf.startService("SMTP",2)
+                if stat<>0 then
+                        message("Message could not be sent "&
+                                "(Infor ERP Enterprise eMessage Connector"&
+                                " service did not start)")
+                        return(1)
+                endif
+                stat = cmf.send(message.ID,"SMTP")
+                if stat<>0 then
+                        message("Message could not be sent "& "(Infor ERP Enterprise eMessage Connector "&
+                                "service refused message)")
+                        cmf.stopService("SMTP",2)
+                        return(1)
+                endif
+                stat = cmf.stopService("SMTP",2)
+        endif
+	return(0)
+}
+							|# PATCH001047.en
+							|#ISGEC015086.sn
+function	handle.tax.fields.enable.disable()
+{
+	if	strip$(tcmsl111.ccty)	=	"IN"	then			
+		enable.fields("tcmsl111.fovn")	|PAN		
+| 		enable.fields("tcmsl111.pefd")
+| 		enable.fields("tcmsl111.pexd")
+		enable.fields("tcmsl111.fov1")	|TAN
+| 		enable.fields("tcmsl111.tefd")
+| 		enable.fields("tcmsl111.texd")
+		enable.fields("tcmsl111.fov2")	|Excise		
+| 		enable.fields("tcmsl111.eefd")
+| 		enable.fields("tcmsl111.eexd")
+		enable.fields("tcmsl111.fov3")|VAT
+| 		enable.fields("tcmsl111.vefd")
+| 		enable.fields("tcmsl111.vexd")
+		enable.fields("tcmsl111.fov4")|LST
+| 		enable.fields("tcmsl111.lefd")
+| 		enable.fields("tcmsl111.lexd")
+		enable.fields("tcmsl111.fov5")|CST
+| 		enable.fields("tcmsl111.cefd")
+| 		enable.fields("tcmsl111.cexd")
+		enable.fields("tcmsl111.fov6")|Service
+| 		enable.fields("tcmsl111.sefd")
+| 		enable.fields("tcmsl111.sexd")
+		disable.fields("tcmsl111.fov9")
+		tcmsl111.fov9	=	""	
+		tcmsl111.naef	=	0
+		tcmsl111.naxd	=	0
+		disable.fields("tcmsl111.naef")		
+		disable.fields("tcmsl111.naxd")		
+	else
+		disable.fields("tcmsl111.fovn")	|PAN
+| 		disable.fields("tcmsl111.pefd")
+| 		disable.fields("tcmsl111.pexd")
+		disable.fields("tcmsl111.fov1")	|TAN
+| 		disable.fields("tcmsl111.tefd")
+| 		disable.fields("tcmsl111.texd")
+		disable.fields("tcmsl111.fov2")	|Excise		
+| 		disable.fields("tcmsl111.eefd")
+| 		disable.fields("tcmsl111.eexd")
+		disable.fields("tcmsl111.fov3")|VAT
+| 		disable.fields("tcmsl111.vefd")
+| 		disable.fields("tcmsl111.vexd")
+		disable.fields("tcmsl111.fov4")|LST
+| 		disable.fields("tcmsl111.lefd")
+| 		disable.fields("tcmsl111.lexd")
+		disable.fields("tcmsl111.fov5")|CST
+| 		disable.fields("tcmsl111.cefd")
+| 		disable.fields("tcmsl111.cexd")
+		disable.fields("tcmsl111.fov6")|Service
+| 		disable.fields("tcmsl111.sefd")
+| 		disable.fields("tcmsl111.sexd")
+		enable.fields("tcmsl111.fov9")		
+		tcmsl111.fovn	=	""
+		tcmsl111.fov1	=	""
+		tcmsl111.fov2	=	""
+		tcmsl111.fov3	=	""
+		tcmsl111.fov4	=	""
+		tcmsl111.fov5	=	""
+		tcmsl111.fov6	=	""
+		tcmsl111.fov9	=	"NA"
+		enable.fields("tcmsl111.naef")		
+		enable.fields("tcmsl111.naxd")		
+	endif
+	display("tcmsl111.fov9")			
+}
+
+| function	extern	bp.item.group()
+| {
+| 	domain	tcmcs.long	rtvl
+| 	
+| 	if	len(trim$(tcmsl111.bpid))	=	9	then
+| 		rtvl	=	start.synchronized.child("tcmsl1113m000","tcmsl111.rqno","tcmsl113.rqno","tcmsl111.bpid","tcmsl113.bpid")
+| 	else
+| 		rtvl	=	start.synchronized.child("tcisg1113m000","tcmsl111.rqno","tcmsl113.rqno")
+| 	endif
+| }
+
+function	extern	supplier.wise.project()
+{
+	domain	tcmcs.long	rtvl
+	
+	if	len(trim$(tcmsl111.bpid))	=	9	then
+		rtvl	=	start.synchronized.child("tcisg1102m000","tcmsl111.bpid","tcisg102.bpid","tcmsl111.rqno","tcisg102.rqno")
+	else
+		rtvl	=	start.synchronized.child("tcisg1102m000","tcmsl111.rqno","tcisg102.rqno")
+	endif
+}
+
+function	domain	tcbool	check.bp.item.group()
+{
+	select	tcisg102.rqno,
+		tcisg102.cprj
+	from	tcisg102
+	where	tcisg102._index2	=	{:tcmsl111.rqno}
+	and	tcisg102.cprj		<>	""
+	selectdo
+	selectempty
+		return(true)
+	endselect
+	return(false)
+}
+
+function	update.bp.in.supplier.wise.project()
+{
+	select	tcisg102.*
+	from	tcisg102
+	where	tcisg102._index2	=	{:tcmsl111.rqno}
+	selectdo	
+		tcisg102.bpid	=	o.business.partner
+		tcisg102.rqno	=	tcmsl111.rqno
+		tcisg102.srno	=	tcisg102.srno
+		tcisg102.cprj	=	tcisg102.cprj
+		db.insert(ttcisg102,db.skip.dupl,e)
+		commit.transaction()
+	endselect
+	
+	select	tcmsl113.*
+	from	tcmsl113
+	where	tcmsl113._index1	=	{:tcmsl111.rqno}
+	selectdo
+		tcmsl113.rqno	=	tcmsl111.rqno
+		tcmsl113.comp	=	tcmsl113.comp
+		tcmsl113.bpid	=	o.business.partner		
+		tcmsl113.sern	=	tcmsl113.sern
+		tcmsl113.citg	=	tcmsl113.citg
+		tcmsl113.item	=	tcmsl113.item
+		tcmsl113.mocn	=	tcmsl113.mocn
+		tcmsl113.size	=	tcmsl113.size
+		|tcmsl113.exdt	=	tcmsl111.bpex - 120	|GH649.10112021.comment
+		tcmsl113.exdt   =	0			|GH649.10112021.add
+		db.insert(ttcmsl113,db.skip.dupl,e)
+		commit.transaction()
+	endselect
+	
+	db.retry.point()
+	
+	select	tcisg102.*
+	from	tcisg102	for	update
+	where	tcisg102._index2	=	{:tcmsl111.rqno}
+	and	tcisg102.bpid		=	""
+	selectdo
+		db.delete(ttcisg102,db.retry,e)
+		commit.transaction()
+	endselect
+	
+	select	tcmsl113.*
+	from	tcmsl113	for	update
+	where	tcmsl113._index1	=	{:tcmsl111.rqno}
+	and	tcmsl113.bpid		=	""
+	selectdo
+		db.delete(ttcmsl113,db.retry,e)
+		commit.transaction()
+	endselect
+
+}
+							|#ISGEC015086.en
+							
+			|#ISGEC017006.sn
+function long same.name.bp.exists()
+{
+	domain	tccom.bpid	temp.bpid
+	domain	tcnama		temp.nama
+	domain	tcmcs.str100	o.bp.msg
+	
+	select	tccom100.bpid:temp.bpid,
+		tccom100.nama:temp.nama
+	from	tccom100
+	selectdo
+		if toupper$(temp.nama) = toupper$(tcmsl111.nama) then
+			if bp.name.flag = 1 then
+				o.bp.msg = "Same Name of Supplier (" & trim$(temp.bpid) & ") Already Exists."
+			else
+				o.bp.msg = "Same Name of Supplier (" & trim$(temp.bpid) & ") Already Exists. Do You Want To Approve Request?"
+			endif
+			
+			message("%s", o.bp.msg)
+			
+			return(1)
+		endif
+	endselect
+	
+	return(0)
+}
+
+		|#ISGEC017006.en
+		
+function Get_Attachment ()									|RAvi.a.s.21102019
+{	
+
+	domain	tcncmp			curr.comp
+	domain	tcmcs.str1		p.char, c.char
+	domain	tcmcs.str30		i.host	
+	domain	tclogn			o.user
+	domain	tcmcs.str50		pass.string, handle.string
+		string			open.link(200),sess.code(30)
+	
+	pass.string = trim$(tcmsl111.rqno) 
+	
+	o.user = logname$
+	
+	i.host = hostname$()
+	i.host =  toupper$(i.host)
+	i.host = trim$(i.host)
+	
+	curr.comp = get.compnr()
+	p.char = ""
+	c.char = ""
+	handle.string = ""
+	handle.string =  "BPREQUEST_" & str$(curr.comp)
+	
+| 	p.char = (tcmsl111.stat  = tcstat.create) ? "y":"n"			|RAvi.new.26072021
+	p.char = (tcmsl111.stat  = tcstat.approve) ? "n":"y"			|RAvi.new.26072021
+		
+	on case i.host
+	case "VISHNU":	
+		open.link = 	"chrome.exe --app=http://192.9.200.146/Attachment/Attachment.aspx?AthHandle=" & trim$(handle.string) &
+				"&Index=" & trim$(pass.string) & "&AttachedBy=" & trim$(o.user) & "&ed=" & p.char	
+		break
+		
+	case "VISHNU10GST":	
+		open.link = 	"chrome.exe --app=http://192.9.200.146/ATHERPTEST/Attachment.aspx?AthHandle=" & trim$(handle.string) &
+				"&Index=" & trim$(pass.string) & "&AttachedBy=" & trim$(o.user) & "&ed=" & p.char
+		break
+	endcase
+		
+
+	open.link = trim$(open.link)
+	
+	app_start(open.link, "", "", "", "")
+
+}												|RAvi.a.e.21102019

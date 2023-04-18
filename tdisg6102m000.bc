@@ -1,0 +1,939 @@
+|******************************************************************************
+|* tdisg6102m000  0  VRC B61U a7 isg 
+|* Dispatch Tracking Sheet
+|* merino1                       
+|* 2018-04-19
+|******************************************************************************
+|* Main table tdisg602 Dispatch Tracking Sheet, Form Type 1
+|******************************************************************************
+|* ID: ISGECMOD031, Atul Ojha, 19-04-2018, VRC B61U a7 isg 
+|* New Development
+|* ID: ISGECMOD057, Anadi Shankar, 03-05-2018, VRC B61U a7 isg
+|* Modification.
+|*
+|* ID: ISGEC01162,Bharti Garg, 05-03-2019
+|* Added a logic for item Catg
+|* 
+|* ID: RAvi Kumar, 27-02-2020
+|* In 651 comp all diviision data show
+
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttdisg602 | Dispatch Tracking Sheet
+	table	ttdmsl400
+	table	ttdmsl500
+	table	ttdmsl501
+	table	ttdmsl503
+	table	ttdpur400
+	table	ttdpur401
+	table	twhinh312
+	table	ttdpur406
+	table	ttcmcs065
+	table	ttccom120
+	table	ttccom130
+	table	ttfisg151
+	table	ttfmsl020
+	table	ttpisg122
+	table	tdmisg134
+| 	table	ttdmsl003
+	table	ttdisg090
+	table	ttdisg605		|ISGEC01162.n
+	
+	extern	domain	tcnama		supl.nama,
+					buyr.nama
+	extern	domain	tcdsca		cprj.dsca
+	extern	domain	tcdesc		elmt.desc
+	extern	domain	tcmcs.str10	proj.mnth,
+					disp.mnth,
+					delv.mnth,
+					rol.mnth,
+					disp.week,
+					rol.week
+		domain	tcpono		max.sern
+		domain	tcsern		get.vrsn
+		domain	tccom.bpid	i.otbp,	
+					i.ccon
+		domain	tcdate		i.ddta,
+					i.updt	
+		domain	tcccur		i.ccur	
+		domain	tdpur.hdst	i.hdst
+		domain	tcitem		i.item
+		domain	tccprj		i.cprj
+		domain	tcmcs.str10	i.cspa
+		domain	tcpric		i.pric,
+					v.pric
+		domain	tcqsl1		i.qoor,
+					rep.rbsc,
+					rep.bbal
+		domain	tcmcs.str20	i.frgt,result1,result2,result3,result4,result
+		domain	tccwoc		i.cofc	
+		domain	tcemm.grid	eu.boiler, eu.smd, eu.apce, eu.redicom, eu.fgd		|RAvi.a.29072020 03112020
+		boolean			receipt.found			
+	long yearno  
+	long monthno  
+	long month_dayno  
+	long hours  
+	long minutes  
+	long seconds 
+	long	comp			|RAvi.27022020
+
+
+|****************************** program section *******************************
+before.program:
+	comp = get.compnr()				|RAvi.27022020
+	eu.boiler = "EU200"
+	eu.smd = "EU230"
+	eu.apce = "EU240"
+	eu.fgd = "EU250"
+	eu.redicom = "EU700"				|RAvi.a.29072020
+	
+	if comp = 651 then				|RAvi.27022020		RAvi.a.s.29072020
+	else
+		if prog.name$ = "tdisg6102m000" then						
+			query.extend.where("tdisg602.eunt = "&quoted.string(eu.boiler))
+		else
+			if prog.name$ = "tdisg6102m001" then
+				query.extend.where("tdisg602.eunt = "&quoted.string(eu.smd))
+			else
+				if prog.name$ = "tdisg6102m002" then
+					query.extend.where("tdisg602.eunt = "&quoted.string(eu.apce))
+				else
+					if prog.name$ = "tdisg6102m003" then
+						query.extend.where("tdisg602.eunt = "&quoted.string(eu.redicom))
+					else
+						if prog.name$ = "tdisg6102m004" then					|RAvi.a.03112020
+							query.extend.where("tdisg602.eunt = "&quoted.string(eu.fgd))
+						endif
+					endif
+				endif
+			endif
+		endif								
+	endif												|RAvi.a.e.29072020
+
+after.form.read:
+	enable.save.on.occ.change()
+	
+	
+before.new.object:
+	max.sern = 0
+	
+	select	isg602.sern:max.sern
+	from	tdisg602 isg602
+	order by isg602.sern desc
+	as set with 1 rows
+	selectdo
+		max.sern = max.sern + 1
+	selectempty
+		max.sern = 1
+	endselect
+
+	tdisg602.sern = max.sern
+	
+|****************************** choice section ********************************
+
+choice.update.db:
+on.choice:
+	refresh.parent(-1)
+
+|****************************** field section **********************************
+field.all:
+before.input:
+	attr.input = true
+
+
+field.tdisg602.orno:
+after.input:
+	get.vrsn = get.order.revn(tdisg602.orno)
+	get.order.details(	
+				tdisg602.orno,
+				get.vrsn
+			  )
+	tdisg602.bpid = i.otbp
+	tdisg602.buyr = i.ccon
+	tdisg602.odat = get.order.date(tdisg602.orno)				
+	tdisg602.ccur = i.ccur
+	tdisg602.hdst = i.hdst
+	tdisg602.revn = get.vrsn
+	tdisg602.eunt = get.division(i.cofc)
+	tdisg602.loca = get.supl.city(i.otbp)
+	tdisg602.amdt = i.updt							
+	tdisg602.abdt = get.abg.recd.date(tdisg602.orno)			
+	tdisg602.rldt = get.adv.date(tdisg602.orno)
+	
+
+field.tdisg602.pono:
+before.zoom:
+	query.extend.where.in.zoom("tdpur401.orno = " & quoted.string(tdisg602.orno))
+after.input:
+	get.orderline.details(	tdisg602.orno,
+				tdisg602.pono,
+				tdisg602.revn
+			     )
+	tdisg602.ddat = i.ddta							
+	tdisg602.item = i.item
+	tdisg602.cprj = i.cprj
+	tdisg602.elmt = i.cspa
+	tdisg602.hssc = get.hsncode(	tdisg602.orno,
+					tdisg602.pono
+				   )
+	tdisg602.quan = i.qoor + get.additional.qty(
+							tdisg602.orno,
+							get.vrsn,
+							tdisg602.pono
+						   )	
+	tdisg602.pric = i.pric
+	tdisg602.bval = tdisg602.quan * tdisg602.pric
+	
+	get.amnt()
+	
+	tdisg602.amnt = rep.bbal
+	tdisg602.frgt = i.frgt
+	tdisg602.dome = get.dome.exp(tdisg602.cprj)
+	tdisg602.gddt = get.gad.date(tdisg602.orno, tdisg602.pono)		
+	tdisg602.mfdt = get.mfg.date(tdisg602.orno, tdisg602.pono)	
+
+	get.supl.eng.item.catg(tdisg602.bpid,tdisg602.citg,tdisg602.supl,tdisg602.cont,tdisg602.ctno)
+	
+	
+	display("tdisg602.citg")
+	display("tdisg602.supl")
+	display("tdisg602.cont")
+	display("tdisg602.ctno")
+
+field.supl.nama:
+before.display:
+	supl.nama = ""
+	get.bp.nama(tdisg602.bpid,supl.nama)
+	
+field.buyr.nama:
+before.display:
+	buyr.nama = ""
+	get.buyer.nama(tdisg602.buyr,buyr.nama)
+	
+
+	
+field.cprj.dsca:
+before.display:
+	cprj.dsca = ""
+	get.project.dsca(tdisg602.cprj,cprj.dsca)
+	
+field.elmt.desc:
+before.display:
+	elmt.desc = ""
+	get.element.desc(tdisg602.elmt,elmt.desc)
+	
+| field.proj.mnth:
+| field.tdisg602.exmt:
+field.tdisg602.exdt:
+after.input:
+| before.display:
+	result4 = sprintf$("%D(Date: %02d/%02m/%04Y)", tdisg602.exdt) 
+	get.month(tdisg602.exdt,tdisg602.exmt)
+
+	display("tdisg602.exmt")
+| field.disp.mnth:
+| field.tdisg602.grmy:
+| before.display:
+field.tdisg602.grdt:
+after.input:
+	tdisg602.grmy = ""
+	result1 = sprintf$("%D(Date: %02d/%02m/%04Y)", tdisg602.grdt) 
+	get.month(tdisg602.grdt,tdisg602.grmy)
+	display("tdisg602.grmy")
+| field.delv.mnth:
+| field.tdisg602.ddmy:
+| before.display:
+field.tdisg602.ddat:
+after.input:
+	tdisg602.ddmy = ""
+	result2 = sprintf$("%D(Date: %02d/%02m/%04Y)", tdisg602.ddat) 
+	get.month(tdisg602.ddat,tdisg602.ddmy)
+	display("tdisg602.ddmy")
+| field.rol.mnth:
+| field.tdisg602.pdmy:
+| before.display:
+field.tdisg602.dldt:
+after.input:
+	tdisg602.pdmy = ""
+	result3 = sprintf$("%D(Date: %02d/%02m/%04Y)", tdisg602.dldt) 
+	get.month(tdisg602.dldt,tdisg602.pdmy)
+	display("tdisg602.pdmy")
+	
+field.disp.week:
+before.display:
+	get.week(tdisg602.grdt,disp.week)
+	
+field.rol.week:
+before.display:
+	get.week(tdisg602.dldt,rol.week)
+
+field.tdisg602.buyr:							|ISGEC01162.sn
+after.input:
+	if trim$(tdisg602.eunt) = "EU230" then
+		select	tdisg605.citg
+		from	tdisg605
+		where	tdisg605._index1 = {:tdisg602.eunt,:tdisg602.buyr}
+		selectdo
+			tdisg602.citg = tdisg605.citg
+			display("tdisg602.citg")
+		endselect
+	endif								|ISGEC01162.en
+
+
+|****************************** functions section ******************************
+
+functions:
+
+function domain	tcsern	get.order.revn(domain	tcorno	v.orno)
+{
+	domain	tcsern	o.revn
+	
+	select	tdmsl400.vrsn:o.revn,
+		tdmsl400.apdt
+	from	tdmsl400
+	where	tdmsl400._index1 = {:v.orno}
+	and	tdmsl400.stat = tcyesno.yes
+	and	tdmsl400.work = tdmsl.work.completed
+	order by tdmsl400.vrsn desc
+	as set with 1 rows
+	selectdo
+	selectempty
+		o.revn = 0
+	endselect
+	init.var()
+	
+	if tdmsl400.apdt <> 0  then
+		utc.to.date(tdmsl400.apdt,yearno,monthno,month_dayno,hours,minutes,seconds)
+		i.updt = date.to.num(yearno,monthno,month_dayno)
+	else
+		i.updt = 0
+	endif
+	
+	return(o.revn)
+}
+
+function get.order.details(	
+				domain	tcorno	o.orno,
+				domain	tcsern	v.revn
+			   )
+{
+	i.otbp = ""
+	i.ccon = ""
+	i.ccur = ""
+	i.cofc = ""
+	i.hdst = empty
+	
+	select	tdmsl500.otbp:i.otbp,
+		tdmsl500.ccon:i.ccon,
+		tdmsl500.ccur:i.ccur,
+		tdmsl500.hdst:i.hdst,
+		tdmsl500.cofc:i.cofc
+	from	tdmsl500
+	where	tdmsl500._index1 = {:o.orno, :v.revn}
+	selectdo
+	selectempty
+		select	tdpur400.otbp:i.otbp,
+			tdpur400.ccon:i.ccon,
+			tdpur400.ccur:i.ccur,
+			tdpur400.hdst:i.hdst,
+			tdpur400.cofc:i.cofc
+		from	tdpur400
+		where	tdpur400._index1 = {:o.orno}
+		selectdo
+		selectempty
+			i.otbp = ""
+			i.ccon = ""
+			i.ccur = ""
+			i.cofc = ""
+			i.hdst = empty
+		endselect
+	endselect	
+}
+
+function get.orderline.details(
+				domain	tcorno		i.orno,
+				domain	tcpono		i.pono,
+				domain	tcsern		i.revn
+			       )
+{
+	i.item = ""
+	i.cprj = ""
+	i.cspa = ""
+	i.qoor = 0
+	i.pric = 0
+	v.pric = 0
+	i.ddta = 0
+	
+	select	tdmsl501.item:i.item,
+		tdmsl501.cprj:i.cprj,
+		tdmsl501.cspa:i.cspa,
+		tdmsl501.qoor:i.qoor,
+		tdmsl501.pric:v.pric,
+		tdmsl501.ddta,
+		tdmsl501.cdec,
+		tdmsl501.oamt
+	from	tdmsl501
+	where	tdmsl501._index1 = {:i.orno, :i.revn, :i.pono}
+	and	tdmsl501.oltp in (tdgen.oltp.total, tdgen.oltp.orderline)
+	selectdo
+		if i.qoor <> 0 then
+			i.pric = (tdmsl501.oamt / i.qoor)
+		endif
+		
+		if (tdmsl501.cdec = "EXW") or (tdmsl501.cdec = "FOT") then
+			i.frgt = "ISGEC"
+		else
+| 			i.frgt = tdisg602.bpid						|#ISGECMOD057.o
+			i.frgt = "SUPPLIER"						|#ISGECMOD057.n
+		endif	
+		init.var()
+		
+		if	tdmsl501.ddta <> 0  then
+			utc.to.date(tdmsl501.ddta,yearno,monthno,month_dayno,hours,minutes,seconds)
+			i.ddta = date.to.num(yearno,monthno,month_dayno)
+		else
+			i.ddta = 0
+		endif
+			
+	selectempty
+		select	tdpur401.item:i.item,
+			tdpur401.cprj:i.cprj,
+			tdpur401.cspa:i.cspa,
+			tdpur401.qoor:i.qoor,
+			tdpur401.pric:v.pric,
+			tdpur401.ddta,
+			tdpur401.cdec,
+			tdpur401.oamt
+		from	tdpur401
+		where	tdpur401._index1 = {:i.orno, :i.pono}
+		and	tdpur401.oltp in (tdgen.oltp.total, tdgen.oltp.orderline)
+		selectdo
+			if i.qoor <> 0 then
+				i.pric = (tdpur401.oamt / i.qoor)
+			endif	
+			
+			if (tdpur401.cdec = "EXW") or (tdpur401.cdec = "FOT") then
+				i.frgt = "ISGEC"
+			else
+				i.frgt = tdisg602.bpid
+			endif
+			init.var()
+			
+			if tdpur401.ddta <> 0  then
+				utc.to.date(tdpur401.ddta,yearno,monthno,month_dayno,hours,minutes,seconds)
+				i.ddta = date.to.num(yearno,monthno,month_dayno)
+			else
+				i.ddta = 0
+			endif
+				
+			
+		selectempty
+			i.item = ""
+			i.cprj = ""
+			i.cspa = ""
+			i.pric = 0
+			v.pric = 0
+			i.ddta = 0 
+		endselect
+	endselect	
+
+}
+
+function domain	tfgld.date	get.order.date(domain	tcorno	ord.orno)
+{
+| 	domain	tcdate	i.odat
+	domain	tfgld.date	i.odat
+	
+	select	tdmsl400.apdt							
+	from	tdmsl400
+	where	tdmsl400._index1 = {:ord.orno,0}
+	selectdo
+	selectempty
+		i.odat = 0
+	endselect								
+	init.var()
+	
+	if tdmsl400.apdt <> 0  then
+		utc.to.date(tdmsl400.apdt,yearno,monthno,month_dayno,hours,minutes,seconds)
+		i.odat = date.to.num(yearno,monthno,month_dayno)
+	else
+		i.odat = 0
+	endif
+
+	return(i.odat)
+}
+
+function domain	tcemm.grid	get.division(domain	tccwoc	in.cofc)
+{
+	domain	tcemm.grid	division
+	
+	division = ""
+	
+	if comp = 700 then
+		division = "EU700"
+	else
+		select	tcmcs065.comp, tcmcs065.ccal
+		from	tcmcs065
+		where	tcmcs065._index1 = {:in.cofc}
+		selectdo
+			select	tcemm030.eunt:division
+			from	tcemm030
+			where	tcemm030.fcmp = :tcmcs065.comp
+			and	tcemm030.ccal = :tcmcs065.ccal
+			as set with 1 rows
+			selectdo
+			selectempty
+				division = ""
+			endselect	
+		endselect
+	endif
+	
+	return(division)
+}
+
+function domain	tcmcs.str15	get.supl.city(domain	tccom.bpid	in.otbp)
+{
+	select	tccom120.cadr,
+		tccom130.ccit
+	from	tccom120, tccom130
+	where	tccom120._index1 = {:in.otbp}
+	and	tccom120.cadr refers to tccom130 unref clear
+	selectdo
+	selectempty
+		tccom130.ccit = ""
+	endselect	
+	
+	return(tccom130.ccit)
+}
+
+function domain	tfgld.date	get.abg.recd.date(domain	tcorno	abg.orno)
+{
+	domain	tfgld.date	i.abdt
+	
+	select	tfisg151.abdt
+	from	tfisg151
+	where	tfisg151.orno = :abg.orno
+	selectdo
+	selectempty
+		tfisg151.abdt = 0
+	endselect
+	init.var()
+	
+	if 	tfisg151.abdt <> 0  then
+		utc.to.date(tfisg151.abdt,yearno,monthno,month_dayno,hours,minutes,seconds)
+		i.abdt = date.to.num(yearno,monthno,month_dayno)
+	else
+		i.abdt = 0
+	endif
+	
+	return(i.abdt)
+}
+
+function domain	tfgld.date	get.adv.date(domain	tcorno	adv.orno)
+{
+	domain	tfgld.date 	i.chdt
+	
+	select	tfmsl020.chdt
+	from	tfmsl020
+	where	tfmsl020.orno = :adv.orno
+	and	tfmsl020.optn = 3
+	order by tfmsl020.chdt 
+	as set with 1 rows
+	selectdo
+	selectempty
+		tfmsl020.chdt = 0
+	endselect
+	init.var()
+	
+	if tfmsl020.chdt <> 0  then
+		utc.to.date(tfmsl020.chdt,yearno,monthno,month_dayno,hours,minutes,seconds)
+		i.chdt = date.to.num(yearno,monthno,month_dayno)
+	else
+		i.chdt = 0
+	endif
+	
+	return(i.chdt)
+}
+
+function domain	tcmcs.str20	get.hsncode(
+							domain	tcorno		h.orno,
+							domain	tcpono		h.pono
+						   )
+{
+	domain	tcmcs.str20	i.code
+
+	select	tdmsl503.code:i.code
+	from	tdmsl503
+	where	tdmsl503._index1 = {:h.orno, :h.pono}
+	selectdo
+	selectempty
+		i.code = ""
+	endselect
+	
+	return(i.code)
+}
+
+function domain tcqiv1	 get.additional.qty(
+						domain	tcorno	in.orno,
+						domain	tcsern	in.revn,
+						domain	tcpono	in.pono
+					    )
+{
+	domain	tcqiv1	ord.qty, 
+			app.qty,
+			diff.qty, 
+			bac.qty
+	
+	ord.qty = 0
+	app.qty = 0
+	bac.qty = 0
+	diff.qty = 0
+		
+	select	a_tdpur501.qoor:ord.qty,
+		a_tdpur501.qiap:app.qty,
+		a_tdpur501.qibo:bac.qty
+	from	tdmsl501 a_tdpur501
+	where	a_tdpur501._index1 = {:in.orno, :in.revn, :in.pono}
+	and	a_tdpur501.oltp = tdgen.oltp.total
+	selectdo
+		diff.qty = diff.qty + bac.qty - (ord.qty - app.qty)
+	selectempty	
+		select	q_tdpur401.qoor:ord.qty,
+			q_tdpur401.qiap:app.qty,
+			q_tdpur401.qibo:bac.qty
+		from	tdpur401 q_tdpur401
+		where	q_tdpur401._index1 = {:in.orno, :in.pono}
+		and	q_tdpur401.oltp = tdgen.oltp.total
+		selectdo
+			diff.qty = diff.qty + bac.qty - (ord.qty - app.qty)
+		endselect
+	endselect
+	
+	return(diff.qty)
+}
+
+function get.amnt()
+{
+	domain	tcorno		rcno.f,
+				rcno.t
+	domain	tcdate		rcdt.f,
+				rcdt.t,
+				v.rcdt.f,
+				v.rcdt.t
+	long			hh,
+				mn,
+				ss,
+				yy,
+				mm,
+				dd
+		
+	if tdisg602.bval > 0 then	
+		receipt.found = false
+		
+		rep.rbsc = 0
+		rep.bbal = 0
+		rcdt.f = 0
+		rcdt.t = utc.num()
+		set.fmin(rcno.f)
+		set.fmax(rcno.t)
+		
+		v.rcdt.f = rcdt.f
+		utc.to.date(rcdt.t, yy, mm, dd, hh, mn, ss)
+		v.rcdt.t = date.to.utc(yy, mm, dd, 23, 59, 59)
+		
+		Get_Warehouse_Receipt(	tdisg602.orno, 
+					tdisg602.pono, 
+					rcno.f, 
+					rcno.t,
+					v.rcdt.f, 
+					v.rcdt.t,
+					v.pric
+				     )
+
+		Get_Purchase_Receipt(	tdisg602.orno, 
+					tdisg602.pono, 
+					rcno.f, 
+					rcno.t,
+					v.rcdt.f, 
+					v.rcdt.t,
+					v.pric
+				    )
+				    
+		if	not receipt.found then
+			rep.bbal = tdisg602.bval		
+		else
+			rep.bbal = tdisg602.bval - rep.rbsc		
+		endif
+	else
+		rep.bbal = tdisg602.bval
+	endif	
+}
+
+function Get_Warehouse_Receipt(
+				domain	tcorno		in.orno,
+				domain	tcpono		in.pono,
+				domain	tcorno		in.rcno.f,
+				domain	tcorno		in.rcno.t,
+				domain	tcdate		in.rcdt.f,
+				domain	tcdate		in.rcdt.t,
+				domain	tcpric		in.pric
+				)
+{
+	select	whinh312.*
+	from	whinh312
+	where	whinh312._index1 inrange {:in.rcno.f}	and	{:in.rcno.t}
+	and	whinh312._index4 = {whinh.oorg.purchase, :in.orno, :in.pono}
+	and	whinh312.ardt inrange :in.rcdt.f	and	:in.rcdt.t
+	selectdo
+		rep.rbsc = rep.rbsc + (in.pric * whinh312.qrcr)
+		receipt.found = true
+	selectempty
+	endselect	
+
+}
+					
+function Get_Purchase_Receipt(
+				domain	tcorno		in.orno,
+				domain	tcpono		in.pono,
+				domain	tcorno		in.rcno.f,
+				domain	tcorno		in.rcno.t,
+				domain	tcdate		in.rcdt.f,
+				domain	tcdate		in.rcdt.t,
+				domain	tcpric		in.pric
+			      )
+{
+	select	tdpur406.*
+	from	tdpur406
+	where	tdpur406._index2 inrange {:in.rcno.f} and	{:in.rcno.t}
+	and	tdpur406._index1 = {:in.orno, :in.pono}
+	and	tdpur406.ddte inrange	:in.rcdt.f	and	:in.rcdt.t
+	and	tdpur406.rcno not in (select	whinh312.rcno	from	whinh312
+					where	whinh312._index4 = {whinh.oorg.purchase, :in.orno, :in.pono}
+					and	whinh312._index1 inrange {:in.rcno.f} and	{:in.rcno.t}
+					and	whinh312.ardt inrange	:in.rcdt.f	and	:in.rcdt.t)
+	selectdo			
+		rep.rbsc = rep.rbsc + (tdpur406.qiap * in.pric)
+		receipt.found = true
+	selectempty
+	endselect	
+
+}
+
+function domain	tcmcs.str5	get.dome.exp(domain	tccprj	in.cprj)
+{
+	domain	tcmcs.str5	i.dome
+	
+	select	tpisg122.exco
+	from	tpisg122
+	where	tpisg122._index1 = {:in.cprj}
+	and	tpisg122.exco = tcyesno.yes
+	selectdo
+		i.dome = "E"
+	selectempty
+		i.dome = "D"
+	endselect	
+	
+	return(i.dome)
+}
+
+function domain	tfgld.date	get.gad.date(
+						domain	tcorno	gad.orno,
+						domain	tcpono	gad.pono
+					    )
+{
+	domain	tfgld.date	dmisg134
+	
+	select	dmisg134.date
+	from	dmisg134
+	where	dmisg134.orno = :gad.orno
+	and	dmisg134.pono = :gad.pono
+	order by dmisg134.date desc
+	as set with 1 rows
+	selectdo
+	selectempty
+		dmisg134.date = 0
+	endselect	
+	init.var()
+	
+	if dmisg134.date <> 0  then
+		utc.to.date(dmisg134.date,yearno,monthno,month_dayno,hours,minutes,seconds)
+		dmisg134 = date.to.num(yearno,monthno,month_dayno)
+	else
+		dmisg134 = 0
+	endif
+	
+	return(dmisg134)
+}
+
+function domain	tfgld.date	get.mfg.date(	
+						domain	tcorno	mfg.orno,
+						domain	tcpono	mfg.pono
+				            )
+{
+	domain	tfgld.date	i.adat
+	
+	select	dmisg134.adat
+	from	dmisg134
+	where	dmisg134.orno = :mfg.orno
+	and	dmisg134.pono = :mfg.pono
+	and	dmisg134.stat = 5
+	order by dmisg134.adat desc
+	as set with 1 rows
+	selectdo
+	selectempty
+		dmisg134.adat = 0
+	endselect
+	init.var()
+	
+	if dmisg134.adat <> 0  then
+		utc.to.date(dmisg134.adat,yearno,monthno,month_dayno,hours,minutes,seconds)
+		i.adat = date.to.num(yearno,monthno,month_dayno)
+	else
+		i.adat = 0
+	endif
+	
+	return(i.adat)
+}
+					     
+					     
+function get.bp.nama(
+			domain	tccom.bpid	i.bpid,
+		ref	domain	tcnama		i.nama)
+{
+	select	tccom100.nama:i.nama
+	from	tccom100
+	where	tccom100._index1 = {:i.bpid}
+	selectdo
+	selectempty
+		i.nama = ""
+	endselect	
+}
+
+function get.buyer.nama(
+			domain	tccom.bpid	in.bpid,
+		ref	domain	tcnama		in.nama)
+{
+	select	tccom001.nama:in.nama
+	from	tccom001
+	where	tccom001._index1 = {:in.bpid}
+	selectdo
+	selectempty
+		in.nama = ""
+	endselect	
+}
+
+function get.month(
+			domain	tfgld.date	i.date,
+		ref	domain	tcmcs.str10	i.year)
+{
+	domain	tcmcs.str10 i.mnth
+	i.mnth = sprintf$("%D(%-20H)", i.date)
+	i.mnth = i.mnth(1;3)
+	i.year = sprintf$("%D(%04Y)", i.date)
+	if i.date <> 0  then
+		i.year = concat$("-",i.mnth,i.year)
+	else
+ 		i.year = ""
+	endif
+	
+	
+}
+	
+function get.week(
+			domain	tfgld.date	v.date,
+		ref	domain	tcmcs.str10	i.week)
+{
+	long	week_dayno,
+		year_dayno,
+		weekno,
+		hh,
+		mn,
+		ss
+	
+	hh = 0
+	mn = 0
+	ss = 0
+	week_dayno = 0
+	year_dayno = 0
+	weekno = 0
+	
+	
+| 	utc.to.week(v.date,week_dayno,year_dayno,weekno,hh,mn,ss)
+| 	i.week = str$(weekno)
+	
+	select	tdisg090.*
+	from	tdisg090
+	selectdo
+		if tdisg090.stdt <=  v.date and v.date <= tdisg090.endt then
+			i.week = str$(tdisg090.wkno)
+		endif
+	endselect
+	
+}
+	
+function get.project.dsca(
+				domain	tccprj		i.cprj,
+			ref	domain	tcdsca		i.dsca)
+{
+	select	tcmcs052.dsca:i.dsca
+	from	tcmcs052
+	where	tcmcs052._index1 = {:i.cprj}
+	selectdo
+	selectempty
+		i.dsca = ""
+	endselect	
+}
+	
+function get.element.desc(
+				domain	tcmcs.str10	i.elmt,
+			ref	domain	tcdesc		i.desc)
+{
+	select	tppdm090.desc:i.desc
+	from	tppdm090
+	where	tppdm090._index1 = {:tdisg602.elmt}
+	selectdo
+	selectempty
+		i.desc = ""
+	endselect	
+}
+
+
+
+function init.var()
+{
+	yearno   = 0
+	monthno  = 0 
+	month_dayno  = 0 
+	hours   = 0
+	minutes   = 0
+	seconds = 0
+}
+
+function get.supl.eng.item.catg(								|#Anadi.sn 23-05-2018
+		domain	tccom.bpid		var.bpid,
+	ref	domain	tcmcs.str20		var.citg,
+	ref	domain	tcemno			var.emno,
+	ref	domain	tcmcs.str50		var.cont,
+	ref	domain	tcmcs.str20		var.ctno
+	
+	
+	)
+{
+	
+	select	tdisg604.citg:var.citg,
+		tdisg604.sueg:var.emno,
+		tdisg604.prsn:var.cont,
+		tdisg604.numb:var.ctno
+	from	tdisg604
+	where	tdisg604._index1 = {:tdisg602.eunt,:tdisg602.bpid}
+	selectdo
+		
+	selectempty
+		var.citg = ""
+		var.emno = ""
+		var.cont = ""
+		var.ctno = ""
+	endselect
+
+}												|#Anadi.en 23-05-2018

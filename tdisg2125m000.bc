@@ -1,0 +1,107 @@
+|******************************************************************************
+|* tdisg2125m000  0  VRC B61U a7 isg 
+|* Display Price Annexure
+|* Ravi Kumar                    
+|* 2021-01-04
+|******************************************************************************
+|* Main table tdisg225 PO Price Annexure, Form Type 1
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttdisg225 | PO Price Annexure
+  table   ttdmsl400
+  table   ttdpur400
+
+	extern	domain	tcsess	calling.session
+	extern	domain	tcorno	i.orno
+	extern	domain	tcpono	i.pono, o.revn
+		string	str.query(500)
+	extern	domain	tcamnt	amnt
+	
+|****************************** program section ********************************
+before.program:
+	import("prog.name$", calling.session)
+		
+	if calling.session = "tdpur4101m000" then
+		import("tdpur401.orno", i.orno)
+		import("tdpur401.pono", i.pono)
+		o.revn = get_latest_revision(i.orno)
+		
+		str.query = "tdisg225.orno = " & quoted.string(i.orno) & " and tdisg225.revn = " & str$(o.revn) &
+				" and tdisg225.pono = " & str$(i.pono)
+		query.extend.where(str.query)
+	else
+		if calling.session = "whinh3512m100" then
+			import("whinh312.orno", i.orno)
+			import("whinh312.pono", i.pono)
+			o.revn = get_latest_revision(i.orno)
+						
+			str.query = "tdisg225.orno = " & quoted.string(i.orno) & " and tdisg225.revn = " & str$(o.revn) &
+					" and tdisg225.pono = " & str$(i.pono)
+			query.extend.where(str.query)
+		endif
+	endif
+	
+before.display.object:
+	select	tdpur400.hdst
+	from	tdpur400
+	where	tdpur400._index1 = {:tdisg225.orno}
+| 	and	tdpur400.hdst in (tdpur.hdst.created, tdpur.hdst.modified)
+	as set with 1 rows
+	selectdo
+		if tdpur400.hdst = tdpur.hdst.created or tdpur400.hdst = tdpur.hdst.modified then
+			enable.commands(mark.delete, add.set, modify.set, actual.occ)
+		else
+			disable.commands(mark.delete, add.set, modify.set, actual.occ)
+		endif
+| 	selectempty
+| 		disable.fields("tdisg225.item", "tdisg225.dsca", "tdisg225.qoor", "tdisg225.cuni", "tdisg225.rate", "tdisg225.amnt")
+| 		disable.commands(mark.delete, add.set, modify.set, actual.occ)
+	endselect
+	if calling.session = "whinh3512m100" then
+		disable.commands(mark.delete, add.set, modify.set, actual.occ)
+	endif
+	
+after.form.read:
+	 enable.save.on.occ.change()
+	 
+before.new.object:
+	select	tdisg225.anxr
+	from	tdisg225
+	where	tdisg225._index1 = {:tdisg225.orno, :tdisg225.revn, :tdisg225.pono}
+	order by tdisg225.anxr desc
+	as set with 1 rows
+	selectdo
+		tdisg225.anxr = tdisg225.anxr + 1
+	selectempty
+		tdisg225.anxr = 1
+	endselect
+	
+|****************************** group section **********************************
+field.tdisg225.orno:
+when.field.changes:
+	tdisg225.revn = get_latest_revision(tdisg225.orno)
+	tdisg225.pono = i.pono
+	
+field.amnt:
+before.display:
+	amnt = tdisg225.qoor * tdisg225.rate
+
+functions:
+function domain	tcpono	get_latest_revision(domain	tcorno	i.orno.revn)
+{
+	select	tdmsl400.vrsn
+	from	tdmsl400
+	where	tdmsl400._index1 = {:i.orno}
+	order by tdmsl400.vrsn desc
+	as set with 1 rows
+	selectdo
+	selectempty
+		tdmsl400.vrsn = 0
+	endselect
+	
+	return(tdmsl400.vrsn)
+}
+

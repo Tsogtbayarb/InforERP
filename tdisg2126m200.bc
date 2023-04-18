@@ -1,0 +1,97 @@
+|******************************************************************************
+|* tdisg2126m000  0  VRC B61U a7 isg 
+|* Request for Supplier Debit Entry
+|* Ravi Kumar                    
+|* 2021-01-05
+|******************************************************************************
+|* Main table tdisg226 Supplier Debit, Form Type 1
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttdisg226 | Supplier Debit
+  table   ttdisg227
+	extern	domain	tclogn	curr.user
+	extern	domain	tcnama	bpid.nama
+	extern	domain	tcdsca	cprj.dsca
+
+|****************************** program section ********************************
+before.program:
+	query.extend.where("tdisg226.stat = tdisg.action.sendtofin")
+	
+before.display.object:
+| 	if tdisg226.stat <> tdisg.action.create then
+| 		disable.commands("receive", "return")
+| 	endif
+	disable.fields("tdisg226.bpid", "tdisg226.orno", "tdisg226.cprj", "tdisg226.ttyp", "tdisg226.amnt", "tdisg226.dbrk", "tdisg226.rqrk")
+
+|****************************** group section **********************************
+
+choice.receive:
+on.choice:
+	select	tdisg226.stat
+	from	tdisg226 for update
+	where	tdisg226._index1 = {:tdisg226.dbno}
+	as set with 1 rows
+	selectdo
+		tdisg226.stat = tdisg.action.received
+		tdisg226.rcac = logname$
+		tdisg226.rrdt = utc.num()
+		db.update(ttdisg226, db.retry)
+		commit.transaction()
+	endselect
+	insert.history()
+	
+choice.return:
+on.choice:
+	select	tdisg226.stat
+	from	tdisg226 for update
+	where	tdisg226._index1 = {:tdisg226.dbno}
+	as set with 1 rows
+	selectdo
+		tdisg226.stat = tdisg.action.return
+		tdisg226.rbac = logname$
+		tdisg226.rbdt = utc.num()
+		db.update(ttdisg226, db.retry)
+		commit.transaction()
+	endselect
+	insert.history()
+	
+field.bpid.nama:
+before.display:
+	select	tccom100.nama:bpid.nama
+	from	tccom100
+	where	tccom100._index1 = {:tdisg226.bpid}
+	as set with 1 rows
+	selectdo
+	selectempty
+		bpid.nama = ""
+	endselect
+	
+field.cprj.dsca:
+before.display:
+	select	tcmcs052.dsca:cprj.dsca
+	from	tcmcs052
+	where	tcmcs052._index1 = {:tdisg226.cprj}
+	as set with 1 rows
+	selectdo
+	selectempty
+		cprj.dsca = ""
+	endselect
+	
+field.tdisg226.docn:
+before.zoom:
+	query.extend.where.in.zoom("cisli205.sfcp = " & str$(tdisg226.comp) & " and cisli205.ityp = " & quoted.string(tdisg226.tran))
+	
+functions:
+function insert.history()
+{
+	tdisg227.dbno = tdisg226.dbno
+	tdisg227.stat = tdisg226.stat
+	tdisg227.rmks = tdisg226.rmks
+	tdisg227.actn = logname$
+	tdisg227.acon = utc.num()
+	db.insert(ttdisg227, db.retry)
+	commit.transaction()
+}

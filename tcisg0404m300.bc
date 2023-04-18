@@ -1,0 +1,783 @@
+|******************************************************************************
+|* tcisg0404m300  0  VRC B61U a7 live
+|* Print Child Item History Tracking
+|* Installation user             
+|* 2014-11-05
+|******************************************************************************
+|* Main table tcisg004 Item Release Line, Form Type 4
+|******************************************************************************
+|* ISGECDV001193, IT0205, Arjit Gupta, VRC B61U a7 live, Dt. 02-12-2014
+|* Add a filter column Lot Item, Supplier Invoice Number & Date to output file.
+|*
+|* ISGEC015040, IT0289, Shilpa Janardanan, VRC B61U a7 live, Dt. 17-08-2015
+|* Printing the records with drawing release status.
+|*
+|* ID ISGEC016009, Manish Manchanda, 2016-07-21
+|* Modification - New field Child Item Status added
+|*
+| ID: GH293CR596, RAvi Kumar, 27-03-2020
+|* New column in reports
+|*
+|* ID: GH301CR601, RAvi Kumar, 12-04-2020
+|* New col added - PO approval Date and Indent Approval Date
+|*
+|* ID GH375CR000, RAvi Kumar, 22-07-2020
+|* Receipted qty more than engg qty in Child item tracking history
+|*
+|* GH421CR76, RAvi Kumar, 17-10-2020
+|* Delivery date on Child Item Tracking History
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttcisg004 | Item Release Line
+	table	ttcisg005
+	table	ttdisg002
+	table	ttdisg003
+	table	ttcmcs052
+	table	ttdpur200
+	table	ttdpur400
+	table	ttdpur401
+	table	ttdmsl400
+	table	ttdisg006
+	table	ttdisg831
+	table	ttdisg832
+	table	ttdisg839
+	table	twhinh312
+	table	ttfacp100
+	table	ttfisg002
+	table	ttpptc100
+	table	ttcibd001
+	table	ttccom100
+	table   ttpisg039
+	table	twhinh310
+	table	ttfisg003
+	table	ttdisg452
+	table	tdmisg005		|#ISGEC015040.n
+	table	tdmisg001		|GH293CR596.a
+
+	|**************** Form Variables ********************
+	extern	domain	tppdm.cspa	elmt.f    fixed
+	extern	domain	tppdm.cspa	elmt.t    fixed
+	extern	domain	tccprj		proj.f    fixed
+	extern	domain	tccprj		proj.t    fixed
+	extern	domain	tcitem		loti.f	  fixed				|#ISGECDV001193.n
+	extern	domain	tcitem		loti.t	  fixed				|#ISGECDV001193.n
+	
+	|*************** File Handling Variables *******************
+	string		err.file(100), file.name(100), line3(3000), line4(3000)
+		domain	tfgld.docn	packing.slip
+	long		ret2, stat.fp
+	
+	|************** File Utilization Variables *****************
+	extern	domain	tccprj		rep.cprj		|1
+	extern	domain	tcdsca		rep.pjdc		|2
+	extern	domain	tppdm.cspa	rep.cspa		|3
+	extern	domain	tcdsca		rep.eldsc		|4
+	extern	domain	tcitem		rep.loti		|5
+	extern	domain	tcdsca		rep.lidc		|6
+	extern	domain	tcitem		rep.item		|7
+	extern	domain	tcdsca		rep.idsc		|8
+	extern	domain	dmstat		rep.stat		|#ISGEC016009.n	
+	extern	domain	tcqiv1		rep.qnty		|9
+	extern	domain	tccuni		rep.cuni		|10
+	extern	domain	tcqiv1		rep.uwgt		|11
+	extern	domain	tcqiv1		rep.twgt		|12
+	extern	domain	tcrqno		rep.rqno		|13
+	extern	domain	tcpono		rep.rqln, rep.pono		|13.1
+	extern	domain	tcmcs.str10	rep.indt		|14
+	extern	domain	tcorno		rep.orno		|15
+	extern	domain	tcpono		rep.vrsn		|16
+	extern	domain	tcmcs.str10	rep.odat		|17
+	extern	domain	tccom.bpid	rep.bpid		|18
+	extern	domain	tcnama		rep.bpnm		|19
+	extern	domain	tcqiv1		rep.crqt		|20
+	extern	domain	tcmcs.str100	rep.irno		|21
+	extern	domain	tcmcs.str256m	rep.sinv		|22			|#ISGECDV001193.n
+	extern	domain	tcmcs.str100	rep.sidt		|23			|#ISGECDV001193.n
+	extern	domain	tcmcs.str256m	rep.grno		|24
+	extern	domain	tcmcs.str100	rep.blad		|25
+	extern	domain	tcmcs.str100	rep.cinv		|26
+	extern	domain	tcmcs.str100	rep.cndt		|27
+	extern	domain	tcmcs.str256m	rep.blno		|28
+	extern	domain	tcmcs.str100	rep.bldt		|29
+	extern	domain	tcmcs.str100	rep.mrno		|30
+	extern	domain	tcmcs.str12	rep.invn		|31
+	extern	domain	tcmcs.str20	rep.srno		|32
+	extern	domain	dmdoc.docid	rep.docn		|33			|GH293CR596.a
+	extern	domain	tcmcs.str100m	rep.dsca		|34			|GH293CR596.a
+	extern	domain	dmdoc.revv	rep.revn		|35			|GH293CR596.a
+	extern	domain	tcdate		rep.drdt		|36			|GH293CR596.a
+	extern	domain	tcdate		rep.trtd		|37			|GH301CR601.a
+	extern	domain	tcdate		rep.podt		|38			|GH301CR601.a
+	extern	domain	tcdate		rep.ddta		|33			|GH421CR76.a
+	
+|*************** Include **************
+#include<bic_desktop>	
+
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+choice.cont.process:
+on.choice:
+	generate.file()
+
+|****************************** field section *********************************
+field.proj.f:
+when.field.changes:
+	proj.t = proj.f
+
+field.elmt.f:
+when.field.changes:
+	elmt.t = elmt.f
+
+					|#ISGECDV001193.sn
+field.loti.f:
+when.field.changes:
+	loti.t = loti.f
+					|#ISGECDV001193.en
+|****************************** function section ******************************
+functions:
+
+function generate.file()
+{
+	open.file()
+	generate.header()
+	read.main.table()
+	get_drawing_release_records()			|#ISGEC015040.n
+	close.file()
+}
+
+function read.main.table()
+{
+	select	tcisg004.*, tcmcs052.dsca, tcibd001.dsca
+	from	tcisg004, tcmcs052, tcibd001
+	where	tcisg004._index1 inrange {:proj.f, :elmt.f, :loti.f}
+					and {:proj.t, :elmt.t, :loti.t}
+	and	tcisg004.proj	refers to tcmcs052 Unref Clear
+	and	tcisg004.itmh	refers to tcibd001 Unref Clear
+	order by tcisg004._index1
+	selectdo
+		Initialize_Variables()
+		select	tpptc100.desc
+		from	tpptc100
+		where	tpptc100._index1 = {:tcisg004.proj, :tcisg004.elmt}
+		selectdo
+		selectempty
+			tpptc100.desc = ""
+		endselect
+		
+		rep.cprj = tcisg004.proj
+		rep.pjdc = tcmcs052.dsca
+		rep.cspa = tcisg004.elmt
+		rep.eldsc = tpptc100.desc
+		rep.loti = tcisg004.itmh
+		rep.lidc = tcibd001.dsca
+		rep.item = tcisg004.item
+		rep.idsc = tcisg004.desc
+		rep.stat	=	tcisg004.stat			|#ISGEC016009.n
+		
+| 		Get_PO_BOM_Detail(tcisg004.proj, tcisg004.elmt, tcisg004.itmh, tcisg004.item,			|GH375CR000.s
+| 				rep.qnty, rep.cuni, rep.twgt, rep.bpid, rep.bpnm, rep.orno, rep.pono, rep.vrsn,
+| 				rep.odat, rep.crqt)
+				
+		Get_PO_BOM_Detail(tcisg004.proj, tcisg004.elmt, tcisg004.itmh, tcisg004.item, tcisg004.docn, tcisg004.rvid,
+				rep.qnty, rep.cuni, rep.twgt, rep.bpid, rep.bpnm, rep.orno, rep.pono, rep.vrsn,
+				rep.odat, rep.crqt, rep.ddta)						|GH421CR76.a.rep.ddta
+		
+| 		Get_Indent(tcisg004.proj, tcisg004.elmt, tcisg004.itmh, tcisg004.item,
+| 				rep.qnty, rep.cuni, rep.twgt, rep.rqno, rep.rqln, rep.indt)
+				
+		Get_Indent(tcisg004.proj, tcisg004.elmt, tcisg004.itmh, tcisg004.item, tcisg004.docn, tcisg004.rvid,
+				rep.qnty, rep.cuni, rep.twgt, rep.rqno, rep.rqln, rep.indt)					|GH375CR000.e
+				
+		Get_Dates(rep.orno, rep.vrsn, rep.rqno, rep.trtd, rep.podt)		|GH301CR601.a	
+		
+		if rep.qnty = 0 then								|GH293CR596.a.s
+			rep.qnty = tcisg004.qnty
+			rep.cuni = tcisg004.quom
+			rep.twgt = tcisg004.wght
+		endif		
+		
+		select	dmisg001.dttl,
+			dmisg001.drdt 
+		from	dmisg001
+		where	dmisg001._index1 = {:tcisg004.docn, :tcisg004.rvid}
+		as set with 1 rows
+		selectdo
+		selectempty
+			dmisg001.dttl = ""
+			dmisg001.drdt = 0
+		endselect		
+												|GH293CR596.a.e
+		
+		
+		if	rep.qnty <> 0	then
+			rep.uwgt = rep.twgt / rep.qnty
+		endif
+		
+		Get_Receipt_Detail(tcisg004.proj, tcisg004.elmt, tcisg004.itmh, tcisg004.item,
+				rep.irno, rep.sinv, rep.sidt, 					|#ISGECDV001193.n
+				rep.grno, rep.blad, rep.cinv, rep.cndt, rep.blno, rep.bldt,
+				rep.mrno)
+		Get_Invoice_No(rep.cprj, rep.blad, rep.invn)
+		Get_srno_no(rep.mrno)
+		
+		rep.docn = tcisg004.docn							|GH293CR596.a.s
+		rep.dsca = dmisg001.dttl
+		rep.revn = tcisg004.rvid
+		rep.drdt = dmisg001.drdt
+												|GH293CR596.a.e
+		print.detail()
+	endselect
+}
+
+function Get_PO_BOM_Detail(
+			domain	tccprj		in.proj,	|Project
+			domain	tppdm.cspa	in.elmt,	|Element
+			domain	tcitem		in.loti,	|Lot Item
+			domain	tcitem		in.item,	|Child Item
+			domain	dmdoc.docid	in.docn,	|Document No.			|GH375CR000.a
+			domain	dmdoc.revv	in.rvid,	|Revision No.			|GH375CR000.a
+		ref	domain	tcqiv1		ot.qnty,	|Quantity
+		ref	domain	tccuni		ot.cuni,	|Unit
+		ref	domain	tcqiv1		ot.twgt,	|Total Weight
+		ref	domain	tccom.bpid	ot.bpid,	|Supplier
+		ref	domain	tcnama		ot.bpnm,	|Supplier Name
+		ref	domain	tcorno		ot.orno,	|PO No.
+		ref	domain	tcpono		ot.pono,	|PO Line.
+		ref	domain	tcpono		ot.vrsn,	|Latest PO Version
+		ref	domain	tcmcs.str10	ot.odat,	|PO Date
+		ref	domain	tcqiv1		ot.crqt,	|Child Receipt Quantity
+		ref	domain	tcdate		ot.ddta		|PO Deliery Date		|GH421CR76.a
+			)
+{
+	domain	tcdate	tmp.apdt
+	db.set.to.default(ttcisg005)
+	db.set.to.default(ttdpur400)
+	db.set.to.default(ttdpur401)
+	select	tcisg005.orno, tcisg005.pono
+	from	tcisg005
+	where	tcisg005._index1 = {:in.proj, :in.elmt, :in.loti, :in.item, tdisg.item.order}
+	selectdo
+		select	tdpur401.orno, tdpur401.pono, tdpur400.otbp, tdpur400.odat,
+			tccom100.nama, tdpur401.ddta						|GH421CR76.a
+		from	tdpur401, tdpur400, tccom100
+		where	tdpur401._index1 = {:tcisg005.orno, :tcisg005.pono}
+		and	tdpur401.oltp in (tdgen.oltp.orderline, tdgen.oltp.total)
+		and	tdpur401.orno refers to tdpur400
+		and	tdpur400.otbp refers to tccom100 Unref Clear
+		selectdo
+			ot.orno = tdpur401.orno
+			ot.pono = tdpur401.pono
+			ot.bpid = tdpur400.otbp
+			ot.bpnm = tccom100.nama
+			ot.ddta = tdpur401.ddta							|GH421CR76.a
+			select	max(tdmsl400.vrsn):ot.vrsn, min(tdmsl400.apdt):tmp.apdt
+			from	tdmsl400
+			where	tdmsl400._index1 = {:tdpur401.orno}
+			selectdo
+			selectempty
+				tmp.apdt = 0
+			endselect
+			
+			if	tmp.apdt <> 0	then
+				ot.odat = sprintf$("%u(%02m/%02d/%04Y)", tmp.apdt)
+			endif
+			
+			select	tdisg002.wght, tdisg002.qnty, tdisg002.quom
+			from	tdisg002
+			where	tdisg002._index1 = {:tdpur401.orno, :tdpur401.pono, :in.item}
+			and	tdisg002.docn = :in.docn						|GH375CR000.a
+			and	tdisg002.revi = :in.rvid						|GH375CR000.a
+			selectdo
+			selectempty
+				tdisg002.wght = 0
+				tdisg002.qnty = 0
+				tdisg002.quom = ""
+			endselect
+			ot.twgt = tdisg002.wght
+			ot.qnty = tdisg002.qnty
+			ot.cuni = tdisg002.quom
+			
+			select	sum(tdisg006.qoor):ot.crqt
+			from	tdisg006
+			where	tdisg006._index2 = {:tdpur401.orno, :tdpur401.pono, :in.item}
+			selectdo
+			selectempty
+				ot.crqt = 0
+			endselect
+		endselect
+	endselect
+				
+}
+
+function Get_Indent(
+		domain	tccprj		in.proj,	|Project
+		domain	tppdm.cspa	in.elmt,	|Element
+		domain	tcitem		in.loti,	|Lot Item
+		domain	tcitem		in.item,	|Child Item 
+		domain	dmdoc.docid	in.docn,	|Document No.					|GH375CR000.a
+		domain	dmdoc.revv	in.rvid,	|Revision No.					|GH375CR000.a
+	ref	domain	tcqiv1		ot.qnty,	|Quantity
+	ref	domain	tccuni		ot.cuni,	|Unit
+	ref	domain	tcqiv1		ot.twgt,	|Total Weight
+	ref	domain	tcrqno		ot.rqno,	|Indent No.
+	ref	domain	tcpono		ot.rqln,	|Indent line.
+	ref	domain	tcmcs.str10	ot.indt		|Indent Date
+			)
+{
+	db.set.to.default(ttcisg005)
+	select	tcisg005.orno, tcisg005.pono
+	from	tcisg005
+	where	tcisg005._index1 = {:in.proj, :in.elmt, :in.loti, :in.item, tdisg.item.indent}
+	selectdo
+		select	tdpur200.rqno, tdpur200.rdat
+		from	tdpur200
+		where	tdpur200._index1 = {:tcisg005.orno}
+		selectdo
+		selectempty
+			tdpur200.rqno = ""
+			tdpur200.rdat = 0
+		endselect
+		ot.rqno = tdpur200.rqno
+		if	tdpur200.rdat <> 0	then
+			ot.indt = sprintf$("%u(%02m/%02d/%04Y)", tdpur200.rdat)
+		endif
+		
+		select	tdisg003.wght, tdisg003.qnty, tdisg003.quom
+		from	tdisg003
+		where	tdisg003._index1 = {:tcisg005.orno, :tcisg005.pono, :in.item}
+		and	tdisg003.docn = :in.docn							|GH375CR000.a
+		and	tdisg003.revi = :in.rvid							|GH375CR000.a
+		selectdo
+		selectempty
+			tdisg003.wght = 0
+			tdisg003.qnty = 0
+			tdisg003.quom = ""
+		endselect
+		ot.twgt = tdisg003.wght
+		ot.qnty = tdisg003.qnty
+		ot.cuni = tdisg003.quom
+		ot.rqln = tcisg005.pono
+	endselect
+}
+
+function Get_Receipt_Detail(
+		domain	tccprj		in.proj,	|Project
+		domain	tppdm.cspa	in.elmt,	|Element
+		domain	tcitem		in.loti,	|Lot Item
+		domain	tcitem		in.item,	|Child Item
+	ref	domain	tcmcs.str100	ot.irno,	|IR No.
+	ref	domain	tcmcs.str256m	ot.sinv,	|Supplier Invoice No.		|#ISGECDV001193.n
+	ref	domain	tcmcs.str100	ot.sidt,	|Supplier Inv. Date		|#ISGECDV001193.n
+	ref	domain	tcmcs.str256m	ot.grno,	|GR No.
+	ref	domain	tcmcs.str100	ot.blad,	|Billing Advice
+	ref	domain	tcmcs.str100	ot.cinv,	|Export Invoice
+	ref	domain	tcmcs.str100	ot.cndt,	|Export Invoice Date
+	ref	domain	tcmcs.str256m	ot.blno,	|BL No.
+	ref	domain	tcmcs.str100	ot.bldt,	|BL Date
+	ref	domain	tcmcs.str100	ot.mrno		|MRN No.	
+			)
+{
+	domain	tcdate		tmp.irdt
+	db.set.to.default(ttcisg005)
+	select	tcisg005.orno, tcisg005.pono
+	from	tcisg005
+	where	tcisg005._index1 = {:in.proj, :in.elmt, :in.loti, :in.item, tdisg.item.receipt}
+	selectdo
+		select	whinh312.rcno, whinh312.rcln, whinh312.psno
+		from	whinh312
+		where	whinh312._index1 = {:tcisg005.orno, :tcisg005.pono}
+		selectdo
+			select	tfacp100.ninv,
+				tfacp100.isup, tfacp100.invd		|#ISGECDV001193.n
+			from	tfacp100
+			where	tfacp100._index1 = {:1}
+			wherebind(1, lval(trim$(whinh312.psno)))
+			selectdo
+			selectempty
+				tfacp100.ninv = 0
+				tfacp100.isup = ""		|#ISGECDV001193.n
+				tfacp100.invd = 0		|#ISGECDV001193.n
+			endselect
+									|#ISGECDV001193.sn
+			if	isspace(ot.sinv)	then
+				ot.sinv = str$(tfacp100.isup)
+			else
+				ot.sinv = trim$(ot.sinv) & "/" & str$(tfacp100.isup)
+			endif	
+			if	isspace(ot.sidt)	then
+				ot.sidt = sprintf$("%D(%02m/%02d/%04Y)", tfacp100.invd)
+			else
+				ot.sidt = trim$(ot.sidt) & "," & sprintf$("%D(%02m/%02d/%04Y)", tfacp100.invd)
+			endif
+									|#ISGECDV001193.en
+			if	isspace(ot.irno)	then
+				ot.irno = str$(tfacp100.ninv)
+			else
+				ot.irno = trim$(ot.irno) & "/" & str$(tfacp100.ninv)
+			endif
+			db.set.to.default(ttfisg002)
+			select	tfisg002.grno, tfisg002.grdt
+			from	tfisg002
+			where	tfisg002._index1 = {:tfacp100.ninv}
+			selectdo
+				if	isspace(ot.grno)	then
+					if	tfisg002.grdt <> 0	then
+						ot.grno = "[" & trim$(tfisg002.grno) & "," & sprintf$("%D(%02m/%02d/%04Y)", tfisg002.grdt) & "]"
+					else	
+						ot.grno = "[" & trim$(tfisg002.grno) & "]"
+					endif
+				else
+					if	tfisg002.grdt <> 0	then
+						ot.grno = trim$(ot.grno) & ",[" & trim$(tfisg002.grno) & "," & sprintf$("%D(%02m/%02d/%04Y)", tfisg002.grdt) & "]"
+					else	
+						ot.grno = trim$(ot.grno) & ",[" & trim$(tfisg002.grno) & "]"
+					endif
+				endif
+			endselect
+			
+			db.set.to.default(ttdisg831)
+			db.set.to.default(ttdisg832)
+			db.set.to.default(ttdisg839)
+			select	tdisg832.edrn, tdisg831.bold, tdisg831.cinv, tdisg831.cind,
+				tdisg839.biln, tdisg839.pddt
+			from	tdisg832, tdisg831, tdisg839
+			where	tdisg832._index4 = {:whinh312.rcno, :whinh312.rcln}
+			and	tdisg832.edrn refers to tdisg831
+			and	tdisg831.bold refers to tdisg839 Unref Clear
+			selectdo
+				if	isspace(ot.blad)	then
+					ot.blad = tdisg832.edrn
+				else
+					ot.blad = trim$(ot.blad) & "/" & trim$(tdisg832.edrn)
+				endif
+				if	isspace(ot.cinv)	then
+					ot.cinv = tdisg831.cinv
+				else
+					ot.cinv = trim$(ot.cinv) & "," & trim$(tdisg831.cinv)
+				endif
+				if	tdisg831.cind <> 0	then
+					if	isspace(ot.cndt)	then
+						ot.cndt = sprintf$("%D(%02m/%02d/%04Y)", tdisg831.cind)
+					else
+						ot.cndt = trim$(ot.cndt) & "," & sprintf$("%D(%02m/%02d/%04Y)", tdisg831.cind)
+					endif
+				endif
+				if	isspace(ot.blno)	then
+					ot.blno = tdisg839.biln
+				else
+					ot.blno = trim$(ot.blno) & "," & trim$(tdisg839.biln)
+				endif
+				if	tdisg839.pddt <> 0	then
+					if	isspace(ot.bldt)	then
+						ot.bldt = sprintf$("%D(%02m/%02d/%04Y)", tdisg839.pddt)
+					else
+						ot.bldt = trim$(ot.bldt) & "," & sprintf$("%D(%02m/%02d/%04Y)", tdisg839.pddt)
+					endif
+				endif		
+			endselect
+			if	isspace(ot.mrno)	then
+				ot.mrno = whinh312.rcno
+			else
+				ot.mrno = trim$(ot.mrno) & "/" & trim$(whinh312.rcno)
+			endif	
+		endselect
+	endselect
+}
+
+function Get_Invoice_No(domain tccprj i.cprj,
+			domain tcorno i.advi,
+		ref	domain tcmcs.str12 i.invn)
+{
+	select	tpisg039.ityp, tpisg039.idoc
+	from	tpisg039
+	where	tpisg039._index1 = {:i.cprj}
+	and	tpisg039.edrn = :i.advi
+	as set with 1 rows
+	selectdo
+		i.invn = tpisg039.ityp & " " & str$(tpisg039.idoc)
+	endselect	
+
+}
+
+function Get_srno_no(domain whinh.shpm i.receipt)
+{
+	rep.srno = ""
+	
+	select whinh310.dino
+	from	whinh310
+	where	whinh310._index1 = {:i.receipt}
+	selectdo
+		packing.slip = val(whinh310.dino)
+		
+		select	tfisg003.grno, tfisg003.bpid, tfisg003.grdt
+		from	tfisg003
+		where 	tfisg003._index3 = {:packing.slip}
+		as set with 1 rows
+		selectdo
+			select	tdisg452.srct, tdisg452.srdt
+			from	tdisg452
+			where 	tdisg452._index3 = {:tfisg003.grno, :tfisg003.bpid, :tfisg003.grdt}
+			selectdo
+				rep.srno = tdisg452.srct & "," & sprintf$("%D(%02m/%02d/%04Y)", tdisg452.srdt)
+			endselect
+		endselect
+	endselect
+	
+}
+
+
+function	generate.header()
+{
+	line4 =	concat$("	",
+		sprintf$("Project"),					|1		
+		sprintf$("Description"),				|2		
+		sprintf$("Element"),					|3		
+		sprintf$("Description"),				|4		
+		sprintf$("Lot Item"),					|5		
+		sprintf$("Lot Item Description"),			|6
+		sprintf$("Document Number"),				|33			GH293CR596.a.s
+		sprintf$("Document Description"),			|34
+		sprintf$("Rev. No."),				|35
+		sprintf$("Drawing Release Date"),						|GH293CR596.a.e
+		sprintf$("Child Item"),				|7		
+		sprintf$("Child Item Description"),			|8
+		sprintf$("Child Item Status"),				|#ISGEC016009.n		
+		sprintf$("Quantity"),					|9		
+		sprintf$("Unit"),					|10		
+		sprintf$("Unit Weight"),				|11
+		sprintf$("Total Weight"),				|12
+		sprintf$("Indent No."),				|13
+		sprintf$("Indent Line"),				|13.1
+		sprintf$("Indent Date"),				|14
+		sprintf$("Requisition Approval Date"),			|14.1			|GH301CR601.a
+		sprintf$("PO No."),					|15
+		sprintf$("PO Line."),					|15.1
+		sprintf$("Latest PO Revision"),			|16
+		sprintf$("PO Date"),					|17
+		sprintf$("PO Approval Date"),				|17.1			|GH301CR601.a
+		sprintf$("PO Delivery Date"),				|17.2			|GH421CR76.a
+		sprintf$("Supplier"),					|18		
+		sprintf$("Supplier Name"),				|19		
+		sprintf$("Child Receipt Qnty."),			|20		
+		sprintf$("Purchase Invoice"),				|21
+		sprintf$("Supplier Invoice No."),			|22			|#ISGECDV001193.n
+		sprintf$("Supplier Inv. Date"),			|23			|#ISGECDV001193.n
+		sprintf$("GR No."),					|24
+		sprintf$("Receipt No."),				|25		
+		sprintf$("Billing Advice"),				|26
+		sprintf$("Export Invoice No."),	  		|27
+		sprintf$("Export Invoice Date"),			|28
+		sprintf$("BL Number"),					|29
+		sprintf$("BL Date"),					|30
+		sprintf$("Invoice No."),				|31
+		sprintf$("SRN No."))					|32
+		
+	line4 = strip$(shiftl$(line4))		
+	seq.puts(line4, stat.fp)	
+}
+
+function	print.detail()
+{	
+	line3 =	concat$("	",
+		sprintf$("%s", rep.cprj),				|1
+		sprintf$("%s", rep.pjdc),				|2				
+		sprintf$("%s", rep.cspa),				|3				
+		sprintf$("%s", rep.eldsc),				|4				
+		sprintf$("%s", rep.loti),				|5				
+		sprintf$("%s", rep.lidc),				|6
+		sprintf$("%s", rep.docn),				|33			|GH293CR596.a.s
+		sprintf$("%s", rep.dsca),				|34
+		sprintf$("%s", rep.revn),				|35
+		sprintf$("%s", sprintf$("%u(%02d/%02m/%04Y)", rep.drdt)),			|GH293CR596.a.e
+		sprintf$("%s", rep.item),				|7				
+		sprintf$("%s", rep.idsc),				|8
+		sprintf$("%s", enum.descr$("dmstat",rep.stat)),	|#ISGEC016009.n		
+		sprintf$("%f", rep.qnty),				|9				
+		sprintf$("%s", rep.cuni),				|10				
+		sprintf$("%f", rep.uwgt),				|11
+		sprintf$("%f", rep.twgt),				|12
+		sprintf$("%s", rep.rqno),				|13
+		sprintf$("%s", rep.rqln),				|13.1
+		sprintf$("%s", rep.indt),				|14
+		sprintf$("%s", sprintf$("%u(%02d/%02m/%04Y)", rep.trtd)),	|14.1 		|GH301CR601.a	
+		sprintf$("%s", rep.orno),				|15
+		sprintf$("%s", rep.pono),				|15.1
+		sprintf$("%d", rep.vrsn),				|16
+		sprintf$("%s", rep.odat),				|17
+		sprintf$("%s", sprintf$("%u(%02d/%02m/%04Y)", rep.podt)),	|17.1		|GH301CR601.a		
+		sprintf$("%s", sprintf$("%u(%02d/%02m/%04Y)", rep.ddta)),	|17.2	|GH421CR76.a
+		sprintf$("%s", rep.bpid),				|18				
+		sprintf$("%s", rep.bpnm),				|19
+		sprintf$("%f", rep.crqt),				|20
+		sprintf$("%s", rep.irno),				|21
+		sprintf$("%s", rep.sinv),				|22			|#ISGECDV001193.n
+		sprintf$("%s", rep.sidt),				|23			|#ISGECDV001193.n
+		sprintf$("%s", rep.grno),				|24
+		sprintf$("%s", rep.mrno),				|25
+		sprintf$("%s", rep.blad),				|26
+		sprintf$("%s", rep.cinv),				|27	
+		sprintf$("%s", rep.cndt),				|28	
+		sprintf$("%s", rep.blno),				|29	
+		sprintf$("%s", rep.bldt),				|30	
+		sprintf$("%s", rep.invn),				|31
+		sprintf$("%s", rep.srno))				|32
+		
+		line3 = strip$(shiftl$(line3))
+		seq.puts(line3, stat.fp)
+}	
+
+function Initialize_Variables()
+{
+	rep.cprj = ""		|1
+	rep.pjdc = ""		|2
+	rep.cspa = ""		|3
+	rep.eldsc = ""		|4
+	rep.loti = ""		|5
+	rep.lidc = ""		|6
+	rep.item = ""		|7
+	rep.idsc = ""		|8
+	rep.stat	=	empty	|#ISGEC016009.n	
+	rep.qnty = 0		|9
+	rep.cuni = ""		|10
+	rep.uwgt = 0		|11
+	rep.twgt = 0		|12
+	rep.rqno = ""		|13
+	rep.rqln = 0		|13.1
+	rep.indt = ""		|14
+	rep.orno = ""		|15
+	rep.pono = 0		|15
+	rep.vrsn = 0		|16
+	rep.odat = ""		|17
+	rep.bpid = ""		|18
+	rep.bpnm = ""		|19
+	rep.crqt = 0		|20
+	rep.irno = ""		|21
+	rep.sinv = ""		|22				|#ISGECDV001193.n
+	rep.sidt = ""		|23				|#ISGECDV001193.n
+	rep.grno = ""		|24
+	rep.blad = ""		|25
+	rep.cinv = ""		|26
+	rep.cndt = ""		|27
+	rep.blno = ""		|28
+	rep.bldt = ""		|29
+	rep.mrno = ""		|30
+	rep.invn = ""		|31
+	rep.srno = ""		|32
+	rep.docn = ""						|GH293CR596.a.s
+	rep.dsca = ""
+	rep.revn = ""
+	rep.drdt = 0						|GH293CR596.a.e
+	rep.trtd = 0						|GH301CR601.a
+	rep.podt = 0 						|GH301CR601.a
+	rep.ddta = 0
+}
+
+
+function open.file()
+{
+	err.file = bse.tmp.dir$() & str$(utc.num()) & ".xls"
+	
+	file.name = "c:\temp\" & str$(utc.num())  & ".xls"
+	
+	stat.fp = seq.open(err.file, "w+")
+	if stat.fp >0 then
+ 		seq.seek(0, 0, stat.fp)
+	endif
+}
+
+function close.file()
+{
+	seq.close(stat.fp)
+	ret2 = server2client(err.file,file.name,1)
+	ret2 = app_start(file.name,"c:","","","")
+}
+
+function get_drawing_release_records()		|#ISGEC015040.sn
+{
+	select	dmisg005.*, tcmcs052.dsca, tcibd001.dsca
+	from	dmisg005, tcmcs052, tcibd001
+	where	dmisg005._index1 inrange {:proj.f, :elmt.f}	and {:proj.t, :elmt.t}
+	and	dmisg005.item inrange {:loti.f} and  {:loti.t}
+	and	dmisg005.cprj	refers to tcmcs052 Unref Clear
+	and	dmisg005.item	refers to tcibd001 Unref Clear
+	and	dmisg005.stat = dmstat.process
+	selectdo
+		Initialize_Variables()
+		select	tpptc100.desc
+		from	tpptc100
+		where	tpptc100._index1 = {:dmisg005.cprj, :dmisg005.cspa}
+		selectdo
+		selectempty
+			tpptc100.desc = ""
+		endselect
+		
+		select	dmisg001.dttl,							|GH293CR596.a.s
+			dmisg001.drdt 
+		from	dmisg001
+		where	dmisg001._index1 = {:dmisg005.docn, :dmisg005.revn}
+		as set with 1 rows
+		selectdo
+		selectempty
+			dmisg001.dttl = ""
+			dmisg001.drdt = 0
+		endselect
+											|GH293CR596.a.e
+		rep.cprj = dmisg005.cprj
+		rep.pjdc = tcmcs052.dsca
+		rep.cspa = dmisg005.cspa
+		rep.eldsc = tpptc100.desc
+		rep.item = dmisg005.item
+| 		rep.idsc = tcibd001.dsca
+		rep.idsc = dmisg005.dsca						|GH293CR596.cng
+		rep.stat	=	dmisg005.stat	|#ISGEC016009.n		
+		rep.qnty = dmisg005.qnty
+		rep.cuni = dmisg005.cuni
+| 		rep.uwgt = dmisg005.wght
+		rep.twgt = dmisg005.wght						|GH293CR596.a.s								
+		rep.docn = dmisg005.docn		
+		rep.dsca = dmisg001.dttl
+		rep.revn = dmisg005.revn
+		rep.drdt = dmisg001.drdt
+		if rep.qnty <> 0 then
+			rep.uwgt = rep.twgt / rep.qnty
+		endif
+											|GH293CR596.a.e
+		print.detail()
+	endselect
+}					|#ISGEC015040.en
+
+function Get_Dates(	domain	tcorno	orno.dt,				|GH301CR601.a.s
+			domain	tcpono	rvsn.dt,
+			domain	tcrqno	rqno.dt,
+		ref	domain	tcdate	trdt.dt,
+		ref	domain	tcdate	podt.dt)
+{
+	select	tdisg210.apdt:trdt.dt
+	from	tdisg210
+	where	tdisg210._index1 = {:rqno.dt}
+	selectdo
+	selectempty
+		trdt.dt = 0
+	endselect
+	
+	select	tdmsl400.apdt:podt.dt
+	from	tdmsl400
+	where	tdmsl400._index1 = {:orno.dt, :rvsn.dt}
+	as set with 1 rows
+	selectdo
+	selectempty
+		podt.dt = 0
+	endselect
+	
+}										|GH301CR601.a.e
+
+
+	

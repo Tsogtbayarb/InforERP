@@ -1,0 +1,102 @@
+|******************************************************************************
+|* tdisg0430m000  0  VRC B61U a7 isg 
+|* Delivery Challan Assign Quantity (IT)
+|* Ravi Kumar                    
+|* 2020-02-17
+|******************************************************************************
+|* Main table tdisg030 Assign Delivery Challan Quantity, Form Type 4
+|*
+|* GH522CR000, RAvi Kumar, 15-03-2021
+|* Add PO No filter in Delivery challan Assigned Qty report
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttdisg030 | Assign Delivery Challan Quantity
+  table	ttdisg027
+
+   extern  domain  whinh.shpm       srcn.f    fixed
+   extern  domain  whinh.shpm       srcn.t    fixed
+   extern	domain	tcorno	pono.f, pono.t
+   extern	domain	tcqiv1	qty, total.qty
+
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.cont.process:
+on.choice:
+   execute(print.data)
+
+choice.print.data:
+on.choice:
+   if rprt_open() then
+       read.main.table()
+       rprt_close()
+   else
+       choice.again()
+   endif
+
+
+|****************************** field section *********************************
+field.srcn.f:
+when.field.changes:
+   srcn.t = srcn.f
+
+field.pono.f:
+when.field.changes:
+   pono.t = pono.f
+|****************************** function section ******************************
+
+functions:
+
+function read.main.table()
+{
+	total.qty = 0
+	
+	select	tdisg030.*
+	from	tdisg030
+	where	tdisg030.srcn inrange {:srcn.f} and {:srcn.t}
+	and	tdisg030.orno inrange {:pono.f} and {:pono.t}
+	order by tdisg030._index2
+	selectdo
+		select	tdisg027.dech
+		from	tdisg027
+		where	tdisg027._index2 = {:tdisg030.orno, :tdisg030.pono}
+		and	tdisg027.rcno = :tdisg030.srcn
+		and	tdisg027.srpo = :tdisg030.svpo
+		as set with 1 rows
+		selectdo
+		selectempty
+			tdisg027.dech= ""
+		endselect
+		
+		select	whinh312.qrcr:qty
+		from	whinh312
+| 		where	whinh312._index1 = {:tdisg030.srcn, :tdisg030.srcl}
+		where	whinh312._index1 = {:tdisg030.rcno, :tdisg030.rcln}
+		selectdo
+		selectempty
+			qty = 0
+		endselect
+		
+		select	sum(tdisg030.iqty):total.qty
+		from	tdisg030
+		where	tdisg030._index2 = {:tdisg030.srcn, :tdisg030.srcl}
+| 		where	tdisg030._index2 = {:tdisg030.rcno, :tdisg030.rcln}
+		selectdo
+		selectempty
+			total.qty = 0
+		endselect
+		
+		rprt_send()
+	endselect
+}

@@ -1,0 +1,232 @@
+|******************************************************************************
+|* tdisg226  0  VRC B61U a7 isg 
+|* DAL for tdisg226
+|* 3776
+|* 21-01-06 [12:02]
+|******************************************************************************
+|* Script Type: DAL
+|******************************************************************************
+
+	table ttdisg226
+	table ttccom100
+	table tbpmdm001
+	table ttccom001
+	
+	extern	domain	tcsess	i.session
+		domain	tctran	old.tran
+		domain	tfgld.docn	old.docn
+#include <bic_dal2>
+#include <bic_cmf>
+
+
+function extern long before.open.object.set()
+{
+| 	dal.field.depends.on("tdisg226.tran", HOOK_IS_VALID, "tdisg226.tran")
+	return(0)
+}
+
+function extern long before.save.object(long type)
+{
+	get.var(parent, "prog.name$", i.session)
+	on case type
+	case DAL_NEW :	
+		if  tcmcs.dll0050.check.and.generate.order.number(
+					3, tdisg226.dbno, "001", 
+					9, tdisg226.dbno) then
+				return(DALHOOKERROR)
+		endif
+		tdisg226.dbdt = utc.num()
+		tdisg226.crln = logname$
+		if i.session = "tdisg2126m200" then 
+			if send.email() then
+				return(DALHOOKERROR)
+			endif
+		endif
+		break
+	case DAL_UPDATE :
+		with.old.object.values.do(get.old.values)
+		if i.session = "tdisg2126m200" then 
+			if old.tran <> tdisg226.tran then
+				if send.email() then
+					return(DALHOOKERROR)
+				endif
+			else
+				if old.docn <> tdisg226.docn then
+					if send.email() then
+						return(DALHOOKERROR)
+					endif
+				endif
+			endif
+		endif
+		break
+	endcase
+	return(0)
+}
+
+function extern	boolean method.is.allowed(long type)
+{
+	get.var(parent, "prog.name$", i.session)
+	on case type
+	case DAL_NEW :
+		break	
+	case DAL_UPDATE :
+		if i.session <> "tdisg2126m200" then
+			if tdisg226.stat = tdisg.action.create then
+				return(true)
+			else
+				return(false)
+			endif
+		endif
+		break
+	case DAL_DESTROY :
+		if tdisg226.stat = tdisg.action.create then
+			return(true)
+		else
+			return(false)
+		endif
+		break
+	endcase
+	return(true)	
+}
+
+function get.old.values()
+{
+	old.tran = tdisg226.tran
+	old.docn = tdisg226.docn
+}
+
+function extern boolean tdisg226.docn.is.valid()
+{
+	select	tfgld018.*
+	from	tfgld018
+	where	tfgld018._index1 = {:tdisg226.tran, :tdisg226.docn}
+	and	tfgld018._compnr = :tdisg226.comp
+	as set with 1 rows
+	selectdo
+	selectempty
+		dal.set.error.message("@ Invalid Document No.")
+		return(DALHOOKERROR)
+	endselect
+	
+	return(true)
+}
+
+
+function extern	boolean tdisg226.bpid.is.mandatory()
+{
+	return(true)
+}
+
+function long send.email()
+{
+	string tmp.file(200),line(500)
+	long fp
+	domain tcemno	emno.code
+	domain	tfgld.user	user.code
+	
+	long    message.ID
+        long    to.ID
+        long    attachment.ID
+        long    ret
+
+        domain ttcmf.prov service       
+                        |Infor ERP Enterprise eMessage Connector service for 
+                        |transporting messages
+        long stat       |Variable to hold return values
+        long mid        |CMF message id
+	
+	tmp.file = creat.tmp.file$(bse.tmp.dir$())
+	fp = seq.open(tmp.file,"w+")
+	if fp <=0 then
+		dal.set.error.message("@ Temp file can not be created")
+		return(1)
+	endif
+	
+	select	tccom100.nama
+	from	tccom100
+	where	tccom100._index1 = {:tdisg226.bpid}
+	selectdo
+	endselect
+	
+	line = ""
+	line = "Debit Request No. " & trim$(tdisg226.dbno) & ", Supplier: " & trim$(tdisg226.bpid) 
+				& " " & trim$(tccom100.nama) & " has been processed by Accounts through Document No. " 
+				& tdisg226.tran & " " & str$(tdisg226.docn) & ". Accounts Remarks are "
+				& trim$(tdisg226.rmks)
+	seq.write(line,len(line),fp)
+	
+	ret = seq.close(fp)
+	
+	user.code = logname$
+	select 	bpmdm001.mail,
+		tccom001.nama 
+	from 	tccom001, bpmdm001
+	where 	tccom001._index4 = {:user.code}
+	and	tccom001.emno refers to bpmdm001
+	as set with 1 rows
+	selectdo
+	selectempty
+		bpmdm001.mail = ""
+	endselect
+	if isspace(bpmdm001.mail) then
+		dal.set.error.message("@ Email ID for user " & user.code & " Not maintained")
+		return(1)
+	endif		
+	|******* Email Header
+        message.ID = cmf.create()
+	line = "Debit Request No. " & trim$(tdisg226.dbno) & ", Supplier: " & trim$(tdisg226.bpid) 
+				& " " & trim$(tccom100.nama)
+        ret = cmf.setClass(message.ID, "CMF.NOTE.EMAIL")
+        ret = cmf.setSubject(message.ID,line)
+	
+	|******** from ID
+	to.ID = cmf.createRecipient(message.ID, ttcmf.role.from)  
+	ret = cmf.setRecipientName(to.ID,tccom001.nama)
+        ret = cmf.setRecipientAddress(to.ID, bpmdm001.mail)	
+	ret = cmf.setRecipientType(to.ID, "SMTP")
+ 
+	|******** to ID
+	select 	bpmdm001.mail,
+		tccom001.nama 
+	from 	tccom001,bpmdm001
+	where 	bpmdm001._index1 = {:tdisg226.crln}
+	and	tccom001.emno refers to bpmdm001
+	and	bpmdm001.mail <> ""
+	selectdo
+		to.ID = cmf.createRecipient(message.ID, ttcmf.role.to)  
+		ret = cmf.setRecipientName(to.ID,tccom001.nama)
+		ret = cmf.setRecipientAddress(to.ID, bpmdm001.mail)	
+		ret = cmf.setRecipientResponsibility(to.ID, "TRUE")		
+		ret = cmf.setRecipientType(to.ID, "SMTP")
+	selectempty
+		dal.set.error.message("@ Email ID for lead buyer not maintained" )
+		return(1)
+	endselect	
+	
+	|********* Mail Body
+	attachment.ID = cmf.createAttachment(message.ID)
+	ret = cmf.setAttachmentBody(attachment.ID,ttyeno.yes)
+	ret = cmf.setAttachmentMIME(attachment.ID,"text/plain")                       
+	ret = cmf.setAttachmentFileName(attachment.ID,tmp.file,"abc.txt")
+
+
+	|*********  Send mail
+        if message.ID <>0 then
+                stat = cmf.startService("SMTP",2)
+                if stat<>0 then
+                        dal.set.error.message("@ Message could not be sent "&
+                                "(Infor ERP Enterprise eMessage Connector"&
+                                " service did not start)")
+                        return(1)
+                endif
+                stat = cmf.send(message.ID,"SMTP")
+                if stat<>0 then
+                        dal.set.error.message("@ Message could not be sent "& "(Infor ERP Enterprise eMessage Connector "&
+                                "service refused message)")
+                        cmf.stopService("SMTP",2)
+                        return(1)
+                endif
+                stat = cmf.stopService("SMTP",2)
+        endif
+	return(0)
+}

@@ -1,0 +1,307 @@
+|******************************************************************************
+|* tdisg4560m000  0  VRC B61U a7 isg 
+|* Request for Indent Value increase
+|* TechVikas                     
+|* 2019-09-26
+|******************************************************************************
+|* Main table tdisg460 Request for Indent Value increase (For zero revision of PO), Form Type 1
+|******************************************************************************
+|*
+|* GH540CR871, RAvi Kumar, 08-04-2021
+|* Indent Increase request should follow same authorization matrix as Indent       
+|* 
+|* GH564CR887, RAvi Kumar, 28-05-2021
+|* Modification in Approval request for indent value increase                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+	table   ttdisg460 | Request for Indent Value increase (For zero revision of PO)
+	table   ttdpur401
+	table   ttdpur402
+	table   ttdpur201
+	table   ttdisg461
+	table   ttdisg462
+	table   ttdisg211			|GH540CR871.a
+	table   ttdpur200			|GH540CR871.a
+	table   ttccom001			|GH540CR871.a
+	
+	extern domain	tcorno	orno.f
+	extern domain	tclogn	user
+	long	ret
+	string	query.string(100000), query.string1(100000)
+
+	long	flag								|GH540CR871.a.s
+	extern domain tcamnt	amfr1, amto1, oamt.t, amti.t, oamt1, amti.t.o, amnt.20	|GH564CR887.a
+	extern domain tcemno	emco1
+	extern domain tcorno	rqno2, reqn					|GH540CR871.a.e	
+|****************************** program section ********************************
+before.program:
+	user = logname$
+| 	if user = "tv0001" then
+| 		query.extend.where("tdisg460.stat <> 1")
+| 	else
+	query.string1 = ""
+| 	query.string = "tdisg460.stat <> 1"
+| 	query.string = query.string & " and tdisg460.reqn in (select tdisg461.reqn tdisg461 where tdisg461.cprj in (select tppdm649.cprj from tppdm649 where tppdm649.cres(1;1) = " & quoted.string("P") & " and tppdm649.emno in (select tccom001.emno from tccom001 where tccom001._index4 = " & quoted.string(user) & ")))"
+| 	query.extend.where(query.string)
+| 	endif
+| 	query.extend.where("tdisg460.stat <> 1")
+	flag = 0								|GH540CR871.a.s
+	select	tccom001.emno:user			
+	from	tccom001
+	where	tccom001._index4 = {:user}
+	selectdo
+	endselect
+	
+| 	select	tdisg211.idgr,
+| 		tdisg211.amfr:amfr1,
+| 		tdisg211.amto:amto1
+| 	from	tdisg211
+| 	where	tdisg211.apco = {:user}
+| 	selectdo
+| 		select	tdisg212.emco:emco1
+| 		from	tdisg212
+| 		where	tdisg212._index1 = {:tdisg211.idgr}
+| 		and	tdisg212.emco <> ""
+| 		selectdo
+| 			select	tccom001.loco:emco1			
+| 			from	tccom001
+| 			where	tccom001._index1 = {:emco1}
+| 			as set with 1 rows
+| 			selectdo
+| 			endselect
+			
+			select	tdpur200.rqno,
+				tdisg461.reqn:reqn
+			from	tdpur200, tdisg461, tdisg460
+| 			where	tdpur200.logn = :emco1
+			where	tdisg461.indn = tdpur200.rqno
+			and	tdisg460.reqn = tdisg461.reqn
+			and	tdisg460.stat = tdisg.rest.pending
+| 			and	tdisg461.reqn in (select tdisg461.reqn from tdisg461 where tdisg461.cprj in 
+| 							(select tppdm649.cprj from tppdm649 where tppdm649.cres(1;1) = "P"
+| 							and tppdm649.emno in (select tccom001.emno from tccom001 where tccom001._index1 = {:user})))
+			selectdo
+				select	sum(tdpur201.oamt):oamt.t
+				from	tdpur201
+				where	tdpur201._index1 = {:tdpur200.rqno}
+				selectdo
+				selectempty
+					oamt.t = 0
+				endselect
+				
+				select	sum(tdisg461.amti):amti.t
+				from	tdisg461
+				where	tdisg461._index3 = {:tdpur200.rqno}
+				selectdo
+				selectempty
+					amti.t = 0
+				endselect
+				
+				select	sum(tdisg461.amti):amti.t.o
+				from	tdisg461
+				where	tdisg461._index1 = {:reqn}
+				selectdo
+				selectempty
+					amti.t.o = 0
+				endselect
+				
+				oamt1 = oamt.t + amti.t			
+				amnt.20 = (oamt1 - amti.t.o) * 20/100
+				
+				if ((amti.t.o) 	> amnt.20) or (amti.t.o > 1000000) then	|GH564CR887.a.s
+					select	tdisg211.idgr,
+						tdisg211.amfr:amfr1,
+						tdisg211.amto:amto1
+					from	tdisg211
+					where	tdisg211.apco = {:user}
+					selectdo
+						select	tdisg212.emco:emco1
+						from	tdisg212
+						where	tdisg212._index1 = {:tdisg211.idgr}
+						and	tdisg212.emco <> ""
+| 						as set with 1 rows
+						selectdo
+							select	tdpur200.rqno
+							from	tdpur200
+							where	tdpur200._index1 = {:tdpur200.rqno}
+							and	tdpur200.logn = :emco1
+							selectdo
+								if flag = 0	then
+									if oamt1 < amfr1 or oamt1 > amto1	then
+									else
+										query.string1 = query.string1 & " (tdisg460.reqn = " & quoted.string(reqn)
+										flag = 1
+									endif
+								else
+									if oamt1 < amfr1 or oamt1 > amto1	then
+									else
+										query.string1 = query.string1 & " or tdisg460.reqn = "& quoted.string(reqn)
+										flag = 1
+									endif
+								endif
+							endselect
+						endselect
+					endselect
+				else							|GH564CR887.a.e	
+| 					query.string1 = query.string1 & "tdisg460.stat <> 1"
+| 					if flag = 0 then
+| 					query.string1 = query.string1 & " ((tdisg460.reqn in (select tdisg461.reqn from tdisg461 where tdisg461.cprj in (select tppdm649.cprj from tppdm649 where tppdm649.cres(1;1) = " 
+| 						& quoted.string("P") & " and tppdm649.emno in (select tccom001.emno from tccom001 where tccom001._index4 = " & quoted.string(user) & "))"
+| 						& " and tdisg461.reqn = "& quoted.string(reqn) & "))"
+| 						flag = 1
+| 					else
+| 					query.string1 = query.string1 & " or (tdisg460.reqn in (select tdisg461.reqn from tdisg461 where tdisg461.cprj in (select tppdm649.cprj from tppdm649 where tppdm649.cres(1;1) = " 
+| 						& quoted.string("P") & " and tppdm649.emno in (select tccom001.emno from tccom001 where tccom001._index4 = " & quoted.string(user) & "))"
+| 						& " and tdisg461.reqn = "& quoted.string(reqn) & "))"
+| 						flag = 1
+| 					endif
+					
+					select	tccom001.emno
+					from	tccom001
+					where	tccom001._index1 = {:user}
+					as set with 1 rows
+					selectdo
+						select	tdisg460.reqn,
+							tdisg461.cprj
+						from	tdisg460, tdisg461
+						where	tdisg460._index1 = {:reqn}
+						and	tdisg460.reqn = tdisg461.reqn
+						as set with 1 rows
+						selectdo
+							select	tppdm649.cprj
+							from	tppdm649
+							where	tppdm649.cres(1;1) = "P"
+							and	tppdm649.emno = :tccom001.emno
+							and	tppdm649.cprj = :tdisg461.cprj
+							as set with 1 rows
+							selectdo
+								if flag = 0	then
+									query.string1 = query.string1 & " (tdisg460.reqn = " & quoted.string(reqn)
+									flag = 1
+								else
+									query.string1 = query.string1 & " or tdisg460.reqn = "& quoted.string(reqn)
+									flag = 1
+								endif
+							endselect
+						endselect
+					endselect
+				endif
+			endselect
+| 		endselect
+| 	endselect
+
+	if isspace(query.string1)	then
+		query.extend.where("tdisg460.reqn = " & quoted.string(""))
+	else
+		query.string1 = trim$(query.string1)&")"
+		query.extend.where(query.string1)
+	endif													|GH540CR871.a.e
+|****************************** group section **********************************
+|****************************** form section **********************************
+form.all:
+init.form:
+	set.checked.command("filter.created", 0)
+	set.checked.command("filter.pending", 0)	
+	set.checked.command("filter.approved", 0)
+	set.checked.command("filter.returned", 0)
+	set.checked.command("filter.canceled", 0)
+	set.checked.command("all.data", 1)
+	
+|****************************** functions section **********************************
+
+functions:
+
+function extern filter.pending()
+{
+| 	if user = "tv0001" then
+| 	query.extend.where("tdisg460.stat = 4",EXTEND_OVERWRITE)
+| 	else
+	query.string = "tdisg460.stat = 4"
+	query.string = query.string & " and tdisg460.reqn in (select tdisg461.reqn tdisg461 where tdisg461.cprj in (select tppdm649.cprj from tppdm649 where tppdm649.cres(1;1) = " & quoted.string("P") & " and tppdm649.emno in (select tccom001.emno from tccom001 where tccom001._index4 = " & quoted.string(user) & ")))"
+	query.extend.where(query.string,EXTEND_OVERWRITE)
+| 	endif
+
+	rebuild.query()   
+	set.checked.command("filter.created", 0)
+	set.checked.command("filter.pending", 1)	
+	set.checked.command("filter.approved", 0)
+	set.checked.command("filter.returned", 0)
+	set.checked.command("filter.canceled", 0)
+	set.checked.command("all.data", 0)
+}
+function extern filter.approved()
+{
+| 	query.extend.where("tdisg460.stat = 2",EXTEND_OVERWRITE)
+| 	if user = "tv0001" then
+| 	query.extend.where("tdisg460.stat = 2",EXTEND_OVERWRITE)
+| 	else
+	query.string = "tdisg460.stat = 2"
+	query.string = query.string & " and tdisg460.reqn in (select tdisg461.reqn tdisg461 where tdisg461.cprj in (select tppdm649.cprj from tppdm649 where tppdm649.cres(1;1) = " & quoted.string("P") & " and tppdm649.emno in (select tccom001.emno from tccom001 where tccom001._index4 = " & quoted.string(user) & ")))"
+	query.extend.where(query.string,EXTEND_OVERWRITE)
+| 	endif
+	rebuild.query()   
+	set.checked.command("filter.created", 0)
+	set.checked.command("filter.pending", 0)	
+	set.checked.command("filter.approved", 1)
+	set.checked.command("filter.returned", 0)
+	set.checked.command("filter.canceled", 0)
+	set.checked.command("all.data", 0)
+}
+function extern filter.returned()
+{
+| 	query.extend.where("tdisg460.stat = 6",EXTEND_OVERWRITE)
+| 	if user = "tv0001" then
+| 	query.extend.where("tdisg460.stat = 6",EXTEND_OVERWRITE)
+| 	else
+	query.string = "tdisg460.stat = 6"
+	query.string = query.string & " and tdisg460.reqn in (select tdisg461.reqn tdisg461 where tdisg461.cprj in (select tppdm649.cprj from tppdm649 where tppdm649.cres(1;1) = " & quoted.string("P") & " and tppdm649.emno in (select tccom001.emno from tccom001 where tccom001._index4 = " & quoted.string(user) & ")))"
+	query.extend.where(query.string,EXTEND_OVERWRITE)
+| 	endif
+	rebuild.query()   
+	set.checked.command("filter.created", 0)
+	set.checked.command("filter.pending", 0)	
+	set.checked.command("filter.approved", 0)
+	set.checked.command("filter.canceled", 0)
+	set.checked.command("filter.returned", 1)
+	set.checked.command("all.data", 0)
+
+}
+function extern filter.canceled()
+{
+| 	query.extend.where("tdisg460.stat = 5",EXTEND_OVERWRITE)
+| 	if user = "tv0001" then
+| 	query.extend.where("tdisg460.stat = 5",EXTEND_OVERWRITE)
+| 	else
+	query.string = "tdisg460.stat = 5"
+	query.string = query.string & " and tdisg460.reqn in (select tdisg461.reqn tdisg461 where tdisg461.cprj in (select tppdm649.cprj from tppdm649 where tppdm649.cres(1;1) = " & quoted.string("P") & " and tppdm649.emno in (select tccom001.emno from tccom001 where tccom001._index4 = " & quoted.string(user) & ")))"
+	query.extend.where(query.string,EXTEND_OVERWRITE)
+| 	endif
+	rebuild.query()   
+	set.checked.command("filter.created", 0)
+	set.checked.command("filter.pending", 0)	
+	set.checked.command("filter.approved", 0)
+	set.checked.command("filter.canceled", 0)
+	set.checked.command("filter.returned", 1)
+	set.checked.command("all.data", 0)
+
+}
+function extern all.data()
+{
+| 	query.extend.where("tdisg460.stat = 2" & " or tdisg460.stat = 6"& " or tdisg460.stat = 4"& " or tdisg460.stat = 5",EXTEND_OVERWRITE)
+| 	if user = "tv0001" then
+| 	query.extend.where("tdisg460.stat <> 1",EXTEND_OVERWRITE)
+| 	else
+	query.string = "tdisg460.stat <> 1"
+	query.string = query.string & " and tdisg460.reqn in (select tdisg461.reqn tdisg461 where tdisg461.cprj in (select tppdm649.cprj from tppdm649 where tppdm649.cres(1;1) = " & quoted.string("P") & " and tppdm649.emno in (select tccom001.emno from tccom001 where tccom001._index4 = " & quoted.string(user) & ")))"
+	query.extend.where(query.string)
+| 	endif
+	rebuild.query()   
+	set.checked.command("filter.created", 0)
+	set.checked.command("filter.pending", 0)	
+	set.checked.command("filter.approved", 0)
+	set.checked.command("filter.returned", 0)
+	set.checked.command("filter.canceled", 0)
+	set.checked.command("all.data", 1)
+
+}

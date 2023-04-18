@@ -1,0 +1,233 @@
+|******************************************************************************
+|* tdisg0145m000  0  VRC B61U a7 isg 
+|* Generate Custom Invoice Debit/Credit Note
+|* Ravi Kumar                    
+|* 2020-10-21
+|******************************************************************************
+|* Main table tdisg045 Custom Invoice Debit/Credit Note, Form Type 1
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttdisg045 | Custom Invoice Debit/Credit Note
+  table   tciisg801 
+  table   tciisg800 
+  table   ttdisg800 
+	
+	string	query.str(500)
+	extern	domain	tfgld.docn	idoc
+	extern	domain	tfgld.ttyp	ityp
+	extern	domain	tcorno		str.doc, temp.invn
+	extern		long		curr.comp
+	extern	string	MSG.ALL(1000)
+
+	#include<bic_desktop>
+	#include<bic_dam>
+|****************************** program section ********************************
+before.program:
+	curr.comp = get.compnr()
+	
+before.display.object:
+| 	idoc = lval(tdisg045.invn(4;8))
+| 	ityp = tdisg045.invn(1;3)
+| 	str.doc = str$(idoc)
+| 	select	ciisg801.errm
+| 	from	ciisg801
+| 	where	ciisg801._index1 = {:curr.comp, :ityp, :str.doc}
+| 	as set with 1 rows
+| 	selectdo
+| 		if isspace(ciisg801.errm) then
+| 			disable.commands(modify.set, actual.occ)
+| 		else
+| 			enable.commands(modify.set, actual.occ)
+| 		endif
+| 	selectempty
+| 		enable.commands(modify.set, actual.occ)
+| 	endselect
+	
+	if tdisg045.stat = tdisg.stat.process then
+		disable.commands("generate")
+| 		disable.fields("tdisg045.cdin", "tdisg045.indt", "tdisg045.invn", "tdisg045.cinv", "tdisg045.note")
+	else
+		enable.commands("generate")
+| 		enable.fields("tdisg045.cdin", "tdisg045.indt", "tdisg045.invn", "tdisg045.cinv")
+	endif
+
+|****************************** group section **********************************
+|****************************** choice section **********************************
+choice.upload.e.invoice:
+before.choice:
+	ityp = tdisg045.cdin(1;3)
+	str.doc = tdisg045.cdin(4;8)	
+
+	select	ciisg800.comp
+	from	ciisg800
+	where	ciisg800.tran = :ityp
+	and	ciisg800.docn = :str.doc
+	as set with 1 rows
+	selectdo
+	endselect
+	
+	select	ciisg801.errm								
+	from	ciisg801
+	where	ciisg801._index1 = {:ciisg800.comp, :ityp, :str.doc}
+	as set with 1 rows
+	selectdo
+		if isspace(ciisg801.errm) then
+			message("E-Invoice already processed")
+			choice.again()
+		endif
+	endselect	
+
+	if len(strip$(tdisg045.cdin)) <> 9 then
+		message("Please Generate Invoice")
+		choice.again()
+	endif
+	
+	if ask.enum("tde-invoiceque", tcyesno.yes) = tcyesno.no then
+		choice.again()
+	endif
+	
+on.choice:
+	tdisg.dll045.extract_export_data(tdisg045.rqno)
+	message("Process complete")
+
+choice.display.e.invoice:
+on.choice:
+	attachment.status()
+
+choice.print.e.invoice:
+on.choice:
+	tdisgdll831cn.custom_invoice(tdisg045.rqno)
+	
+choice.generate:
+on.choice:
+	tcmcs.dll0095.read.parm("tdisg800")
+	if len(strip$(tdisg045.cdin)) <> 9 then
+		if tdisg045.note = tdisg.notes.credit then
+			tdisg045.cdin = tdisg800.crno
+			if tcmcs.dll0050.check.and.generate.order.number(
+					3, tdisg045.cdin, tdisg800.crse, 
+					9, tdisg045.cdin ) then
+				show.dal.messages(MSG.ALL)
+				abort.transaction()
+				choice.again()
+			else
+				temp.invn = tdisg045.cdin	
+			endif
+		else
+			tdisg045.cdin = tdisg800.dbno
+			if tcmcs.dll0050.check.and.generate.order.number(
+					3, tdisg045.cdin, tdisg800.dbse, 
+					9, tdisg045.cdin ) then
+				show.dal.messages(MSG.ALL)
+				abort.transaction()
+				choice.again()
+			else
+				temp.invn = tdisg045.cdin	
+			endif
+		endif
+	else
+		temp.invn = tdisg045.cdin
+	endif
+
+	select 	tdisg045.cdin,
+		tdisg045.stat,
+		tdisg045.cdno,					
+		tdisg045.cddt						
+	from	tdisg045 for update
+	where	tdisg045._index1 = {:tdisg045.rqno}
+	selectdo
+		tdisg045.cdin = temp.invn
+		tdisg045.stat = tdisg.stat.process
+		tdisg045.cdno	=	logname$	
+		tdisg045.cddt	=	utc.num()			
+		db.update(ttdisg045, db.retry)
+	endselect
+	commit.transaction()	
+	refresh()
+
+|****************************** field section **********************************
+field.tdisg045.rqno:
+before.zoom:
+	query.extend.where.in.zoom("tcmcs050.nrgr = " & chr$(34) & "933" & chr$(34))
+	
+field.tdisg045.cdin:
+before.zoom:
+	query.extend.where.in.zoom("tcmcs050.nrgr = " & chr$(34) & "934" & chr$(34))
+	
+field.tdisg045.invn:
+before.zoom:
+	query.str = "tdisg831.type = tdisg.type.export and tdisg831.etyp = tdisg.advice.supply and tdisg831.octy = " & chr$(34) & "IN " & chr$(34)
+			& " and tdisg831.invn <> " & chr$(34) & "" & chr$(34)
+	query.extend.where.in.zoom(query.str)
+	
+functions:
+function attachment.status()								
+{
+	domain	tcncmp			curr.comp, curr.comp.o
+	domain	tcmcs.str1		p.char, c.char
+	domain	tcmcs.str30		i.host	
+	domain	tclogn			o.user
+	domain	tcmcs.str50		pass.string, handle.string
+		string			open.link(200), sess.code(30)
+	domain	tcibd.sern	irno.str
+		
+	o.user = logname$
+	
+	i.host = hostname$()
+	i.host =  toupper$(i.host)
+	i.host = trim$(i.host)
+	
+	curr.comp.o = get.compnr()
+	p.char = ""
+	c.char = ""
+	handle.string = ""
+	irno.str = ""
+	
+	ityp = tdisg045.cdin(1;3)
+	str.doc = tdisg045.cdin(4;8)
+	
+	select	ciisg800.comp
+	from	ciisg800
+	where	ciisg800.tran = :ityp
+	and	ciisg800.docn = :str.doc
+	as set with 1 rows
+	selectdo
+	endselect
+	
+| 	handle.string =  "EINV_INVPDF_" & str$(ciisg800.comp)
+	handle.string =  "EINV_INVPDF_200"
+	pass.string = trim$(str$(ciisg800.comp)) & "_" &trim$(ityp) & "_" & trim$(Str$(str.doc))
+	
+| 	p.char = (whinh312.lsta  = whinh.lstc.confirmed) ? "n":"y"
+	p.char = "n"
+
+	on case i.host
+	case "VISHNU":	
+		open.link = 	"chrome.exe --app=http://192.9.200.146/Attachment/Attachment.aspx?AthHandle=" & trim$(handle.string) &
+				"&Index=" & trim$(pass.string) & "&AttachedBy=" & trim$(o.user) & "&ed=" & p.char	
+		break
+		
+	case "VISHNU10GST":	
+		open.link = 	"chrome.exe --app=http://192.9.200.146/ATHERPTEST/Attachment.aspx?AthHandle=" & trim$(handle.string) &
+				"&Index=" & trim$(pass.string) & "&AttachedBy=" & trim$(o.user) & "&ed=" & p.char
+		break
+	endcase
+		
+
+	open.link = trim$(open.link)
+	
+	select	ciisg801.errm
+	from	ciisg801
+	where	ciisg801._index1 = {:ciisg800.comp, :ityp, :str.doc}
+	as set with 1 rows
+	selectdo
+		if isspace(ciisg801.errm) then
+			app_start(open.link, "", "", "", "")
+		else
+			message(ciisg801.errm)
+		endif
+	endselect
+}												

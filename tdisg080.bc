@@ -1,0 +1,821 @@
+|******************************************************************************
+|* tdisg080  0  VRC B61U a7 live
+|* DAL for tdisg080
+|* baan
+|* 14-09-16 [16:28]
+|******************************************************************************
+|* Script Type: DAL
+|******************************************************************************
+|* ISGECDV001069, IT0205, Arjit Gupta, VRC B61U a7 live, Dt. 30-09-2014
+|* First Free Number Generation Logic
+|* 
+|* ISGECDV001155, IT0205, Arjit Gupta, VRC B61U a7 live, Dt. 14-11-2014
+|* Add Validation of PO Revision, Reason Allocation
+|* 
+|* ISGECDV001180, IT0205, Arjit Gupta, VRC B61U a7 live, Dt. 25-11-2014
+|* PO Reference must be defaulted not derived, PO Revision must be derived.
+|*
+|* ISGECDV001203, IT0205, Arjit Gupta, VRC B61U a7 live, Dt. 20-12-2014
+|* PO revision having workflow status "COMPLETED" should only be derived.
+|*
+|* ISGEC001191, IT0205, Arjit Gupta, VRC B61U a7 isg, Dt. 22-12-2014
+|* Remove derived of PO revision having workflow status "COMPLETED"
+|*
+|* ISGECDV001205, IT0205, Arjit Gupta, VRC B61U a7 isg, Dt. 22-12-2014
+|* Check & Validation as per Case ID 240 suggested by Mr. Nishant Verma.
+
+|* ISGEC01012, IT0289, Shilpa Janardanan, VRC B61U a7 isg , Dt.23-12-2014
+|* Updating revision according to order & revision
+|****************************************************************************
+|*ISGEC01066, IT0375,Sandhyarani, Dt.25-12-2015
+|*Modifications
+|*
+|*ISGEC01534, IT0302,Ankit Sharma, Dt.30-07-2015
+|*Added check for basic value calculation
+|*
+|* GH205CR000, RAvi Kumar, 09-11-2019
+|* IR-132672 PO Basic Value not correct in Audit Dept. 
+|* 
+|* GH252, Adarsh Pal, 24-01-2020, VRC B61U a7 isg
+|* Basic Value Changes
+|****************************************************************************                                                                                
+	|******************** Includes
+	#include <bic_dal2>
+	#include "itcmcs2000"	|* DAL(-GUI) Support Defines
+
+|*************** Table declaration ******************
+		table	ttdisg080
+		table	ttdmsl400
+		table	ttcisg000
+				
+|****************************** object hooks **********************************
+
+function extern boolean method.is.allowed(
+			long		i.method)
+{
+	on case i.method
+		case DAL_NEW:
+		if not new.method.is.allowed() then
+			dal.set.error.message("@Cannot insert a record.")	
+			return(false)
+		endif
+		break
+	case DAL_UPDATE:
+		if not update.method.is.allowed() then
+			dal.set.error.message("@Cannot modify this record.")
+			return(false)
+		endif
+		break
+	case DAL_DESTROY:
+		if not destroy.method.is.allowed() then
+			dal.set.error.message("@Cannot delete this record.")
+			return(false)
+		endif
+		break
+	endcase
+
+	return(true)
+}
+
+function extern long before.open.object.set()
+{
+	read.parameters()
+	define.field.dependencies()
+	return(0)
+}
+
+function extern long before.save.object(long type)
+{
+	on case type
+		case DAL_NEW :
+			if  tcmcs.dll0050.check.and.generate.order.number(
+					3, tdisg080.srno, tcisg000.adng, 
+					9, tdisg080.srno) then
+				return(DALHOOKERROR)
+			endif
+			tdisg080.etby = toupper$(logname$)
+			tdisg080.etdt = utc.num()
+			break
+		case DAL_UPDATE:
+			tdisg080.etdt = utc.num()
+			break
+	ENDCASE
+	return(0)
+}
+
+function extern long set.object.defaults()
+{
+	tdisg080.srno.object.default()
+	return(0)
+}
+
+function extern long before.new.object()
+{	
+	tdisg080.srno = tcisg000.adsr	
+	return(0)
+}
+
+function extern long before.get.object()
+{
+	return(0)
+}
+
+function extern long after.get.object()
+{
+	
+	return(0)
+}
+
+function long read.parameters()
+{
+	RETIFNOK(tcmcs.dll0095.read.parm("tcisg000"))		
+	return(0)
+}
+
+|**** Dependencies Section ****************************************************
+
+function void define.field.dependencies()
+{
+	|* Initialize field relations.
+	dal.init.field.dependencies()
+	
+	dal.field.depends.on("tdisg080.bval", HOOK_IS_DERIVED,
+				"tdisg080.orno", "tdisg080.revi")
+				
+	dal.field.depends.on("tdisg080.bdmt", HOOK_IS_DERIVED,
+				"tdisg080.orno", "tdisg080.revi")	
+								|#ISGECDV001155.sn
+	dal.field.depends.on("tdisg080.revi", HOOK_IS_VALID +
+						HOOK_IS_DERIVED,	|#ISGECDV001180.n
+					"tdisg080.orno")
+					
+	dal.field.depends.on("tdisg080.real", HOOK_IS_APPLICABLE,
+					"tdisg080.prty")
+	
+	dal.field.depends.on("tdisg080.rerm", HOOK_IS_VALID +
+						HOOK_IS_APPLICABLE +
+						HOOK_IS_MANDATORY,
+					"tdisg080.prty")
+					
+								
+| 	dal.field.depends.on("tdisg080.pref", HOOK_IS_DERIVED ,	|#ISGECDV001180.so	
+| 						"tdisg080.orno",
+| 						"tdisg080.revi")
+								|#ISGECDV001180.eo
+								|#ISGECDV001155.en
+	
+								|#ISGECDV001205.sn
+	dal.field.depends.on("tdisg080.hbrs", HOOK_IS_APPLICABLE +
+						HOOK_IS_MANDATORY,
+						"tdisg080.prty")
+								|#ISGECDV001205.en
+	|* Add direct dependent fields.
+	|* Please keep the fields in alphabetical order.
+	dal.field.depends.on("tdisg080.reas", HOOK_IS_MANDATORY,		|#ISGEC01066.sn
+					"tdisg080.prty")
+						
+	dal.field.depends.on("tdisg080.apby", HOOK_IS_MANDATORY,
+					"tdisg080.prty")	
+						|#ISGEC01066.en
+	dal.finalize.field.dependencies()
+}
+
+function boolean new.method.is.allowed()
+{
+	return(true)
+}
+
+function boolean update.method.is.allowed()
+{
+	return(true)
+}
+function boolean destroy.method.is.allowed()
+{
+			long		delete.allowed
+
+	with.old.object.values.do(	deleting_allowed,
+					delete.allowed)	|* ref
+	if not delete.allowed then
+		return(false)
+	endif
+
+	return(true)
+}
+
+function void deleting_allowed(
+	ref		long		o.delete.allowed)
+{
+	o.delete.allowed = true
+}
+
+|**********************  Serial Number ****************
+function void tdisg080.srno.object.default()
+{	
+	tdisg080.srno = tcisg000.adsr		
+}
+
+|********************** Basic Value *******************
+function extern boolean tdisg080.bval.is.derived(long	mode)
+{
+	tdisg080.bval = Get_Basic_Value(tdisg080.orno, tdisg080.revi)
+	return(true)
+}
+
+|********************** Budget Amount *******************
+function extern boolean tdisg080.bdmt.is.derived(long	mode)
+{
+	tdisg080.bdmt = Get_Budget_Value(tdisg080.orno, tdisg080.revi)
+	return(true)
+}
+								|#ISGECDV001203.sn
+								|#ISGEC001191.so
+|********************* PO ***************************
+| function extern boolean tdisg080.orno.is.valid(long mode)
+| {
+| 	select	rv_tdmsl400.vrsn
+| 	from	tdmsl400 rv_tdmsl400
+| 	where	rv_tdmsl400._index1 = {:tdisg080.orno}
+| 	and	rv_tdmsl400.work = tdmsl.work.completed	
+| 	as set with 1 rows	
+| 	selectdo
+| 	selectempty
+| 		dal.set.error.message("@Order not Locked")
+| 		return(DALHOOKERROR)
+| 	endselect
+| 	
+| 	return(true)
+| }
+								|#ISGEC001191.eo
+								|#ISGECDV001203.en
+
+						|#ISGECDV001155.sn
+|********************* Revision ***************************
+function extern boolean tdisg080.revi.is.valid(long mode)
+{
+	select	rv_tdmsl400.vrsn
+	from	tdmsl400 rv_tdmsl400
+	where	rv_tdmsl400._index1 = {:tdisg080.orno, :tdisg080.revi}
+| 	and	rv_tdmsl400.work = tdmsl.work.completed			|#ISGECDV001203.n	|#ISGEC001191.o
+	selectdo
+	selectempty
+		return(false)
+	endselect
+	
+	return(true)
+}
+						|#ISGECDV001180.sn
+function extern boolean tdisg080.revi.is.derived(long mode)
+{
+	on case mode					|ISGEC01012.n
+		case DAL_NEW:				|ISGEC01012.n
+			select	max(rv_tdmsl400.vrsn):tdisg080.revi
+			from	tdmsl400 rv_tdmsl400			
+			where	rv_tdmsl400._index1 = {:tdisg080.orno}		
+		| 	and	rv_tdmsl400.work = tdmsl.work.completed		|#ISGECDV001203.n		|#ISGEC001191.o
+			selectdo
+			selectempty
+				tdisg080.revi = 0
+			endselect
+		break							|ISGEC01012.sn
+		case DAL_UPDATE:
+			select	max(rv_tdmsl400.vrsn):tdisg080.revi
+			from	tdmsl400 rv_tdmsl400
+			where	rv_tdmsl400._index1 = {:tdisg080.orno, :tdisg080.revi}		
+| 		| 	and	rv_tdmsl400.work = tdmsl.work.completed		|#ISGECDV001203.n		|#ISGEC001191.o
+			selectdo
+			selectempty
+				tdisg080.revi = 0
+			endselect
+			break
+		endcase							|ISGEC01012.en
+		
+	return(true)
+}
+						|#ISGECDV001180.en
+						
+						|#ISGECDV001205.sn
+|******************* Higher by Rupees ***********************
+function extern boolean tdisg080.hbrs.is.applicable(long mode)
+{
+	if	tdisg080.prty = tdparty.high	then
+		return(true)
+	endif
+	
+	return(false)
+}
+
+function extern boolean tdisg080.hbrs.is.mandatory(long mode)
+{
+	if	tdisg080.prty = tdparty.high	then
+		return(true)
+	endif
+	
+	return(false)
+}
+						|#ISGECDV001205.en
+|******************* Reason Allocation **********************
+function extern boolean tdisg080.real.tdreas.alloc.none.is.valid(long mode)
+{
+	on case tdisg080.prty
+		case tdparty.high:
+		case tdparty.single:
+			return(false)
+			break	
+	ENDCASE
+
+	return(true)
+}
+
+function extern boolean tdisg080.real.tdreas.alloc.cust.is.valid(long mode)
+{
+	on case tdisg080.prty
+		case tdparty.high:
+		case tdparty.single:
+			return(true)
+			break	
+	ENDCASE
+
+	return(false)
+}
+
+function extern boolean tdisg080.real.tdreas.alloc.isg.afct.is.valid(long mode)
+{
+	on case tdisg080.prty
+		case tdparty.high:
+		case tdparty.single:
+			return(true)
+			break	
+	ENDCASE
+
+	return(false)
+}
+
+function extern long tdisg080.real.check(long mode)
+{
+	on case tdisg080.prty
+		case tdparty.high:
+		case tdparty.single:
+			if	tdisg080.real = tdreas.alloc.none	then
+				dal.set.error.message("@Reason Allocation cannot be None")
+				return(DALHOOKERROR)
+			endif
+			break	
+		default:
+			if	tdisg080.real <> tdreas.alloc.none	then
+				dal.set.error.message("@Reason Allocation can only be None")
+				return(DALHOOKERROR)
+			endif
+	ENDCASE
+
+	return(0)
+}
+
+|******************* PO Reference *******************
+								|#ISGECDV001180.so
+| function extern boolean tdisg080.pref.is.derived(long mode)
+| {
+| 	tdisg080.pref = Get_PO_Reference(tdisg080.orno, tdisg080.revi)
+| 	return(true)
+| }
+								|#ISGECDV001180.eo
+|******************* Reason Remarks ****************
+function extern boolean tdisg080.apby.is.mandatory(long mode)					|#ISGEC01066.sn
+{
+	on case mode
+		case DAL_NEW :
+		case DAL_UPDATE :
+			if isspace(tdisg080.apby) then
+				dal.set.error.message("@Approved By is compulsory.")
+				return(DALHOOKERROR)
+				
+			endif
+		endcase	
+	return(true)
+}
+
+function extern boolean tdisg080.reas.is.mandatory(long mode)
+{
+	on case tdisg080.prty
+		case tdparty.high:
+		case tdparty.single:
+		case tdparty.two:
+		case tdparty.repeat:
+		case tdparty.revi:
+			dal.set.error.message("@Reason should be compulsory.")
+			return(DALHOOKERROR)		
+			break
+		case tdparty.low:
+			return(false)
+			break
+	endcase	
+	return(true)		
+}													
+function extern boolean tdisg080.real.is.applicable(long mode)
+{
+	if	(tdisg080.prty = tdparty.high) or (tdisg080.prty = tdparty.single)	then
+		return(true)
+	endif
+	
+	return(false)
+}
+
+function extern boolean tdisg080.rerm.is.applicable(long mode)
+{
+	if	(tdisg080.prty = tdparty.high) or (tdisg080.prty = tdparty.single)	then
+		return(true)
+		
+	endif
+	
+	return(false)
+}
+
+function extern boolean tdisg080.orno.is.applicable(long mode)
+{
+	if isspace(tdisg080.orno) then
+		return(true)
+	endif
+	return(false)
+}									|#ISGEC01066.en
+
+function extern boolean tdisg080.rerm.is.valid(long mode)
+{
+	on case tdisg080.prty
+		case tdparty.high:
+		case tdparty.single:
+									|#ISGECDV001205.so
+| 			if	isspace(tdisg080.rerm)	then
+| 				dal.set.error.message("@Specify Reason Remarks")
+| 				return(DALHOOKERROR)
+| 			endif
+									|#ISGECDV001205.eo
+									|#ISGECDV001205.sn
+			on case tdisg080.real
+				case tdreas.alloc.isg.afct:
+					on case trim$(tdisg080.rerm)
+						case "ISGC01":
+						case "ISGC02":
+						case "ISGC03":
+						case "ISGC04":
+						case "ISGC05":
+						case "ISGC06":
+						case "ISGC07":
+						case "ISGC08":
+						case "ISGC09":
+						case "ISGC10":
+							break
+						default:
+							dal.set.error.message("@Specify Valid Reason Remarks")
+							return(DALHOOKERROR)	
+					ENDCASE		
+					break
+				case tdreas.alloc.cust:
+					on case trim$(tdisg080.rerm)
+						case "CUST01":
+						case "CUST02":
+							break
+						default:
+							dal.set.error.message("@Specify Valid Reason Remarks")
+							return(DALHOOKERROR)	
+					ENDCASE		
+					break
+			ENDCASE		
+									|#ISGECDV001205.en
+			break	
+									|#ISGECDV001205.so
+| 		default:
+| 			if	not isspace(tdisg080.rerm)	then
+| 				dal.set.error.message("@Reason Remarks not required")
+| 				return(DALHOOKERROR)
+| 			endif
+									|#ISGECDV001205.eo
+	ENDCASE
+
+	return(true)
+}
+
+| function extern boolean tdisg080.rerm.is.applicable(long mode)	|#ISGEC01066.o
+| {									|#ISGEC01066.o			
+							|#ISGECDV001205.so
+| 	on case tdisg080.prty
+| 		case tdparty.high:
+| 		case tdparty.single:
+| 		case tdparty.low:			|#ISGECDV001205.n
+| 			return(false)			|#ISGECDV001205.n
+| 			break	
+| 	ENDCASE
+							|#ISGECDV001205.eo
+| 	return(true)					|#ISGECDV001205.n	|#ISGEC01066.o	
+| }									|#ISGEC01066.o
+
+function extern boolean tdisg080.rerm.is.mandatory(long mode)
+{
+	on case tdisg080.prty
+		case tdparty.high:
+		case tdparty.single:
+			if	isspace(tdisg080.rerm)	then				|#ISGEC01066.sn
+				dal.set.error.message("@Specify Reason Remarks")
+				return(DALHOOKERROR)
+			endif								|#ISGEC01066.en
+| 		case tdparty.low:
+			return(False)			|#ISGECDV001205.n
+| 			dal.set.error.message("@Reason")
+			break
+	ENDCASE		
+	return(true)				|#ISGECDV001205.n
+}
+						|#ISGECDV001205.sn
+| function extern boolean tdisg080.rerm.is.mandatory(long mode)
+						|#ISGECDV001205.en
+						|#ISGECDV001155.en
+
+|********************* Internal Function *************
+
+function domain tcamnt Get_Budget_Value(
+				domain	tcorno	i.orno,
+				domain	tcsern	i.vrsn
+					)
+{
+	domain	tcamnt	t.amnt, t.oamt
+	domain	tcpono	t.pono, t.sqnb
+	
+	t.amnt = 0
+	t.oamt = 0
+	t.pono = 0
+	t.sqnb = 0
+	
+	select	b_tdpur401.pono:t.pono,
+		b_tdpur401.sqnb:t.sqnb 
+	from	tdpur401 b_tdpur401
+	where	b_tdpur401._index1 = {:i.orno}
+	and	b_tdpur401.oltp in (tdgen.oltp.orderline, tdgen.oltp.total)
+	selectdo
+		if	not Highest_Version(i.orno, i.vrsn)	then
+			if	not select.line.from.history(i.orno, i.vrsn, t.pono)	then
+				continue
+			endif
+		endif		
+		select	b_tdpur201.oamt:t.oamt
+		from	tdpur402 b_tdpur402, tdpur201 b_tdpur201
+		where	b_tdpur402._index1 = {:i.orno, :t.pono, :t.sqnb}
+		and	b_tdpur402.cmbe refers to b_tdpur201
+		as set with 1 rows
+		selectdo
+			t.amnt = t.amnt + t.oamt			
+		endselect
+	endselect	
+	
+	return(t.amnt)
+}
+					
+function domain tcamnt Get_Basic_Value
+				(
+				domain	tcorno	i.orno,
+				domain	tcsern	i.vrsn
+				)
+{
+	domain	tcamnt		line.oamt, tot.oamt
+	domain	tcqiv1		line.qoor, add.qty
+	domain	tcpono		t.pono, t.sqnb
+	domain	tdgen.oltp	t.oltp
+	
+	
+	tot.oamt = 0
+	line.oamt = 0
+	line.qoor = 0
+	t.pono = 0
+	t.sqnb = 0
+	t.oltp = empty
+	
+	select	b_tdpur401.pono:t.pono,
+		b_tdpur401.sqnb:t.sqnb,
+		b_tdpur401.qoor:line.qoor,
+		b_tdpur401.oamt:line.oamt,
+		b_tdpur401.oltp:t.oltp
+	from	tdpur401 b_tdpur401
+	where	b_tdpur401._index1 = {:i.orno}
+	and	b_tdpur401.oltp in (tdgen.oltp.orderline, tdgen.oltp.total)
+	selectdo
+		if	not Highest_Version(i.orno, i.vrsn)	then
+			if	not select.line.from.history(i.orno, i.vrsn, t.pono)	then
+				continue
+			else	
+				select	tdmsl501.oamt:line.oamt,				|#ISGEC01534.sn
+					tdmsl501.qoor:line.qoor			|RAvi.a.19122020 #IR160474
+				from	tdmsl501
+| 				where	tdmsl501._index1 = {:i.orno, :i.vrsn,:t.pono,:t.sqnb}			|RAvi.com.GH205CR000
+				where	tdmsl501._index1 = {:i.orno, :i.vrsn,:t.pono}	
+				and	tdmsl501.oltp in (tdgen.oltp.orderline, tdgen.oltp.total)
+				selectdo
+				endselect						|#ISGEC01534.en
+			endif
+		endif		
+		add.qty = 0.0
+| 		if	t.oltp = tdgen.oltp.total then								|#GH252.o
+			if	Highest_Version(i.orno, i.vrsn)	then
+				add.qty = get.additional.qty.from.401(i.orno, t.pono)
+			else
+| 				add.qty = get.additional.qty.from.501(i.orno, t.pono)				|#GH252.o
+				add.qty = get.additional.qty.from.501(i.orno,i.vrsn,t.pono)			|#GH252.n
+			endif
+| 		endif												|#GH252.o					
+					
+| 		line.oamt = (line.oamt / line.qoor ) * (line.qoor + add.qty)					|#GH252.o
+		line.oamt = (line.oamt / line.qoor ) * (add.qty)						|#GH252.n
+		
+		tot.oamt = tot.oamt + line.oamt
+	endselect
+
+	return(tot.oamt)
+}
+
+function domain tcqsl1	get.additional.qty.from.401
+				(
+				domain	tcorno	q.orno,
+				domain	tcpono	q.pono
+				)
+{
+														|#GH252.so
+| 	domain	tcqsl1	ord.qty, app.qty, diff.qty, bac.qty
+| 	
+| 	ord.qty = 0
+| 	app.qty = 0
+| 	bac.qty = 0
+| 	diff.qty = 0
+| 	
+| 	select	atdpur401.qoor:ord.qty,
+| 		atdpur401.qiap:app.qty,
+| 		atdpur401.qibo:bac.qty
+| 	from	tdpur401 atdpur401
+| 	where	atdpur401._index1 = {:q.orno, :q.pono}
+| 	and	atdpur401.oltp = tdgen.oltp.total
+| 	selectdo
+| 		diff.qty = diff.qty + bac.qty - (ord.qty - app.qty)
+| 	endselect
+														|#GH252.eo
+														|#GH252.sn
+	domain	tcqsl1	final.rcpt.qnty,non.final.rcpt.qnty,diff.qty,ord.qty
+	
+	final.rcpt.qnty = 0.0 
+	non.final.rcpt.qnty = 0.0
+	diff.qty = 0.0
+	ord.qty = 0.0
+	
+	select	sum(tdpur401.qidl):final.rcpt.qnty
+	from 	tdpur401 
+	where 	tdpur401._index1 = {:q.orno,:q.pono}
+	and	tdpur401.oltp <> 1		|* Not Total Line Type
+	and	tdpur401.clyn <> tcyesno.yes 	|* Not Consider Cancelled PO Line
+	selectdo
+	selectempty
+		final.rcpt.qnty = 0.00
+	endselect
+		
+	select	sum(tdpur401.qidl):non.final.rcpt.qnty,
+		sum(tdpur401.qoor):ord.qty
+	from 	tdpur401 
+	where 	tdpur401._index1 = {:q.orno,:q.pono}
+	and	tdpur401.fire = tcyesno.no
+	and	tdpur401.oltp <> 1		|* Not Total Line Type
+	and	tdpur401.clyn <> tcyesno.yes 	|* Not Consider Cancelled PO Line
+	selectdo
+	selectempty
+		ord.qty = 0.00
+		non.final.rcpt.qnty = 0.00
+	endselect
+	
+	diff.qty = final.rcpt.qnty + (ord.qty - non.final.rcpt.qnty)
+	diff.qty = round(diff.qty,6,2)						
+														|#GH252.en
+	return(diff.qty)
+}
+
+function domain tcqsl1	get.additional.qty.from.501
+					(
+					domain	tcorno	q.orno,
+					domain	tcsern	q.sern,							|#GH252.n
+					domain	tcpono	q.pono
+					)
+{	
+														|#GH252.so
+| 	domain	tcqsl1	ord.qty, app.qty, diff.qty, bac.qty
+| 	
+| 	ord.qty = 0
+| 	app.qty = 0
+| 	bac.qty = 0
+| 	diff.qty = 0
+| 	
+| 	select	atdmsl501.qoor:ord.qty,
+| 		atdmsl501.qiap:app.qty,
+| 		atdmsl501.qibo:bac.qty
+| 	from	tdmsl501 atdmsl501
+| 	where	atdmsl501._index1 = {:q.orno,:q.pono}
+| 	and atdmsl501.oltp = 1
+| 	selectdo
+| 		diff.qty = diff.qty + bac.qty - (ord.qty - app.qty)
+| 	endselect
+														|#GH252.eo
+														|#GH252.sn
+	domain	tcqsl1	final.rcpt.qnty,non.final.rcpt.qnty,diff.qty,ord.qty
+	
+	final.rcpt.qnty = 0.0
+	non.final.rcpt.qnty = 0.0
+	diff.qty = 0.0
+	ord.qty = 0.0
+	
+	select	sum(tdmsl501.qidl):final.rcpt.qnty
+	from 	tdmsl501 
+	where 	tdmsl501._index1 = {:q.orno,:q.sern,:q.pono}
+	and	tdmsl501.oltp <> 1		|* Not Total Line Type
+	and	tdmsl501.clyn <> tcyesno.yes 	|* Not Consider Cancelled PO Line
+	selectdo
+	selectempty
+		final.rcpt.qnty = 0.00
+	endselect
+	
+	select	sum(tdmsl501.qidl):non.final.rcpt.qnty,
+		sum(tdmsl501.qoor):ord.qty
+	from 	tdmsl501 
+	where 	tdmsl501._index1 = {:q.orno,:q.sern,:q.pono}
+	and	tdmsl501.fire = tcyesno.no
+	and	tdmsl501.oltp <> 1		|* Not Total Line Type
+	and	tdmsl501.clyn <> tcyesno.yes 	|* Not Consider Cancelled PO Line
+	selectdo
+	selectempty
+		ord.qty = 0.00
+		non.final.rcpt.qnty = 0.00
+	endselect
+	
+	diff.qty = final.rcpt.qnty + (ord.qty - non.final.rcpt.qnty)			
+	diff.qty = round(diff.qty,6,0)
+														|#GH252.en
+	return(diff.qty)
+}
+
+function boolean Highest_Version(
+			domain	tcorno	in.orno,
+			domain	tcsern	in.vrsn
+				)
+{
+	select	tdmsl400.vrsn
+	from	tdmsl400
+	where	tdmsl400._index1 = {:in.orno}
+	order by tdmsl400.vrsn desc
+	as set with 1 rows
+	selectdo
+		if	tdmsl400.vrsn <> in.vrsn	then
+			return(false)
+		endif
+	endselect
+	
+	return(true)
+}
+	
+function long select.line.from.history(
+				domain	tcorno	i.orno,
+				domain	tcsern	i.vrsn,
+				domain	tcpono	i.pono
+					)
+{
+
+	select	tdmsl501.orno 
+	from	tdmsl501
+	where	tdmsl501._index1 = {:i.orno, :i.vrsn, :i.pono}
+	as set with 1 rows
+	selectdo
+		
+	selectempty
+		return(0)
+	endselect
+	
+	return(1)
+}	
+
+							|#ISGECDV001155.sn
+function domain tcdsca Get_PO_Reference
+			(
+			domain	tcorno		in.orno,
+			domain	tcpono		in.vrsn
+			)
+{
+	domain	tcdsca	tmp.dsca
+	domain	tcpono	max.vrsn
+	
+	tmp.dsca = ""
+	if	not Highest_Version(in.orno, in.vrsn)	then
+		select	rf_tdmsl500.refa:tmp.dsca
+		from	tdmsl500 rf_tdmsl500
+		where	rf_tdmsl500._index1 = {:in.orno, :in.vrsn}
+		selectdo
+		endselect
+	else
+		select	rf_tdpur400.refa:tmp.dsca
+		from	tdpur400 rf_tdpur400
+		where	rf_tdpur400._index1 = {:in.orno}
+		selectdo
+		endselect
+	endif
+	
+	
+	return(tmp.dsca)
+}
+							|#ISGECDV001155.en

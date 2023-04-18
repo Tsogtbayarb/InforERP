@@ -1,0 +1,636 @@
+|******************************************************************************
+|* tdisg1540m000  0  VRC B61U a7 isg 
+|* Superprocure
+|* Ravi Kumar                    
+|* 2020-04-13
+|******************************************************************************
+|* Main table tdisg140 Superprocure, Form Type 1
+|******************************************************************************
+|*
+|* GH528CR878, RAvi Kumar, 26-03-2021
+|* Modification in Logistics PO Generation from Superprocure utility
+|*
+|* GH585CR908, RAvi Kumar, 18-06-2021
+|* Changes in Superprocure PO generation for multiple Projects in Single Load 
+|* 
+|* GH606CR000, RAvi Kumar, 15-07-2021
+|* Check of Project, Element, BP approved for project checks before generating Superprocure Project Code
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttdisg140 | Superprocure
+  table	ttccom001
+  table	ttccom100
+  table	ttppdm600
+  table	ttcmcs065
+  table	ttdpur400
+  table	ttdpur401
+  table	ttctax400
+  
+	extern	domain	tcorno	orno.org
+			string	error.msg(500)
+			
+#include<bic_dam>
+#include<bic_text>
+
+|****************************** program section ********************************
+before.program:
+	query.extend.where("tdisg140.genp = tcyesno.yes and tdisg140.proc = tcyesno.no", EXTEND_OVERWRITE)
+
+
+|****************************** group section **********************************
+form.all:
+init.form:
+	set.checked.command("show.all", 0)
+	
+|****************************** choice section **********************************
+choice.generate:
+before.choice:
+	if tdisg140.proc = tcyesno.yes then
+		message("Already Processed")
+		choice.again()
+	endif
+	
+	if tdisg140.genp = tcyesno.no then
+		message("PO should not generate")
+		choice.again()
+	endif
+	
+	select	tppdm600.cprj				|GH606CR000.a.s
+	from	tppdm600
+	where	tppdm600._index1 = {:tdisg140.cprj}
+	as set with 1 rows
+	selectdo
+	selectempty
+		message("Project not Available")
+		choice.again()
+	endselect
+	
+	select	tpptc100.cprj,
+		tpptc100.cspa
+	from	tpptc100
+	where	tpptc100._index1 = {:tdisg140.cprj, "99050500"}
+	as set with 1 rows
+	selectdo
+	selectempty
+		message("Element 99050500 is not present in Project " & trim$(tdisg140.cprj))
+		choice.again()
+	endselect
+	
+	select	tccom100.cdf_prjs
+	from	tccom100
+	where	tccom100._index1 = {:tdisg140.tran}
+	and	tccom100.cdf_prjs = tcyesno.yes
+	as set with 1 rows
+	selectdo
+		select	tcisg102.cprj
+		from	tcisg102
+		where	tcisg102._index1	=	{:tdisg140.tran}
+		and	tcisg102.cprj		=	:tdisg140.cprj
+		selectdo
+		selectempty
+			dal.set.error.message("Selected project not maintained in supplier wise projects.")
+			choice.again()
+		endselect
+	endselect
+	
+	select	tpisg011.acti
+	from	tpisg011
+	where	tpisg011._index1 = {:tdisg140.cprj}
+	and	tpisg011.act1 = tpisg.sanction.approved
+	as set with 1 rows
+	selectdo
+	selectempty
+		message("Sanction not Approved")
+		choice.again()
+	endselect								|GH606CR000.a.e
+	
+on.choice:
+	if (ask.enum("tdisg154000000", tcyesno.no, tdisg140.load)) = tcyesno.yes then
+		
+		generate.po()
+		
+		if not isspace(orno.org) then
+			message("Process Completed, PO " & trim$(orno.org) & " is generated")
+		endif
+	else
+		choice.again()
+	endif
+	
+
+functions:
+function extern show.all()
+{
+	query.extend.where("", EXTEND_OVERWRITE)
+	rebuild.query()   
+	set.checked.command("show.all", 1)
+}
+
+function generate.po()
+{
+	domain	tclogn	curr.logn
+	domain	tcncmp	comp
+	domain	tcorno	orno.series
+	
+	curr.logn = logname$
+	comp = get.compnr()
+	orno.org = ""
+	
+	if comp = 200 then
+		orno.series = "P601"
+	else
+		if comp = 700 then
+| 			orno.series = "P701"
+			orno.series = "P771"			|GH585CR908.cng
+		else
+			if comp = 651 then
+| 				orno.series = "P651"
+				orno.series = "P656"		|GH585CR908.cng
+			endif
+		endif
+	endif
+	
+	select	tccom001.emno
+	from	tccom001
+	where	tccom001._index4 = {:curr.logn}
+	as set with 1 rows
+	selectdo 
+	selectempty
+		tccom001.emno = ""
+	endselect
+	
+	select	tdisg140.*
+	from	tdisg140
+	where	tdisg140._index1 = {:tdisg140.load, :tdisg140.cprj}		|GH585CR908.a
+	as set with 1 rows
+	selectdo
+		select	tccom100.cadr
+		from	tccom100
+		where	tccom100._index1 = {:tdisg140.tran}
+		as set with 1 rows
+		selectdo
+		selectempty
+			tccom100.cadr = ""
+		endselect
+		
+		if comp = 700 then 					|Ravi.a.14072021
+			tcmcs065.cwoc = "PUR700"
+		else
+			select	tppdm600.ncmp
+			from	tppdm600
+			where	tppdm600._index1 = {:tdisg140.cprj}
+			as set with 1 rows
+			selectdo
+				select	tcmcs065.cwoc
+				from	tcmcs065
+				where	tcmcs065.comp = :tppdm600.ncmp
+				and	tcmcs065.typd = tctypd.pur.office
+				as set with 1 rows
+				selectdo
+				endselect
+			endselect
+		endif
+	
+		if dal.new.object("tdpur400") = 0 then			
+			dal.set.field("tdpur400.orno", orno.series)
+			dal.set.field("tdpur400.otbp", tdisg140.tran)
+			dal.set.field("tdpur400.stbp", tdisg140.tran)
+			dal.set.field("tdpur400.otad", tccom100.cadr)
+			dal.set.field("tdpur400.sfad", tccom100.cadr)
+			dal.set.field("tdpur400.odat", utc.num())
+			dal.set.field("tdpur400.cotp", "DL1")
+			dal.set.field("tdpur400.cofc", tcmcs065.cwoc)
+			dal.set.field("tdpur400.cdf_qapa", tcyesno.no)
+			dal.set.field("tdpur400.cpay", "001")
+			dal.set.field("tdpur400.ccon", tccom001.emno)
+			dal.set.field("tdpur400.refa", "TRANSPORTATION")
+			if dal.save.object("tdpur400") = 0 then
+				commit.transaction()
+				orno.org = tdpur400.orno
+				create.text.footer(orno.org)
+				generate.po.line(orno.org)
+				select	tdisg140.orno,
+					tdisg140.proc
+				from	tdisg140 for update
+				where	tdisg140._index1 = {:tdisg140.load, :tdisg140.cprj}		|GH585CR908.a
+				as set with 1 rows
+				selectdo
+					tdisg140.proc = tcyesno.yes
+					tdisg140.orno = orno.org
+					db.update(ttdisg140, db.retry)
+					commit.transaction()
+				endselect
+			else
+				abort.transaction()
+				dal.get.error.message(error.msg)
+				message(error.msg)
+			endif
+		endif
+	endselect
+}
+
+
+function generate.po.line(	domain	tcorno	orno.po.line)
+{
+	domain	tcitem	item
+	domain	tcncmp	comp
+	
+	comp = get.compnr()
+	
+	if comp = 200 or comp = 651 then
+		item = "         ACFC001"
+	else
+		if comp = 700 then
+			item = "         ACFR001"
+		endif
+	endif
+	
+	select	tdpur400.cdf_qapa
+	from	tdpur400 for update
+	where	tdpur400._index1 = {:orno.po.line}
+	as set with 1 rows
+	selectdo
+		if dal.change.object("tdpur400") = 0 then
+			dal.set.field("tdpur400.cdf_qapa", tcyesno.no)
+			if dal.save.object("tdpur400") = 0 then
+				commit.transaction()
+			else
+				abort.transaction()
+				dal.get.error.message(error.msg)
+				message(error.msg)
+			endif
+		endif
+	endselect
+	
+	select	tdpur401.orno
+	from	tdpur401
+	where	tdpur401._index1 = {:orno.po.line, 1, 1}
+	as set with 1 rows
+	selectdo
+	selectempty
+		select	tppdm600.rsac
+		from	tppdm600
+		where	tppdm600._index1 = {:tdisg140.cprj}
+		as set with 1 rows
+		selectdo
+		selectempty
+			tppdm600.rsac = ""
+		endselect
+		
+		select	tctax400.seqn.l
+		from	tctax400
+		where	tctax400._index2 = {:tdisg140.tgst, :tdisg140.tran}
+		as set with 1 rows
+		selectdo
+		selectempty
+			tctax400.seqn.l = 0
+		endselect
+		
+		if dal.new.object("tdpur401") = 0 then
+			dal.set.field("tdpur401.orno", orno.po.line)
+			dal.set.field("tdpur401.pono", 1)
+			dal.set.field("tdpur401.sqnb", 1)
+			dal.set.field("tdpur401.item", item)
+			dal.set.field("tdpur401.qoor", tdisg140.amnt)
+			dal.set.field("tdpur401.pric", 1)
+			dal.set.field("tdpur401.cprj", tdisg140.cprj)
+			dal.set.field("tdpur401.cspa", "99050500")
+			dal.set.field("tdpur401.cact", tppdm600.rsac)
+			dal.set.field("tdpur401.rnsb.l", tctax400.seqn.l)
+			dal.set.field("tdpur401.txta", tdisg140.txta)				|RAvi.a.12062021
+			if dal.save.object("tdpur401") = 0 then
+				commit.transaction()
+| 				create.text(orno.po.line)
+				generate.po.line.ex(orno.po.line)
+				generate.document.req(orno.po.line)
+				update.payment.term(orno.po.line)		|GH528CR878.a
+				commit.transaction()
+			else
+				abort.transaction()
+				dal.get.error.message(error.msg)
+				message(error.msg)
+			endif
+		endif
+	endselect
+}
+
+function generate.po.line.ex(	domain	tcorno	orno.po.line.ex)
+{
+	select	tdmsl503.orno
+	from	tdmsl503
+	where	tdmsl503._index1 = {:orno.po.line.ex, 1}
+	as set with 1 rows
+	selectdo
+	selectempty
+		select	tdpur401.orno,
+			tdpur401.rnsb.l,
+			tdpur401.rnso.l,
+			tdpur401.cvat
+		from	tdpur401
+		where	tdpur401._index1 = {:orno.po.line.ex, 1 ,1}
+		as set with 1 rows
+		selectdo
+			if dal.new.object("tdmsl503") = 0 then
+				dal.set.field("tdmsl503.orno", orno.po.line.ex)
+				dal.set.field("tdmsl503.pono", 1)
+				dal.set.field("tdmsl503.typo", tpisg.cont.typ.services)
+				dal.set.field("tdmsl503.gstn.b", tdpur401.rnsb.l)
+				dal.set.field("tdmsl503.gstn.c", tdpur401.rnso.l)
+				dal.set.field("tdmsl503.cvat", tdpur401.cvat)
+				if dal.save.object("tdmsl503") = 0 then
+					commit.transaction()
+				else
+					abort.transaction()
+					dal.get.error.message(error.msg)
+					message(error.msg)
+				endif
+			endif
+		endselect
+	endselect
+}
+
+
+function generate.document.req(	domain	tcorno	orno.po.line.ex)
+{
+	long	i
+	domain	tfgld.ttyp	docn
+	
+	for i = 1 to 3
+		if i = 1 then
+			docn = "V08"
+		else
+			if i = 2 then
+				docn = "V09"
+			else
+				if i = 3 then
+					docn = "V21"
+				endif
+			endif
+		endif
+		
+		select	tdisg001.*
+		from	tdisg001
+		where	tdisg001._index1 = {:orno.po.line.ex, 0, :i}
+		selectdo
+		selectempty
+			if dal.new.object("tdisg001") = 0 then
+				dal.set.field("tdisg001.orno", orno.po.line.ex)
+				dal.set.field("tdisg001.vrsn", 0)
+				dal.set.field("tdisg001.pono", i)
+				dal.set.field("tdisg001.docn", docn)
+				dal.set.field("tdisg001.catg", tdisg.dcat.information)
+				dal.set.field("tdisg001.nods", 30)
+				dal.set.field("tdisg001.bdat", tdisg.bdat.del.dt)
+				dal.set.field("tdisg001.pdat", 0)
+				dal.set.field("tdisg001.pmtl", 1)
+				if dal.save.object("tdisg001") = 0 then
+				else
+					dal.get.error.message(error.msg)
+					message(error.msg)
+				endif
+			endif
+		endselect
+	endfor	
+}
+
+function domain	tcmcs.str500m	get.text.line()
+{
+| 	domain	tcmcs.str500m	str.text		|GH528CR878.com
+			string	str.text(5000)			|GH528CR878.a
+	domain	tcdsca	to.state, from.state
+	
+| 	select	tdpur401.ccty
+| 	from	tdpur401
+| 	where	tdpur401._index1 = {:orno.org, 1, 1}
+| 	as set with 1 rows
+| 	selectdo
+| 	selectempty
+| 		tdpur401.ccty = ""
+| 	endselect
+	
+| 	select	tcmcs143.dsca:from.state
+| 	from	tcmcs143
+	|where	tcmcs143._index1 = {:tdpur401.ccty, :tdisg140.fcst}
+| 	where	tcmcs143.cdf_scod = :tdisg140.fcst
+| 	as set with 1 rows
+| 	selectdo
+| 	selectempty
+| 		from.state = ""
+| 	endselect
+| 	
+| 	select	tcmcs143.dsca:to.state
+| 	from	tcmcs143
+| 	where	tcmcs143.cdf_scod = :tdisg140.tcst
+| 	as set with 1 rows
+| 	selectdo
+| 	selectempty
+| 		to.state = ""
+| 	endselect
+	
+	str.text = "Load no - " & trim$(str$(tdisg140.load)) & ", "
+	str.text = str.text & "Vehicle Request no - " & trim$(tdisg140.ivrn) & ", "
+	str.text = str.text & "From State - " & trim$(tdisg140.fcst) & ""
+	str.text = str.text & " LUMPSUM LOWEST RATE SETTLED WITH TRANSPORTER FOR TRANSPORTATION OF MATERIAL "
+	str.text = str.text & "from " & trim$(tdisg140.snam) & " to " & trim$(tdisg140.dnam)
+	str.text = str.text & " to state - " & trim$(tdisg140.tcst) & ", "
+	str.text = str.text & "Type of Vehicle - " & trim$(tdisg140.type) & ", "
+| 	str.text = str.text & "Weight - " & trim$(str$(tdisg140.wght)) & ", "						|GH528CR878.com
+	str.text = str.text & "Weight of Material - " & trim$(str$(tdisg140.wght)) & " " &trim$(tdisg140.wunt) & ", "	|GH528CR878.a
+	str.text = str.text & "Size of Vehicle - " & trim$(tdisg140.size) & " " &trim$(tdisg140.uoms) & ", "
+	str.text = str.text & "No. of Vehicle - " & trim$(str$(tdisg140.novc)) & ", "
+	str.text = str.text & "Amount - Rs." & trim$(str$(tdisg140.amnt))
+	
+	return(str.text)
+}
+
+function create.text(domain	tcorno	orno.po.line.text)
+{
+	
+	string	temp.file1(500), text(300), kw1(17),kw2(17),kw3(17),kw4(17), buffer.string(5000)	|GH528CR878.a	
+	long	write.return, input.file, seq
+| 	domain	tcmcs.str500m	buffer.string								|GH528CR878.com
+	
+	select	tdpur401.txta
+	from	tdpur401 for update
+	where	tdpur401._index1 = {:orno.po.line.text, 1, 1}
+	as set with 1 rows
+	selectdo
+| 		buffer.string = get.text.line()								GH528CR878.com
+		temp.file1 = creat.tmp.file$(bse.tmp.dir$())
+		temp.file1 = strip$(temp.file1)
+		input.file = seq.open(temp.file1,"w")
+| 		seq = seq.puts(buffer.string, input.file)						|GH528CR878.a.s		
+		seq = 	seq.puts("Load no - " & trim$(str$(tdisg140.load)), input.file)
+		seq = 	seq.puts("Vehicle Request no - " & trim$(tdisg140.ivrn), input.file)
+		seq = 	seq.puts("From State - " & trim$(tdisg140.fcst)  & " LUMPSUM LOWEST RATE SETTLED WITH TRANSPORTER FOR TRANSPORTATION OF MATERIAL "
+				& "from " & trim$(tdisg140.snam) & " to " & trim$(tdisg140.dnam) & " to state - " & trim$(tdisg140.tcst), input.file)
+		seq = 	seq.puts("Type of Vehicle - " & trim$(tdisg140.type), input.file)
+		seq = 	seq.puts("Actual Size - " & trim$(tdisg140.size), input.file)
+		seq = 	seq.puts("Weight of Material - " & trim$(str$(tdisg140.wght)) & " " &trim$(tdisg140.wunt), input.file)
+		seq = 	seq.puts("No. of Vehicle - " & trim$(str$(tdisg140.novc)), input.file)
+		seq = 	seq.puts("Amount - Rs." & trim$(str$(tdisg140.amnt)), input.file)		|GH528CR878.a.e
+		seq = seq.puts("RATES ARE INCLUDING ALL STATES RTO PANELTY, CHALLANS, TAXES,DUTIES & WARAI ETC.", input.file)
+		seq = seq.puts("GST SHALL BE DEPOSITED BY ISGEC IN TO GOVERNMENT ACCOUNT AS PER APPLICABLE RATE", input.file)
+		seq = seq.puts("TDS SHALL BE DEDUCTED AS PER APPLICABLE RATE", input.file)
+		seq = seq.close(input.file)
+		
+		write.return = text.write("tdpur401.txta", "2", kw1, kw2, kw3, kw4, "text", "", temp.file1)
+		db.update(ttdpur401, db.retry)
+		seq = seq.unlink(temp.file1)
+		commit.transaction()
+	endselect
+}
+
+
+function create.text.footer(domain	tcorno	orno.po.footer.text)
+{
+	string	temp.file2(5000), text(300), kw1(17),kw2(17),kw3(17),kw4(17)
+	long	write.return, seq
+| 	domain	tcmcs.str500m	buffer.string
+	
+	select	tdpur400.txtb
+	from	tdpur400 for update
+	where	tdpur400._index1 = {:orno.po.footer.text}
+	as set with 1 rows
+	selectdo
+| 		temp.file2 = get.text.footer()
+		temp.file2 = get.text.footer.new()			|RAvi.cng in 05-07-2021
+	
+		write.return = text.write("tdpur400.txtb", "2", kw1, kw2, kw3, kw4, "text", "", temp.file2)
+		db.update(ttdpur400, db.retry)
+		seq = seq.unlink(temp.file2)
+		commit.transaction()
+	endselect
+}
+
+function string get.text.footer()
+{
+	domain	tcmcs.str500m	str.text
+	domain	tcdsca	to.state, from.state
+	string	temp.file2(5000), str3(1000), str4(1000), str5(1000), str6(1000), str7(1000), str8(1000), str14(1000), str15(1000)
+	long	input.file, seq
+	
+	temp.file2 = creat.tmp.file$(bse.tmp.dir$())
+	input.file = seq.open(temp.file2, "w")
+	temp.file2 = strip$(temp.file2)
+	
+	seq = seq.puts("TERMS AND CONDITIONS FOR SPOT FINALISATION - ", input.file)
+	seq = seq.puts("", input.file)
+	seq = seq.puts("Terms & Conditions:", input.file)
+	seq = seq.puts("1.  Rate will be valid for 15 days from the date of finalization.", input.file)
+	seq = seq.puts("2.  NO Challan for settled ODC or any increase dimension will be paid on ODC side.", input.file)
+	
+	str3 = "3.  We will not pay for any charges for any deviation upto 5% in settled"
+	str3 = str3 & " ODC side.  In case of an ODC for any other side than what has been"
+	str3 = str3 & " settled, we will settle the case on the spot basis. Please do not move"
+	str3 = str3 & " the vehicle until the case is settled. In case vehicle is moved without"	
+	str3 = str3 & " our permission then the original dimensions will be considered as final."
+	seq = seq.puts(str3, input.file)
+	
+	str4 = "4.  The transporter will load vehicles as per the Pay Load Capacity"
+	str4 = str4 & " mentioned in Clause 1 of Isgec Transportation Contract. Overweight"
+	str4 = str4 & " vehicles above the tolerance limit of 5% in Gross weight as per"
+	str4 = str4 & " notification number RT-11036/92/2015   MVL issued by Ministry of Road" 
+	str4 = str4 & " Transport & Highways dated 11th Feb, 2016 are NOT allowed. In case of"
+	str4 = str4 & " any accident if the vehicle is found to be overloaded more than 5% in"
+	str4 = str4 & " Gross weight, the insurance claim is liable to be rejected and in such" 
+	str4 = str4 & " cases all costs & consequences will be to the transporters account. It"
+	str4 = str4 & " is implicit that no RTO Penalties / Challans for overweight cargo will" 
+	str4 = str4 & " be levied or claimed."
+	
+	seq = seq.puts(str4, input.file)
+	
+	str5 = "5.  The placement of vehicle will be intimated via email. You are to place the vehicle on requested date"
+	seq = seq.puts(str5, input.file)
+	
+	str6 = "6.  In case you fail to provide the finalized normal vehicle within 48 hours and finalized special vehicles within 72 hours of request date"
+	str6 = str6 & "then Isgec will reserve the right to send the goods through an alternate source and any differential freight amount will be debited to you."
+	seq = seq.puts(str6, input.file)
+	
+	str7 = "7.  For Special Vehicles (Low Bed Trailers and above 40 Feet Bed Trailers) the finalized dimensions and weight will be final. No"
+	str7 = str7 & " weighment slip or RC copy is required upto 22 MT. For weight above 22 MT RC copy will be required"
+	seq = seq.puts(str7, input.file)
+	
+	str8 = "8. Photographs at Loading Point of All Vehicles are compulsory, however at certain suppliers such as ISGEC YNR Photography is not allowed inside"
+	str8 = str8 & " Works. If same is noticed at other supplier s locations/works then photograph will be taken outside the works. These photographs are to be"
+	str8 = str8 & " provided on email after loading and hard copy along with Bill to process payment."
+	seq = seq.puts(str8, input.file)
+	seq = seq.puts("9. Weighment is compulsory for every vehicle except for Airport Delivery and point #7 above.", input.file)
+	seq = seq.puts("10.  Except points mentioned above other Terms & Conditions will be as per Isgec Transportation Contract.", input.file)
+	seq = seq.puts("11. Isgec reserves the right to award the contract Partial / Full basis.", input.file)
+	seq = seq.puts("12. Isgec reserves the right to reject Transporter offer without assigning any reason.", input.file)
+	seq = seq.puts("13.  Isgec Transportation Terms & Conditions for reference can be provided on request.", input.file)
+	
+	str14 = "14. By quoting to the RFQ it is assumed that Transporter has conducted due diligence of Route & will be able to accomplish the"
+	str14 = str14 & " job in the most professional manner."
+	seq = seq.puts(str14, input.file)
+	
+	str15 = "15. After placement of vehicle Isgec reserves the right to load material"
+	str15 = str15 & " which falls within the payload capacity and dimensions of given vehicle"
+	str15 = str15 & "s bed size irrespective of the declared weight + dimensions of the"
+	str15 = str15 & " material mentioned in the online vehicle placement request.  No Pro-rata for weight will be given."
+	seq = seq.puts(str15, input.file)
+	seq = seq.puts("16. Penalty for Delay Delivery :", input.file)
+	seq = seq.puts("a)      1% of freight charges per day of delay.", input.file)
+	seq = seq.puts("b)      Maximum 10% of freight charges upto 30 days.", input.file)
+	seq = seq.puts("c)      Beyond 30 days, Penalty is flat 15% of freight bill.", input.file)
+	seq = seq.puts("===================================================================", input.file)
+	seq = seq.puts("INFORMATION FOR USE BY LOGISTICS DEPARTMENT.", input.file)
+	seq = seq.puts("============================================", input.file)
+	seq = seq.puts("1.Reason for SPOT Finalization: NEW PROJECT.", input.file)
+	seq = seq.puts("2.Reference Rate Contract: NO REF.RATE FOR DELIVERY LOCATION.", input.file)
+	seq = seq.puts("3.Reference Rate: NA.", input.file)
+	seq = seq.puts("4.Excess by Rs. NA.", input.file)
+	seq = seq.puts("5.Lesser by Rs. NA.", input.file)
+	seq = seq.puts("6.Debit Action to if any: NA ", input.file)
+	seq = seq.puts("=====================================================================", input.file)
+	
+	seq = seq.close(input.file)
+	return(temp.file2)
+}
+
+function update.payment.term(	domain	tcorno	orno.po.line.pay)				|GH528CR878.a.s
+{
+	select	tcisg001.bdat,
+		tcisg001.prd
+	from	tcisg001 for update
+	where	tcisg001._index1 = {:orno.po.line.pay}
+	as set with 1 rows
+	selectdo
+		if dal.change.object("tcisg001") = 0 then
+			dal.set.field("tcisg001.bdat", tcisg.bdat.delivery.date)
+			dal.set.field("tcisg001.prd", "Within 30 Days")
+			if dal.save.object("tcisg001") = 0 then
+				commit.transaction()
+			else
+				dal.get.error.message(error.msg)
+			endif
+		endif
+	endselect
+}												|GH528CR878.a.e
+
+function string get.text.footer.new()
+{
+	string	temp.file2(5000)
+	long	input.file, seq
+	
+	temp.file2 = creat.tmp.file$(bse.tmp.dir$())
+	input.file = seq.open(temp.file2, "w")
+	temp.file2 = strip$(temp.file2)
+	
+	seq = seq.puts("SPOT FINALISATION - TERMS & CONDITIONS AS PER Ref: DL/STC/2021/0102, Dated: 01st February, 2021", input.file)
+	seq = seq.puts("========================================================================", input.file)
+	seq = seq.puts("", input.file)
+	seq = seq.puts("========================================================================", input.file)
+	seq = seq.puts("INFORMATION FOR USE BY LOGISTICS DEPARTMENT.", input.file)
+	seq = seq.puts("============================================", input.file)
+	seq = seq.puts("1.Reason for SPOT Finalization: OC05- NO CONTRACT", input.file)
+	seq = seq.puts("2.Reference Rate Contract:", input.file)
+	seq = seq.puts("3.Reference Rate- Rs.NA.", input.file)
+	seq = seq.puts("4.Excess by       Rs.NA.", input.file)
+	seq = seq.puts("5.Lesser by       Rs.NA.", input.file)
+	seq = seq.puts("6.Debit Action to if any: NA ", input.file)
+	seq = seq.puts("========================================================================", input.file)
+	seq = seq.close(input.file)
+	return(temp.file2)
+}

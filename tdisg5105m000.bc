@@ -1,0 +1,170 @@
+|******************************************************************************
+|* tdisg5105m000  0  VRC B61U a7 isg 
+|* Request for Vendor Registration, Assessment and Approval
+|* Ravi Kumar                    
+|* 2021-01-14
+|******************************************************************************
+|* Main table tdisg505 Request for Vendor Registration, Assessment and Approval, Form Type 1
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttdisg505 | Request for Vendor Registration, Assessment and Approval
+
+	string	error.msg(500)
+	extern	domain	tcnama	code.nama
+	extern	domain	tcncmp	curr.comp
+	long ret
+	#include <bic_dam>
+	#include<bic_desktop>
+|****************************** program section ********************************
+before.display.object:
+	if tdisg505.rsts = tdisg.req.stat.created then
+		enable.commands("sendforapp")
+	else
+		disable.commands("sendforapp")
+	endif
+
+|****************************** group section **********************************
+group.7:
+init.group:
+ret = create.extra.toolbar(
+		"attachment",	"tcgen:activate",
+		"notes", "dmisg:notes")
+		
+choice.sendforapp:
+on.choice:
+	select	tdisg505.rsts
+	from	tdisg505 for update
+	where	tdisg505._index1 = {:tdisg505.rqno}
+	as set with 1 rows
+	selectdo
+		tdisg505.rsts = tdisg.req.stat.sendforappr
+		db.update(ttdisg505, db.retry)
+		commit.transaction()
+		insert.history()
+		tdisgdll05505.send.email.alert(tdisg505.rqno)
+	endselect
+	
+choice.attachment:
+on.choice:
+	get_attachment()
+	
+choice.notes:
+on.choice:
+	get.notes()
+	
+field.code.nama:
+before.display:
+	select	tccom100.nama:code.nama
+	from	tccom100
+	where	tccom100._index1 = {:tdisg505.code}
+	as set with 1 rows
+	selectdo
+	selectempty
+		code.nama = ""
+	endselect
+
+|*******************************Functions******************************************
+functions:
+function insert.history()
+{
+	if dal.new.object("tdisg509") = 0 then
+		dal.set.field("tdisg509.rqno", tdisg505.rqno)
+		dal.set.field("tdisg509.ordv", tdisg505.ordv)
+		dal.set.field("tdisg509.bpid", tdisg505.bpid)
+		dal.set.field("tdisg509.item", tdisg505.item)
+		dal.set.field("tdisg509.stat", tdisg505.rsts)
+		dal.set.field("tdisg509.acdt", utc.num())
+		dal.set.field("tdisg509.acby", logname$)
+		if dal.save.object("tdisg509") = 0 then
+			commit.transaction()
+		else
+			abort.transaction()
+		endif
+	endif
+}
+
+function get_attachment()
+{
+	domain	tcmcs.str1		p.char, c.char
+	domain	tcmcs.str30		i.host	
+	domain	tclogn			o.user
+	domain	tcmcs.str50		pass.string, handle.string
+		string			open.link(200),sess.code(30)
+	
+	pass.string = trim$(tdisg505.rqno) 
+	
+	o.user = logname$
+	
+	i.host = hostname$()
+	i.host =  toupper$(i.host)
+	i.host = trim$(i.host)
+	
+	curr.comp = get.compnr()
+	p.char = ""
+	c.char = ""
+	handle.string = ""
+	handle.string =  "Vendor_Registration" & str$(curr.comp)
+	
+	p.char = "y"
+		
+	on case i.host
+	case "VISHNU":	
+		open.link = 	"chrome.exe --app=http://192.9.200.146/Attachment/Attachment.aspx?AthHandle=" & trim$(handle.string) &
+				"&Index=" & trim$(pass.string) & "&AttachedBy=" & trim$(o.user) & "&ed=" & p.char	
+		break
+	case "ERPTESTAPP01":
+		open.link = 	"chrome.exe --app=http://192.9.200.146/ATHERPTEST/Attachment.aspx?AthHandle=" & trim$(handle.string) &
+				"&Index=" & trim$(pass.string) & "&AttachedBy=" & trim$(o.user) & "&ed=" & p.char
+		break
+	case "VISHNU10GST":	
+		open.link = 	"chrome.exe --app=http://192.9.200.146/ATHERPTEST/Attachment.aspx?AthHandle=" & trim$(handle.string) &
+				"&Index=" & trim$(pass.string) & "&AttachedBy=" & trim$(o.user) & "&ed=" & p.char
+		break
+	endcase
+		
+
+	open.link = trim$(open.link)
+	
+	app_start(open.link, "", "", "", "")
+
+}
+
+function get.notes()
+{
+	domain	tclogn			o.user
+	domain	tcmcs.str50		pass.string, handle.string
+	domain	tcmcs.str30		i.host	
+	domain	tcmcs.str1		p.char
+		string			open.link(200)
+	
+	o.user = logname$
+	
+	i.host = hostname$()
+	i.host =  toupper$(i.host)
+	i.host = trim$(i.host)
+	
+	curr.comp = get.compnr()
+	p.char = ""
+	
+	on case i.host
+	case "VISHNU":
+		p.char = "P"
+		break
+		
+	case "VISHNU10GST":
+		p.char = "T"
+		break
+	endcase
+	pass.string = "LN_SUPPLIERAPPROVALREQUEST_" & str$(curr.comp)
+	
+	open.link = "chrome.exe --app=http://192.9.200.146/Attachment/Notes.aspx?handle=" & 
+				trim$(pass.string) & "&Index=" & trim$(tdisg505.rqno) & "&user=" & trim$(o.user) &
+				"&Em=" & "&Hd=" & trim$(tdisg505.rqno) & "&Tl=" & trim$(tdisg505.rqno)
+				
+	open.link = trim$(open.link)
+	
+	app_start(open.link, "", "", "", "")
+}

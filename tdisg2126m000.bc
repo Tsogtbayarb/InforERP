@@ -1,0 +1,91 @@
+|******************************************************************************
+|* tdisg2126m000  0  VRC B61U a7 isg 
+|* Request for Supplier Debit Entry
+|* Ravi Kumar                    
+|* 2021-01-05
+|******************************************************************************
+|* Main table tdisg226 Supplier Debit, Form Type 1
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttdisg226 | Supplier Debit
+  table   ttdisg227
+
+	extern	domain	tcnama	bpid.nama
+	extern	domain	tcdsca	cprj.dsca
+
+|****************************** program section ********************************
+before.display.object:
+	if tdisg226.stat <> tdisg.action.create then
+		disable.commands("send.to.approve")
+	endif
+	
+	if tdisg226.stat <> tdisg.action.approved then
+		disable.commands("send.for.finance")
+	endif
+
+|****************************** group section **********************************
+
+choice.send.to.approve:
+on.choice:
+	select	tdisg226.stat
+	from	tdisg226 for update
+	where	tdisg226._index1 = {:tdisg226.dbno}
+	as set with 1 rows
+	selectdo
+		tdisg226.stat = tdisg.action.sendforapp
+		db.update(ttdisg226, db.retry)
+		commit.transaction()
+	endselect
+	insert.history()
+	
+choice.send.for.finance:
+on.choice:
+	select	tdisg226.stat
+	from	tdisg226 for update
+	where	tdisg226._index1 = {:tdisg226.dbno}
+	as set with 1 rows
+	selectdo
+		tdisg226.stat = tdisg.action.sendtofin
+		tdisg226.sfin = logname$
+		tdisg226.sedt = utc.num()
+		db.update(ttdisg226, db.retry)
+		commit.transaction()
+	endselect
+	insert.history()
+	
+field.bpid.nama:
+before.display:
+	select	tccom100.nama:bpid.nama
+	from	tccom100
+	where	tccom100._index1 = {:tdisg226.bpid}
+	as set with 1 rows
+	selectdo
+	selectempty
+		bpid.nama = ""
+	endselect
+	
+field.cprj.dsca:
+before.display:
+	select	tcmcs052.dsca:cprj.dsca
+	from	tcmcs052
+	where	tcmcs052._index1 = {:tdisg226.cprj}
+	as set with 1 rows
+	selectdo
+	selectempty
+		cprj.dsca = ""
+	endselect
+	
+functions:
+function insert.history()
+{
+	tdisg227.dbno = tdisg226.dbno
+	tdisg227.stat = tdisg226.stat
+	tdisg227.rmks = tdisg226.rqrk
+	tdisg227.actn = logname$
+	tdisg227.acon = utc.num()
+	db.insert(ttdisg227, db.retry)
+	commit.transaction()
+}

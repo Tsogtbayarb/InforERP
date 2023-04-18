@@ -1,0 +1,687 @@
+|******************************************************************************
+|* tdisg2414  0  VRC B61U a7 isg 
+|* Details of Orders Processed/To be Processed by Audit
+|* Utam Kumar Singh              
+|* 2021-10-08
+|******************************************************************************
+|* Main table tdisg214 , Form Type 4
+|******************************************************************************
+|* 
+|* GH670CR993.02022022, Utam kumar singh
+|* Filter for Auditable & Non-Auditable Orders to be added in Audit Dashboard Reports                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+  table		ttdisg214 | 
+  table		ttccom001
+  table		ttdmsl400
+  table		ttdpur400
+  table		ttdisg215
+  table		ttdmsl400
+  table		ttdisg088
+  table		ttdmsl500
+
+   
+   extern	domain	tcyesno		amch		|GH670CR993.02022022.add
+   
+   string	snam(46),pdsc(45),apby(45),str(300), err.file(100), file.name(100), line3(2000), line4(2000),status(12)
+   long		ret2, stat.fp,order_in_hand, order_received, order_processed, balance_order,order_in_hand1,order_in_hand2,order_in_hand3,order_received1,order_received2,order_received3,order_processed1,order_processed2,order_processed3
+   
+   
+|*************** Include **************
+#include<bic_desktop>
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.cont.process:
+on.choice:
+   generate.file()
+
+|****************************** field section *********************************
+
+	
+|****************************** function section ******************************
+
+functions:
+
+function generate.file()
+{
+	open.file1()
+	generate.header1()
+	read.main.table1()
+	close.file1()
+	
+	open.file2()
+	generate.header2()
+	read.main.table2()
+	close.file2()
+}
+
+function open.file1()
+{
+	err.file = bse.tmp.dir$() & str$(utc.num()) & ".xls"
+	
+	file.name = "c:\temp\" & str$(utc.num())  & ".xls"
+	
+	stat.fp = seq.open(err.file, "w+")
+	if stat.fp >0 then
+ 		seq.seek(0, 0, stat.fp)
+	endif
+}
+
+function open.file2()
+{
+	err.file = bse.tmp.dir$() & str$(utc.num()) & ".xls"
+	
+	file.name = "c:\temp\" & str$(utc.num())  & ".xls"
+	
+	stat.fp = seq.open(err.file, "w+")
+	if stat.fp >0 then
+ 		seq.seek(0, 0, stat.fp)
+	endif
+}
+
+function close.file1()
+{
+	seq.close(stat.fp)
+	ret2 = server2client(err.file,file.name,1)
+	ret2 = app_start(file.name,"c:","","","")
+}
+
+function close.file2()
+{
+	seq.close(stat.fp)
+	ret2 = server2client(err.file,file.name,1)
+	ret2 = app_start(file.name,"c:","","","")
+}
+
+function	generate.header1()
+{
+	line4 =	concat$("	",
+		sprintf$("Purchase Office"),					|1		
+		sprintf$("Orders in Hand Till Previous Day"),			|2		
+		sprintf$("Orders Received Today"),				|3		
+		sprintf$("Orders Processed Today"),				|4		
+		sprintf$("Balance Orders in Hand for Processing"))		|5
+		
+									
+	line4 = strip$(shiftl$(line4))		
+	seq.puts(line4, stat.fp)	
+}
+
+function	generate.header2()
+{
+	line4 =	concat$("	",
+		sprintf$("Purchase Office"),					|1		
+		sprintf$("Purchase Order"),					|2		
+		sprintf$("Version"),						|3		
+		sprintf$("Status"),						|4		
+		sprintf$("Submission Date"),					|5
+		sprintf$("Approval Date"))					|6
+		
+									
+	line4 = strip$(shiftl$(line4))		
+	seq.puts(line4, stat.fp)	
+}
+
+function read.main.table1()
+{
+	domain	tccwoc	cofc
+	long	yyyy,mm,dd,hh,mm1,ss, yesterday_date, order_in_hand_t, order_received_t, order_processed_t, balance_order_t
+	
+	utc.to.date(utc.num(),yyyy,mm,dd,hh,mm1,ss)
+	yesterday_date = date.to.utc(yyyy, mm, dd, 00, 00, 00)
+	
+	order_in_hand_t = 0
+	order_received_t = 0
+	order_processed_t = 0
+	balance_order_t = 0
+	
+	select	tdpur400.cofc
+	from	tdpur400,tdmsl400
+	where	tdpur400.cofc <> ""
+	and	tdmsl400.orno refers to tdpur400
+	group by tdpur400.cofc
+	order by tdpur400.cofc
+	selectdo
+		cofc = tdpur400.cofc
+		order_in_hand = 0
+		order_received = 0
+		order_processed = 0
+		
+| 		select	count(tdmsl400.orno):order_in_hand			|GH670CR993.02022022.cmnt.strt
+| 		from	tdpur400,tdmsl400
+| 		where	tdpur400.cofc = :cofc
+| 		and	tdmsl400.updt < :yesterday_date
+| 		and	tdmsl400.work = tdmsl.work.yes
+| 		and	tdmsl400.orno refers to tdpur400
+| 		selectdo
+| 		endselect
+
+| 		select	count(tdmsl400.orno):order_received
+| 		from	tdpur400,tdmsl400
+| 		where	tdpur400.cofc = :cofc
+| 		and	tdmsl400.updt >= :yesterday_date
+| 		and	tdmsl400.work = tdmsl.work.yes
+| 		and	tdmsl400.orno refers to tdpur400
+| 		selectdo
+| 		endselect
+| 		
+| 		select	count(tdmsl400.orno):order_processed
+| 		from	tdpur400,tdmsl400
+| 		where	tdpur400.cofc = :cofc
+| 		and	tdmsl400.updt >= :yesterday_date
+| 		and	(tdmsl400.work = tdmsl.work.completed or (tdmsl400.work = tdmsl.work.no and tdmsl400.apdt <> 0))
+| 		and	tdmsl400.orno refers to tdpur400
+| 		selectdo
+| 		endselect							|GH670CR993.02022022.cmnt.end
+										|GH670CR993.02022022.add.strt
+		if amch = tcyesno.yes then					| Non-Auditable
+			select	count(tdmsl400.orno):order_in_hand1
+			from	tdpur400,tdmsl400,tdisg214
+			where	tdpur400.cofc = :cofc
+			and	tdpur400.oamt < 500000
+			and	tdpur400.ccur = "INR"
+			and	tdmsl400.vrsn = 0
+			and	tdmsl400.updt < :yesterday_date
+			and	tdmsl400.work = tdmsl.work.yes
+			and	tdmsl400.orno refers to tdpur400
+			and	tdisg214._index1 refers to tdmsl400._index1
+			selectdo
+			endselect
+			
+			select	count(tdmsl400.orno):order_in_hand2
+			from	tdpur400,tdmsl400,tdisg214
+			where	tdpur400.cofc = :cofc
+			and	tdpur400.ccur = "INR"
+			and	tdmsl400.vrsn > 0
+			and	tdmsl400.amch = tcyesno.yes
+			and	tdmsl400.updt < :yesterday_date
+			and	tdmsl400.work = tdmsl.work.yes
+			and	tdmsl400.orno refers to tdpur400
+			and	tdisg214._index1 refers to tdmsl400._index1
+			selectdo
+			endselect
+			
+			order_in_hand = order_in_hand1 + order_in_hand2
+
+			select	count(tdmsl400.orno):order_received1
+			from	tdpur400,tdmsl400,tdisg214
+			where	tdpur400.cofc = :cofc
+			and	tdpur400.oamt < 500000
+			and	tdpur400.ccur = "INR"
+			and	tdmsl400.vrsn = 0
+			and	tdmsl400.updt >= :yesterday_date
+			and	tdmsl400.work = tdmsl.work.yes
+			and	tdmsl400.orno refers to tdpur400
+			and	tdisg214._index1 refers to tdmsl400._index1
+			selectdo
+			endselect
+			
+			select	count(tdmsl400.orno):order_received2
+			from	tdpur400,tdmsl400,tdisg214
+			where	tdpur400.cofc = :cofc
+			and	tdpur400.ccur = "INR"
+			and	tdmsl400.vrsn > 0
+			and	tdmsl400.amch = tcyesno.yes
+			and	tdmsl400.updt >= :yesterday_date
+			and	tdmsl400.work = tdmsl.work.yes
+			and	tdmsl400.orno refers to tdpur400
+			and	tdisg214._index1 refers to tdmsl400._index1
+			selectdo
+			endselect
+			
+			order_received = order_received1 + order_received2
+			
+			select	count(tdmsl400.orno):order_processed1
+			from	tdpur400,tdmsl400,tdisg214
+			where	tdpur400.cofc = :cofc
+			and	tdpur400.oamt < 500000
+			and	tdpur400.ccur = "INR"
+			and	tdmsl400.vrsn = 0
+			and	tdmsl400.updt >= :yesterday_date
+			and	(tdmsl400.work = tdmsl.work.completed or (tdmsl400.work = tdmsl.work.no and tdmsl400.apdt <> 0))
+			and	tdmsl400.orno refers to tdpur400
+			and	tdisg214._index1 refers to tdmsl400._index1
+			selectdo
+			endselect
+			
+			select	count(tdmsl400.orno):order_processed2
+			from	tdpur400,tdmsl400,tdisg214
+			where	tdpur400.cofc = :cofc
+			and	tdpur400.ccur = "INR"
+			and	tdmsl400.vrsn > 0
+			and	tdmsl400.amch = tcyesno.yes
+			and	tdmsl400.updt >= :yesterday_date
+			and	(tdmsl400.work = tdmsl.work.completed or (tdmsl400.work = tdmsl.work.no and tdmsl400.apdt <> 0))
+			and	tdmsl400.orno refers to tdpur400
+			and	tdisg214._index1 refers to tdmsl400._index1
+			selectdo
+			endselect
+			
+			order_processed = order_processed1 + order_processed2
+		else								 | Auditable
+			select	count(tdmsl400.orno):order_in_hand1
+			from	tdpur400,tdmsl400,tdisg214
+			where	tdpur400.cofc = :cofc
+			and	tdpur400.oamt >= 500000
+			and	tdpur400.ccur = "INR"
+			and	tdmsl400.vrsn = 0
+			and	tdmsl400.updt < :yesterday_date
+			and	tdmsl400.work = tdmsl.work.yes
+			and	tdmsl400.orno refers to tdpur400
+			and	tdisg214._index1 refers to tdmsl400._index1
+			selectdo
+			endselect
+			
+			select	count(tdmsl400.orno):order_in_hand2
+			from	tdpur400,tdmsl400,tdisg214
+			where	tdpur400.cofc = :cofc
+			and	tdmsl400.vrsn > 0
+			and	tdmsl400.amch = tcyesno.no
+			and	tdmsl400.updt < :yesterday_date
+			and	tdmsl400.work = tdmsl.work.yes
+			and	tdmsl400.orno refers to tdpur400
+			and	tdisg214._index1 refers to tdmsl400._index1
+			selectdo
+			endselect
+			
+			select	count(tdmsl400.orno):order_in_hand3			| For Export 24022022
+			from	tdpur400,tdmsl400,tdisg214
+			where	tdpur400.cofc = :cofc
+			and	tdpur400.ccur <> "INR"
+			and	tdmsl400.vrsn = 0
+			and	tdmsl400.updt < :yesterday_date
+			and	tdmsl400.work = tdmsl.work.yes
+			and	tdmsl400.orno refers to tdpur400
+			and	tdisg214._index1 refers to tdmsl400._index1
+			selectdo
+			endselect
+			
+			order_in_hand = order_in_hand1 + order_in_hand2 + order_in_hand3
+
+			select	count(tdmsl400.orno):order_received1
+			from	tdpur400,tdmsl400,tdisg214
+			where	tdpur400.cofc = :cofc
+			and	tdpur400.oamt >= 500000
+			and	tdpur400.ccur = "INR"
+			and	tdmsl400.vrsn = 0
+			and	tdmsl400.updt >= :yesterday_date
+			and	tdmsl400.work = tdmsl.work.yes
+			and	tdmsl400.orno refers to tdpur400
+			and	tdisg214._index1 refers to tdmsl400._index1
+			selectdo
+			endselect
+			
+			select	count(tdmsl400.orno):order_received2
+			from	tdpur400,tdmsl400,tdisg214
+			where	tdpur400.cofc = :cofc
+			and	tdmsl400.vrsn > 0
+			and	tdmsl400.amch = tcyesno.no
+			and	tdmsl400.updt >= :yesterday_date
+			and	tdmsl400.work = tdmsl.work.yes
+			and	tdmsl400.orno refers to tdpur400
+			and	tdisg214._index1 refers to tdmsl400._index1
+			selectdo
+			endselect
+			
+			select	count(tdmsl400.orno):order_received3			| For Export 24022022
+			from	tdpur400,tdmsl400,tdisg214
+			where	tdpur400.cofc = :cofc
+			and	tdpur400.ccur <> "INR"
+			and	tdmsl400.vrsn = 0
+			and	tdmsl400.updt >= :yesterday_date
+			and	tdmsl400.work = tdmsl.work.yes
+			and	tdmsl400.orno refers to tdpur400
+			and	tdisg214._index1 refers to tdmsl400._index1
+			selectdo
+			endselect
+			
+			order_received = order_received1 + order_received2 + order_received3
+			
+			select	count(tdmsl400.orno):order_processed1
+			from	tdpur400,tdmsl400,tdisg214
+			where	tdpur400.cofc = :cofc
+			and	tdpur400.oamt >= 500000
+			and	tdpur400.ccur = "INR"
+			and	tdmsl400.vrsn = 0
+			and	tdmsl400.updt >= :yesterday_date
+			and	(tdmsl400.work = tdmsl.work.completed or (tdmsl400.work = tdmsl.work.no and tdmsl400.apdt <> 0))
+			and	tdmsl400.orno refers to tdpur400
+			and	tdisg214._index1 refers to tdmsl400._index1
+			selectdo
+			endselect
+
+			select	count(tdmsl400.orno):order_processed2
+			from	tdpur400,tdmsl400,tdisg214
+			where	tdpur400.cofc = :cofc
+			and	tdmsl400.vrsn > 0
+			and	tdmsl400.amch = tcyesno.no
+			and	tdmsl400.updt >= :yesterday_date
+			and	(tdmsl400.work = tdmsl.work.completed or (tdmsl400.work = tdmsl.work.no and tdmsl400.apdt <> 0))
+			and	tdmsl400.orno refers to tdpur400
+			and	tdisg214._index1 refers to tdmsl400._index1
+			selectdo
+			endselect
+			
+			select	count(tdmsl400.orno):order_processed3				| For Export 24022022
+			from	tdpur400,tdmsl400,tdisg214
+			where	tdpur400.cofc = :cofc
+			and	tdpur400.ccur <> "INR"
+			and	tdmsl400.vrsn = 0
+			and	tdmsl400.updt >= :yesterday_date
+			and	(tdmsl400.work = tdmsl.work.completed or (tdmsl400.work = tdmsl.work.no and tdmsl400.apdt <> 0))
+			and	tdmsl400.orno refers to tdpur400
+			and	tdisg214._index1 refers to tdmsl400._index1
+			selectdo
+			endselect
+			
+			order_processed = order_processed1 + order_processed2 + order_processed3		|GH670CR993.02022022.add.end
+		endif											
+		
+		balance_order = (order_in_hand + order_received) - order_processed
+		
+		order_in_hand_t = order_in_hand_t + order_in_hand
+		order_received_t = order_received_t + order_received
+		order_processed_t = order_processed_t + order_processed
+		balance_order_t = balance_order_t + balance_order
+		
+		print.detail1()
+	endselect
+	
+	tdpur400.cofc = "Total"
+	order_in_hand = order_in_hand_t
+	order_received = order_received_t
+	order_processed = order_processed_t
+	balance_order = balance_order_t
+	print.detail1()
+}
+
+function read.main.table2()
+{
+	domain	tccwoc	cofc
+	long	yyyy,mm,dd,hh,mm1,ss, yesterday_date
+	
+	utc.to.date(utc.num(),yyyy,mm,dd,hh,mm1,ss)
+	yesterday_date = date.to.utc(yyyy, mm, dd, 00, 00, 00)
+	
+	
+	select	tdpur400.cofc
+	from	tdpur400,tdmsl400
+	where	tdpur400.cofc <> ""
+	and	tdmsl400.orno refers to tdpur400
+	group by tdpur400.cofc
+	order by tdpur400.cofc
+	selectdo
+		cofc = tdpur400.cofc
+		
+| 		select	tdmsl400.*					|GH670CR993.02022022.cmnt.strt
+| 		from	tdpur400,tdmsl400
+| 		where	tdpur400.cofc = :cofc
+| 		and	tdmsl400.work = tdmsl.work.yes
+| 		and	tdmsl400.orno refers to tdpur400
+| 		selectdo
+| 			if tdmsl400.apdt = 0 then
+| 				status = "Submitted"
+| 			else
+| 				status = "Re-Submitted"
+| 			endif	
+| 			print.detail2()	
+| 		endselect						|GH670CR993.02022022.cmnt.end
+									|GH670CR993.02022022.add.strt
+		if amch = tcyesno.yes then				| Non-Auditable
+			select	tdmsl400.*
+			from	tdpur400,tdmsl400,tdisg214
+			where	tdpur400.cofc = :cofc
+			and	tdpur400.oamt < 500000
+			and	tdpur400.ccur = "INR"
+			and	tdmsl400.vrsn = 0
+			and	tdmsl400.work = tdmsl.work.yes
+			and	tdmsl400.orno refers to tdpur400
+			and	tdisg214._index1 refers to tdmsl400._index1
+			selectdo
+				if tdmsl400.apdt = 0 then
+					status = "Submitted"
+				else
+					status = "Re-Submitted"
+				endif	
+				print.detail2()	
+			endselect
+			
+			select	tdmsl400.*
+			from	tdpur400,tdmsl400,tdisg214
+			where	tdpur400.cofc = :cofc
+			and	tdpur400.ccur = "INR"
+			and	tdmsl400.vrsn > 0
+			and	tdmsl400.amch = tcyesno.yes
+			and	tdmsl400.work = tdmsl.work.yes
+			and	tdmsl400.orno refers to tdpur400
+			and	tdisg214._index1 refers to tdmsl400._index1
+			selectdo
+				if tdmsl400.apdt = 0 then
+					status = "Submitted"
+				else
+					status = "Re-Submitted"
+				endif	
+				print.detail2()	
+			endselect
+		else							| Auditable
+			select	tdmsl400.*
+			from	tdpur400,tdmsl400,tdisg214
+			where	tdpur400.cofc = :cofc
+			and	tdpur400.oamt >= 500000
+			and	tdpur400.ccur = "INR"
+			and	tdmsl400.vrsn = 0
+			and	tdmsl400.work = tdmsl.work.yes
+			and	tdmsl400.orno refers to tdpur400
+			and	tdisg214._index1 refers to tdmsl400._index1
+			selectdo
+				if tdmsl400.apdt = 0 then
+					status = "Submitted"
+				else
+					status = "Re-Submitted"
+				endif	
+				print.detail2()	
+			endselect
+			
+			select	tdmsl400.*
+			from	tdpur400,tdmsl400,tdisg214
+			where	tdpur400.cofc = :cofc
+			and	tdmsl400.vrsn > 0
+			and	tdmsl400.amch = tcyesno.no
+			and	tdmsl400.work = tdmsl.work.yes
+			and	tdmsl400.orno refers to tdpur400
+			and	tdisg214._index1 refers to tdmsl400._index1
+			selectdo
+				if tdmsl400.apdt = 0 then
+					status = "Submitted"
+				else
+					status = "Re-Submitted"
+				endif	
+				print.detail2()	
+			endselect
+			
+			select	tdmsl400.*					| For Export 24022022
+			from	tdpur400,tdmsl400,tdisg214
+			where	tdpur400.cofc = :cofc
+			and	tdpur400.ccur <> "INR"
+			and	tdmsl400.vrsn = 0
+			and	tdmsl400.work = tdmsl.work.yes
+			and	tdmsl400.orno refers to tdpur400
+			and	tdisg214._index1 refers to tdmsl400._index1
+			selectdo
+				if tdmsl400.apdt = 0 then
+					status = "Submitted"
+				else
+					status = "Re-Submitted"
+				endif	
+				print.detail2()	
+			endselect
+		endif							|GH670CR993.02022022.add.end
+		
+| 		select	tdmsl400.*					|GH670CR993.02022022.cmnt.strt
+| 		from	tdpur400,tdmsl400
+| 		where	tdpur400.cofc = :cofc
+| 		and	tdmsl400.updt >= :yesterday_date
+| 		and	tdmsl400.orno refers to tdpur400
+| 		selectdo
+| 			if tdmsl400.work = tdmsl.work.completed then
+| 				status = "Approved"
+| 				print.detail2()
+| 			else	
+| 				if (tdmsl400.work = tdmsl.work.no and tdmsl400.apdt <> 0) then
+| 					status = "Rejected"
+| 					print.detail2()
+| 				endif
+| 			endif		
+| 		endselect						|GH670CR993.02022022.cmnt.end
+									|GH670CR993.02022022.add.strt
+		if amch = tcyesno.yes then				| Non-Auditable
+			select	tdmsl400.*
+			from	tdpur400,tdmsl400,tdisg214
+			where	tdpur400.cofc = :cofc
+			and	tdpur400.oamt < 500000
+			and	tdpur400.ccur = "INR"
+			and	tdmsl400.vrsn = 0
+			and	tdmsl400.updt >= :yesterday_date
+			and	tdmsl400.orno refers to tdpur400
+			and	tdisg214._index1 refers to tdmsl400._index1
+			selectdo
+				if tdmsl400.work = tdmsl.work.completed then
+					status = "Approved"
+					print.detail2()
+				else	
+					if (tdmsl400.work = tdmsl.work.no and tdmsl400.apdt <> 0) then
+						status = "Rejected"
+						print.detail2()
+					endif
+				endif		
+			endselect
+			
+			select	tdmsl400.*
+			from	tdpur400,tdmsl400,tdisg214
+			where	tdpur400.cofc = :cofc
+			and	tdpur400.ccur = "INR"
+			and	tdmsl400.vrsn > 0
+			and	tdmsl400.amch = tcyesno.yes
+			and	tdmsl400.updt >= :yesterday_date
+			and	tdmsl400.orno refers to tdpur400
+			and	tdisg214._index1 refers to tdmsl400._index1
+			selectdo
+				if tdmsl400.work = tdmsl.work.completed then
+					status = "Approved"
+					print.detail2()
+				else	
+					if (tdmsl400.work = tdmsl.work.no and tdmsl400.apdt <> 0) then
+						status = "Rejected"
+						print.detail2()
+					endif
+				endif		
+			endselect
+		else								| Auditable
+			select	tdmsl400.*
+			from	tdpur400,tdmsl400,tdisg214
+			where	tdpur400.cofc = :cofc
+			and	tdpur400.oamt >= 500000
+			and	tdpur400.ccur = "INR"
+			and	tdmsl400.vrsn = 0
+			and	tdmsl400.updt >= :yesterday_date
+			and	tdmsl400.orno refers to tdpur400
+			and	tdisg214._index1 refers to tdmsl400._index1
+			selectdo
+				if tdmsl400.work = tdmsl.work.completed then
+					status = "Approved"
+					print.detail2()
+				else	
+					if (tdmsl400.work = tdmsl.work.no and tdmsl400.apdt <> 0) then
+						status = "Rejected"
+						print.detail2()
+					endif
+				endif		
+			endselect
+			
+			select	tdmsl400.*
+			from	tdpur400,tdmsl400,tdisg214
+			where	tdpur400.cofc = :cofc
+			and	tdmsl400.vrsn > 0
+			and	tdmsl400.amch = tcyesno.no
+			and	tdmsl400.updt >= :yesterday_date
+			and	tdmsl400.orno refers to tdpur400
+			and	tdisg214._index1 refers to tdmsl400._index1
+			selectdo
+				if tdmsl400.work = tdmsl.work.completed then
+					status = "Approved"
+					print.detail2()
+				else	
+					if (tdmsl400.work = tdmsl.work.no and tdmsl400.apdt <> 0) then
+						status = "Rejected"
+						print.detail2()
+					endif
+				endif		
+			endselect
+			
+			select	tdmsl400.*					| For Export 24022022
+			from	tdpur400,tdmsl400,tdisg214
+			where	tdpur400.cofc = :cofc
+			and	tdpur400.ccur <> "INR"
+			and	tdmsl400.vrsn = 0
+			and	tdmsl400.updt >= :yesterday_date
+			and	tdmsl400.orno refers to tdpur400
+			and	tdisg214._index1 refers to tdmsl400._index1
+			selectdo
+				if tdmsl400.work = tdmsl.work.completed then
+					status = "Approved"
+					print.detail2()
+				else	
+					if (tdmsl400.work = tdmsl.work.no and tdmsl400.apdt <> 0) then
+						status = "Rejected"
+						print.detail2()
+					endif
+				endif		
+			endselect
+		endif							|GH670CR993.02022022.add.end
+	endselect
+	
+}
+
+
+function	print.detail1()
+{	
+	
+	line3 =	concat$("	",
+		sprintf$("%s", tdpur400.cofc),				|1
+		sprintf$("%d", order_in_hand),				|2
+		sprintf$("%d", order_received),				|3
+		sprintf$("%d", order_processed),			|4
+		sprintf$("%d", balance_order))				|5
+		
+	
+		line3 = strip$(shiftl$(line3))
+		seq.puts(line3, stat.fp)
+}
+
+function	print.detail2()
+{	
+	
+	line3 =	concat$("	",
+		sprintf$("%s", tdpur400.cofc),				|1
+		sprintf$("%s", tdmsl400.orno),				|2
+		sprintf$("%d", tdmsl400.vrsn),				|3
+		sprintf$("%s", status),					|4
+		sprintf$("%u(%02d/%02m/%04Y)", tdmsl400.updt),		|5
+		sprintf$("%u(%02d/%02m/%04Y)", tdmsl400.apdt))		|6
+		
+	
+		line3 = strip$(shiftl$(line3))
+		seq.puts(line3, stat.fp)
+}
+
+

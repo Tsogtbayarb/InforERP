@@ -1,0 +1,301 @@
+|******************************************************************************
+|* tcisg0401m200  0  VRC B61U a7 isg 
+|* Print Terms of Payment by Purchase Order
+|* Ravi Kumar	                       
+|* 2020-04-29
+|******************************************************************************
+|* Main table tcisg001 , Form Type 4
+|*
+|* GH545CR000, Ravi Kumar, 16-04-2021
+|* Modification in report POwise Payment Term (tcisg0401m200)
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttcisg001 
+	table	ttdpur400 
+	table	ttdmsl400 
+	table	ttcmcs013 
+	table	ttccom100 
+
+	extern	domain	tccom.bpid	bpid.f, bpid.t
+	extern	domain	tcorno		orno.f, orno.t  
+	extern	domain	tcdate		apdt.f, apdt.t
+	extern	domain	tcyesno		revl, revn, reva
+		string			err.file(100), file.name(100),
+					line(1000)
+		long			stat.fp, ret
+
+
+			|Report Variables:
+			
+	extern	domain	tcorno		rep.orno
+	extern	domain	tcsern		rep.vrsn, rep.srno
+	extern	domain	tcdate		rep.apdt
+	extern	domain	tccom.bpid	rep.otbp
+	extern	domain	tcnama		rep.nama
+	extern	domain	tcamnt		rep.oamt, rep.amnt
+	extern	domain	tccpay		rep.cpay
+	extern	domain	tcdsca		rep.dsca
+	extern	domain	tcmcs.nods	rep.nods,rep.nods
+	extern	domain	tcisg.catg	rep.catg
+	extern	domain	tcperc		rep.perc
+	extern	domain	tcmcs.str60	rep.prdr	
+	extern	domain	tcrefa		rep.refa		|GH545CR000.a
+#pragma used dll ottdllbw 
+
+|****************************** program section ********************************
+|****************************** field section **********************************
+field.bpid.f:
+when.field.changes:
+	bpid.t = bpid.f
+	
+field.orno.f:
+when.field.changes:
+	orno.t = orno.f
+	
+field.apdt.f:
+when.field.changes:
+	apdt.t = apdt.f
+	
+field.revl:
+when.field.changes:
+	if revl = tcyesno.yes then
+		revn = tcyesno.no
+		reva = tcyesno.no
+	endif
+	display.all()
+	
+field.revn:
+when.field.changes:
+	if revn = tcyesno.yes then
+		revl = tcyesno.no
+		reva = tcyesno.no
+	endif
+	display.all()
+	
+field.reva:
+when.field.changes:
+	if reva = tcyesno.yes then
+		revn = tcyesno.no
+		revl = tcyesno.no
+	endif
+	display.all()
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section *********************************
+choice.print_data:
+on.choice:
+       generate.file()
+
+| ****************************** function section ******************************
+
+functions:
+
+function generate.file()
+{
+	err.file = bse.tmp.dir$() & "/" & str$(utc.num()) & ".xls"
+	file.name = "C:\temp\" & "POwise Payment Term " & str$(utc.num())  & ".xls"
+	stat.fp = seq.open(err.file, "w+")
+	
+	if stat.fp > 0 then
+		process.file()
+	endif
+
+	seq.close(stat.fp)
+	
+	ret = server2client(err.file,file.name,1)
+	ret = app_start(file.name,"c:","","","")
+}
+
+function process.file()
+{
+	generate.header()
+	read.main.table()
+}
+
+function generate.header()
+{
+	line = concat$("	",
+		sprintf$("%s","Purchase Order"),				|1
+		sprintf$("%s","Revision No."),					|2
+		sprintf$("%s","Revision Date"),					|3
+		sprintf$("%s","Supplier"),					|4
+		sprintf$("%s","Supplier Name"),					|5
+		sprintf$("%s","PO Basic Amount"),				|6
+		sprintf$("%s","Payment Term Code"),				|7
+		sprintf$("%s","Payment Term Description"),			|8
+		sprintf$("%s", "Payment Term Serial No."),			|9
+		sprintf$("%s","No. of Days"),					|10
+		sprintf$("%s","No. of Days from"),				|11
+		sprintf$("%s","Type"),						|12
+		sprintf$("%s","Percentage"),					|13
+		sprintf$("%s","Amount"),					|14
+		sprintf$("%s","Payable Remarks"),				|15
+		sprintf$("%s","Reference"))					|16 |GH545CR000.a
+	line = trim$(line)
+	seq.puts(line,stat.fp)	
+}
+
+function read.main.table()
+{
+	domain	tcsern	vern.f, vern.t
+	domain	tcorno	orno.n, orno.o
+	vern.f = 0
+	vern.t = 0
+	orno.n = ""
+	orno.o = ""
+
+	select	tcisg001.orno,
+		tcisg001.vrsn
+	from	tcisg001
+	where	tcisg001._index1 inrange {:orno.f} and {:orno.t}
+	selectdo
+		orno.n = tcisg001.orno
+		if orno.n <> orno.o then
+		select	tdpur400.orno,
+			tdpur400.otbp,
+			tdpur400.oamt,
+			tdpur400.cpay,
+			tdpur400.refa,			|GH545CR000.a
+			tccom100.nama
+		from	tdpur400, tccom100
+		where	tdpur400._index1 = {:tcisg001.orno}
+		and	tdpur400.otbp inrange :bpid.f and :bpid.t
+		and	tdpur400.otbp refers to tccom100
+		selectdo
+			if revl = tcyesno.yes then
+				select	max(tdmsl400.vrsn):vern.f
+				from	tdmsl400
+				where	tdmsl400._index1 = {:tcisg001.orno}
+				as set with 1 rows
+				selectdo
+					vern.t = vern.f
+				endselect
+			else
+				if revn = tcyesno.yes then
+					vern.f = 0
+					vern.t = 0
+				else
+					if reva = tcyesno.yes then
+						vern.f = 0
+						select	max(tdmsl400.vrsn):vern.t
+						from	tdmsl400
+						where	tdmsl400._index1 = {:tcisg001.orno}
+						as set with 1 rows
+						selectdo
+						endselect
+					endif
+				endif
+			endif
+			
+			select	tdmsl400.orno,
+				tdmsl400.vrsn,
+				tdmsl400.apdt
+			from	tdmsl400
+			where	tdmsl400._index1 = {:tdpur400.orno}
+			and	tdmsl400.vrsn inrange :vern.f and :vern.t
+			and	tdmsl400.apdt inrange :apdt.f and :apdt.t
+			selectdo
+				if tdmsl400.apdt > 0 then
+					select	tdmsl500.orno:tdpur400.orno,
+						tdmsl500.otbp:tdpur400.otbp,
+						tdmsl500.oamt:tdpur400.oamt,
+						tdmsl500.cpay:tdpur400.cpay,
+						tccom100.nama
+					from	tdmsl500, tccom100
+					where	tdmsl500._index1 = {:tdmsl400.orno, :tdmsl400.vrsn}
+					and	tdmsl500.otbp refers to tccom100
+					as set with 1 rows
+					selectdo
+					endselect
+				endif
+				
+				select	tcmcs013.dsca
+				from	tcmcs013
+				where	tcmcs013._index1 = {:tdpur400.cpay}
+				as set with 1 rows
+				selectdo
+				selectempty
+					tcmcs013.dsca = ""
+				endselect
+
+				initiate()
+				
+				select	tcisg001.*
+				from	tcisg001
+| 				where	tcisg001._index1 = {:tdmsl400.orno, :tdmsl400.vrsn, :tcisg001.srno}
+				where	tcisg001._index1 = {:tdmsl400.orno, :tdmsl400.vrsn}
+| 				as set with 1 rows
+				selectdo
+					rep.orno = tcisg001.orno		|1	PO No.
+					rep.vrsn = tcisg001.vrsn		|2	Revision No.
+					rep.apdt = tdmsl400.apdt		|3	Revision Date
+					rep.otbp = tdpur400.otbp		|4	Supplier Code
+					rep.nama = tccom100.nama		|5	Supplier Name
+					rep.oamt = tdpur400.oamt		|6	PO Basic Amount
+					rep.cpay = tdpur400.cpay		|7	Payment Term Code
+					rep.dsca = tcmcs013.dsca		|8	Payment Term Description
+					rep.srno = tcisg001.srno		|9	Payment Term Serial No.
+					rep.nods = tcisg001.nods		|10	No. of Days
+					rep.nods = tcisg001.nods		|11	No. of Days from
+					rep.catg = tcisg001.catg		|12	Type
+					rep.perc = tcisg001.perc		|13	Percentage
+					rep.amnt = tcisg001.amnt		|14	Amount
+					rep.prdr = tcisg001.prd			|15	Payable Remarks
+					rep.refa = tdpur400.refa		|16	Reference		|GH545CR000.a
+					write.data()
+				endselect
+			endselect
+		endselect
+		endif
+		orno.o = orno.n
+	endselect
+}
+
+function write.data()
+{
+	line = concat$("	",
+		sprintf$("%s", rep.orno),					|1
+		sprintf$("%s", str$(rep.vrsn)),					|2
+		sprintf$("%s", sprintf$("%u(%02d/%02m/%04Y)",rep.apdt)),			|3
+		sprintf$("%s", rep.otbp),					|4
+		sprintf$("%s",trim$(rep.nama)),					|5
+		sprintf$("%s",str$(rep.oamt)),					|6
+		sprintf$("%s",str$(rep.cpay)),					|7
+		sprintf$("%s",trim$(rep.dsca)),					|8
+		sprintf$("%s",str$(rep.srno)),					|9
+		sprintf$("%s",str$(rep.nods)),					|10
+		sprintf$("%s",str$(rep.nods)),					|11
+		sprintf$("%s",enum.descr$("tcisg.catg",rep.catg)),		|12
+		sprintf$("%s",str$(rep.perc)),					|13
+		sprintf$("%s",str$(rep.amnt)),					|13
+		sprintf$("%s",trim$(rep.prdr)),					|15
+		sprintf$("%s",trim$(rep.refa)))					|16	|GH545CR000.a
+	line = trim$(line)	
+	seq.puts(line,stat.fp)	
+}
+
+function initiate()
+{
+	rep.orno = ""		|1	PO No.
+	rep.vrsn = 0		|2	Revision No.
+	rep.apdt = 0		|3	Revision Date
+	rep.otbp = ""		|4	Supplier Code
+	rep.nama = ""		|5	Supplier Name
+	rep.oamt = 0		|6	PO Basic Amount
+	rep.cpay = ""		|7	Payment Term Code
+	rep.dsca = ""		|8	Payment Term Description
+	rep.srno = 0		|9	Payment Term Serial No.
+	rep.nods = 0		|10	No. of Days
+	rep.nods = 0		|11	No. of Days from
+	rep.catg = empty		|12	Type
+	rep.perc = 0		|13	Percentage
+	rep.amnt = 0		|14	Amount
+	rep.prdr = ""			|15	Payable Remarks
+	rep.refa = ""			|16	Reference			|GH545CR000.a
+}

@@ -1,0 +1,185 @@
+|******************************************************************************
+|* tdisg0145m000  0  VRC B61U a7 isg 
+|* Generate Custom Invoice Debit/Credit Note
+|* Ravi Kumar                    
+|* 2020-10-21
+|******************************************************************************
+|* Main table tdisg045 Custom Invoice Debit/Credit Note, Form Type 1
+|******************************************************************************
+|*
+|* GH517CR000, RAvi Kumar, 12-03-2021
+|* Modification in Billing Plan session to consider Export DR/CR note while calculation balance to be assigned value                                                                              
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttdisg045 | Custom Invoice Debit/Credit Note
+  table   tciisg801 
+  table   tciisg800 
+  table   ttdisg046
+  table   ttdisg831
+  table   ttppin020
+	
+	string	query.str(500)
+	extern	domain	tfgld.docn	idoc
+	extern	domain	tfgld.ttyp	ityp
+	extern	domain	tcorno		str.doc
+	extern		long		curr.comp
+
+	#include<bic_desktop>
+|****************************** program section ********************************
+before.program:
+	curr.comp = get.compnr()
+	
+before.display.object:
+| 	idoc = lval(tdisg045.invn(4;8))
+| 	ityp = tdisg045.invn(1;3)
+| 	str.doc = str$(idoc)
+| 	select	ciisg801.errm
+| 	from	ciisg801
+| 	where	ciisg801._index1 = {:curr.comp, :ityp, :str.doc}
+| 	as set with 1 rows
+| 	selectdo
+| 		if isspace(ciisg801.errm) then
+| 			disable.commands(modify.set, actual.occ)
+| 		else
+| 			enable.commands(modify.set, actual.occ)
+| 		endif
+| 	selectempty
+| 		enable.commands(modify.set, actual.occ)
+| 	endselect
+	
+	if tdisg045.stat = tdisg.stat.created then
+		enable.commands("freeze", actual.occ)
+	else
+		disable.commands("freeze", actual.occ)
+	endif
+
+|****************************** group section **********************************
+|****************************** choice section **********************************
+choice.freeze:
+on.choice:
+	select	tdisg045.stat
+	from	tdisg045 for update
+	where	tdisg045._index1 = {:tdisg045.rqno}
+	as set with 1 rows
+	selectdo
+		tdisg045.stat = tdisg.stat.freeze
+		db.update(ttdisg045, db.retry)
+		commit.transaction()
+	endselect
+
+	select	tdisg045.rqno,					|GH517CR000.a.s
+		tdisg045.invn			
+	from	tdisg045
+	where	tdisg045._index1 = {:tdisg045.rqno}
+	selectdo
+		select	tdisg046.nins
+		from	tdisg046
+		where	tdisg046._index1 = {:tdisg045.rqno}
+		selectdo
+			select	tdisg831.cprj, 
+				tdisg831.ofbp
+			from	tdisg831
+			where	tdisg831._index2 = {:tdisg045.invn}
+			selectdo
+				select	tppin020.insa, 
+					tppin020.cdf_insa
+				from	tppin020 for update
+				where	tppin020._index1 = {:tdisg831.cprj, :tdisg831.ofbp, :tdisg046.nins}
+				selectdo
+					put.var(pid,"tppin020.cdf_insa",tppin020.insa)
+					db.update(ttppin020, db.retry)
+					commit.transaction()
+				selectempty
+				endselect
+			selectempty
+			endselect
+		selectempty
+		endselect
+	selectempty
+	endselect						|GH517CR000.a.e
+
+|****************************** field section **********************************
+field.tdisg045.rqno:
+before.zoom:
+	query.extend.where.in.zoom("tcmcs050.nrgr = " & chr$(34) & "933" & chr$(34))
+	
+field.tdisg045.cdno:
+before.zoom:
+	query.extend.where.in.zoom("tcmcs050.nrgr = " & chr$(34) & "934" & chr$(34))
+	
+field.tdisg045.invn:
+before.zoom:
+	query.str = "tdisg831.type = tdisg.type.export and tdisg831.etyp = tdisg.advice.supply and tdisg831.octy = " & chr$(34) & "IN " & chr$(34)
+		& " and tdisg831.invn <> " & chr$(34) & "" & chr$(34) & " and tdisg831.cinv = " & chr$(34) & "" & chr$(34)
+	query.extend.where.in.zoom(query.str)
+	
+functions:
+function attachment.status()								
+{
+	domain	tcncmp			curr.comp, curr.comp.o
+	domain	tcmcs.str1		p.char, c.char
+	domain	tcmcs.str30		i.host	
+	domain	tclogn			o.user
+	domain	tcmcs.str50		pass.string, handle.string
+		string			open.link(200),sess.code(30)
+	domain	tcibd.sern	irno.str
+		
+	o.user = logname$
+	
+	i.host = hostname$()
+	i.host =  toupper$(i.host)
+	i.host = trim$(i.host)
+	
+	curr.comp.o = get.compnr()
+	p.char = ""
+	c.char = ""
+	handle.string = ""
+	irno.str = ""
+	
+	ityp = tdisg045.cdin(1;3)
+	str.doc = tdisg045.cdin(4;8)
+| 	str.doc = str$(idoc)
+	
+	select	ciisg800.comp
+	from	ciisg800
+	where	ciisg800.tran = :ityp
+	and	ciisg800.docn = :str.doc
+	as set with 1 rows
+	selectdo
+	endselect
+	
+| 	handle.string =  "EINV_INVPDF_" & str$(ciisg800.comp)
+	handle.string =  "EINV_INVPDF_200"
+	pass.string = trim$(str$(ciisg800.comp)) & "_" &trim$(ityp) & "_" & trim$(Str$(str.doc))
+	
+| 	p.char = (whinh312.lsta  = whinh.lstc.confirmed) ? "n":"y"
+	p.char = "n"
+
+	on case i.host
+	case "VISHNU":	
+		open.link = 	"chrome.exe --app=http://192.9.200.146/Attachment/Attachment.aspx?AthHandle=" & trim$(handle.string) &
+				"&Index=" & trim$(pass.string) & "&AttachedBy=" & trim$(o.user) & "&ed=" & p.char	
+		break
+		
+	case "VISHNU10GST":	
+		open.link = 	"chrome.exe --app=http://192.9.200.146/ATHERPTEST/Attachment.aspx?AthHandle=" & trim$(handle.string) &
+				"&Index=" & trim$(pass.string) & "&AttachedBy=" & trim$(o.user) & "&ed=" & p.char
+		break
+	endcase
+		
+
+	open.link = trim$(open.link)
+	
+	select	ciisg801.errm
+	from	ciisg801
+	where	ciisg801._index1 = {:ciisg800.comp, :ityp, :str.doc}
+	as set with 1 rows
+	selectdo
+		if isspace(ciisg801.errm) then
+			app_start(open.link, "", "", "", "")
+		else
+			message(ciisg801.errm)
+		endif
+	endselect
+}												

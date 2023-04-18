@@ -1,0 +1,1577 @@
+|******************************************************************************
+|* tdisg4400m500  0  VRC B61U a7 isg 
+|* Print PO Ammendment Format
+|* Installation user             
+|* 2015-01-30
+|******************************************************************************
+|* Main table tdmsl500 Purchase Orders History, Form Type 4
+|******************************************************************************
+|* ID ISGEC01038
+|* Manish Kumar
+|* 31-01-201
+|* Report for PO Ammendment.
+|* IDENT ISGEC01056, Mani sharma, Dt. 18-02-2015 
+|* Print delivery terms and items from tdpur401 for latest revision
+|******************************************************************************
+|*ID:5615,Sandhyarani,Dt.20-02-2015
+|*IDENT ISGRC01059
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttdmsl500 | Purchase Orders History
+	table	ttdmsl501 | Purchase Orders Lines History
+	table	ttdmsl400
+	table	ttcisg001
+	table	ttccom001
+	table	ttdpur400
+	table	ttdisg089
+	table	ttdisg001
+	table	ttpisg005
+	table	ttdpur201
+	table	ttclct200
+	table	ttcmcs036
+	table	ttctax941
+	table	ttdpur401
+
+	extern  domain  tcorno           orno
+	extern  domain  tcsern           revi
+	extern  domain  tcsern           revi.prev
+	
+	extern	domain	tcnama		o.approvar,p.approver
+
+		|* Report Related Variables
+	
+		|* PO Header Amount Layout Variables.
+	extern	domain	tcmcs.long	po.amount		| Variables for Layout Handling
+	extern	domain	tcsern		prev.revi
+	extern	domain	tcsern		curr.revi
+	extern	domain	tcamnt		prev.revi.amount
+	extern	domain	tcamnt		curr.revi.amount
+	
+	
+		domain	tcbool	highest.vrsn
+		
+	extern	domain	tcamnt	iamt.m,exc.amnt,exc.rate,stx.rate,
+				stx.amnt,tot.amnt,oth.chg1,oth.chg2
+	extern	domain	tcamnt	tot.exc,tot.stx,tot.oth1,tot.oth2,tot.bas
+	extern	domain	tcamnt	ind.exc,ind.stx,ind.oth1,ind.oth2,ind.bas
+	extern	domain	tcamnt	tot.oth.stx,oth.stx,oth.exc
+	domain	tcpvat		rate
+	extern	domain	tcsern	i.vrsn
+	extern	domain	tcqsl1		add.qty
+	
+		|* PO Line Amount Variables
+	extern	domain	tcamnt		prev.revi.l.amt
+	extern	domain	tcamnt		curr.revi.l.amt
+	
+		|* Payment Terms Variables
+	extern	domain	tcpono		first.pono
+	extern	domain	tcmcs.str30	first.document
+	
+		|* Delivery Terms and Buyer
+	extern	domain	tcdsca		prev.del.terms
+	extern	domain	tcdsca		curr.del.terms
+	extern	domain	tcnama		prev.buyer
+	extern	domain	tcnama		curr.buyer
+	extern domain  tcamnt          max.vrsn					|ISGEC01056.n
+	
+		|* Delivery Date,LD Date and Tax code
+		
+	extern	domain	tccvat	prev.cvat
+	extern	domain	tccvat	curr.cvat
+	extern	domain	tcdate	prev.ddta
+	extern	domain	tcdate	curr.ddta
+	extern	domain	tcdate	prev.ldat.c
+	extern	domain	tcdate	curr.ldat.c
+
+	|* REF A ,Header text ,Footer Text
+	
+	extern	domain	tcrefa	prev.refa
+	extern	domain	tcrefa	curr.refa
+	extern	domain	tctxtn	prev.txta
+	extern	domain	tctxtn	prev.txtb
+	extern	domain	tctxtn	curr.txta
+	extern	domain	tctxtn	curr.txtb
+	
+		|*** PO Line Text
+	extern	domain	tctxtn	prev.txta.line
+	extern	domain	tctxtn	curr.txta.line
+	
+		|*** PO Lines Variables.
+	extern	domain	tcitem	curr.revi.item
+	extern	domain	tcitem	prev.revi.item
+	extern	domain	tcdsca	curr.revi.item.ds
+	extern	domain	tcdsca	prev.revi.item.ds
+	extern domain  tcpono  pono.var
+	
+	
+	extern	domain	tcmcs.str15	changes.refa
+	extern	domain	tcmcs.str15	changes.txta
+	extern	domain	tcmcs.str15	changes.txtb
+	
+#pragma used dll "otctaxdll9141.l"
+|****************************** program section ********************************
+|****************************** group section **********************************
+group.1:
+init.group:
+   get.screen.defaults()
+|****************************** choice section ********************************
+choice.cont.process:
+on.choice:
+	execute(print.data)
+
+choice.print.data:
+before.choice:
+	check.all.input()
+on.choice:
+	if rprt_open() then
+		read.main.table()
+		rprt_close()
+	else
+		choice.again()
+	endif
+|****************************** field section *********************************
+field.orno:
+when.field.changes:
+	revi = 0
+
+check.input:
+	select	tdpur400.orno
+	from	tdpur400
+	where	tdpur400._index1 = {:orno}
+	selectdo
+	selectempty
+		message("Invalid Purchase Order")
+		set.input.error("",e)
+	endselect
+	
+field.revi:
+before.zoom:
+	tdmsl400.orno = orno
+	
+check.input:
+	select	tdmsl400.vrsn
+	from	tdmsl400
+	where	tdmsl400._index1 = {:orno,:revi}
+	selectdo
+	selectempty
+		message("Invalid Revision")
+		set.input.error("",e)
+	endselect
+
+	
+|****************************** function section ******************************
+
+functions:
+
+function read.main.table()
+{
+	po.amount = 0
+	
+	|* Before Report Layout Logic
+	select	tdpur400.*,
+		tccom001.nama
+	from	tdpur400,tccom001
+	where	tdpur400._index1 = {:orno}
+	and	tdpur400.ccon refers to tccom001  
+	selectdo
+	selectempty
+		tccom001.nama = " "	
+	endselect
+	
+	select	tdisg089.user
+| 		tccom001.nama:o.approvar				|#ISGEC01059.o
+	from	tdisg089 |,tccom001					|#ISGEC01059.o	
+	where	tdisg089._index1 = {:orno,:revi}
+	and	tdisg089.appr = tcyesno.yes
+| 	and	tdisg089.user refers to tccom100			|#ISGEC01059.o	
+	selectdo
+	selectempty
+| 		o.approvar = ""						|#ISGEC01059.o
+	endselect
+	
+| 	select	tdmsl400.apby,tccom001.nama:o.approvar		|#ISGEC01059.sn
+| 	from	tdmsl400,tccom001
+| 	where	tdmsl400._index1 = {:orno,:revi}
+| 	and	tdmsl400.apby refers to tccom001		UNREF CLEAR
+| 	selectdo
+| 	selectempty	
+| 		o.approvar = " "	
+| 	endselect							|#ISGEC01059.en		
+	
+	
+	select	tdmsl400.apby
+	from	tdmsl400
+	where	tdmsl400._index1 = {:orno,:revi}
+	selectdo
+		if not isspace(tdmsl400.apby) then
+			select	tccom001.nama:o.approvar
+			from	tccom001
+			where	tccom001._index4 = {:tdmsl400.apby}
+			selectdo
+			selectempty
+				o.approvar = " "
+			endselect
+		endif	
+	selectempty
+		o.approvar = " "
+	endselect	
+	|**** PO Amount Logic ******************
+	highest.vrsn = true
+	select tdmsl400.vrsn from tdmsl400
+	where tdmsl400._index1 = {:orno}
+	order by tdmsl400.vrsn desc
+	as set with 1 rows
+	selectdo
+		if tdmsl400.vrsn <> revi then
+			highest.vrsn = false
+		endif
+	endselect
+	
+	if not highest.vrsn then
+		select	tdmsl500.oamt:curr.revi.amount,
+			tdmsl500.vrsn:curr.revi
+		from	tdmsl500
+		where	tdmsl500._index1 = {:orno,:revi}
+		selectdo
+			po.amount = 1
+			
+			print.po.header.amount(revi)
+			curr.revi.amount = tot.amnt
+			
+		selectempty
+			curr.revi = -1
+			curr.revi.amount = 0.00
+		endselect
+	else
+		select	tdmsl500.oamt:curr.revi.amount,
+			tdmsl500.vrsn:curr.revi
+		from	tdmsl500
+		where	tdmsl500._index1 = {:orno,:revi}
+		selectdo
+			po.amount = 1
+			
+			print.po.header.amount.new(revi)
+			curr.revi.amount = tot.amnt
+			
+		selectempty
+			curr.revi = -1
+			curr.revi.amount = 0.00
+		endselect
+	endif
+	
+	revi.prev = revi -1 
+	
+	if revi.prev < 0 then
+		prev.revi = -1
+		prev.revi.amount = 0.00
+	else
+		select	tdmsl500.oamt:prev.revi.amount,
+			tdmsl500.vrsn:prev.revi
+		from	tdmsl500
+		where	tdmsl500._index1 = {:orno,:revi.prev}
+		selectdo
+			po.amount = 1
+			highest.vrsn = false
+			print.po.header.amount(revi.prev)
+			
+			prev.revi.amount = tot.amnt
+			
+		selectempty
+			prev.revi = -1
+			prev.revi.amount = 0.00
+		endselect
+	endif
+	
+	if po.amount = 1 then
+		rprt_send()
+	endif
+	
+	|**** PO Line Amount Logic
+	highest.vrsn = true
+	select tdmsl400.vrsn from tdmsl400
+	where tdmsl400._index1 = {:orno}
+	order by tdmsl400.vrsn desc
+	as set with 1 rows
+	selectdo
+		max.vrsn = tdmsl400.vrsn
+		if tdmsl400.vrsn <> revi then
+			highest.vrsn = false
+			pono.var = 0
+			select	tdmsl501.pono,					
+				tdmsl501.sqnb,
+				tdmsl501.oamt:curr.revi.l.amt,
+				tdmsl501.vrsn:curr.revi
+			from	tdmsl501
+			where	tdmsl501._index1 = {:orno,:revi}
+			selectdo						
+				po.amount = 2
+				pono.var = pono.var + 1
+				revi.prev = revi - 1
+				if not highest.vrsn then
+					print.po.header.amount.line(tdmsl501.pono,tdmsl501.sqnb,curr.revi)
+				else
+					print.po.header.amount.line.new(tdmsl501.pono,curr.revi)
+				endif
+				curr.revi.l.amt = tot.amnt
+		
+				if revi.prev < 0 then
+					prev.revi = -1
+					prev.revi.l.amt = 0.00
+				else
+					select	tdmsl501.oamt:prev.revi.l.amt,
+						tdmsl501.vrsn:prev.revi
+					from	tdmsl501
+					where	tdmsl501._index1 = {:orno,:revi.prev,:tdmsl501.pono,:tdmsl501.sqnb}
+					selectdo
+						print.po.header.amount.line(tdmsl501.pono,tdmsl501.sqnb,prev.revi)
+						prev.revi.l.amt = tot.amnt
+					selectempty
+						prev.revi = -1
+						prev.revi.l.amt = 0.00
+					endselect
+				endif
+			rprt_send()
+			selectempty
+				curr.revi = -1
+				curr.revi.l.amt = 0.00
+				prev.revi = -1
+				prev.revi.l.amt = 0.00
+			endselect
+			pono.var = 0
+		else										|ISGEC01056.sn
+			pono.var = 0
+			curr.revi = tdmsl400.vrsn
+			select	tdpur401.pono,					
+				tdpur401.sqnb,
+				tdpur401.oamt:curr.revi.l.amt
+			from	tdpur401
+			where	tdpur401._index1 = {:orno}
+			selectdo						
+				po.amount = 2
+				pono.var = pono.var + 1
+				revi.prev = revi - 1
+				if not highest.vrsn then
+					print.po.header.amount.line(tdpur401.pono,tdpur401.sqnb,curr.revi)
+				else
+					print.po.header.amount.line.new(tdpur401.pono,curr.revi)
+				endif
+				curr.revi.l.amt = tot.amnt
+		
+				if revi.prev < 0 then
+					prev.revi = -1
+					prev.revi.l.amt = 0.00
+				else
+					select	tdmsl501.oamt:prev.revi.l.amt,
+						tdmsl501.vrsn:prev.revi,
+						tdmsl501.pono,
+						tdmsl501.sqnb
+					from	tdmsl501
+					where	tdmsl501._index1 = {:orno,:revi.prev,:tdpur401.pono,:tdpur401.sqnb}
+					selectdo
+						print.po.header.amount.line(tdmsl501.pono,tdmsl501.sqnb,prev.revi)
+						prev.revi.l.amt = tot.amnt
+					selectempty
+						prev.revi = -1
+						prev.revi.l.amt = 0.00
+					endselect
+				endif
+			rprt_send()
+			selectempty
+				curr.revi = -1
+				curr.revi.l.amt = 0.00
+				prev.revi = -1
+				prev.revi.l.amt = 0.00
+			endselect
+			pono.var = 0
+		endif								|ISGEC010156.en
+	endselect
+	
+
+	
+	
+	|******** Payment Terms Logic for Previous Revision
+	
+	revi.prev = revi - 1
+
+	if revi.prev >= 0 then
+		
+		select	tdisg001.pono:first.pono,
+			tdisg001.docn,
+			tpisg005.desc:first.document
+		from	tdisg001,tpisg005
+		where	tdisg001._index1 = {:orno,:revi.prev}
+		and	tdisg001.docn refers to tpisg005
+		order	by tdisg001.pono asc
+		as set with 1 rows
+		selectdo
+		selectempty
+			first.pono = 0
+			first.document = ""
+		endselect
+		
+		select	tcisg001.*
+		from	tcisg001
+		where	tcisg001._index1 = {:orno,:revi.prev}
+		selectdo
+			prev.revi = revi.prev
+			po.amount = 3
+			rprt_send()
+		selectempty
+			db.set.to.default(ttcisg001)
+		endselect
+	endif
+	
+	|******** Payment Terms Logic for Current Revision******
+	select	tdisg001.pono:first.pono,
+		tdisg001.docn,
+		tpisg005.desc:first.document
+	from	tdisg001,tpisg005
+	where	tdisg001._index1 = {:orno,:revi}
+	and	tdisg001.docn refers to tpisg005
+	order	by tdisg001.pono asc
+	as set with 1 rows
+	selectdo
+	selectempty
+		first.pono = 0
+		first.document = ""
+	endselect
+	
+	select	tcisg001.*
+	from	tcisg001
+	where	tcisg001._index1 = {:orno,:revi}
+	selectdo
+		curr.revi = revi
+		po.amount = 4
+		rprt_send()
+	selectempty
+		db.set.to.default(ttcisg001)
+	endselect
+	
+	|* Delivery Terms and Buyer
+	revi.prev = revi - 1
+	if revi.prev >=0 then
+		select	tdmsl500.ccon,
+			tdmsl500.cdec,
+			tdmsl500.vrsn:prev.revi,
+			tccom001.nama:prev.buyer,
+			tcmcs041.dsca:prev.del.terms
+		from	tdmsl500,tccom001,tcmcs041
+		where	tdmsl500._index1 = {:orno,:revi.prev}
+		and	tdmsl500.ccon refers to tccom001
+		and	tdmsl500.cdec refers to tcmcs041
+		selectdo
+			po.amount = 5
+		selectempty
+			prev.revi = -1
+			prev.buyer = ""
+			prev.del.terms = ""
+		endselect
+	endif
+	
+	select max(tdmsl400.vrsn):max.vrsn				|ISGEC01056.sn
+	from   tdmsl400
+	where  tdmsl400._index1 = {:orno}
+	selectdo
+		
+	endselect
+	
+	if max.vrsn = revi    then
+		curr.revi = max.vrsn
+		
+		select tdpur400.ccon,
+			tdpur400.cdec,
+			tccom001.nama:curr.buyer,
+			tcmcs041.dsca:curr.del.terms
+		from    tdpur400,tcmcs041,tccom001
+		where   tdpur400._index1 = {:orno}
+		and	tdpur400.ccon refers to tccom001
+		and	tdpur400.cdec refers to tcmcs041
+		selectdo
+			po.amount = 5
+		selectempty
+			curr.revi = -1
+			curr.buyer = ""
+			curr.del.terms = ""
+		endselect	
+	else									|ISGEC01056.en
+	
+		select	tdmsl500.ccon,
+			tdmsl500.cdec,
+			tdmsl500.vrsn:curr.revi,
+			tccom001.nama:curr.buyer,
+			tcmcs041.dsca:curr.del.terms
+		from	tdmsl500,tccom001,tcmcs041
+		where	tdmsl500._index1 = {:orno,:revi}
+		and	tdmsl500.ccon refers to tccom001
+		and	tdmsl500.cdec refers to tcmcs041
+		selectdo
+			po.amount = 5
+		selectempty
+			curr.revi = -1
+			curr.buyer = ""
+			curr.del.terms = ""
+		endselect
+	endif
+	if po.amount = 5 then
+		rprt_send()
+	endif
+	|* Delivery date,LD Date ,and Tax Code Logic
+	
+	select max(tdmsl400.vrsn):max.vrsn				|ISGEC01056.sn
+	from   tdmsl400
+	where  tdmsl400._index1 = {:orno}
+	selectdo
+	endselect
+	
+if max.vrsn = revi    then
+	curr.revi = max.vrsn
+	pono.var = 0
+	select tdpur401.pono,
+		tdpur401.sqnb,
+		tdpur401.ddta:curr.ddta,
+		tdpur401.cdf_ldat:curr.ldat.c,
+		tdpur401.cvat:curr.cvat
+	from    tdpur401
+	where   tdpur401._index1 = {:orno}
+	selectdo
+		pono.var = pono.var + 1
+		po.amount = 6		
+			select	tdmsl501.ddta:prev.ddta,
+				tdmsl501.ldat.c:prev.ldat.c,
+				tdmsl501.cvat:prev.cvat,
+				tdmsl501.vrsn:prev.revi
+			from	tdmsl501
+			where	tdmsl501._index1 = {:orno,:revi.prev,:tdpur401.pono,:tdpur401.sqnb}
+			selectdo
+			selectempty
+				prev.revi = -1
+				prev.ddta = 0
+				prev.ldat.c =0
+				prev.cvat = ""
+			endselect
+		rprt_send()
+	selectempty
+		curr.ddta = 0
+		curr.ldat.c = 0
+		prev.ddta = 0
+		prev.ldat.c =0
+		prev.cvat = ""
+		curr.cvat = ""
+		prev.revi = -1
+		curr.revi = -1
+	endselect	
+	pono.var = 0
+else									|ISGEC01056.en
+	pono.var = 0							|ISGEC01056.n
+	select	tdmsl501.pono,
+		tdmsl501.sqnb,
+		tdmsl501.ddta:curr.ddta,
+		tdmsl501.ldat.c:curr.ldat.c,
+		tdmsl501.cvat:curr.cvat,
+		tdmsl501.vrsn:curr.revi
+	from	tdmsl501
+	where	tdmsl501._index1 = {:orno,:revi}
+	selectdo
+		pono.var = pono.var + 1					|ISGEC01056.n
+		po.amount = 6
+		select	tdmsl501.ddta:prev.ddta,
+			tdmsl501.ldat.c:prev.ldat.c,
+			tdmsl501.cvat:prev.cvat,
+			tdmsl501.vrsn:prev.revi
+		from	tdmsl501
+		where	tdmsl501._index1 = {:orno,:revi.prev,:tdmsl501.pono,:tdmsl501.sqnb}
+		selectdo
+		selectempty
+			prev.revi = -1
+			prev.ddta = 0
+			prev.ldat.c =0
+			prev.cvat = ""
+		endselect
+		rprt_send()
+	selectempty
+		curr.ddta = 0
+		curr.ldat.c = 0
+		prev.ddta = 0
+		prev.ldat.c =0
+		prev.cvat = ""
+		curr.cvat = ""
+		prev.revi = -1
+		curr.revi = -1
+	endselect
+	pono.var = 0
+endif	
+	
+	|* REF A ,Header Footer text.
+	revi.prev = revi - 1
+	
+	changes.txta = ""
+	changes.txtb = ""
+	changes.refa = ""
+	
+	select	tdmsl500.refa:curr.refa,
+		tdmsl500.txta:curr.txta,
+		tdmsl500.txtb:curr.txtb
+	from	tdmsl500
+	where	tdmsl500._index1 = {:orno,:revi}
+	selectdo
+		po.amount = 7
+		
+		if revi.prev >=0 then
+			select	tdmsl500.refa:prev.refa,
+				tdmsl500.txta:prev.txta,
+				tdmsl500.txtb:prev.txtb
+			from	tdmsl500
+			where	tdmsl500._index1 = {:orno,:revi}
+			selectdo
+			selectempty
+				prev.refa = ""
+				prev.txta = 0
+				prev.txtb = 0
+			endselect
+		endif
+		
+		if curr.refa = prev.refa then
+			changes.refa = "No Change"
+		else
+			changes.refa = "Changes Made"
+		endif
+		
+		if curr.txta = prev.txta then
+			changes.txta = "No Change"
+		else
+			changes.txta = "Changes Made"
+		endif
+		
+		if curr.txtb = prev.txtb then
+			changes.txtb = "No Change"
+		else
+			changes.txtb = "Changes Made"
+		endif
+		
+		rprt_send()
+		
+	selectempty
+		curr.refa = ""
+		curr.txta = 0
+		curr.txtb = 0
+		prev.refa = ""
+		prev.txta = 0
+		prev.txtb = 0
+	endselect
+	
+	|*********** PO Line Text.**************
+	changes.txta = ""
+	
+	select	tdmsl501.pono,
+		tdmsl501.sqnb,
+		tdmsl501.txta:curr.txta.line,
+		tdmsl501.vrsn:curr.revi
+	from	tdmsl501
+	where	tdmsl501._index1 = {:orno,:revi}
+	selectdo
+		po.amount = 8
+		revi.prev = revi - 1
+		
+		if revi.prev >= 0 then
+			select	tdmsl501.txta:prev.txta.line,
+				tdmsl501.vrsn:prev.revi
+			from	tdmsl501
+			where	tdmsl501._index1 = {:orno,:revi.prev,:tdmsl501.pono,:tdmsl501.sqnb}
+			selectdo
+			selectempty
+				prev.revi = -1
+				prev.txta.line = 0
+			endselect
+		endif
+		
+		if curr.txta.line = prev.txta.line then
+			changes.txta = "No Change"
+		else
+			changes.txta = "Changes Made"
+		endif
+		
+		rprt_send()
+		
+	selectempty
+		revi.prev = -1
+		curr.txta.line = 0
+		prev.txta.line = 0
+		prev.revi = -1
+		curr.revi = -1
+	endselect
+	
+	
+	|******** PO Line Item Logic
+	
+	select max(tdmsl400.vrsn):max.vrsn				|ISGEC01056.sn
+	from   tdmsl400
+	where  tdmsl400._index1 = {:orno}
+	selectdo
+	endselect
+	
+if max.vrsn = revi    then
+	curr.revi = max.vrsn
+	pono.var = 0
+	select tdpur401.pono,
+		tdpur401.sqnb,
+		tdpur401.item:curr.revi.item,
+		tcibd001.dsca:curr.revi.item.ds
+	from    tdpur401,tcibd001
+	where   tdpur401._index1 = {:orno}
+	and	tdpur401.item refers to tcibd001 UNREF CLEAR
+	selectdo
+		pono.var = pono.var + 1
+		po.amount = 9
+		revi.prev = revi - 1
+		prev.revi.item.ds = ""
+		prev.revi = -1
+		prev.revi.item = ""
+		
+		if revi.prev >=0 then
+			select	tdmsl501.item:prev.revi.item,
+				tdmsl501.vrsn:prev.revi,
+				tcibd001.dsca:prev.revi.item.ds
+			from	tdmsl501,tcibd001
+			where	tdmsl501._index1 = {:orno,:revi.prev,:tdpur401.pono,:tdpur401.sqnb}
+			and	tdmsl501.item refers to tcibd001 UNREF CLEAR
+			selectdo
+			selectempty
+				prev.revi.item.ds = ""
+				prev.revi = -1
+				prev.revi.item = ""
+			endselect
+		endif
+	
+		rprt_send()
+	selectempty
+		revi.prev = -1
+		prev.revi.item = ""
+		curr.revi.item = ""
+		prev.revi = -1
+		curr.revi = -1
+		prev.revi.item.ds = ""
+		curr.revi.item.ds = ""
+	endselect	
+	pono.var = 0
+else									|ISGEC01056.en
+	pono.var = 0							|ISGEC01056.n
+	select	tdmsl501.pono,
+		tdmsl501.sqnb,
+		tdmsl501.item:curr.revi.item,
+		tdmsl501.vrsn:curr.revi,
+		tcibd001.dsca:curr.revi.item.ds
+	from	tdmsl501,tcibd001
+	where	tdmsl501._index1 = {:orno,:revi}
+	and	tdmsl501.item refers to tcibd001 UNREF CLEAR
+	selectdo
+		pono.var = pono.var + 1					|ISGEC01056.n
+		po.amount = 9
+		revi.prev = revi - 1
+		prev.revi.item.ds = ""
+		prev.revi = -1
+		prev.revi.item = ""
+		
+		if revi.prev >=0 then
+			select	tdmsl501.item:prev.revi.item,
+				tdmsl501.vrsn:prev.revi,
+				tcibd001.dsca:prev.revi.item.ds
+			from	tdmsl501,tcibd001
+			where	tdmsl501._index1 = {:orno,:revi.prev,:tdmsl501.pono,tdmsl501.sqnb}
+			and	tdmsl501.item refers to tcibd001 UNREF CLEAR
+			selectdo
+			selectempty
+				prev.revi.item.ds = ""
+				prev.revi = -1
+				prev.revi.item = ""
+			endselect
+		endif
+		
+		rprt_send()
+		
+	selectempty
+		revi.prev = -1
+		prev.revi.item = ""
+		curr.revi.item = ""
+		prev.revi = -1
+		curr.revi = -1
+		prev.revi.item.ds = ""
+		curr.revi.item.ds = ""
+	endselect
+	pono.var = 0							|ISGEC01056.n
+endif	
+}
+
+
+
+function print.po.header.amount
+	(
+		domain	tcsern	i.revi
+	)
+{
+	tot.exc = 0
+	tot.stx = 0
+	tot.oth1 = 0
+	tot.oth2 = 0
+	tot.bas = 0
+	ind.exc = 0
+	ind.stx = 0
+	ind.oth1 = 0
+	ind.oth2 = 0
+	ind.bas = 0
+	
+	select	tdmsl500.*
+	from	tdmsl500
+	where	tdmsl500._index1 = {:orno,:i.revi}
+	selectdo
+	endselect
+	
+	select tdmsl501.* 
+	from tdmsl501
+	where tdmsl501._index1 = {:orno,:i.revi}
+	and	tdmsl501.oltp in (1,4)
+	selectdo
+		select tdpur402.rqno,tdpur402.rqpo,tdpur201.*
+		from tdpur402,tdpur201
+		where tdpur402._index1 = {:tdmsl501.orno,:tdmsl501.pono,:tdmsl501.sqnb}
+		and tdpur402.cmbe refers to tdpur201
+		as set with 1 rows
+		selectdo
+			ind.exc = 0
+			ind.stx = 0
+			ind.oth1 = 0
+			ind.oth2 = 0
+			ind.bas = ind.bas + tdpur201.oamt			
+		endselect
+		add.qty = 0.0
+		if etol(tdmsl501.oltp) = 1 then
+			if highest.vrsn then
+| 				add.qty = get.additional.qty.from.401()
+			else
+				add.qty = get.additional.qty.from.501()
+			endif
+		endif
+		tdmsl501.oamt = (tdmsl501.oamt / tdmsl501.qoor ) * (tdmsl501.qoor + add.qty)
+		tdmsl501.tase.l = (tdmsl501.tase.l / tdmsl501.qoor ) * (tdmsl501.qoor + add.qty)
+		tdmsl501.tasv.l = (tdmsl501.tasv.l / tdmsl501.qoor ) * (tdmsl501.qoor + add.qty)
+		tdmsl501.tass.l = (tdmsl501.tass.l / tdmsl501.qoor ) * (tdmsl501.qoor + add.qty)
+		tdmsl501.qoor = tdmsl501.qoor + add.qty
+		iamt.m = 0
+		exc.amnt = 0
+		exc.rate = 0
+		stx.rate = 0
+		stx.amnt = 0
+		tot.amnt = 0
+		oth.chg1 = 0
+		oth.chg2 = 0
+
+		rate = 0
+		
+		Get_Landed_Cost(tdmsl501.orno, tdmsl501.pono)
+		populate.tax.amounts()
+									
+		tot.exc = tot.exc + exc.amnt + oth.exc
+ 		tot.stx = tot.stx + stx.amnt + oth.stx
+								
+		tot.oth1 = tot.oth1 + oth.chg1
+		tot.oth2 = tot.oth2 + oth.chg2
+		tot.bas = tot.bas + tdmsl501.oamt
+ 		tot.amnt = tot.bas+tot.exc+tot.stx+tot.oth1+tot.oth2
+		
+	endselect	
+}
+
+function Get_Landed_Cost(domain tcorno		im.orno,
+			domain	tcpono		im.pono)
+{
+	domain	tcpono	tmp.sqnb
+	string	tmp.borf(5), prv.borf(5)
+	
+	oth.chg1 = 0
+	oth.chg2 = 0
+	oth.stx = 0
+	oth.exc = 0
+	select	a_tdpur401.sqnb:tmp.sqnb 
+	from	tdpur401 a_tdpur401
+	where	a_tdpur401._index1 = {:im.orno, :im.pono}
+	and	a_tdpur401.oltp in (2,3,4)
+	selectdo
+		tmp.borf = str$(im.pono)&"/"&str$(tmp.sqnb)
+		select	tclct200.* from tclct200
+		where	tclct200._index1 = {2}
+		and	tclct200.bobj = :im.orno
+		and	tclct200.borf = :tmp.borf
+		order by tclct200._index1
+		as set with 2 rows
+		selectdo
+| 			if not highest.vrsn then
+| 				select	tcmsl200.*
+| 				from	tcmsl200
+| 				where	tcmsl200._index1 = {:tclct200.boty,
+| 							:tclct200.boor,
+| 							:tclct200.bobj,
+| 							:tclct200.borf,
+| 							:tdmsl400.vrsn,
+| 							:tclct200.lcln}
+| 				as set with 1 rows
+| 				selectdo
+| 					tdmsl.dll0500.move.tcmsl200.to.tclct200()
+| 				endselect
+| 			endif
+			if	tmp.borf <> prv.borf	then
+				prv.borf = tmp.borf
+				oth.chg1 = oth.chg1 + tclct200.lcam
+			else
+				oth.chg2 = oth.chg2 + tclct200.lcam
+			endif
+			if not highest.vrsn then
+				calculate.oth.tax.amounts()
+			else
+				calculate.oth.tax.amounts.new()
+			endif
+			
+		endselect
+	endselect	
+}
+
+function calculate.oth.tax.amounts()
+{
+	domain	tcamnt		line.tax.amount.array(1, 1)	based
+	domain	tcamnt		line.base.amount.array(1, 1)	based
+	domain	tccvat		line.tax.code.array(1, 1)	based
+	domain	tctax.indt.l	o.line.indirect.tax.array(1, 1)	based
+	domain	tctax.indt.l	i.duty.type.array(1, 1)		based
+	domain	tcyesno		expensed.tax(1, 1)		based
+	domain	tcmcs.s250m	o.comb.output.set(1)		based
+	domain	tcpvat		o.tax.rates(1,1)		based
+	domain	tcamnt		i.duties.array(1,1)		based
+	domain tctax.seqn 	o.maximum.sequence.number
+	domain tcamnt 		o.claimable.tax.amount
+	domain tcamnt 		o.non.claimable.tax.amount
+	domain tcamnt 		o.total.tax.amount
+	domain tcamnt 		o.sales.tax
+	domain tcmcs.s250m 	o.error.msg mb
+	if isspace(tclct200.cvat) then
+		return
+	endif
+	tctax.dll9141.determine.aggregate.tax.amounts.per.line( 
+						tdmsl501.ccty,				| domain tcccty i.tax.country, 
+						tclct200.cvat,				| domain tccvat i.aggregate.tax.code, 
+						tdmsl501.odat,				| domain tcdate i.tax.date, 
+						tdmsl501.oamt,				| domain tcamnt i.order.line.price, 
+						tdmsl501.cuva,				| domain tcamnt i.customs.value, 
+						tdmsl501.mrpi.l,			| domain tcamnt i.market.retail.price, 
+						0.00,					| domain tcamnt i.retail.sales.price, 
+						0.00,					| domain tcamnt i.tariff.price, 
+						tdmsl500.ccur,				| domain tcccur i.price.currency, 
+						tdmsl500.ratd,				| domain tcdate i.currency.rate.date, 
+						tdmsl500.ratt,				| domain tcrtyp i.currency.exchange.rate.type, 
+						tclct200.lcam,			| domain tcpric i.asv.excise, 
+						tclct200.lcam,			| domain tcpric i.asv.vat, 
+						tclct200.lcam,			| domain tcpric i.asv.service.tax, 
+						0.00,
+						tdmsl501.ddta,				| domain tcdate i.ship.or.receive.date, 
+						tcyesno.no,				| domain tcyesno i.as.is.sales, 
+						tcyesno.no,				| domain tcyesno i.yesno.flag, 
+						i.duty.type.array,			| ref domain tctax.indt.l i.duty.type.array(,), 
+						i.duties.array,				| ref domain tcamnt i.duties.array(,), 
+						o.tax.rates,				| ref domain tcpvat o.tax.rates(,), 
+						o.maximum.sequence.number,		| ref domain tctax.seqn o.maximum.sequence.number, 
+						line.base.amount.array,			| ref domain tcamnt o.line.base.amount.array(,), 
+						line.tax.amount.array,			| ref domain tcamnt o.line.tax.amount.array(,), 
+						line.tax.code.array,			| ref domain tccvat o.line.tax.code.array(,) fixed, 
+						o.line.indirect.tax.array,		| ref domain tctax.indt.l o.line.indirect.tax.array(,), 
+						expensed.tax,				| ref domain tcyesno o.expensed.tax(,), 
+						o.claimable.tax.amount,			| ref domain tcamnt o.claimable.tax.amount, 
+						o.non.claimable.tax.amount,		| ref domain tcamnt o.non.claimable.tax.amount, 
+						o.total.tax.amount,			| ref domain tcamnt o.total.tax.amount, 
+						o.sales.tax,				| ref domain tcamnt o.sales.tax, 
+						o.comb.output.set,			| ref domain tcmcs.s250m o.comb.output.set() fixed mb, 
+						o.error.msg)				| ref domain tcmcs.s250m o.error.msg mb )
+	select tctax941.*,tcmcs036.*
+	from tctax941,tcmcs036
+	where tctax941._index1 = {:tdmsl501.ccty,:tdmsl501.cvat}
+	and	tctax941.type = 20		|tctax.type.l.tax
+	and	tctax941.cmbb refers to tcmcs036
+	selectdo
+		on case tcmcs036.indt.l
+		case	tctax.indt.l.bed:
+		case	tctax.indt.l.service:	
+			oth.exc = oth.exc + line.tax.amount.array(tctax941.layr,tctax941.seqn)
+			break
+		case	tctax.indt.l.aed:	
+		case	tctax.indt.l.sed:	
+		case	tctax.indt.l.e.cess.excise:	
+		case	tctax.indt.l.e.cess.service:	
+		case	tctax.indt.l.hse.cess.excise:
+		case	tctax.indt.l.hse.cess.servic:	
+			oth.exc = oth.exc + line.tax.amount.array(tctax941.layr,tctax941.seqn)
+			break
+		default:
+			oth.stx = oth.stx + line.tax.amount.array(tctax941.layr,tctax941.seqn)
+		endcase
+	endselect
+}
+
+function populate.tax.amounts()
+{
+	domain	tcamnt		line.tax.amount.array(1, 1)	based
+	domain	tcamnt		line.base.amount.array(1, 1)	based
+	domain	tccvat		line.tax.code.array(1, 1)	based
+	domain	tctax.indt.l	o.line.indirect.tax.array(1, 1)	based
+	domain	tctax.indt.l	i.duty.type.array(1, 1)		based
+	domain	tcyesno		expensed.tax(1, 1)		based
+	domain	tcmcs.s250m	o.comb.output.set(1)		based
+	domain	tcpvat		o.tax.rates(1,1)		based
+	domain	tcamnt		i.duties.array(1,1)		based
+	domain tctax.seqn 	o.maximum.sequence.number
+	domain tcamnt 		o.claimable.tax.amount
+	domain tcamnt 		o.non.claimable.tax.amount
+	domain tcamnt 		o.total.tax.amount
+	domain tcamnt 		o.sales.tax
+	domain tcmcs.s250m 	o.error.msg mb
+	domain	tcamnt		tmp.rate		
+	domain	tcamnt		temp.1.rate, temp.amnt	
+	
+	
+	tmp.rate = 0					
+	temp.1.rate = 0
+	rate = 0
+	
+	tctax.dll9141.determine.aggregate.tax.amounts.per.line( 
+						tdmsl501.ccty,				| domain tcccty i.tax.country, 
+						tdmsl501.cvat,				| domain tccvat i.aggregate.tax.code, 
+						tdmsl501.odat,				| domain tcdate i.tax.date, 
+						tdmsl501.oamt,				| domain tcamnt i.order.line.price, 
+						tdmsl501.cuva,				| domain tcamnt i.customs.value, 
+						tdmsl501.mrpi.l,			| domain tcamnt i.market.retail.price, 
+						0.00,					| domain tcamnt i.retail.sales.price, 
+						0.00,					| domain tcamnt i.tariff.price, 
+						tdmsl500.ccur,				| domain tcccur i.price.currency, 
+						tdmsl500.ratd,				| domain tcdate i.currency.rate.date, 
+						tdmsl500.ratt,				| domain tcrtyp i.currency.exchange.rate.type, 
+						tdmsl501.tase.l,			| domain tcpric i.asv.excise, 
+						tdmsl501.tasv.l,			| domain tcpric i.asv.vat, 
+						tdmsl501.tass.l,			| domain tcpric i.asv.service.tax, 
+						tdmsl501.tasg.l,
+						tdmsl501.ddta,				| domain tcdate i.ship.or.receive.date, 
+						tcyesno.no,				| domain tcyesno i.as.is.sales, 
+						tcyesno.no,				| domain tcyesno i.yesno.flag, 
+						i.duty.type.array,			| ref domain tctax.indt.l i.duty.type.array(,), 
+						i.duties.array,				| ref domain tcamnt i.duties.array(,), 
+						o.tax.rates,				| ref domain tcpvat o.tax.rates(,), 
+						o.maximum.sequence.number,		| ref domain tctax.seqn o.maximum.sequence.number, 
+						line.base.amount.array,			| ref domain tcamnt o.line.base.amount.array(,), 
+						line.tax.amount.array,			| ref domain tcamnt o.line.tax.amount.array(,), 
+						line.tax.code.array,			| ref domain tccvat o.line.tax.code.array(,) fixed, 
+						o.line.indirect.tax.array,		| ref domain tctax.indt.l o.line.indirect.tax.array(,), 
+						expensed.tax,				| ref domain tcyesno o.expensed.tax(,), 
+						o.claimable.tax.amount,			| ref domain tcamnt o.claimable.tax.amount, 
+						o.non.claimable.tax.amount,		| ref domain tcamnt o.non.claimable.tax.amount, 
+						o.total.tax.amount,			| ref domain tcamnt o.total.tax.amount, 
+						o.sales.tax,				| ref domain tcamnt o.sales.tax, 
+						o.comb.output.set,			| ref domain tcmcs.s250m o.comb.output.set() fixed mb, 
+						o.error.msg)				| ref domain tcmcs.s250m o.error.msg mb )
+	select tctax941.*,tcmcs036.*
+	from tctax941,tcmcs036
+	where tctax941._index1 = {:tdmsl501.ccty,:tdmsl501.cvat}
+	and	tctax941.type = 20		|tctax.type.l.tax
+	and	tctax941.cmbb refers to tcmcs036
+	selectdo
+		on case tcmcs036.indt.l
+		case	tctax.indt.l.bed:
+		case	tctax.indt.l.service:			|#ISGEC0104.n
+			exc.amnt = exc.amnt + line.tax.amount.array(tctax941.layr,tctax941.seqn)
+			exc.rate = o.tax.rates(tctax941.layr,tctax941.seqn)
+			tmp.rate = exc.rate			
+			break
+		case	tctax.indt.l.aed:	
+		case	tctax.indt.l.sed:	
+		case	tctax.indt.l.e.cess.excise:	
+		case	tctax.indt.l.e.cess.service:			
+		case	tctax.indt.l.hse.cess.excise:
+		case	tctax.indt.l.hse.cess.servic:		
+			exc.amnt = exc.amnt + line.tax.amount.array(tctax941.layr,tctax941.seqn)
+			exc.rate = exc.rate + (tmp.rate * o.tax.rates(tctax941.layr,tctax941.seqn))/100	
+			break
+		default:			
+			
+			rate = rate + 1
+			if rate =  1 then
+				stx.amnt = stx.amnt + line.tax.amount.array(tctax941.layr,tctax941.seqn)
+				stx.rate = o.tax.rates(tctax941.layr,tctax941.seqn)
+				temp.1.rate = stx.rate
+				
+			else
+				if tctax941.lr06 = tcyesno.no	then
+					stx.rate = stx.rate + o.tax.rates(tctax941.layr,tctax941.seqn)
+				else
+					stx.amnt = stx.amnt + line.tax.amount.array(tctax941.layr,tctax941.seqn)			
+					stx.rate = stx.rate + (temp.1.rate * o.tax.rates(tctax941.layr,tctax941.seqn))/100
+				endif
+			endif
+		endcase
+		
+	endselect
+}
+
+function domain tcqsl1	 get.additional.qty.from.401()
+{
+	domain tcqsl1 ord.qty,app.qty,diff.qty,bac.qty
+	ord.qty = 0
+	app.qty = 0
+	bac.qty = 0
+	diff.qty = 0
+	
+	select atdmsl501.qoor:ord.qty,atdmsl501.qiap:app.qty,
+		atdmsl501.qibo:bac.qty
+	from tdmsl501 atdmsl501
+	where atdmsl501._index1 = {:tdmsl501.orno,:tdmsl501.pono}
+	and atdmsl501.oltp = 1
+	selectdo
+		diff.qty = diff.qty + bac.qty - (ord.qty - app.qty)
+	endselect
+	return(diff.qty)
+}
+
+function domain tcqsl1	get.additional.qty.from.501()
+{
+	domain tcqsl1 ord.qty,app.qty,diff.qty,bac.qty
+	ord.qty = 0
+	app.qty = 0
+	bac.qty = 0
+	diff.qty = 0
+	select atdmsl501.qoor:ord.qty,atdmsl501.qiap:app.qty,
+		atdmsl501.qibo:bac.qty
+	from tdmsl501 atdmsl501
+	where atdmsl501._index1 = {:tdpur401.orno,:i.vrsn, :tdpur401.pono}
+	and atdmsl501.oltp = 1
+	selectdo
+		diff.qty = diff.qty + bac.qty - (ord.qty - app.qty)
+	endselect
+	return(diff.qty)
+}
+
+
+|********************** if Hihest Version is true
+
+function print.po.header.amount.new
+	(
+		domain	tcsern	i.revi
+	)
+{
+	tot.exc = 0
+	tot.stx = 0
+	tot.oth1 = 0
+	tot.oth2 = 0
+	tot.bas = 0
+	ind.exc = 0
+	ind.stx = 0
+	ind.oth1 = 0
+	ind.oth2 = 0
+	ind.bas = 0
+	
+	select	tdpur400.*
+	from	tdpur400
+	where	tdpur400._index1 = {:orno}
+	selectdo
+	endselect
+	
+	select tdpur401.* 
+	from tdpur401
+	where tdpur401._index1 = {:orno}
+	and	tdpur401.oltp in (1,4)
+	selectdo
+		select tdpur402.rqno,tdpur402.rqpo,tdpur201.*
+		from tdpur402,tdpur201
+		where tdpur402._index1 = {:tdpur401.orno,:tdpur401.pono,:tdpur401.sqnb}
+		and tdpur402.cmbe refers to tdpur201
+		as set with 1 rows
+		selectdo
+			ind.exc = 0
+			ind.stx = 0
+			ind.oth1 = 0
+			ind.oth2 = 0
+			ind.bas = ind.bas + tdpur201.oamt			
+		endselect
+		add.qty = 0.0
+		if etol(tdpur401.oltp) = 1 then
+			if highest.vrsn then
+				add.qty = get.additional.qty.from.401()
+			endif
+		endif
+		tdpur401.oamt = (tdpur401.oamt / tdpur401.qoor ) * (tdpur401.qoor + add.qty)
+		tdpur401.tase.l = (tdpur401.tase.l / tdpur401.qoor ) * (tdpur401.qoor + add.qty)
+		tdpur401.tasv.l = (tdpur401.tasv.l / tdpur401.qoor ) * (tdpur401.qoor + add.qty)
+		tdpur401.tass.l = (tdpur401.tass.l / tdpur401.qoor ) * (tdpur401.qoor + add.qty)
+		tdpur401.qoor = tdpur401.qoor + add.qty
+		iamt.m = 0
+		exc.amnt = 0
+		exc.rate = 0
+		stx.rate = 0
+		stx.amnt = 0
+		tot.amnt = 0
+		oth.chg1 = 0
+		oth.chg2 = 0
+
+		rate = 0
+		
+		Get_Landed_Cost(tdpur401.orno, tdpur401.pono)
+		populate.tax.amounts.new()
+									
+		tot.exc = tot.exc + exc.amnt + oth.exc
+ 		tot.stx = tot.stx + stx.amnt + oth.stx
+								
+		tot.oth1 = tot.oth1 + oth.chg1
+		tot.oth2 = tot.oth2 + oth.chg2
+		tot.bas = tot.bas + tdpur401.oamt
+ 		tot.amnt = tot.bas+tot.exc+tot.stx+tot.oth1+tot.oth2
+		
+	endselect	
+}
+
+
+function calculate.oth.tax.amounts.new()
+{
+	domain	tcamnt		line.tax.amount.array(1, 1)	based
+	domain	tcamnt		line.base.amount.array(1, 1)	based
+	domain	tccvat		line.tax.code.array(1, 1)	based
+	domain	tctax.indt.l	o.line.indirect.tax.array(1, 1)	based
+	domain	tctax.indt.l	i.duty.type.array(1, 1)		based
+	domain	tcyesno		expensed.tax(1, 1)		based
+	domain	tcmcs.s250m	o.comb.output.set(1)		based
+	domain	tcpvat		o.tax.rates(1,1)		based
+	domain	tcamnt		i.duties.array(1,1)		based
+	domain tctax.seqn 	o.maximum.sequence.number
+	domain tcamnt 		o.claimable.tax.amount
+	domain tcamnt 		o.non.claimable.tax.amount
+	domain tcamnt 		o.total.tax.amount
+	domain tcamnt 		o.sales.tax
+	domain tcmcs.s250m 	o.error.msg mb
+	if isspace(tclct200.cvat) then
+		return
+	endif
+	tctax.dll9141.determine.aggregate.tax.amounts.per.line( 
+						tdpur401.ccty,				| domain tcccty i.tax.country, 
+						tclct200.cvat,				| domain tccvat i.aggregate.tax.code, 
+						tdpur401.odat,				| domain tcdate i.tax.date, 
+						tdpur401.oamt,				| domain tcamnt i.order.line.price, 
+						tdpur401.cuva,				| domain tcamnt i.customs.value, 
+						tdpur401.mrpi.l,			| domain tcamnt i.market.retail.price, 
+						0.00,					| domain tcamnt i.retail.sales.price, 
+						0.00,					| domain tcamnt i.tariff.price, 
+						tdpur400.ccur,				| domain tcccur i.price.currency, 
+						tdpur400.ratd,				| domain tcdate i.currency.rate.date, 
+						tdpur400.ratt,				| domain tcrtyp i.currency.exchange.rate.type, 
+						tclct200.lcam,			| domain tcpric i.asv.excise, 
+						tclct200.lcam,			| domain tcpric i.asv.vat, 
+						tclct200.lcam,			| domain tcpric i.asv.service.tax, 
+						0.00,
+						tdpur401.ddta,				| domain tcdate i.ship.or.receive.date, 
+						tcyesno.no,				| domain tcyesno i.as.is.sales, 
+						tcyesno.no,				| domain tcyesno i.yesno.flag, 
+						i.duty.type.array,			| ref domain tctax.indt.l i.duty.type.array(,), 
+						i.duties.array,				| ref domain tcamnt i.duties.array(,), 
+						o.tax.rates,				| ref domain tcpvat o.tax.rates(,), 
+						o.maximum.sequence.number,		| ref domain tctax.seqn o.maximum.sequence.number, 
+						line.base.amount.array,			| ref domain tcamnt o.line.base.amount.array(,), 
+						line.tax.amount.array,			| ref domain tcamnt o.line.tax.amount.array(,), 
+						line.tax.code.array,			| ref domain tccvat o.line.tax.code.array(,) fixed, 
+						o.line.indirect.tax.array,		| ref domain tctax.indt.l o.line.indirect.tax.array(,), 
+						expensed.tax,				| ref domain tcyesno o.expensed.tax(,), 
+						o.claimable.tax.amount,			| ref domain tcamnt o.claimable.tax.amount, 
+						o.non.claimable.tax.amount,		| ref domain tcamnt o.non.claimable.tax.amount, 
+						o.total.tax.amount,			| ref domain tcamnt o.total.tax.amount, 
+						o.sales.tax,				| ref domain tcamnt o.sales.tax, 
+						o.comb.output.set,			| ref domain tcmcs.s250m o.comb.output.set() fixed mb, 
+						o.error.msg)				| ref domain tcmcs.s250m o.error.msg mb )
+	select tctax941.*,tcmcs036.*
+	from tctax941,tcmcs036
+	where tctax941._index1 = {:tdpur401.ccty,:tdpur401.cvat}
+	and	tctax941.type = 20		|tctax.type.l.tax
+	and	tctax941.cmbb refers to tcmcs036
+	selectdo
+		on case tcmcs036.indt.l
+		case	tctax.indt.l.bed:
+		case	tctax.indt.l.service:	
+			oth.exc = oth.exc + line.tax.amount.array(tctax941.layr,tctax941.seqn)
+			break
+		case	tctax.indt.l.aed:	
+		case	tctax.indt.l.sed:	
+		case	tctax.indt.l.e.cess.excise:	
+		case	tctax.indt.l.e.cess.service:	
+		case	tctax.indt.l.hse.cess.excise:
+		case	tctax.indt.l.hse.cess.servic:	
+			oth.exc = oth.exc + line.tax.amount.array(tctax941.layr,tctax941.seqn)
+			break
+		default:
+			oth.stx = oth.stx + line.tax.amount.array(tctax941.layr,tctax941.seqn)
+		endcase
+	endselect
+}
+
+function populate.tax.amounts.new()
+{
+	domain	tcamnt		line.tax.amount.array(1, 1)	based
+	domain	tcamnt		line.base.amount.array(1, 1)	based
+	domain	tccvat		line.tax.code.array(1, 1)	based
+	domain	tctax.indt.l	o.line.indirect.tax.array(1, 1)	based
+	domain	tctax.indt.l	i.duty.type.array(1, 1)		based
+	domain	tcyesno		expensed.tax(1, 1)		based
+	domain	tcmcs.s250m	o.comb.output.set(1)		based
+	domain	tcpvat		o.tax.rates(1,1)		based
+	domain	tcamnt		i.duties.array(1,1)		based
+	domain tctax.seqn 	o.maximum.sequence.number
+	domain tcamnt 		o.claimable.tax.amount
+	domain tcamnt 		o.non.claimable.tax.amount
+	domain tcamnt 		o.total.tax.amount
+	domain tcamnt 		o.sales.tax
+	domain tcmcs.s250m 	o.error.msg mb
+	domain	tcamnt		tmp.rate		
+	domain	tcamnt		temp.1.rate, temp.amnt	
+	
+	
+	tmp.rate = 0					
+	temp.1.rate = 0
+	rate = 0
+	
+	tctax.dll9141.determine.aggregate.tax.amounts.per.line( 
+						tdpur401.ccty,				| domain tcccty i.tax.country, 
+						tdpur401.cvat,				| domain tccvat i.aggregate.tax.code, 
+						tdpur401.odat,				| domain tcdate i.tax.date, 
+						tdpur401.oamt,				| domain tcamnt i.order.line.price, 
+						tdpur401.cuva,				| domain tcamnt i.customs.value, 
+						tdpur401.mrpi.l,			| domain tcamnt i.market.retail.price, 
+						0.00,					| domain tcamnt i.retail.sales.price, 
+						0.00,					| domain tcamnt i.tariff.price, 
+						tdpur400.ccur,				| domain tcccur i.price.currency, 
+						tdpur400.ratd,				| domain tcdate i.currency.rate.date, 
+						tdpur400.ratt,				| domain tcrtyp i.currency.exchange.rate.type, 
+						tdpur401.tase.l,			| domain tcpric i.asv.excise, 
+						tdpur401.tasv.l,			| domain tcpric i.asv.vat, 
+						tdpur401.tass.l,			| domain tcpric i.asv.service.tax, 
+						tdpur401.tasg.l,
+						tdpur401.ddta,				| domain tcdate i.ship.or.receive.date, 
+						tcyesno.no,				| domain tcyesno i.as.is.sales, 
+						tcyesno.no,				| domain tcyesno i.yesno.flag, 
+						i.duty.type.array,			| ref domain tctax.indt.l i.duty.type.array(,), 
+						i.duties.array,				| ref domain tcamnt i.duties.array(,), 
+						o.tax.rates,				| ref domain tcpvat o.tax.rates(,), 
+						o.maximum.sequence.number,		| ref domain tctax.seqn o.maximum.sequence.number, 
+						line.base.amount.array,			| ref domain tcamnt o.line.base.amount.array(,), 
+						line.tax.amount.array,			| ref domain tcamnt o.line.tax.amount.array(,), 
+						line.tax.code.array,			| ref domain tccvat o.line.tax.code.array(,) fixed, 
+						o.line.indirect.tax.array,		| ref domain tctax.indt.l o.line.indirect.tax.array(,), 
+						expensed.tax,				| ref domain tcyesno o.expensed.tax(,), 
+						o.claimable.tax.amount,			| ref domain tcamnt o.claimable.tax.amount, 
+						o.non.claimable.tax.amount,		| ref domain tcamnt o.non.claimable.tax.amount, 
+						o.total.tax.amount,			| ref domain tcamnt o.total.tax.amount, 
+						o.sales.tax,				| ref domain tcamnt o.sales.tax, 
+						o.comb.output.set,			| ref domain tcmcs.s250m o.comb.output.set() fixed mb, 
+						o.error.msg)				| ref domain tcmcs.s250m o.error.msg mb )
+	select tctax941.*,tcmcs036.*
+	from tctax941,tcmcs036
+	where tctax941._index1 = {:tdpur401.ccty,:tdpur401.cvat}
+	and	tctax941.type = 20		|tctax.type.l.tax
+	and	tctax941.cmbb refers to tcmcs036
+	selectdo
+		on case tcmcs036.indt.l
+		case	tctax.indt.l.bed:
+		case	tctax.indt.l.service:			|#ISGEC0104.n
+			exc.amnt = exc.amnt + line.tax.amount.array(tctax941.layr,tctax941.seqn)
+			exc.rate = o.tax.rates(tctax941.layr,tctax941.seqn)
+			tmp.rate = exc.rate			
+			break
+		case	tctax.indt.l.aed:	
+		case	tctax.indt.l.sed:	
+		case	tctax.indt.l.e.cess.excise:	
+		case	tctax.indt.l.e.cess.service:			
+		case	tctax.indt.l.hse.cess.excise:
+		case	tctax.indt.l.hse.cess.servic:		
+			exc.amnt = exc.amnt + line.tax.amount.array(tctax941.layr,tctax941.seqn)
+			exc.rate = exc.rate + (tmp.rate * o.tax.rates(tctax941.layr,tctax941.seqn))/100	
+			break
+		default:			
+			
+			rate = rate + 1
+			if rate =  1 then
+				stx.amnt = stx.amnt + line.tax.amount.array(tctax941.layr,tctax941.seqn)
+				stx.rate = o.tax.rates(tctax941.layr,tctax941.seqn)
+				temp.1.rate = stx.rate
+				
+			else
+				if tctax941.lr06 = tcyesno.no	then
+					stx.rate = stx.rate + o.tax.rates(tctax941.layr,tctax941.seqn)
+				else
+					stx.amnt = stx.amnt + line.tax.amount.array(tctax941.layr,tctax941.seqn)			
+					stx.rate = stx.rate + (temp.1.rate * o.tax.rates(tctax941.layr,tctax941.seqn))/100
+				endif
+			endif
+		endcase
+		
+	endselect
+}
+
+
+function print.po.header.amount.line
+	(
+		domain	tcpono	i.pono,
+		domain	tcpono	i.sqnb,
+		domain	tcsern	i.revi
+	)
+{
+	tot.exc = 0
+	tot.stx = 0
+	tot.oth1 = 0
+	tot.oth2 = 0
+	tot.bas = 0
+	ind.exc = 0
+	ind.stx = 0
+	ind.oth1 = 0
+	ind.oth2 = 0
+	ind.bas = 0
+	
+	select	tdmsl500.*
+	from	tdmsl500
+	where	tdmsl500._index1 = {:orno,:i.revi}
+	selectdo
+	endselect
+	
+	select tdmsl501.* 
+	from tdmsl501
+	where tdmsl501._index1 = {:orno,:i.revi,:i.pono,:i.sqnb}
+	and	tdmsl501.oltp in (1,4)
+	selectdo
+		select tdpur402.rqno,tdpur402.rqpo,tdpur201.*
+		from tdpur402,tdpur201
+		where tdpur402._index1 = {:tdmsl501.orno,:tdmsl501.pono,:tdmsl501.sqnb}
+		and tdpur402.cmbe refers to tdpur201
+		as set with 1 rows
+		selectdo
+			ind.exc = 0
+			ind.stx = 0
+			ind.oth1 = 0
+			ind.oth2 = 0
+			ind.bas = ind.bas + tdpur201.oamt			
+		endselect
+		add.qty = 0.0
+		if etol(tdmsl501.oltp) = 1 then
+			if highest.vrsn then
+| 				add.qty = get.additional.qty.from.401()
+			else
+				add.qty = get.additional.qty.from.501()
+			endif
+		endif
+		tdmsl501.oamt = (tdmsl501.oamt / tdmsl501.qoor ) * (tdmsl501.qoor + add.qty)
+		tdmsl501.tase.l = (tdmsl501.tase.l / tdmsl501.qoor ) * (tdmsl501.qoor + add.qty)
+		tdmsl501.tasv.l = (tdmsl501.tasv.l / tdmsl501.qoor ) * (tdmsl501.qoor + add.qty)
+		tdmsl501.tass.l = (tdmsl501.tass.l / tdmsl501.qoor ) * (tdmsl501.qoor + add.qty)
+		tdmsl501.qoor = tdmsl501.qoor + add.qty
+		iamt.m = 0
+		exc.amnt = 0
+		exc.rate = 0
+		stx.rate = 0
+		stx.amnt = 0
+		tot.amnt = 0
+		oth.chg1 = 0
+		oth.chg2 = 0
+
+		rate = 0
+		
+		Get_Landed_Cost(tdmsl501.orno, tdmsl501.pono)
+		populate.tax.amounts()
+									
+		tot.exc = tot.exc + exc.amnt + oth.exc
+ 		tot.stx = tot.stx + stx.amnt + oth.stx
+								
+		tot.oth1 = tot.oth1 + oth.chg1
+		tot.oth2 = tot.oth2 + oth.chg2
+		tot.bas = tot.bas + tdmsl501.oamt
+ 		if po.amount <> 2 then
+			tot.amnt = tot.bas+tot.exc+tot.stx+tot.oth1+tot.oth2
+		else
+			tot.amnt = tdmsl501.oamt + exc.amnt + stx.amnt + oth.chg1 + oth.chg2
+		endif
+	endselect	
+}
+
+
+function print.po.header.amount.line.new
+	(
+		domain	tcpono	i.pono,
+		domain	tcsern	i.revi
+	)
+{
+	tot.exc = 0
+	tot.stx = 0
+	tot.oth1 = 0
+	tot.oth2 = 0
+	tot.bas = 0
+	ind.exc = 0
+	ind.stx = 0
+	ind.oth1 = 0
+	ind.oth2 = 0
+	ind.bas = 0
+	
+	select	tdpur400.*
+	from	tdpur400
+	where	tdpur400._index1 = {:orno}
+	selectdo
+	endselect
+	
+	select tdpur401.* 
+	from tdpur401
+	where tdpur401._index1 = {:orno,:i.pono}
+	and	tdpur401.oltp in (1,4)
+	selectdo
+		select tdpur402.rqno,tdpur402.rqpo,tdpur201.*
+		from tdpur402,tdpur201
+		where tdpur402._index1 = {:tdpur401.orno,:tdpur401.pono,:tdpur401.sqnb}
+		and tdpur402.cmbe refers to tdpur201
+		as set with 1 rows
+		selectdo
+			ind.exc = 0
+			ind.stx = 0
+			ind.oth1 = 0
+			ind.oth2 = 0
+			ind.bas = ind.bas + tdpur201.oamt			
+		endselect
+		add.qty = 0.0
+		if etol(tdpur401.oltp) = 1 then
+			if highest.vrsn then
+				add.qty = get.additional.qty.from.401()
+			endif
+		endif
+		tdpur401.oamt = (tdpur401.oamt / tdpur401.qoor ) * (tdpur401.qoor + add.qty)
+		tdpur401.tase.l = (tdpur401.tase.l / tdpur401.qoor ) * (tdpur401.qoor + add.qty)
+		tdpur401.tasv.l = (tdpur401.tasv.l / tdpur401.qoor ) * (tdpur401.qoor + add.qty)
+		tdpur401.tass.l = (tdpur401.tass.l / tdpur401.qoor ) * (tdpur401.qoor + add.qty)
+		tdpur401.qoor = tdpur401.qoor + add.qty
+		iamt.m = 0
+		exc.amnt = 0
+		exc.rate = 0
+		stx.rate = 0
+		stx.amnt = 0
+		tot.amnt = 0
+		oth.chg1 = 0
+		oth.chg2 = 0
+
+		rate = 0
+		
+		Get_Landed_Cost(tdpur401.orno, tdpur401.pono)
+		populate.tax.amounts.new()
+									
+		tot.exc = tot.exc + exc.amnt + oth.exc
+ 		tot.stx = tot.stx + stx.amnt + oth.stx
+								
+		tot.oth1 = tot.oth1 + oth.chg1
+		tot.oth2 = tot.oth2 + oth.chg2
+		tot.bas = tot.bas + tdpur401.oamt
+ 		if po.amount <> 2 then
+			tot.amnt = tot.bas+tot.exc+tot.stx+tot.oth1+tot.oth2
+		else
+			tot.amnt = tdpur401.oamt + exc.amnt + stx.amnt + oth.chg1 + oth.chg2
+		endif
+		
+	endselect	
+}

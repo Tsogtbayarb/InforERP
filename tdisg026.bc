@@ -1,0 +1,407 @@
+|******************************************************************************
+|* tdisg026  0  VRC B61U a7 isg 
+|* Dal Delivery Challan Header
+|* merino1
+|* 18-02-23 [10:37]
+|******************************************************************************
+|* Script Type: DAL
+|******************************************************************************
+|*ID:ISGEC018001, Manwendra singh,18-02-23,VRC B61U a7 isg  
+|*New Development
+|*
+|* ID:ISGEC018001, Dharmendra Singh, 06-08.2018
+|*
+|* GH511CR000, RAvi Kumar, 05-03-2021
+|* IR 172831 - Apply check in Delivery challan should not be create if IR extension not maintain
+|******************************************************************************
+#include <bic_dal2>
+#pragma used dll otcmcsdll0095 
+	table	ttdisg026 | Delivery Challan
+	table	ttdisg027 | Delivery Challan line
+	table	ttcmcs050 | First Free Number
+	table	ttcmcs051 | Number Group	
+	table	ttppdm600 | Project
+	table	ttdisg028 | Delivery Challan Parameter 	
+	table	ttccom001
+	table	ttdisg029					|#ISGEC018001.sn
+	table	ttfisg405
+	table	ttctax940
+	table	twhinh310
+	table	ttcmcs003
+	table	ttcmcs143
+	table	twhinh312
+	
+	extern domain	tcseri	seri
+	extern	domain	tclogn		user(250),curr.user
+	extern	domain	tcmcs.long	appr.allow,ret
+	extern	domain	whinh.shpm	receipt.no, challan.no, challan.found, challan.no.from, challan.no.to
+	long	year, month, day, hour, minutes, seconds, last.no
+		domain	tfgld.docn	document.no
+		domain	tcyesno		physical, vendor
+		string	state.cdf(9)
+	
+
+|************************* Object Hooks ***************************************
+
+function extern long before.open.object.set()
+{
+	dal.field.depends.on("tdisg026.divs",
+					HOOK_IS_DERIVED,HOOK_UPDATE,"tdisg026.proj")
+	return(0)
+}
+
+function extern long before.new.object()
+{
+	tcmcs.dll0095.read.parm("tdisg028")
+| 	tdisg026.dech = tdisg028.seri					|#ISGEC018001.o
+	tdisg026.date = utc.num()					|#ISGEC018001.n
+	return(0)
+}
+
+function extern long before.save.object(long type)
+{
+	
+	if type = DAL_NEW then
+| 		seri = tdisg026.dech
+| 		increase_ffno()						|#ISGEC018001.so
+| 		update_ffno()						|#ISGEC018001.eo
+		select	whinh310.dino, whinh310.cwar			|GH511CR000.a.s
+		from	whinh310
+		where	whinh310._index1 = {:receipt.no}
+		selectdo
+		endselect
+		
+		document.no = val(whinh310.dino)
+		
+		select	tfisg405.gstn.c
+		from	tfisg405
+		where	tfisg405._index1 = {:document.no}
+		selectdo
+			generate.challan.no()
+			update.date()
+		selectempty
+			dal.set.error.message("@ Isgec GSTIN not maintained in IR extensition")
+			return(DALHOOKERROR)
+		endselect
+| 		generate.challan.no()
+| 		update.date()						|GH511CR000.a.e
+| 		tcmcs.dll0050.check.and.generate.order.number(3,
+| 								)
+	endif	
+	
+	return(0)
+}
+
+function extern long after.save.object(long type)
+{
+	insert.delivery.challan.line()
+	return(0)
+}
+
+function extern boolean method.is.allowed(long type)
+{
+	
+	on case type
+	case DAL_NEW:
+| 		if tdisg026.flag = 1	then
+| 			return(false)
+| 		endif
+| 		
+| 		break
+	case DAL_UPDATE:
+| 		if tdisg026.flag = 1	then
+| 			return(false)
+| 		endif
+| 		break
+	case DAL_DESTROY:
+		if tdisg026.flag = 1 and appr.allow = 0 then
+			return(false)
+		endif
+		break
+	endcase
+	return(true)
+}
+
+function extern boolean tdisg026.date.is.mandatory()
+{
+	return(true)
+}
+
+| function extern boolean tdisg026.divs.is.mandatory()
+| {
+| 	return(true)
+| }
+
+function extern boolean tdisg026.proj.is.mandatory()
+{
+	return(true)
+}
+
+function extern boolean tdisg026.proj.is.valid()
+{
+	if not projValid() then
+		return(false)
+	endif
+	
+	return(true)
+}
+
+function extern boolean tdisg026.divs.is.derived()
+{
+	return(true)
+}
+								|#ISGEC018001.sn
+function extern boolean tdisg026.purp.is.valid()
+{
+	select	tdisg029.*
+	from	tdisg029
+	where	tdisg029._index1 = {:tdisg026.purp}
+	selectdo
+	selectempty
+		return(false)
+	endselect
+	return(true)
+
+}
+								|#ISGEC018001.en
+
+function extern tdisg026.divs.update()
+{
+	domain	tcdsca	division
+	
+	select	tppdm600.cdf_divs:division
+	from	tppdm600
+	where	tppdm600._index1 = {:tdisg026.proj}
+	selectdo
+		tdisg026.divs = division
+	selectempty
+		tdisg026.divs = ""
+	endselect
+}
+|***************************** field Hooks ************************************
+
+|***************************** function ***************************************
+
+function update_ffno()
+{
+	long	save,ffno
+	tcmcs.dll0095.read.parm("tdisg028")
+	
+	select	tcmcs050.ffno
+	from	tcmcs050	for update
+	where	tcmcs050._index1 = {:tdisg028.nrgr, :tdisg028.seri}
+	order by tcmcs050.ffno desc
+	as set with 1 rows
+	selectdo
+		dal.change.object("tcmcs050")
+		dal.set.field("tcmcs050.ffno", tcmcs050.ffno +1)
+		dal.save.object("tcmcs050",e)
+		if not e then
+			commit.transaction()
+		else
+			abort.transaction()
+		endif
+	endselect
+}
+
+function increase_ffno()
+{
+	long ffno
+	long totl
+	string st(9)
+	
+	tcmcs.dll0095.read.parm("tdisg028")
+	
+	select tcmcs050.ffno,tcmcs051.lngt,tcmcs050.nrgr
+	from	tcmcs050,tcmcs051
+	where	tcmcs050._index1={:tdisg028.nrgr, :tdisg028.seri}
+	and	tcmcs050.nrgr refers to tcmcs051
+	selectdo
+		ffno = len(str$(tcmcs050.ffno))
+		totl = 9-tcmcs051.lngt-ffno
+		st = string.set$("0",totl)
+| 		tdisg026.dech = trim$(tdisg026.dech)&tdisg028.seri & st & str$(tcmcs050.ffno)	
+		tdisg026.dech = trim$(tdisg028.seri) & st & str$(tcmcs050.ffno)	
+	endselect
+}
+
+function boolean projValid()
+{
+	if not isspace(tdisg026.proj) then
+		select	tppdm600.cprj
+		from	tppdm600
+		where	tppdm600._index1 = {:tdisg026.proj}
+		selectdo
+		selectempty	
+			return(false)
+		endselect
+	endif
+	return (true)
+}
+
+
+
+function update.date()
+{
+	domain	tclogn	curr.user
+	curr.user = logname$
+	
+	select	tccom001.emno
+	from	tccom001
+	where	tccom001.loco = :curr.user
+	selectdo
+	endselect
+	tdisg026.crby = tccom001.emno
+	tdisg026.crdt = utc.num()
+ }		
+
+
+function extern long freeze()
+{
+	curr.user = logname$
+	select	tdisg026.flag
+	from	tdisg026 for update
+	where	tdisg026._index1 = {:tdisg026.dech}
+	selectdo
+		appr.allow = 1
+		dal.change.object("tdisg026")
+		select	tccom001.emno,tccom001.nama
+		from	tccom001
+		where	tccom001._index1 = {:curr.user}
+		selectdo
+		endselect
+		dal.set.field("tdisg026.frdt",utc.num())
+		dal.set.field("tdisg026.frby",tccom001.emno)
+		dal.set.field("tdisg026.flag",1)
+		dal.set.field("tdisg026.stat",tdisg.delv.freeze)	|#ISGEC018001.n
+		ret = dal.save.object("tdisg026")
+		if ret <> 0  then
+			show.dal.messages(MSG.ALL)
+			return(1)
+		endif
+		appr.allow = 0
+	endselect
+	return(0)
+}
+
+									|#ISGEC018001.sn
+function generate.challan.no()
+{
+	ret = utc.to.date(utc.num(), year, month, day, hour, minutes, seconds)
+	
+	on case month
+	case 01:
+	case 02:
+	case 03:
+		challan.no.from = str$(year)
+		break
+	case 04:
+	case 05:
+	case 06:
+	case 07:
+	case 08:
+	case 09:
+	case 10:
+	case 11:
+	case 12:
+		challan.no.from = str$(year + 1)
+		break	
+	endcase
+	
+	challan.no.from = challan.no.from(3;2)
+	
+	
+	select	whinh310.dino, whinh310.cwar
+	from	whinh310
+	where	whinh310._index1 = {:receipt.no}
+	selectdo
+	endselect
+	
+	document.no = val(whinh310.dino)
+	
+	select	tfisg405.gstn.c
+	from	tfisg405
+	where	tfisg405._index1 = {:document.no}
+	selectdo
+	endselect
+	
+	select	tctax940.stpv
+	from	tctax940
+	where	tctax940._index1 = {:tfisg405.gstn.c}
+	selectdo
+	endselect
+	
+	select	tcmcs143.cdf_scod
+	from	tcmcs143
+	where	tcmcs143._index1 = {"IN ", :tctax940.stpv}
+	selectdo
+	endselect
+	
+	ret = get.var(pid, "tcmcs143.cdf_scod", state.cdf)
+	
+	challan.no.from = trim$(challan.no.from) & trim$(state.cdf)
+	
+	select	tcmcs003.cdf_phwr, tcmcs003.cdf_vewr
+	from	tcmcs003
+	where	tcmcs003._index1 = {:whinh310.cwar}
+	selectdo
+	endselect
+	
+	ret = get.var(pid, "tcmcs003.cdf_phwr", physical)
+	ret = get.var(pid, "tcmcs003.cdf_vewr", vendor)
+	
+	if vendor = tcyesno.yes then
+		challan.no.from = trim$(challan.no.from) & "J"
+	else if physical = tcyesno.yes then
+		challan.no.from = trim$(challan.no.from) & "N"
+	endif
+	endif
+	
+	challan.no = trim$(challan.no.from)
+	challan.no.to = trim$(challan.no.from) & "9999"
+	challan.no.from = trim$(challan.no.from) & "0000"
+	
+
+	select	max(tdisg026.dech):challan.found
+	from	tdisg026
+	where	tdisg026._index1 inrange {:challan.no.from} and {:challan.no.to}
+	selectdo
+	selectempty
+		challan.found = challan.no & "0000"
+	endselect
+	
+	last.no = val(challan.found(6;4))
+	last.no = last.no + 1
+	
+	challan.no = trim$(challan.no) & sprintf$("%@9999@", last.no)
+	
+	tdisg026.dech = challan.no
+
+}
+
+
+function insert.delivery.challan.line()
+{
+	select	whinh312.rcno, whinh312.rcln, whinh312.orno, whinh312.pono
+	from	whinh312
+	where	whinh312._index1 = {:receipt.no}
+	selectdo
+		select	tdisg027.*
+		from	tdisg027 for update 
+		where	tdisg027._index1 = {:challan.no, :whinh312.rcno, :whinh312.rcln}
+		selectdo
+		selectempty
+			tdisg027.dech = challan.no
+			tdisg027.rcno = whinh312.rcno
+			tdisg027.recl = whinh312.rcln
+			tdisg027.srpo = whinh312.orno
+			tdisg027.srpl = whinh312.pono
+			db.insert(ttdisg027, db.retry)
+		endselect
+	endselect
+	
+}
+
+
+
+									|#ISGEC018001.en

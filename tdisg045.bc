@@ -1,0 +1,192 @@
+|******************************************************************************
+|* tdisg045  0  VRC B61U a7 isg 
+|* DAL for tdisg045
+|* 3776
+|* 20-10-22 [10:10]
+|******************************************************************************
+|* Script Type: DAL
+|* GH446CR000, RAvi Kumar, 23-11-2020
+|* Checks on Custom inv selection in exports dr cr note
+|* 
+|* GH489CR000, RAvi Kumar, 11022021
+|* Correction in Custom Invoice functionality to Post same Tax code and Isgec Registration in E-Invoicing and GSTR-1
+|******************************************************************************
+                  
+	table	ttdisg045
+	table	ttdisg800
+	table	ttdisg831
+	table	tciisg800				|GH446CR000.a
+	table	tciisg801				|GH446CR000.a
+	
+	extern	string	sess.code(13)
+	domain	tfgld.docn	docn.orno		
+	domain	tcorno		docn.orno.str		
+	domain	tfgld.ttyp	ityp	
+#include <bic_dal2>
+
+
+function extern long before.open.object.set()
+{
+	field.depend()
+	return(0)
+}
+
+function extern long before.save.object(long type)
+{
+	on case type
+	case DAL_NEW :	
+		tcmcs.dll0095.read.parm("tdisg800")
+		if  tcmcs.dll0050.check.and.generate.order.number(
+					3, tdisg045.rqno, "933", 
+					9, tdisg045.rqno) then
+				return(DALHOOKERROR)
+		endif
+		tdisg045.logn = logname$
+		tdisg045.crdt = utc.num()
+		break
+	endcase
+	return(0)
+}
+
+function extern boolean method.is.allowed(long type)
+{
+	get.var(pid, "prog.name$", sess.code)
+	on case type
+	case DAL_NEW :
+		break
+	case DAL_UPDATE :
+		if sess.code = "tdisg0145m100" then
+			if tdisg045.stat = tdisg.stat.created then
+				return(true)
+			else
+				return(false)
+			endif
+		endif
+		
+		if sess.code = "tdisg0145m000" then
+			if tdisg045.stat = tdisg.stat.freeze  then
+				return(true)
+			else
+				return(false)
+			endif
+		endif
+		break
+	endcase
+	
+	return(true)
+}
+
+function field.depend()
+{
+	dal.field.depends.on("tdisg045.note", HOOK_UPDATE, "tdisg045.rqno")
+	dal.field.depends.on("tdisg045.cvat", HOOK_UPDATE, "tdisg045.invn")
+}
+
+function extern tdisg045.note.update()
+{
+	if tdisg045.rqno(1; 3) = "CRN" then
+		tdisg045.note = tdisg.notes.credit
+	else
+		tdisg045.note = tdisg.notes.debit
+	endif
+}
+
+function extern tdisg045.cvat.update()
+{
+| 	select	tdisg831.cvat
+	select	tdisg831.ccvt					|GH489CR000.a
+	from	tdisg831
+	where	tdisg831._index2 = {:tdisg045.invn}
+	as set with 1 rows
+	selectdo
+	selectempty
+| 		tdisg831.cvat = ""
+		tdisg831.ccvt = ""				|GH489CR000.a	
+	endselect
+	
+| 	tdisg045.cvat = tdisg831.cvat
+	tdisg045.cvat = tdisg831.ccvt				|GH489CR000.a
+}
+
+function extern boolean tdisg045.invn.is.valid(long type)
+{
+	long count.line
+	
+	count.line = 0
+	
+	on case type
+	case DAL_NEW :
+	case DAL_UPDATE :
+		select	count(tdisg046.rqno):count.line
+		from	tdisg046
+		where	tdisg046._index1 = {:tdisg045.rqno}
+		selectdo
+		endselect
+		
+		if  count.line > 0 then
+			dal.set.error.message("@ First delete line then change the Custom Invoice No.")
+			return(DALHOOKERROR)
+		endif
+		
+		select	tdisg831.invn
+		from	tdisg831
+		where	tdisg831._index2 = {:tdisg045.invn}
+		as set with 1 rows
+		selectdo
+		selectempty
+			dal.set.error.message("@ This is not valid Custom Invoice No.")
+			return(DALHOOKERROR)
+		endselect
+		
+		select	tdisg831.invn								|GH446CR000.a.s
+		from	tdisg831
+		where	tdisg831._index2 = {:tdisg045.invn}
+		and	tdisg831.cinv = ""
+		as set with 1 rows
+		selectdo
+		selectempty
+			dal.set.error.message("@ Custom Invoice should without Commercial Invoice No")
+			return(DALHOOKERROR)
+		endselect
+
+		docn.orno = lval(tdisg045.invn(4;8))
+		ityp = tdisg045.invn(1;3)
+		docn.orno.str = str$(docn.orno)
+		
+		select	ciisg800.comp
+		from	ciisg800
+		where	ciisg800.tran = :ityp
+		and	ciisg800.docn = :docn.orno.str
+		as set with 1 rows
+		selectdo
+		endselect
+		
+		select	ciisg801.errm
+		from	ciisg801
+		where	ciisg801._index1 = {:ciisg800.comp, :ityp, :docn.orno.str}
+		as set with 1 rows
+		selectdo
+			if not isspace(ciisg801.errm) then	
+				dal.set.error.message("@ Custom Invoice should be E-Invoiced")
+				return(DALHOOKERROR)
+			endif
+		selectempty
+			dal.set.error.message("@ Custom Invoice should be E-Invoiced")
+			return(DALHOOKERROR)
+		endselect
+		
+		select	tdisg831.invn
+		from	tdisg831
+		where	tdisg831._index2 = {:tdisg045.invn}
+		and	tdisg831.stat = tdisg.stat.freeze
+		as set with 1 rows
+		selectdo
+		selectempty
+			dal.set.error.message("@ Billing advice of Custom Invoice should not be in returned to project Status")
+			return(DALHOOKERROR)
+		endselect									|GH446CR000.a.e
+		break
+	endcase
+	return(true)
+		
+}

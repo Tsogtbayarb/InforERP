@@ -1,0 +1,561 @@
+|******************************************************************************
+|* tdisg0180m000  0  VRC B61U a7 live
+|* Maintain PO Register for Audit
+|* Installation user             
+|* 2014-09-16
+|******************************************************************************
+|* Main table tdisg080 PO Register for Audit, Form Type 1
+|******************************************************************************
+|* ISGECDV001069, IT0205, Arjit Gupta, VRC B61U a7 live, Dt. 30-09-2014
+|* First Free Number Generation Logic
+|* 
+|* ISGECDV001180, IT0205, Arjit Gupta, VRC B61U a7 live, Dt. 25-11-2014
+|* PO Reference must be defaulted not derived, PO Revision must be derived.
+|*
+|* ISGECDV001203, IT0205, Arjit Gupta, VRC B61U a7 live, Dt. 20-12-2014
+|* PO revision having workflow status "COMPLETED" should only be filtered.
+|*
+|* ISGEC001191, IT0205, Arjit Gupta, VRC B61U a7 isg, Dt. 22-12-2014
+|* Remove filtered from PO revision having workflow status "COMPLETED"
+|****************************************************************************
+|*IDENT: ISGEC01066,IT0375,Sandhyarani, Dt. 25-02-2015
+|Modification
+|****************************************************************************
+|* IDENT ISGEC01083, Mani sharma, Dt. 11-03-2015
+|* Modification on purchase office
+|***************************************************************************
+|* ISGEC01088, Mani sharma , Dt. 13.03.2015
+|* Attach a session and make reference order no mandatory in case of repeat party type
+|***************************************************************************
+|* ID: ISGEC01041, Sumit Bansal, 16/08/2017
+|* Sr Group Modification
+|*
+|* GH205CR000, RAvi Kumar, 09-11-2019
+|* IR-132672 PO Basic Value not correct in Audit Dept. 
+|* 
+|* GH252, Adarsh Pal, 24-01-2020, VRC B61U a7 isg
+|* Basic Value Changes
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttdisg080 | PO Register for Audit
+	table	ttdmsl400
+	table	ttcisg000		|#ISGECDV001069.n
+	table	ttcmcs050		|#ISGECDV001069.n
+	table	ttdpur400		|#ISGEC01066.n
+	table	ttdisg081		|#ISGEC01066.n
+	
+	|**************** Form Variables ******************
+	extern	domain	tcnama		var.nama
+	extern	domain	tccprj		var.cprj
+	extern	domain	tcdsca		var.pjdc
+	extern	domain	tcdsca		var.dvdc
+	extern domain  tccwoc		on.input.office,var.temp		|ISGEC01083.n
+	string	reas.new(3),str(50)
+	extern  domain tcpono          temp.var				|ISGEC01083.n
+			domain	tcamnt		line.oamt, tot.oamt		|RAvi.a.s.GH205CR000
+		domain	tcqiv1		line.qoor, add.qty
+		domain	tcpono		t.pono, t.sqnb
+		domain	tdgen.oltp	t.oltp
+		extern	domain	tcccur	ccur
+	extern	domain	tcdsca	ccur.dsca
+									|RAvi.a.e.GH205CR000
+	
+							|#ISGECDV001203.sn	|#ISGEC001191.so
+	|*************** Script Variables ******************
+| 	string		str(200)
+							|#ISGECDV001203.en	|#ISGEC001191.eo
+
+
+|****************************** program section ********************************
+before.program:
+	set.synchronized.dialog("tdisg0180m000")
+	read.parameters()				|#ISGECDV001069.n
+	temp.var = 0
+|****************************** group section **********************************
+group.1:											|#Anadi.sn 09-05-2018
+init.group:
+	create.extra.toolbar("dmisg1235m000", "dmisg:notes")					|#Anadi.en 09-05-2018
+|****************************** field section **********************************
+
+field.var.nama:
+before.display:
+	var.nama = Get_Supplier_Name(tdisg080.orno)
+	
+field.var.cprj:
+before.display:
+	var.cprj = Get_Project_Code(tdisg080.orno)
+	
+field.var.pjdc:
+before.display:
+	var.pjdc = Get_Project_Desc(var.cprj)
+	
+field.var.dvdc:
+before.display:
+	var.dvdc = Get_PurchaseOffice_Desc(tdisg080.orno)
+	
+field.tdisg080.rerm:						|#ISGEC01066.sn	
+before.zoom:
+	boolean ret
+	if tdisg080.real = tdreas.alloc.isg.afct then
+		reas.new = "ISG" 			
+		query.extend.where.in.zoom("tdisg081.reas(1;3) = '" &reas.new&"'")
+ 		
+	else
+		if tdisg080.real = tdreas.alloc.cust then
+			reas.new = "CUS" 			
+			query.extend.where.in.zoom("tdisg081.reas(1;3) = '" &reas.new&"'")
+		endif	
+	endif
+field.tdisg080.rfpo:								|ISGEC01088.sn
+after.field:
+	if tdisg080.prty = tdparty.repeat then
+		if isspace(tdisg080.rfpo) then
+			message("Reference order No. is Mandatory in case of repeat Party Type")
+		endif	
+	endif	
+										|ISGEC01088.en
+field.tdisg080.divn:										
+before.field:
+	select	tdpur400.cofc
+	from	tdpur400
+	where	tdpur400._index1 = {:tdisg080.orno}
+	selectdo
+		tdisg080.divn = tdpur400.cofc				|ISGEC01083.sn
+		if temp.var = 1 then
+			tdisg080.divn = on.input.office
+		endif
+		select tdisg080.divn:var.temp
+		from    tdisg080
+		where   tdisg080._index2 = {:tdisg080.orno,:tdisg080.revi}
+		and      tdisg080.divn <> ""
+		selectdo
+			tdisg080.divn = var.temp
+		endselect						|ISGEC01083.en
+	selectempty
+		tdisg080.divn = " "
+	endselect
+
+		
+after.input:								|ISGEC01083.sn
+	on.input.office = tdisg080.divn
+	temp.var = 1							|ISGEC01083.en
+	
+	
+field.tdisg080.revi:
+before.zoom:
+	select 	tdmsl400.vrsn						
+	from	tdmsl400
+	where	tdmsl400._index1 = {:tdisg080.orno}
+	order by tdmsl400.vrsn desc
+	selectdo
+		tdisg080.revi = tdmsl400.vrsn
+	selectempty
+		tdisg080.revi = 0
+	endselect							|#ISGEC01066.en
+| 	tdmsl400.orno = tdisg080.orno					|ISGEC01066.o
+| 	query.extend.where.in.zoom("tdmsl400._index1 =" & quoted.string(tdisg080.orno))
+
+						|#ISGECDV001069.sn
+field.tdisg080.srno:
+before.zoom:
+	tcmcs050.nrgr = tcisg000.adng
+						|#ISGECDV001069.en
+						
+						|#ISGECDV001180.sn
+field.tdisg080.orno:
+						|#ISGECDV001203.sn
+						|#ISGEC001191.so
+| before.zoom:
+| 	str = "tdpur400.orno in ("
+| 	str = str & "select tdmsl400.orno from tdmsl400 where tdmsl400.work = tdmsl.work.completed)"
+| 	query.extend.where.in.zoom(str)
+						|#ISGEC001191.eo
+						|#ISGECDV001203.en
+when.field.changes:
+	tdisg080.pref = Get_PO_Reference(tdisg080.orno, tdisg080.revi)
+	
+field.tdisg080.pref:
+before.input:
+	if	update.status = add.set	then
+		tdisg080.pref = Get_PO_Reference(tdisg080.orno, tdisg080.revi )
+	endif
+						|#ISGECDV001180.en
+
+field.ccur:										|RAvi.a.GH205CR000
+before.display:
+	select	tdpur400.ccur:ccur
+	from	tdpur400
+	where	tdpur400._index1 = {:tdisg080.orno}
+	as set with 1 rows
+	selectdo
+	selectempty 
+		ccur = ""
+	endselect
+	
+field.ccur.dsca:
+before.display:
+	select	tdpur400.ccur
+	from	tdpur400
+	where	tdpur400._index1 = {:tdisg080.orno}
+	as set with 1 rows
+	selectdo
+		select	tcmcs002.dsca:ccur.dsca
+		from	tcmcs002
+		where	tcmcs002._index1 = {:tdpur400.ccur}
+		as set with 1 rows
+		selectdo
+		selectempty
+			ccur.dsca = ""
+		endselect
+	selectempty 
+		ccur.dsca = ""
+	endselect
+	
+						
+choice.refresh.bvat:								
+on.choice:
+	tot.oamt = 0
+	line.oamt = 0
+	line.qoor = 0
+	t.pono = 0
+	t.sqnb = 0
+	t.oltp = empty
+	
+	select	b_tdpur401.pono:t.pono,
+		b_tdpur401.sqnb:t.sqnb,
+		b_tdpur401.qoor:line.qoor,
+		b_tdpur401.oamt:line.oamt,
+		b_tdpur401.oltp:t.oltp
+	from	tdpur401 b_tdpur401
+	where	b_tdpur401._index1 = {:tdisg080.orno}
+	and	b_tdpur401.oltp in (tdgen.oltp.orderline, tdgen.oltp.total)
+	selectdo
+		if	not Highest_Version(tdisg080.orno, tdisg080.revi)	then
+			if	not select.line.from.history(tdisg080.orno, tdisg080.revi, t.pono)	then
+				continue
+			else	
+				select	tdmsl501.oamt:line.oamt,				|#ISGEC01534.sn
+					tdmsl501.qoor:line.qoor			|RAvi.a.19122020 #IR160474
+				from	tdmsl501
+| 				where	tdmsl501._index1 = {:i.orno, :i.vrsn,:t.pono,:t.sqnb}
+				where	tdmsl501._index1 = {:tdisg080.orno, :tdisg080.revi, :t.pono}
+				and	tdmsl501.oltp in (tdgen.oltp.orderline, tdgen.oltp.total)
+				selectdo
+				endselect						|#ISGEC01534.en
+			endif
+		endif		
+		add.qty = 0.0
+| 		if	t.oltp = tdgen.oltp.total then								|#GH252.o			
+			if	Highest_Version(tdisg080.orno, tdisg080.revi)	then
+				add.qty = get.additional.qty.from.401(tdisg080.orno, t.pono)
+			else
+| 				add.qty = get.additional.qty.from.501(tdisg080.orno, t.pono)			|#GH252.o
+				add.qty = get.additional.qty.from.501(tdisg080.orno,tdisg080.revi,t.pono)	|#GH252.n
+			endif
+| 		endif
+	
+| 		line.oamt = (line.oamt / line.qoor ) * (line.qoor + add.qty)					|#GH252.o
+		line.oamt = (line.oamt / line.qoor ) * (add.qty)						|#GH252.n
+		
+		tot.oamt = tot.oamt + line.oamt
+	endselect
+
+	select	tdisg080.bval 
+	from	tdisg080 for update
+	where	tdisg080._index1 = {:tdisg080.srno}
+	as set with 1 rows
+	selectdo
+		tdisg080.bval = tot.oamt
+		db.update(ttdisg080, db.retry)
+		commit.transaction()
+	endselect
+												|RAvi.e.GH205CR000
+|****************************** function section **********************************
+Functions:
+
+function domain tcnama	Get_Supplier_Name
+			(
+			domain	tcorno	i.orno
+			)
+{
+	domain	tcnama	t.nama
+	
+	t.nama = ""
+	
+	select	s_tccom100.nama:t.nama
+	from	tdpur400 s_tdpur400, tccom100 s_tccom100
+	where	s_tdpur400._index1 = {:i.orno}
+	and	s_tdpur400.otbp refers to s_tccom100 Unref Clear
+	selectdo
+	selectempty
+		t.nama = ""
+	endselect
+
+	return(t.nama)
+}			
+
+function domain tccprj Get_Project_Code
+			(
+			domain	tcorno	i.orno	
+			)
+{
+	domain	tccprj	t.cprj
+	
+	t.cprj = ""
+	
+	select	p_tdpur401.cprj:t.cprj
+	from	tdpur401 p_tdpur401
+	where	p_tdpur401._index1 = {:i.orno}
+	and	p_tdpur401.cprj <> "         "
+	selectdo
+	selectempty
+		t.cprj = ""
+	endselect
+	
+	return(t.cprj)
+}
+
+function domain tcdsca	Get_Project_Desc
+			(
+			domain	tccprj	i.cprj
+			)
+{
+	domain	tcdsca	t.dsca
+	
+	t.dsca = ""
+	
+	select	pj_tcmcs052.dsca:t.dsca
+	from	tcmcs052 pj_tcmcs052
+	where	pj_tcmcs052._index1 = {:i.cprj}
+	selectdo
+	selectempty
+		t.dsca = ""
+	endselect
+	
+	return(t.dsca)
+}
+
+function domain tcdsca	Get_PurchaseOffice_Desc
+			(
+			domain	tcorno	i.orno
+			)
+{
+	domain	tcdsca	t.dsca
+	
+	t.dsca = ""
+	
+	select	po_tdpur012.dsca:t.dsca
+	from	tdpur400 po_tdpur400, tdpur012 po_tdpur012
+	where	po_tdpur400._index1 = {:i.orno}
+	and	po_tdpur400.cofc refers to po_tdpur012 Unref Clear
+	selectdo
+	selectempty
+		t.dsca = ""
+	endselect
+	
+	return(t.dsca)
+}
+							|#ISGECDV001069.sn
+function read.parameters()
+{
+	tcmcs.dll0095.read.parm("tcisg000")
+}
+							|#ISGECDV001069.en
+
+							|#ISGECDV001180.sn
+function domain tcdsca Get_PO_Reference
+			(
+			domain	tcorno		in.orno,
+			domain	tcpono		in.vrsn
+			)
+{
+	domain	tcdsca	tmp.dsca
+	domain	tcpono	max.vrsn
+	
+	tmp.dsca = ""
+	if	not Highest_Version(in.orno, in.vrsn)	then
+		select	rf_tdmsl500.refa:tmp.dsca
+		from	tdmsl500 rf_tdmsl500
+		where	rf_tdmsl500._index1 = {:in.orno, :in.vrsn}
+		selectdo
+		endselect
+	else
+		select	rf_tdpur400.refa:tmp.dsca
+		from	tdpur400 rf_tdpur400
+		where	rf_tdpur400._index1 = {:in.orno}
+		selectdo
+		endselect
+	endif
+	
+	
+	return(tmp.dsca)
+}
+
+function boolean Highest_Version(
+			domain	tcorno	in.orno,
+			domain	tcsern	in.vrsn
+				)
+{
+	select	tdmsl400.vrsn
+	from	tdmsl400
+	where	tdmsl400._index1 = {:in.orno}
+	order by tdmsl400.vrsn desc
+	as set with 1 rows
+	selectdo
+		if	tdmsl400.vrsn <> in.vrsn	then
+			return(false)
+		endif
+	endselect
+	
+	return(true)
+}
+							|#ISGECDV001180.en
+							
+function domain tcqsl1	get.additional.qty.from.401					|RAvi.a.GH205CR000
+				(
+				domain	tcorno	q.orno,
+				domain	tcpono	q.pono
+				)
+{
+											|#GH252.so
+| 	domain	tcqsl1	ord.qty, app.qty, diff.qty, bac.qty
+| 	
+| 	ord.qty = 0
+| 	app.qty = 0
+| 	bac.qty = 0
+| 	diff.qty = 0
+	
+| 	select	atdpur401.qoor:ord.qty,
+| 		atdpur401.qiap:app.qty,
+| 		atdpur401.qibo:bac.qty
+| 	from	tdpur401 atdpur401
+| 	where	atdpur401._index1 = {:q.orno, :q.pono}
+| 	and	atdpur401.oltp = tdgen.oltp.total
+| 	selectdo
+| 		diff.qty = diff.qty + bac.qty - (ord.qty - app.qty)
+| 	endselect
+											|#GH252.eo
+											|#GH252.sn
+	domain	tcqsl1	final.rcpt.qnty,non.final.rcpt.qnty,diff.qty,ord.qty
+	
+	final.rcpt.qnty = 0.0 
+	non.final.rcpt.qnty = 0.0
+	diff.qty = 0.0
+	ord.qty = 0.0
+	
+	select	sum(tdpur401.qidl):final.rcpt.qnty
+	from 	tdpur401 
+	where 	tdpur401._index1 = {:q.orno,:q.pono}
+	and	tdpur401.oltp <> 1		|* Not Total Line Type
+	and	tdpur401.clyn <> tcyesno.yes 	|* Not Consider Cancelled PO Line
+	selectdo
+	selectempty
+		final.rcpt.qnty = 0.00
+	endselect
+		
+	select	sum(tdpur401.qidl):non.final.rcpt.qnty,
+		sum(tdpur401.qoor):ord.qty
+	from 	tdpur401 
+	where 	tdpur401._index1 = {:q.orno,:q.pono}
+	and	tdpur401.fire = tcyesno.no
+	and	tdpur401.oltp <> 1		|* Not Total Line Type
+	and	tdpur401.clyn <> tcyesno.yes 	|* Not Consider Cancelled PO Line
+	selectdo
+	selectempty
+		ord.qty = 0.00
+		non.final.rcpt.qnty = 0.00
+	endselect
+	
+	diff.qty = final.rcpt.qnty + (ord.qty - non.final.rcpt.qnty)
+	diff.qty = round(diff.qty,6,2)						
+											|#GH252.en
+	return(diff.qty)
+}
+
+function domain tcqsl1	get.additional.qty.from.501
+					(
+					domain	tcorno	q.orno,
+					domain	tcsern	q.sern,				|#GH252.n
+					domain	tcpono	q.pono
+					)
+{
+											|#GH252.so
+| 	domain	tcqsl1	ord.qty, app.qty, diff.qty, bac.qty
+| 	
+| 	ord.qty = 0
+| 	app.qty = 0
+| 	bac.qty = 0
+| 	diff.qty = 0
+| 	
+| 	select	atdmsl501.qoor:ord.qty,
+| 		atdmsl501.qiap:app.qty,
+| 		atdmsl501.qibo:bac.qty
+| 	from	tdmsl501 atdmsl501
+| 	where	atdmsl501._index1 = {:q.orno,:q.pono}
+| 	and atdmsl501.oltp = 1
+| 	selectdo
+| 		diff.qty = diff.qty + bac.qty - (ord.qty - app.qty)
+| 	endselect
+| 	
+| 	return(diff.qty)
+											|#GH252.eo
+											|#GH252.sn
+	domain	tcqsl1	final.rcpt.qnty,non.final.rcpt.qnty,diff.qty,ord.qty
+	
+	final.rcpt.qnty = 0.0
+	non.final.rcpt.qnty = 0.0
+	diff.qty = 0.0
+	ord.qty = 0.0
+	
+	select	sum(tdmsl501.qidl):final.rcpt.qnty
+	from 	tdmsl501 
+	where 	tdmsl501._index1 = {:q.orno,:q.sern,:q.pono}
+	and	tdmsl501.oltp <> 1		|* Not Total Line Type
+	and	tdmsl501.clyn <> tcyesno.yes 	|* Not Consider Cancelled PO Line
+	selectdo
+	selectempty
+		final.rcpt.qnty = 0.00
+	endselect
+	
+	select	sum(tdmsl501.qidl):non.final.rcpt.qnty,
+		sum(tdmsl501.qoor):ord.qty
+	from 	tdmsl501 
+	where 	tdmsl501._index1 = {:q.orno,:q.sern,:q.pono}
+	and	tdmsl501.fire = tcyesno.no
+	and	tdmsl501.oltp <> 1		|* Not Total Line Type
+	and	tdmsl501.clyn <> tcyesno.yes 	|* Not Consider Cancelled PO Line
+	selectdo
+	selectempty
+		ord.qty = 0.00
+		non.final.rcpt.qnty = 0.00
+	endselect
+	
+	diff.qty = final.rcpt.qnty + (ord.qty - non.final.rcpt.qnty)			
+	diff.qty = round(diff.qty,6,0)							
+	
+	return(diff.qty)
+											|#GH252.en
+}
+
+function long select.line.from.history(
+				domain	tcorno	i.orno,
+				domain	tcsern	i.vrsn,
+				domain	tcpono	i.pono
+					)
+{
+
+	select	tdmsl501.orno 
+	from	tdmsl501
+	where	tdmsl501._index1 = {:i.orno, :i.vrsn, :i.pono}
+	as set with 1 rows
+	selectdo
+		
+	selectempty
+		return(0)
+	endselect
+	
+	return(1)
+}	
+												|RAvi.e.GH205CR000
+

@@ -1,0 +1,106 @@
+|******************************************************************************
+|* tdisg2131m000  0  VRC B61U a7 isg 
+|* Approval Request Form
+|* merino1                       
+|* 2019-08-09
+|******************************************************************************
+|* Main table tdisg231 Request From, Form Type 1
+|******************************************************************************
+|* ID: ISGEC01196, Arun Chauhan, 07-08-2019, VRC B61U a7 isg
+|* Tolerrance to be handeled in sanction
+|* NEW Development                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+  
+	table	ttdisg231 | Request From
+	table	ttdisg232
+	table	ttpisg012
+	table 	ttpisg011
+  
+	string  query.string(200)
+	extern	domain	tcccur		a,b	
+		domain	tcamnt		o.avai,tot.tran.amnt
+
+
+
+|****************************** program section ******************************
+|****************************** field section ********************************
+field.tdisg231.rcno:
+before.zoom:
+	clear.query.extend.in.zoom()
+	query.string	=	"tdisg230.rcno not in (select tdisg231.rcno from tdisg231)"
+	query.extend.where.in.zoom(query.string)
+
+
+|****************************** choice section **********************************
+choice.send.for.approval:
+before.choice:
+	select sum(tdisg232.amnt):tot.tran.amnt
+	from	tdisg232
+	where	tdisg232._index1 = {:tdisg231.rqno,:tdisg231.rcno}
+	selectdo
+	selectempty
+		tot.tran.amnt = 0.00
+	endselect
+	
+	select tdisg232.cprj
+	from	tdisg232
+	where	tdisg232._index1 = {:tdisg231.rqno,:tdisg231.rcno}
+	selectdo
+		select	tpisg012.avai:o.avai
+		from	tpisg012
+		where	tpisg012._index1 = {:tdisg232.cprj}
+		and	tpisg012.elem = "99210000"
+		as set with 1 rows
+		selectdo
+		selectempty
+			message("Contigency - V Element Is Not Present For Project - %s In Sanction Control",tdisg232.cprj)
+			choice.again()
+			o.avai = 0.00
+		endselect
+	selectempty
+		o.avai = 0.00
+	endselect
+	
+	if tot.tran.amnt > o.avai then
+		message("Total Transfer Amount Should Be Less Than Available Amount in Contigency - V Element In Sanction")
+		choice.again()
+	endif
+	
+	
+on.choice:
+	send_for_approval()
+
+choice.end.program:
+before.choice:
+	refresh.parent(-1)
+	
+choice.abort.program:
+before.choice:
+	refresh.parent(-1)
+
+choice.update.db:
+after.choice:
+refresh.parent(-1)
+
+|****************************** function section ********************************
+functions:
+
+function send_for_approval()
+{
+	db.retry.point()
+	select	tdisg231.stat
+	from	tdisg231  for update
+	where	tdisg231._index1 = {:tdisg231.rqno,:tdisg231.rcno}
+	and 	tdisg231.stat = tdisg.rqno.created
+	selectdo
+		tdisg231.stat = tdisg.rqno.pending.for.app
+		tdisg231.rodt = utc.num()
+		tdisg231.rqby = logname$
+		db.update(ttdisg231,db.retry,e)
+		commit.transaction()
+	endselect
+	
+}
+

@@ -1,0 +1,544 @@
+|******************************************************************************
+|* tcisgdll0100  0  VRC B61U a7 isg 
+|* Common Functions For GST
+|* merino1
+|* 17-04-26 [11:23]
+|******************************************************************************
+|* Script Type: Library
+|******************************************************************************
+|* ID : ISGEC017006, IT0386, Saurabh Dubey, VRC B61U a7 isg, Isgec Onsite Deployment
+|* Merino Services Limited
+|* Commonly Used Functions for GST
+|* New DLL Created
+|*
+|* ID : ISGECMOD005, IT0386, Saurabh Dubey, 09 January 2018, VRC B61U a7 isg
+|* Merino Services Limited, Isgec Onsite Deployment
+|* Check for BP GSTIN Validation transferred to DLL from BP GSTIN DAL
+|* and further logic modified according to it in respective sessions
+|*
+|* GH406CR000, RAvi Kumar, 24-09-2020
+|* IDMS not shows name of left users
+|******************************************************************************
+              
+	table	ttcmcs143
+	table	ttcisg124
+	table	ttctax400
+	table	ttctax940
+	table	ttccom936
+	table	ttfacp100
+		
+	#include"itcisg00001"
+	#pragma used dll otcmcsdll0095
+
+function extern tcisgdll0100.get.state.description
+				(
+					domain	tcccty		i.ccty,		|* Country	
+					domain	tcmcs.cste	i.cste,		|* State Code
+				ref	domain	tcdsca		o.state.dsca	|* Description
+				)
+{
+	select	tcmcs143.dsca:o.state.dsca
+	from	tcmcs143
+	where	tcmcs143._index1 = {:i.ccty, :i.cste}
+	selectdo
+	selectempty
+		o.state.dsca = ""
+	endselect
+}
+
+
+function extern tcisgdll0100.get.statutory.state.code
+				(
+					domain	tcccty		i.ccty,		|* Country	
+					domain	tcmcs.cste	i.cste,		|* State Code
+				ref	domain	tcmcs.str2	o.stat.code	|* Statutory Code
+				)
+{
+	DLLUSAGE
+		This DLL determines the statutory state code issued by Government
+		for GST.
+	Input : 	i.ccty : Country
+		i.cste: State
+		
+	Output:	o.stat.code : 2 digit Statutory Code
+		
+	ENDDLLUSAGE
+	
+	domain	tcmcs.str30	bind.scod
+	
+	select	tcmcs143.cdf_scod
+	from	tcmcs143
+	where	tcmcs143._index1 = {:i.ccty, :i.cste}
+	selectdo
+		get.var(pid, "tcmcs143.cdf_scod", bind.scod)
+	selectempty
+		bind.scod = ""
+	endselect
+	
+	o.stat.code = trim$(bind.scod)
+}
+
+
+
+function extern tcisgdll0100.get.bp.country.state.from.tax.seqn.l
+				(
+					domain	tctax.seqn.l	i.seqn.l,	|* Tax Sequence	
+				ref	domain	tcccty		o.bp.country,	|* Country
+				ref	domain	tcmcs.cste	o.bp.state	|* State
+				)
+{
+	select	tctax400.ccty:o.bp.country,
+	 	tctax400.stpv.l:o.bp.state
+	from	tctax400
+	where	tctax400._index3 = {:i.seqn.l}
+	selectdo
+	selectempty
+		o.bp.country = ""
+		o.bp.state = ""
+	endselect
+}
+					|#ISGECMOD005.sn
+function extern long tcisgdll0100.validate.GSTIN
+					(
+						domain tcccty		i.ccty,		|* Country
+						domain tcmcs.cste	i.cste,		|* State
+						domain tctax.txnb	i.fovn,		|* GSTIN
+						domain tcyesno		i.temp.flag,	|* Temp. Tax flag
+					ref	domain	tcmcs.str100	o.err.mess	|* ref Error message	
+					)
+{
+	DLLUSAGE
+		This DLL determines the Validity of GST No.
+	Input : 	i.ccty :      	Country
+		i.cste:        State
+		i.fovn:         GST Number
+		i.temp.flag: Temp. Tax No.(Yes/No)
+		
+	Output:	0		: No Error
+		1 		: Error
+		o.error.msg	: Error Message(if Any) 
+		
+	ENDDLLUSAGE
+	
+	i.fovn = trim$(i.fovn)
+	o.err.mess = ""
+	
+	domain	tcmcs.str2	o.scod	|* Statutory Code
+	
+	if i.temp.flag = tcyesno.no then
+		if len(i.fovn) <> 15 then
+			o.err.mess = "GSTIN Should be of 15 Characters...."
+			return(1)
+		endif
+
+		tcisgdll0100.get.statutory.state.code(	i.ccty, 
+							i.cste, 
+							o.scod)
+		i.fovn = trim$(i.fovn)	
+		
+		if i.fovn(1;2) <> o.scod then
+			o.err.mess = "State Code Not Matching With GSTIN..."
+			return(1)
+		endif
+	endif
+	
+	return(0)
+}
+					|#ISGECMOD005.en
+
+function extern tcisgdll0100.get.bp.state.from.tax.seqn.l
+				(
+					domain	tctax.seqn.l	i.seqn.l,	|* Tax Sequence	
+				ref	domain	tcmcs.cste	o.bp.state	|* State
+				)
+{
+	select 	tctax400.stpv.l:o.bp.state
+	from	tctax400
+	where	tctax400._index3 = {:i.seqn.l}
+	selectdo
+	selectempty
+		o.bp.state = ""
+	endselect
+}
+
+
+function extern boolean tcisgdll0100.check.bp.seqn.l.effectivity.l
+				(
+					domain	tccom.bpid	i.bpid,
+					domain	tcccty		i.ccty,
+					domain	tctax.seqn.l	i.seqn.l,
+					domain	tcdate		i.eff.date.l,
+				ref	domain	tcmcs.str100	o.error.msg	
+				)
+{
+	DLLUSAGE
+		This DLL Checks whether entered BP regsitration Sequence is 
+		Valid On Effective date.
+		
+		Special Check for GST Category of registration Sequence has been provided
+		based on Indian Localization Parameters.
+		
+		Input :	i.bpid 	:	Business Partner Code
+			i.ccty  	:	BP Tax Country
+			i.seqn.l	:	registration Sequence
+			i.eff.date.l : 	Effective Date
+			
+		
+		Output :	o.error.msg : If any Error found else blank
+		
+		Return : 	True  :  No Error
+			False :  Error
+	ENDDLLUSAGE
+	
+	domain	tctax.catg.l	bind.catg.l
+	
+	o.error.msg = ""
+	
+	if i.ccty = OWN.COUNTRY then
+		select	tctax400.catg.l:bind.catg.l
+		from	tctax400
+		where	tctax400._index4 = {
+					:i.bpid,
+					:i.ccty,
+					:i.seqn.l
+					}
+		and	tctax400.efdt <= :i.eff.date.l
+		and	(tctax400.exdt > :i.eff.date.l or tctax400.exdt = 0)
+		as set with 1 rows
+		selectdo
+			if GST.IMPLEMENTED() then
+				if bind.catg.l <> tctax.catg.l.gst then
+					o.error.msg = "Registered BP Sequence No. is Not of GST Category..."
+					return(false)
+				endif
+			endif	
+		selectempty
+			o.error.msg = "Registration No. Sequence Not Effective or Valid for Business Partner..."
+			return(false)
+		endselect
+	else							|* For Foreign Business Partners
+		
+		if not tctax.dll4100.check.if.bp.seqn.exists.l(	i.seqn.l, 
+								i.bpid, 
+								i.ccty
+								)  then
+								
+			o.error.msg = "Registration No. Sequence Not Effective or Valid for Business Partner..." 
+			return(false)
+		endif
+	endif	
+	return(true)
+}
+
+function extern tcisgdll0100.get.own.state.from.reg.seqn
+				(
+					domain	tctax.seqn	i.seqn,		|* Tax Sequence	
+				ref	domain	tcmcs.cste	o.own.state	|* State
+				)
+{
+	select	tctax940.stpv:o.own.state
+	from	tctax940
+	where	tctax940._index1 = {:i.seqn}
+	selectdo
+	selectempty
+		o.own.state = ""
+	endselect
+}
+
+
+function extern tcisgdll0100.get.user.name
+				(
+					domain	tfgld.user	i.user,		|* User
+				ref	domain	tcnama		o.user.name	|* Name			
+				)
+{
+| 	select	ttaad200.name:o.user.name					|GH406CR000.a.s
+| 	from	ttaad200
+| 	where	ttaad200._index1 = {:i.user}
+| 	and	ttaad200._compnr = RESERVED_COMPANY
+| 	selectdo
+| 	selectempty
+| 		o.user.name = ""
+| 	endselect
+
+	select	tccom001.nama:o.user.name
+	from	tccom001
+	where	tccom001._index4 = {:i.user}
+	as set with 1 rows
+	selectdo
+	selectempty
+		o.user.name = ""
+	endselect								|GH406CR000.a.e
+}
+
+
+
+function extern tcisgdll0100.get.item.type.from.goods.service
+						(
+							domain	tpisg.cont.typ	i.ctyp,		|* Goods/Service	
+						ref	domain	tcisg.item.typ	o.item.type	|* Item Type	
+						)
+{
+	DLLUSAGE
+		This DLL is used to identify the Applicable Category of HSN/SAC
+		in case of GST
+		
+		Input	:	Category(Goods/Service)
+		
+		Output	:	Applicable Category of HSN or SAC
+		
+	ENDDLLUSAGE
+	
+	on case i.ctyp
+	case tpisg.cont.typ.goods:
+		o.item.type = tcisg.item.typ.hsn
+		break
+	
+	case tpisg.cont.typ.services:
+		o.item.type = tcisg.item.typ.sac
+		break
+	endcase
+}
+
+
+function extern long tcisgdll0100.check.HSN.SAC.code
+					(
+						domain	tcisg.item.typ	i.item.type,
+						domain	tchsnc.l	i.code,
+					ref	domain	tcmcs.str300m	o.error.msg	
+					)
+{
+	
+	DLLUSAGE
+		This DLL is used to check validity of HSN/SAC Code
+		
+		Input	:	i.itemp.type(HSN/SAC)
+		
+				i.code(HSN/SAC Code)
+		
+		Output	:	o.error.msg(Error Message. Blank in case No Error)
+		
+		Return 	:	0 - No Error
+				1 - Error
+		
+	ENDDLLUSAGE
+	
+	domain	tchsnc.l	bind.hsn.sac
+	
+	o.error.msg = ""
+	
+	select	tcisg124.code:bind.hsn.sac
+	from	tcisg124
+	where	tcisg124._index1 = {:i.item.type, :i.code}
+	as set with 1 rows
+	selectdo
+	selectempty
+		o.error.msg = "HSN/SAC Code is Not Valid..."
+		return(1)
+	endselect
+	
+	return(0)
+}
+
+
+function extern tcisgdll0100.get.HSN.SAC.description
+					(
+						domain	tcisg.item.typ	i.item.type,
+						domain	tchsnc.l	i.code,		|* HSN/SAC Code
+					ref	domain	tcmcs.str100	o.hsn.sac.desc	|* Description			
+					)
+{
+	o.hsn.sac.desc = ""
+	
+	select	tcisg124.desc:o.hsn.sac.desc
+	from	tcisg124
+	where	tcisg124._index1 = {:i.item.type, :i.code}
+	selectdo
+	selectempty
+		o.hsn.sac.desc = ""
+	endselect
+}
+
+
+function extern boolean tcisgdll0100.check.if.company.registraion.seq.exists
+					(
+						domain	tctax.seqn	i.seqn
+					)
+{
+	domain	tctax.seqn	bind.seqn
+	domain	tctax.catg.l	bind.catg
+	
+	select	tctax940.seqn:bind.seqn,
+		tctax940.catg:bind.catg
+	from	tctax940
+	where	tctax940._index1 = {:i.seqn}
+	selectdo
+		if GST.IMPLEMENTED() then
+			if bind.catg <> tctax.catg.l.gst then
+				message("Registerd Sequence is not of Type GSTIN....")
+				return(false)
+			endif
+		endif	
+	selectempty
+		return(false)
+	endselect
+	
+	return(true)
+}
+
+
+function extern boolean GST.IMPLEMENTED()
+{
+	DLLUSAGE
+		This DLL is used to check whether the GST Applicable is set to yes
+		is set to yes in Indian Localization Parameters(tccom936)
+	ENDDLLUSAGE
+	
+	tcmcs.dll0095.read.parm("tccom936") 
+	
+	if tccom936.gsta = tcyesno.yes then
+		return(true)
+	endif
+	
+	return(false)
+}
+
+
+function extern boolean UNREGISTERED_BUSINESS_PARTNER
+					(
+						domain	tccom.bpid	i.bpid
+					)
+{
+	domain	tcisg.tax.clas	bind.tax.classification
+	
+	select	tcisg104.txcl:bind.tax.classification
+	from	tcisg104
+	where	tcisg104._index1 = {:i.bpid}
+	selectdo
+	selectempty
+		bind.tax.classification = empty
+	endselect
+	
+	if	bind.tax.classification = tcisg.tax.clas.nreg or
+		bind.tax.classification = empty then
+		
+		return(true)
+	endif
+	
+	return(true)
+}
+
+function extern boolean tcisgdll0100.check.IR.is.project.purchase
+					(
+						domain	tfgld.docn	i.ninv
+					)
+{
+	domain	tcyesno	o.flag
+	
+	select	tfacp100.cdf_prpu
+	from	tfacp100
+	where	tfacp100._index1 = {:i.ninv}
+	selectdo
+		get.var(pid, "tfacp100.cdf_prpu", o.flag)
+	selectempty
+		o.flag = tcyesno.no
+	endselect
+	
+	if o.flag <> tcyesno.yes then
+		return(false)
+	endif
+	
+	return(true)
+}
+
+
+function extern tcisgdll0100.get.country.state.from.address
+				(
+					domain	tccom.cadr	i.cadr,		|* Address
+				ref	domain	tcccty		o.country,	|* Country
+				ref	domain	tcmcs.cste	o.state		|* State
+				)
+{
+	o.country = tccom.dll4032.get.address.country(i.cadr)
+	o.state = tccom.dll4032.get.address.state.province(i.cadr)
+}
+
+
+function extern tcisgdll0100.get.financial.company.address.CDF.from.seqn
+				(
+					domain	tctax.seqn	i.seqn,		|* Tax Sequence	
+				ref	domain	tccom.cadr	o.cadr		|* Address
+				)
+{
+	domain	tcmcs.str30	bind.cadr
+	
+	select	tctax940.cdf_cadr
+	from	tctax940
+	where	tctax940._index1 = {:i.seqn}
+	selectdo
+		get.var(pid, "tctax940.cdf_cadr", bind.cadr)
+	selectempty
+		bind.cadr = ""
+	endselect
+	
+	o.cadr = trim$(bind.cadr)
+}
+
+
+function extern void tcisgdll0100.get.month.description
+				(
+					domain	tfgld.prod	i.month,		
+				ref	domain	tcmcs.str15	month.description	
+				)
+{
+	DLLUSAGE
+		This DLL is used to get the Calender Month Description.
+		eg .	1	:	January
+			2:	:	February
+					:
+					:
+					:
+					:
+			12	:	December		
+	ENDDLLUSAGE
+	
+	month.description = ""
+	
+	on case i.month
+	case 1:
+		month.description = "January"
+		break
+	case 2:
+		month.description = "February"
+		break
+	case 3:
+		month.description = "March"
+		break
+	case 4:
+		month.description = "April"
+		break
+	case 5:
+		month.description = "May"
+		break
+	case 6:
+		month.description = "June"
+		break
+	case 7:
+		month.description = "July"
+		break
+	case 8:
+		month.description = "August"
+		break
+	case 9:
+		month.description = "September"
+		break
+	case 10:
+		month.description = "October"
+		break
+	case 11:
+		month.description = "November"
+		break
+	case 12:
+		month.description = "December"
+	endcase
+}

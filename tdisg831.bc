@@ -1,0 +1,2504 @@
+|******************************************************************************
+|* tdisg831  0  VRC B61U a7 live
+|* Billing Advice Data
+|* tools1
+|* 14-05-05 [13:55]
+|******************************************************************************
+|* Script Type: DAL
+|******************************************************************************
+|* IDEN ISG001016    Somak Mondal	05-05-2014	VRC B61U a7 live
+| IDENT  ISG001041  Abhishek Singh 04/06/2014 VRC B61U a7 live
+| IDENT  ISG001048  Biswajyoti Panda, 07/06/2014 VRC B61U a7 live
+| IDENT  #GT.19062014  Gaurav Tyagi, 19/06/2014 VRC B61U a7 live
+|***
+|* Based on Domestic & Export Process
+|* Global Variable will be set.
+|* For Domestic Process - Global Variable - 1
+|* For Export Process - Global Variable - 2
+|* Default - Global Variable - 0
+
+|*** Script Cleaned by Sujeet Kumar
+|* All Previous indenting are removed.
+
+|*** GLOBAL VARIABLES SET BY PROGRAM SCRIPT ***********************************
+| 	GLOBAL VARIABLE 	VALUE		PROGRAM SCRIPT
+| 	calling.session		1		tdisg8131m000
+| 	calling.session		2		tdisg8131m100
+| 	calling.session		3		tdisg8131m800
+| 	calling.session		4		tdisg8131m600
+|******************************************************************************   
+
+|* ID ISGECDV001002	Sujeet Kumar,		2014-09-08
+|* Project is Modified, however lines are added in Billing Advice
+|* Need to Block the Modification of Project and Sold-to Business Partner
+|* if the line exists for the same advice
+|* Functional - Mr. Vikas Yadav
+|*
+|*ID ISGECDV001034	Sujeet Kumar		2014-09-09
+|* Once the Line is Created User Cann't Change the LC Number
+|* Functional - Mrs. Mamta Upadhyay
+|*
+|*ID ISGECDV001039	Gaurav Tyagi		2014-09-12
+|* Add new field Export Type for handling Service Scenario
+|* Functional - Mrs. Mamta Upadhyay
+|*
+|* ID: ISGECDV001112	Ritu Shrivastava	2014-10-16
+|* Enable, disabling of commercial invoice date
+|* Validation of Invoice Number generation in series
+|* Functional - Mrs. Mamta Upadhyay 
+|*
+|* ID: ISGECDV001114    Ritu Shrivastava	2014-10-17
+|* Enable and Disable of fields based on Commercial Invoice
+|* 
+|* ID:ISGEC01087 	Mani sharma 	 	2015-03-13
+|* Add freeze date in table 
+|* ISGEC015079, IT0417, Vishal Anand, Dt. 07-01-2016, VRC B61U a7 live
+|* Flag required for handling Free Issue to Vendor and FICH Billing Advises for Export Projects 
+|*
+|* ID ISGEC002037, Manish Manchanda, 2016-03-11
+|* Bilable field defaulte to yes when type Domestic
+|*
+|* ISGEC016036, Manish Manchanda, 2016-11-10
+|* Modifications - new field added in table to be update on freeze
+|*
+|* ID : ISGEC017006, IT0386, Saurabh Dubey, 18 May 2017, VRC B61U a7 isg
+|* GST Related Modifications
+|* Isgec Onsite Deployment
+|* ID: ISGEC002032, Monika Mandal, 16-05-2019
+|* Modifications.
+|*
+|* GH429CR754, RAvi Kumar, 05-11-2020
+|* Process of GST Paid Invoices Dr Notes/Cr Notes of Export Invoicing
+|* 
+|* GH489CR000, RAvi Kumar, 11022021
+|* Correction in Custom Invoice functionality to Post same Tax code and Isgec Registration in E-Invoicing and GSTR-1
+|*
+|* GH544CR000, RAvi Kumar, 15-04-2021
+|* 176242-Billing advice cannot be deleted if receipt already link in billing advice
+#include <bic_dal2>
+	table	ttcemm170 | Companies
+	table	ttdisg800 | Export Parameter
+	table	ttdisg831 | Export Dispatch Request Data
+	table	ttdisg802 |
+	table	ttdisg803
+	table	twhisg312
+	table	ttcibd001
+	table	ttpisg036
+	table	ttpisg038
+	table	ttpisg032
+	table	ttpppc215
+	table  ttdisg832
+	table  ttppdm740
+	table	ttppdm600
+	table	ttccom100
+	table	ttccom130
+	table	ttccom000
+	table	ttdisg825
+	table	ttdisg876
+	table	ttppin020
+	table	tciisg101
+	table	ttpisg122
+	table	ttccom130
+
+	long calling.session
+	
+	extern domain	tcamnt	totl
+	|********* Global Variable *********
+	extern	domain	tcyesno		i.comm
+	extern	domain	tdisg.stat	i.status
+	extern	domain	tdisg.nvst	i.packing.status
+	extern	domain	tcorno		get.edrn
+| 	extern	domain	tcamnt		i.rfac
+	extern domain  tcorno		i.invoice
+	long	ret					|#ISGEC015079.n
+|******************************************************************************
+function extern long before.open.object.set()
+{
+| 	tcmcs.dll0095.read.parm("tdisg800")
+	read.parameters()
+	define.field.dependencies()
+	
+												|#ISG001048.en
+	return(0)
+}
+
+function extern long before.save.object(long type)
+{
+	long ret_val
+	
+	on case type
+		case DAL_NEW :	
+			if  tcmcs.dll0050.check.and.generate.order.number(
+					3, tdisg831.edrn, tdisg800.ednr, 
+					9, tdisg831.edrn) then
+				return(DALHOOKERROR)
+			endif
+			
+			select	tpisg036.xref
+			from	tpisg036
+			where	tpisg036._index1 = {:tdisg831.cprj}
+			selectdo
+				tdisg831.xref = trim$(tdisg831.cprj) & "/" & trim$(tpisg036.xref) & "/" & trim$(tdisg831.edrn)
+			selectempty
+				tdisg831.xref = ""
+			endselect
+		
+			select	tppdm740.raca
+			from	tppdm740
+			where	tppdm740._index1 = {:tdisg831.cprj,:tdisg831.ofbp}
+			selectdo
+				tdisg831.rate = tppdm740.raca(1)
+			endselect
+							
+			if tdisg831.type = tdisg.type.domestic then
+				tdisg831.etyp = empty
+			endif	
+			update.billed.value()					|#ISGEC002037.n	
+			assign.GSTIN()	|#ISGEC017006.n
+| 			if not isspace(tdisg831.cvat) then			|RAvi.a.s.28102020
+| 				tdisg831.lcod = ""
+| 				tdisg831.eist = tdisg.suptype.expwp
+| 			endif
+										|RAvi.a.e.28102020
+		break
+		case 	DAL_UPDATE :
+			if dal.is.field.changed("tdisg831.cprj")  then
+				if check.line.exists(tdisg831.edrn) then
+					dal.set.error.message("@ Lines are Added, Project Code Cann't be Modified")
+					return(DALHOOKERROR)
+				endif
+			endif
+							|#ISGECDV001034.sn
+			if dal.is.field.changed("tdisg831.lcno") then
+				if check.line.exists(tdisg831.edrn) then
+					dal.set.error.message("@ Lines are Added, LC Number Cann't be Modified")
+					return(DALHOOKERROR)
+				endif
+			endif
+							|#ISGECDV001034.en
+						
+													|#ISGECDV001112.sn
+| 			with.old.object.values.do(get_invoice)
+| 			if i.invoice <> tdisg831.invn then
+| 			if dal.is.field.changed("tdisg831.invn") then
+| 				if not isspace(tdisg831.invn) then
+| 					if check.length(tdisg831.invn) then
+| 						If check.invoice.number(tdisg831.invn) then					
+| 							dal.set.error.message("@ Invoice Number already exists")
+| 							return(DALHOOKERROR)
+| 						endif
+| 					endif
+| 				endif
+| 			endif										|#ISGECDV001112.en
+			update.billed.value()								|#ISGEC002037.n
+			assign.GSTIN()	|#ISGEC017006.n
+| 			if not isspace(tdisg831.cvat) then			|RAvi.a.s.28102020
+| 				tdisg831.lcod = ""
+| 				tdisg831.eist = tdisg.suptype.expwp
+| 			endif
+										|RAvi.a.e.28102020
+		break
+	endcase
+	return(0)
+}
+
+function extern long after.save.object(long type)
+{
+	long ret_val
+	
+	on case type
+		case DAL_UPDATE :
+	
+		if dal.is.field.changed("tdisg831.sasa") then
+			select 	tdisg832.sasa.l
+			from	tdisg832 for update 
+			where	tdisg832._index1 = {:tdisg831.edrn}
+			selectdo
+				dal.start.business.method("tdisg832","tdisg832.sasa.l.update",ret_val)
+				db.update(ttdisg832,db.retry)
+			endselect
+		endif 	
+		
+		if dal.is.field.changed("tdisg831.rate") then
+			select	tdisg832.rfac
+			from	tdisg832 for update
+			where	tdisg832._index1 = {:tdisg831.edrn}
+			selectdo
+				dal.start.business.method("tdisg832","update_billing_factor",ret_val)
+				db.update(ttdisg832,db.retry)
+			endselect	
+		endif
+		
+								|#ISGEC015079.sn
+		if dal.is.field.changed("tdisg831.bill") then
+			select	tdisg832.tobi
+			from	tdisg832 for update
+			where	tdisg832._index2 = {:tdisg831.edrn}
+			selectdo
+				dal.change.object("tdisg832")
+				if tdisg831.bill = tcyesno.no then
+					
+					dal.set.field("tdisg832.tobi",tcyesno.no)
+				else
+					dal.set.field("tdisg832.tobi",tcyesno.yes)
+				endif
+				ret = dal.save.object("tdisg832")
+		
+				if ret <> 0 then
+					return(DALHOOKERROR)
+				endif
+			endselect
+		endif 
+								|#ISGEC015079.en
+		break
+	endcase
+	
+	return(0)
+}
+
+function extern long before.destroy.object()
+{	
+	if not isspace(tdisg831.invn) then
+		dal.set.error.message("@Custom Invoice has Alredy been Generated. Deletion Not Allowed...")
+		return(DALHOOKERROR)
+	endif
+	
+	select	tdisg832.*					|GH544CR000.a.s
+	from	tdisg832
+	where	tdisg832._index1 = {:tdisg831.edrn}
+	as set with 1 rows
+	selectdo
+		dal.set.error.message("@Lines are present, Deletion Not Allowed...")
+		return(DALHOOKERROR)
+	endselect						|GH544CR000.a.e
+	
+	return(0)
+}
+
+function extern long	set.object.defaults()		
+{
+	tdisg831.crby.object.default()
+	tdisg831.crdt.object.default()
+	
+	tdisg831.octy = "IN "
+	tdisg831.etyp = tdisg.advice.supply	|ISGECDV001039.n
+	
+	select	tdisg876.dlut,
+		tdisg876.code:tdisg831.lcod
+	from	tdisg876
+	where	tdisg876.dlut = tcyesno.yes	|ISGEC002032.n
+	as set with 1 rows
+	selectdo
+	selectempty
+		tdisg831.lcod = ""
+	endselect
+| 	
+	if tdisg831.type = tdisg.type.export then			|GH429CR754.a.s
+		tdisg831.cvat = "GUPIGST05"
+		tdisg831.ccvt = "GUPIGST05"				|GH489CR000.a
+| 		tdisg831.eist = tdisg.subtype.expwop
+		tdisg831.eist = ltoe(5)
+	endif								|GH429CR754.a.e	
+| 	tdisg831.edrn.object.default()
+	return(0)
+}							
+
+function extern long before.new.object()
+{
+	read.parameters()
+	tdisg831.edrn = tdisg800.edsr
+| 	tdisg831.octy = "IN "		|Commented by GT
+| 	if tdisg831.type = tdisg.type.export then	
+| 		tdisg831.etyp = tdisg.advice.supply
+| 	endif	
+	return(0)
+}
+
+
+function extern long before.get.object()
+{
+	get.total.line.amount()
+	
+	return(0)
+}
+
+function extern long after.get.object()
+{
+	get.total.line.amount()
+					|#ISGEC015079.so
+| 	on case tdisg831.type
+| 		case 	tdisg.type.export:
+| 			if calling.session = 5 then
+| 				return(DALHOOKERROR)
+| 			endif
+| 			break
+| 		case	tdisg.type.domestic:
+| 			if tdisg831.stat = tdisg.stat.created and calling.session = 5 then
+| 				return(DALHOOKERROR)
+| 			endif
+| 			break
+| 		endcase
+					|#ISGEC015079.eo
+	return(0)
+}
+
+
+function extern boolean method.is.allowed(long type)
+{
+	with.old.object.values.do(get_status)
+	
+	on case type
+	case 	DAL_UPDATE :
+		
+		if tdisg831.stat = tdisg.stat.process then
+			return(false)
+		endif
+		break
+	case DAL_DESTROY :
+		on case tdisg831.stat
+			case 	tdisg.stat.created:
+				break
+			default:
+				return(false)
+			endcase
+		break	
+	endcase
+	
+	return(true)
+}
+				|GT.30062014.sn
+function extern boolean freeze.is.allowed()
+{
+	on case tdisg831.stat
+		case 	tdisg.stat.freeze:
+		case 	tdisg.stat.process:
+			return(false)
+			break
+	endcase
+	
+	return(true)
+}
+				|GT.30062014.en
+
+function extern boolean unfreeze.is.allowed()
+{
+	if	tdisg831.stat = tdisg.stat.freeze and tdisg831.flag = 0 then
+		return(true)
+	endif
+	
+	return(false)
+}
+
+
+function extern boolean process.cont.is.allowed()
+{
+	on case tdisg831.stat
+		case tdisg.stat.freeze:
+			return(true)
+		break
+	endcase
+	return(false)
+}
+
+function read.parameters()
+{
+	tcmcs.dll0095.read.parm("tdisg800")
+}
+|************************ Export Field *******************************
+|Exporter Reference No.
+function extern boolean tdisg831.xref.is.derived()
+{
+	if disable.export.fields() then
+		return(true)
+	endif
+	return(false)
+}
+|
+function extern void tdisg831.xref.update()
+{
+	select	tpisg036.xref
+	from	tpisg036
+	where	tpisg036._index1 = {:tdisg831.cprj}
+	selectdo
+		tdisg831.xref = trim$(tdisg831.cprj) & "/" & trim$(tpisg036.xref) & "/" & trim$(tdisg831.edrn)
+	selectempty
+		tdisg831.xref = ""
+	endselect
+}
+
+|LC No.
+
+function extern boolean tdisg831.lcno.is.derived()
+{
+	if tdisg831.stat <> tdisg.stat.created then
+		return(true)
+	endif
+	return(false)
+}
+
+|Country of Origin
+
+function extern boolean tdisg831.octy.is.derived()
+{
+	if disable.export.fields() then
+		return(true)
+	endif
+	return(false)
+}
+
+| function extern void tdisg831.octy.update()
+| {
+| 	select	tpisg036.coor
+| 	from	tpisg036
+| 	where	tpisg036._index1 = {:tdisg831.cprj}
+| 	selectdo
+| 		tdisg831.octy = tpisg036.coor
+| 	selectempty
+| 		tdisg831.octy = ""
+| 	endselect
+| }
+
+|Country of Destination *****
+
+| function extern boolean tdisg831.dcty.is.derived()
+| {
+| 	return(true)
+| }
+
+|Billable Yes/No					|#ISGEC015079.sn
+function extern boolean tdisg831.bill.is.derived()
+{
+	if tdisg831.stat <> tdisg.stat.created then
+		return(true)
+	endif
+	return(false)
+}							|#ISGEC015079.en
+
+								|#ISGEC001209.sn
+function extern boolean tdisg831.bill.is.readonly()
+{
+	if tdisg831.type = tdisg.type.domestic then
+		return(true)
+	endif
+	return(false)
+}
+								|#ISGEC001209.en
+							
+function extern void tdisg831.dcty.update()
+{
+	select	tdisg825.ccty
+	from	tdisg825
+	where	tdisg825._index1 = {:tdisg831.lcno}
+	selectdo
+		tdisg831.dcty = tdisg825.ccty
+	selectempty
+		select	tpisg036.cofd
+		from	tpisg036
+		where	tpisg036._index1 = {:tdisg831.cprj}
+		selectdo
+			tdisg831.dcty = tpisg036.cofd
+		selectempty
+			tdisg831.dcty = ""
+		endselect
+	endselect	
+}
+
+|******** Port of Loading *************************
+
+function extern boolean tdisg831.ptld.is.derived()
+{
+	if disable.export.fields() then
+		return(true)
+	endif
+	return(false)
+}
+
+| function extern void tdisg831.ptld.update()
+| {
+| 	select	tpisg036.pold
+| 	from	tpisg036
+| 	where	tpisg036._index1 = {:tdisg831.cprj}
+| 	selectdo
+| 		tdisg831.ptld = tpisg036.pold
+| 	selectempty
+| 		tdisg831.ptld = ""
+| 	endselect
+| }
+
+|******* Port of Discharge ****************************
+function extern boolean tdisg831.ptds.is.derived()
+{
+	if disable.export.fields() then
+		return(true)
+	endif
+	return(false)
+}
+
+function extern void tdisg831.ptds.update()
+{
+	select	tdisg825.port
+	from	tdisg825
+	where	tdisg825._index1 = {:tdisg831.lcno}
+	selectdo
+		tdisg831.ptds = tdisg825.port
+	selectempty
+		select	tpisg036.pods
+		from	tpisg036
+		where	tpisg036._index1 = {:tdisg831.cprj}
+		selectdo
+			tdisg831.ptds = tpisg036.pods
+		selectempty
+			tdisg831.ptds = ""
+		endselect
+	endselect	
+}
+
+|Place  of Delivery *******************
+
+function extern boolean tdisg831.ctyd.is.derived()
+{
+	if disable.export.fields() then
+		return(true)
+	endif
+	return(false)
+}
+
+function extern void tdisg831.ctyd.update()
+{
+	select	tdisg825.plad
+	from	tdisg825
+	where	tdisg825._index1 = {:tdisg831.lcno}
+	selectdo
+		tdisg831.ctyd = tdisg825.plad
+	selectempty
+		select	tpisg036.pldv
+		from	tpisg036
+		where	tpisg036._index1 = {:tdisg831.cprj}
+		selectdo
+			tdisg831.ctyd = tpisg036.pldv
+		selectempty
+			tdisg831.ctyd = ""
+		endselect
+	endselect		
+}
+
+|Invoice Packing List
+
+| function extern boolean tdisg831.nvst.is.derived()
+| {
+| 	return(true)
+| }
+
+|Terms of Delivery & Payment
+
+function extern boolean tdisg831.itod.is.derived()
+{
+	if disable.export.fields() then
+		return(true)
+	endif
+	return(false)
+}
+
+|Shipping Bill No. 
+
+function extern boolean tdisg831.sbno.is.derived()
+{
+	if disable.export.fields() then
+		return(true)
+	endif
+	return(false)
+}
+
+|Shipping Date
+
+function extern boolean tdisg831.shdt.is.derived()
+{
+	if disable.export.fields() then
+		return(true)
+	endif
+	return(false)
+}
+
+|Bill of Lading No
+
+function extern boolean tdisg831.bold.is.derived()
+{
+| 	if tdisg831.nvst = tdisg.nvst.postship then				|#ISGECDV001114.so
+| 		return(false)
+| 	endif
+| 	
+| 	return(true)								|#ISGECDV001114.eo
+	
+	if disable.export.fields() then					|#ISGECDV001114.sn
+		return(true)
+	endif
+	return(false)								|#ISGECDV001114.en
+}	
+
+|Bill of Lading Date
+
+function extern boolean tdisg831.bodt.is.derived()
+{
+	if disable.export.fields() then
+		return(true)
+	endif
+	return(false)
+}
+
+|Mode of Transport
+
+function extern boolean tdisg831.motp.is.derived()
+{
+	if disable.export.fields() then
+		return(true)
+	endif
+	return(false)
+}
+
+function extern void tdisg831.motp.update()
+{
+	select	tpisg036.motp
+	from	tpisg036
+	where	tpisg036._index1 = {:tdisg831.cprj}
+	selectdo
+		tdisg831.motp = tpisg036.motp
+	selectempty
+		tdisg831.motp = empty
+	endselect
+	
+}
+
+
+|Created By
+
+function	void tdisg831.crby.object.default()
+{
+	tdisg831.crby = logname$
+}
+
+function extern boolean tdisg831.crby.is.derived()
+{
+	if disable.export.fields() then
+		return(true)
+	endif
+	return(false)
+}
+
+|Creation Date
+
+function	void tdisg831.crdt.object.default()
+{
+	tdisg831.crdt = utc.num()
+}
+
+function extern boolean tdisg831.crdt.is.derived()
+{
+	if disable.export.fields() then
+		return(true)
+	endif
+	return(false)
+}
+
+|Processing Date
+
+| function extern boolean tdisg831.prdt.is.derived()
+| {
+| 	return(true)
+| }
+
+|Billing Advice
+function	void tdisg831.edrn.object.default()
+{
+	tdisg831.edrn = tdisg800.edsr
+}
+
+
+|Invoice Value(INR)
+
+function extern boolean tdisg831.amti.is.derived()
+{
+	if disable.export.fields() then
+		return(true)
+	endif
+	return(false)
+}
+
+|Insurance
+
+function extern boolean tdisg831.insu.is.derived()
+{
+	if disable.export.fields() then
+		return(true)
+	endif
+	return(false)
+}
+
+|Freight
+
+function extern boolean tdisg831.frgt.is.derived()
+{
+	if disable.export.fields() then
+		return(true)
+	endif
+	return(false)
+}
+
+|Commision
+
+function extern boolean tdisg831.comm.is.derived()
+{
+	if disable.export.fields() then
+		return(true)
+	endif
+	return(false)
+}
+
+|Discount
+
+function extern boolean tdisg831.disc.is.derived()
+{
+	if disable.export.fields() then
+		return(true)
+	endif
+	return(false)
+}
+
+|Packing Charges
+
+function extern boolean tdisg831.pcki.is.derived()
+{
+	if disable.export.fields() then
+		return(true)
+	endif
+	return(false)
+}
+
+|Other Deduction
+
+function extern boolean tdisg831.othr.is.derived()
+{
+	if disable.export.fields() then
+		return(true)
+	endif
+	return(false)
+}
+
+function extern void tdisg831.fovv.update()
+{
+	tdisg831.fovv = tdisg831.amti - 
+		(tdisg831.insu + tdisg831.frgt + tdisg831.comm 
+		+ tdisg831.disc + tdisg831.pcki + tdisg831.othr)
+}
+
+|Project 
+
+function extern boolean tdisg831.cprj.is.derived()
+{
+	if tdisg831.stat <> tdisg.stat.created then
+		return(true)
+	endif
+	return(false)
+}
+
+function extern boolean tdisg831.cprj.is.mandatory()			|#ISG001041.sn
+{
+	if not isspace(tdisg831.cprj) then
+		select	tcmcs052.cprj
+		from	tcmcs052
+		where	tcmcs052._index1 = {:tdisg831.cprj}
+		selectdo
+		selectempty
+			dal.set.error.message("@Project not valid")
+			return(DALHOOKERROR)	
+		endselect
+	else
+		dal.set.error.message("@Project not valid")
+		return(DALHOOKERROR)		
+	endif
+	return(true)
+}
+
+|Sold to BP ******************************************
+
+function extern boolean tdisg831.ofbp.is.derived()
+{
+						|#ISGECDV001002.so
+| 	if tdisg831.stat <> tdisg.stat.created then
+| 		return(true)
+| 	endif
+| 	return(false)
+						|#ISGECDV001002.eo
+	return(true)
+|	endif
+|	return(false)
+}
+
+function extern boolean tdisg831.ofbp.is.mandatory()			|#ISG001041.sn
+{
+	if not isspace(tdisg831.ofbp) then
+		select	tppdm740.ofbp
+		from	tppdm740
+		where	tppdm740._index1 = {:tdisg831.cprj,:tdisg831.ofbp}
+		selectdo
+		selectempty
+			dal.set.error.message("@BP not valid")
+			return(DALHOOKERROR)	
+		endselect
+	else
+		dal.set.error.message("@BP not valid")
+		return(DALHOOKERROR)		
+	endif
+	return(true)
+}									|#ISG001041.en
+
+function extern tdisg831.ofbp.update()
+{
+	select 	tppdm740.ofbp
+	from	tppdm740
+	where	tppdm740._index1 = {:tdisg831.cprj}
+	as set with 1 rows
+	selectdo
+	endselect
+	
+	tdisg831.ofbp = tppdm740.ofbp
+}
+
+|Custom Invoice No
+
+function extern boolean tdisg831.invn.is.derived()
+{
+	| if disable.export.fields() then
+	| 	return(true)
+	| endif
+	| return(false)
+| 	return(true)
+	if len(trim$(tdisg831.invn)) = 9 then
+		return(true)
+	endif
+	return(false)
+}
+
+|Custom Invoice Date
+
+function extern boolean tdisg831.invd.is.derived()
+{
+| 	if isspace(tdisg831.invn) then					|#ISGECDV001112.so
+| 		return(false)
+| 	endif								|#ISGECDV001112.eo
+|		break
+| 	default:
+| 	return(true)
+| 	endcase
+
+| 	if isspace(tdisg831.invn) then
+| 		return(false)
+| 	endif
+| 	return(true)							|#ISGECDV001112.o
+	if len(trim$(tdisg831.invn)) = 9 then				|#ISGECDV001112.sn
+		return(true)
+	endif
+	return(false)							|#ISGECDV001112.en
+}
+
+|Link to Shipping Bill
+
+| function extern boolean tdisg831.ilnk.is.derived()
+| {
+| 	return(true)
+| }
+
+|Commercial Invoice
+
+function extern boolean tdisg831.cinv.is.derived()
+{
+	return(true)
+}
+
+|Select Custom Invoice
+
+| function extern boolean tdisg831.sele.is.derived()
+| {
+| 	return(true)
+| }
+
+|Link Commercial Invoice
+
+| function extern boolean tdisg831.link.is.derived()
+| {
+| 	return(true)
+| }
+
+|Freeze Commercial Invoice
+
+| function extern boolean tdisg831.frez.is.derived()
+| {
+| 	return(true)
+| }
+
+|Commercial Invoice Date
+
+function extern boolean tdisg831.cind.is.derived()
+{
+	if disable.export.fields() then
+		return(true)
+	endif
+	return(false)
+}
+
+|CHA Name
+
+function extern boolean tdisg831.chnm.is.derived()
+{
+	if disable.export.fields() then
+		return(true)
+	endif
+	return(false)
+}
+
+function extern void tdisg831.chnm.update()
+{
+	select	tpisg036.chnm
+	from	tpisg036
+	where	tpisg036._index1 = {:tdisg831.cprj}
+	selectdo
+		tdisg831.chnm = tpisg036.chnm
+	selectempty
+		tdisg831.chnm = ""
+	endselect
+}
+
+|* Consignee 
+function extern boolean tdisg831.cons.is.derived()
+{
+	if disable.export.fields() then
+		return(true)
+	endif
+	return(false)
+}
+
+|** Buyer
+function extern boolean tdisg831.buyr.is.derived()
+{
+	if disable.export.fields() then
+		return(true)
+	endif
+	return(false)
+}
+
+|Status
+
+| function extern boolean tdisg831.edst.is.derived()
+| {
+| 	return(true)
+| }
+
+|Type - Domestic or Export
+
+function extern boolean tdisg831.type.is.derived()
+{
+	return(true)
+}
+
+function extern void	tdisg831.type.update()
+{
+	select 	tppdm740.ofbp,
+		tppdm740.ccur,
+		tccom130.ccty,
+		tppdm600.ncmp	
+	from	tppdm740,tccom100,tppdm600,tccom130
+	where	tppdm740._index1 = {:tdisg831.cprj,:tdisg831.ofbp}
+	and	tppdm740.ofbp refers to tccom100
+	and	tppdm740.cprj refers to tppdm600
+	and	tccom100.cadr refers to tccom130
+	as set with 1 rows
+	selectdo
+	endselect
+	
+	select	tcemm170.lcur
+	from	tcemm170
+	where	tcemm170._index1 = {:tppdm600.ncmp}
+	and	tcemm170.lcur = :tppdm740.ccur
+	as set with 1 rows
+	selectdo
+		select	tccom000.ccty
+		from	tccom000
+		where	tccom000._index1 = {0,:tppdm600.ncmp}
+		selectdo
+			if tccom000.ccty <> tccom130.ccty then
+				tdisg831.type = tdisg.type.export	|GT.30062014.n
+			else	
+				tdisg831.type = tdisg.type.domestic	|GT.30062014.n
+			endif	
+		endselect
+	selectempty
+		tdisg831.type = tdisg.type.export
+	endselect
+}
+
+
+
+|Billing Process Status
+
+| function extern boolean tdisg831.stat.is.derived()
+| {
+| 	return(true)
+| }
+
+|Processed By
+
+| function extern boolean tdisg831.user.is.derived()
+| {
+| 	return(true)
+| }
+
+|Pre Carriage By
+
+function extern boolean tdisg831.pcar.is.derived()
+{
+	if disable.export.fields() then
+		return(true)
+	endif
+	return(false)
+}
+
+
+|Place of Receipt by Pre- CArriage
+function extern boolean tdisg831.prec.is.derived()
+{
+	if disable.export.fields() then
+		return(true)
+	endif
+	return(false)
+}
+
+|Place of Receipt by PreCarriage
+
+| function extern boolean tdisg831.expr.is.derived()
+| {
+| 	return(true)
+| }
+
+|Mode of Payment
+
+| function extern boolean tdisg831.mode.is.derived()
+| {
+| 	return(true)
+| }
+
+function extern void tdisg831.mode.update()
+{
+	select	tdisg825.mpay
+	from	tdisg825
+	where	tdisg825._index1 = {:tdisg831.lcno}
+	selectdo
+		tdisg831.mode = tdisg825.mpay
+	selectempty
+		tdisg831.mode = ""
+	endselect	
+}
+
+|Container/Lorry Required On
+function extern boolean tdisg831.ddat.is.derived()
+{
+	if disable.export.fields() then
+		return(true)
+	endif
+	return(false)
+}
+
+|** Container / Lorry Required At
+function extern boolean tdisg831.otbp.is.derived()
+{
+	if disable.export.fields() then
+		return(true)
+	endif
+	return(false)
+}
+|Exchange Rate
+
+function extern boolean tdisg831.rate.is.derived()
+{
+	if disable.export.fields() then
+		return(true)
+	endif
+	return(false)
+}
+
+| function extern  tdisg831.rate.update()
+| {
+| 	select	tppdm740.raca
+| 	from	tppdm740
+| 	where	tppdm740._index1 = {:tdisg831.cprj,:tdisg831.ofbp}
+| 	selectdo
+| 		tdisg831.rate = tppdm740.raca(1)
+| 	endselect
+| }
+
+|Container Lorry Required
+
+function extern boolean tdisg831.cont1.is.derived()
+{
+	if disable.export.fields() then
+		return(true)
+	endif
+	return(false)
+}
+
+function extern boolean tdisg831.cont2.is.derived()
+{
+	if disable.export.fields() then
+		return(true)
+	endif
+	return(false)
+}
+
+function extern boolean tdisg831.cont3.is.derived()
+{
+	if disable.export.fields() then
+		return(true)
+	endif
+	return(false)
+}
+
+function extern boolean tdisg831.cont4.is.derived()
+{
+	if disable.export.fields() then
+		return(true)
+	endif
+	return(false)
+}
+
+|Factory
+
+function extern boolean tdisg831.fact.is.derived()
+{
+	if disable.export.fields() then
+		return(true)
+	endif
+	return(false)
+}
+
+function extern boolean tdisg831.insp.is.derived()
+{
+	if disable.export.fields() then
+		return(true)
+	endif
+	return(false)
+}
+|Shipping Amount
+
+function extern boolean tdisg831.shmt.is.derived()
+{
+	if disable.export.fields() then
+		return(true)
+	endif
+	return(false)
+}
+
+|Commercial Freight
+function extern boolean tdisg831.ded1.is.derived()
+{
+
+| 	if tdisg831.nvst = tdisg.nvst.postship then				|#ISGECDV001114.o
+	if tdisg831.nvst = tdisg.nvst.postship or				|#ISGECDV001114.sn
+	   tdisg831.nvst = tdisg.nvst.cominv   then				|#ISGECDV001114.en
+		return(false)
+	endif
+	
+| 	if disable.export.fields() then
+| 		return(true)
+| 	endif
+| 	return(false)
+
+	return(true)
+}
+
+|Commercial Insurance
+
+function extern boolean tdisg831.ded2.is.derived()
+{
+| 	if disable.export.fields() then
+| 		return(true)
+| 	endif
+| 	return(false)
+
+| 	if tdisg831.nvst = tdisg.nvst.postship then				|#ISGECDV001114.o
+	if tdisg831.nvst = tdisg.nvst.postship or				|#ISGECDV001114.sn
+	   tdisg831.nvst = tdisg.nvst.cominv   then				|#ISGECDV001114.en
+		return(false)
+	endif	
+	return(true)
+}
+
+|Commercial Amount
+
+function extern boolean tdisg831.camt.is.derived()
+{
+	if disable.export.fields() then
+		return(true)
+	endif
+	return(false)
+}
+
+|Buyer
+
+function extern boolean tdisg831.buyr1.is.derived()
+{
+	if disable.export.fields() then
+		return(true)
+	endif
+	return(false)
+}
+
+
+function extern boolean tdisg831.buyr2.is.derived()
+{
+	if disable.export.fields() then
+		return(true)
+	endif
+	return(false)
+}
+
+function extern boolean tdisg831.buyr3.is.derived()
+{
+	if disable.export.fields() then
+		return(true)
+	endif
+	return(false)
+}
+
+function extern boolean tdisg831.buyr4.is.derived()
+{
+	if disable.export.fields() then
+		return(true)
+	endif
+	return(false)
+}
+
+function extern boolean tdisg831.buyr5.is.derived()
+{
+	if disable.export.fields() then
+		return(true)
+	endif
+	return(false)
+}
+
+|Consignee
+
+function extern boolean tdisg831.con1.is.derived()
+{
+	if disable.export.fields() then
+		return(true)
+	endif
+	return(false)
+}
+
+function extern boolean tdisg831.con2.is.derived()
+{
+	if disable.export.fields() then
+		return(true)
+	endif
+	return(false)
+}
+
+function extern boolean tdisg831.con3.is.derived()
+{
+	if disable.export.fields() then
+		return(true)
+	endif
+	return(false)
+}
+
+function extern boolean tdisg831.con4.is.derived()
+{
+	if disable.export.fields() then
+		return(true)
+	endif
+	return(false)
+}
+
+function extern boolean tdisg831.con5.is.derived()
+{
+	if disable.export.fields() then
+		return(true)
+	endif
+	return(false)
+}
+
+|Tax Country
+
+function extern boolean tdisg831.ccty.is.derived()
+{
+	if not disable.tax.classification.fields() then
+		return(false)
+	endif
+	return(true)
+}
+
+function extern tdisg831.ccty.update()
+{
+ 	domain	tcccty		o.ccty		|Tax Country
+	domain	tccvat		o.cvat		|Tax Code
+ 	domain	tcccty		o.bptc		|Bp Tax Country	
+	domain	tctax.seqn	o.rnso.l
+	domain	tctax.seqn.l	o.rnsb.l
+	
+	get.data.from.project.business.partner(tdisg831.cprj,tdisg831.ofbp,
+			o.ccty,o.cvat,o.bptc,o.rnso.l,o.rnsb.l)
+	
+	tdisg831.ccty = o.ccty
+	
+}
+
+|Tax Code
+
+function extern boolean tdisg831.cvat.is.derived()
+{
+	if not disable.tax.classification.fields() then
+		return(false)
+	endif
+	
+	return(true)
+}
+
+function extern boolean tdisg831.ccvt.is.derived()				|GH489CR000.a
+{
+	if not disable.tax.classification.fields() then
+		return(false)
+	endif
+	
+	return(true)
+}
+
+function extern tdisg831.cvat.update()
+{
+ 	domain	tcccty		o.ccty		|Tax Country
+	domain	tccvat		o.cvat		|Tax Code
+ 	domain	tcccty		o.bptc		|Bp Tax Country	
+	domain	tctax.seqn	o.rnso.l
+	domain	tctax.seqn.l	o.rnsb.l
+	
+	get.data.from.project.business.partner(tdisg831.cprj,tdisg831.ofbp,
+			o.ccty,o.cvat,o.bptc,o.rnso.l,o.rnsb.l)
+	
+	if tdisg831.type = tdisg.type.export then			|RAvi.a.28122020
+		tdisg831.cvat = "GUPIGST05"
+		tdisg831.eist = ltoe(5)
+	else
+		tdisg831.cvat = o.cvat
+	endif
+	
+}
+
+function extern tdisg831.ccvt.update()						|GH489CR000.a
+{
+ 	domain	tcccty		o.ccty		|Tax Country
+	domain	tccvat		o.cvat		|Tax Code
+ 	domain	tcccty		o.bptc		|Bp Tax Country	
+	domain	tctax.seqn	o.rnso.l
+	domain	tctax.seqn.l	o.rnsb.l
+	
+	get.data.from.project.business.partner(tdisg831.cprj,tdisg831.ofbp,
+			o.ccty,o.cvat,o.bptc,o.rnso.l,o.rnsb.l)
+	
+	if tdisg831.type = tdisg.type.export then			
+		tdisg831.ccvt = "GUPIGST05"
+		tdisg831.eist = ltoe(5)
+	endif
+	
+}
+|BP Tax Country
+
+function extern boolean tdisg831.bptc.is.derived()
+{
+	if not disable.tax.classification.fields() then
+		return(false)
+	endif
+	return(true)
+}
+
+function extern tdisg831.bptc.update()
+{
+ 	domain	tcccty		o.ccty		|Tax Country
+	domain	tccvat		o.cvat		|Tax Code
+ 	domain	tcccty		o.bptc		|Bp Tax Country	
+	domain	tctax.seqn	o.rnso.l
+	domain	tctax.seqn.l	o.rnsb.l
+	
+	get.data.from.project.business.partner(tdisg831.cprj,tdisg831.ofbp,
+			o.ccty,o.cvat,o.bptc,o.rnso.l,o.rnsb.l)
+	
+	tdisg831.bptc = o.bptc
+	
+}	
+function extern void tdisg831.lcod.update()				|ISGEC002032.sn
+{
+	if not isspace(tdisg831.invn) then
+		select	tdisg876.dlut,
+			tdisg876.code:tdisg831.lcod
+		from	tdisg876
+		where	tdisg876.dlut = tcyesno.yes
+		as set with 1 rows
+		selectdo
+		selectempty
+			tdisg831.lcod = ""
+		endselect
+	endif								|ISGEC002032.en
+	
+	if tdisg831.type = tdisg.type.export then			|GH429CR754.a.s
+| 		if tdisg831.cvat = "GUPIGST05" or isspace(tdisg831.cvat) then	|GH489CR000.o
+		if tdisg831.ccvt = "GUPIGST05" or isspace(tdisg831.ccvt) then		|GH489CR000.n
+			select	tdisg876.dlut,
+				tdisg876.code:tdisg831.lcod
+			from	tdisg876
+			where	tdisg876.dlut = tcyesno.yes
+			as set with 1 rows
+			selectdo
+			selectempty
+				tdisg831.lcod = ""
+			endselect
+		else
+			tdisg831.lcod = ""
+		endif
+	endif
+}
+|*** Registration Sequence BP
+
+function extern void tdisg831.eist.update()					|GH429CR754.a.s
+{
+	if tdisg831.type = tdisg.type.export then		
+| 		if tdisg831.cvat = "GUPIGST05" or isspace(tdisg831.cvat) then		|GH489CR000.o
+		if tdisg831.ccvt = "GUPIGST05" or isspace(tdisg831.ccvt) then		|GH489CR000.n
+| 			tdisg831.eist = tdisg.subtype.expwop
+			tdisg831.eist = ltoe(5)
+		else
+| 			tdisg831.eist = tdisg.subtype.expwp
+			tdisg831.eist = ltoe(4)
+		endif
+	endif
+}
+										|GH429CR754.a.e
+
+function extern boolean tdisg831.rnso.l.is.derived()
+{
+	if not disable.tax.classification.fields() then
+		return(false)
+	endif
+	return(true)
+}
+function extern tdisg831.rnso.l.update()
+{
+ 	domain	tcccty		o.ccty		|Tax Country
+	domain	tccvat		o.cvat		|Tax Code
+ 	domain	tcccty		o.bptc		|Bp Tax Country	
+	domain	tctax.seqn	o.rnso.l
+	domain	tctax.seqn.l	o.rnsb.l
+	
+	get.data.from.project.business.partner(tdisg831.cprj,tdisg831.ofbp,
+			o.ccty,o.cvat,o.bptc,o.rnso.l,o.rnsb.l)
+	
+	tdisg831.rnso.l = o.rnso.l
+	
+}
+
+| function extern boolean tdisg831.rnso.l.is.valid()
+| {
+| 	if tdisg831.stat = tdisg.stat.freeze then
+| 		on case tdisg831.type
+| 			case tdisg.type.domestic:
+| 				if not check.registration.sequence.own(tdisg831.rnso.l,tcyesno.no) then
+| 					dal.set.error.message("@ Enter Valid Registration Sequence OWN")
+| 					return(DALHOOKERROR)
+| 				endif
+| 				break
+| 			case	tdisg.type.export:
+| 				if not check.registration.sequence.own(tdisg831.rnso.l,tcyesno.yes) then
+| 					dal.set.error.message("@ Enter Valid Registration Sequence OWN")
+| 					return(DALHOOKERROR)
+| 				endif
+| 				break
+| 		endcase
+| 	endif	
+| 	return(true)
+| }
+
+function extern boolean tdisg831.rnsb.l.is.derived()
+{
+	if not disable.tax.classification.fields() then
+		return(false)
+	endif
+	return(true)
+}
+function extern tdisg831.rnsb.l.update()
+{
+ 	domain	tcccty		o.ccty		|Tax Country
+	domain	tccvat		o.cvat		|Tax Code
+ 	domain	tcccty		o.bptc		|Bp Tax Country	
+	domain	tctax.seqn	o.rnso.l
+	domain	tctax.seqn.l	o.rnsb.l
+	
+	get.data.from.project.business.partner(tdisg831.cprj,tdisg831.ofbp,
+			o.ccty,o.cvat,o.bptc,o.rnso.l,o.rnsb.l)
+	
+	tdisg831.rnsb.l = 0
+}
+
+
+|Invoice Date
+function extern boolean tdisg831.ivdt.is.derived()
+{
+	if not disable.tax.classification.fields() then
+		return(false)
+	endif
+	return(true)
+}
+function extern boolean tdisg831.ivdt.is.valid()
+{
+	on case tdisg831.type
+		case 	tdisg.type.domestic:
+		
+			select 	ciisg101.opdt,
+				ciisg101.ldat
+			from	ciisg101
+			where	ciisg101._index1 = {:tdisg831.rnso.l}
+			and	ciisg101.type = tcyesno.no
+			as set with 1 rows
+			selectdo
+				
+				if tdisg831.ivdt > utc.num() then
+					dal.set.error.message("@ Invoice Date Cann't be Greater than Current Date")
+					return(DALHOOKERROR)
+				endif
+				
+				if tdisg831.ivdt < ciisg101.ldat then
+					dal.set.error.message("@ Invoice Date Cann't be Less than Last Invoice Date")
+					return(DALHOOKERROR)
+				endif
+				
+				
+				if tdisg831.ivdt > ciisg101.opdt then
+					dal.set.error.message("@ Invoice Date Cann't be Greater than Open Invoice Date")
+					return(DALHOOKERROR)
+				endif
+							
+			selectempty
+				dal.set.error.message("@ Please Select Valid Domestic Registration Number")
+				return(DALHOOKERROR)
+			endselect
+			break
+		case 	tdisg.type.export:
+			select 	ciisg101.opdt,
+				ciisg101.ldat
+			from	ciisg101
+			where	ciisg101._index1 = {:tdisg831.rnso.l}
+			and	ciisg101.type = tcyesno.yes
+			as set with 1 rows
+			selectdo
+			selectempty
+				dal.set.error.message("@ Please Select Valid Export Regisgration Number")
+				return(DALHOOKERROR)
+			endselect
+			
+			if tdisg831.ivdt > utc.num() then
+				dal.set.error.message("@ Invoice Date Cann't be Greater than Current Date")
+				return(DALHOOKERROR)
+			endif
+			break
+	endcase
+		
+	return(true)
+}
+
+
+
+|** Revenue Code
+
+function extern boolean tdisg831.cpro.is.derived()
+{
+	if not disable.tax.classification.fields() then
+		return(false)
+	endif
+	return(true)
+}
+
+|Advance on Service Tax
+function extern boolean tdisg831.sasa.is.derived()
+{
+	on case tdisg831.stat
+		case 	tdisg.stat.process :
+			return(true)
+			break
+		default:
+			on case tdisg831.type
+				case 	tdisg.type.export:
+					return(true)
+					break
+			endcase
+	endcase
+		
+	if disable.tax.classification.fields() then
+		return(true)
+	endif	
+		
+	return(false)
+}
+
+								|#ISGEC016036.sn
+function	extern	tdisg831.lubu.update()
+{
+	if	tdisg831.efms	=	tcyesno.yes	then				
+		tdisg831.ludt	=	utc.num()											
+		tdisg831.lubu	=	logname$	
+	endif						
+
+}
+								|#ISGEC016036.en
+								
+						|ISGECDV001039.sn
+|******** Export Type(Service Scenario) **************************
+function extern boolean tdisg831.etyp.is.derived()
+{
+	if disable.export.fields() then
+		return(true)
+	endif
+	return(false)
+}
+						|ISGECDV001039.en
+|************* Derive End *************************
+
+|Functions
+
+
+function get.data.from.project.business.partner
+				(
+					domain	tccprj		i.cprj,		|Project
+					domain	tccom.bpid	i.ofbp,		|Sold-to Business Partner
+				ref 	domain	tcccty		o.ccty,		|Tax Country
+				ref	domain	tccvat		o.cvat,		|Tax Code
+				ref 	domain	tcccty		o.bptc,		|Bp Tax Country	
+				ref 	domain	tctax.seqn	o.rnso.l,
+				ref 	domain	tctax.seqn.l	o.rnsb.l
+				)
+{
+	select 	tppdm740.ccty:o.ccty,
+		tppdm740.cvat:o.cvat,
+		tppdm740.bptc:o.bptc,
+		tppdm740.rnso.l:o.rnso.l,
+		tppdm740.rnsb.l:o.rnsb.l
+		
+	from	tppdm740
+	where	tppdm740._index1 = {:i.cprj,:i.ofbp}
+	as set with 1 rows
+	selectdo
+	endselect	
+}
+
+
+
+
+|******************************* Functions ********************************
+function get.total.line.amount()
+{
+	select sum(tdisg832.bivl):totl			|#ISG001048.n
+	from	tdisg832
+	where	tdisg832._index1 = {:tdisg831.edrn} 
+	selectdo
+	selectempty
+		totl=0
+	endselect	
+}
+
+|***************  Set Global Variable ******************************************
+
+function extern set.global.variable(long i.value)
+{
+| 	global.session.val = i.value
+	calling.session = i.value
+}
+
+
+function extern long freeze.record()						|#ISG001041.sn
+{ 	
+	long ret_val
+	domain	tcamnt		o.bivl
+	domain	tccprj		o.cprj
+	
+| 	db.retry.point()	
+	select	tdisg831.stat						|#GT.30062014.n
+		,tdisg831.frze						|#ISGEC016036.n	
+	from	tdisg831 for update
+	where	tdisg831._index1 = {:tdisg831.edrn}
+	and	tdisg831.stat = tdisg.stat.created
+	selectdo
+		dal.change.object("tdisg831")
+		dal.set.field("tdisg831.stat", tdisg.stat.freeze)	|#GT.30062014.n
+		dal.set.field("tdisg831.frzd",utc.num())		|ISGEC01087.n
+		dal.set.field("tdisg831.frze", logname$)		|#ISGEC016036.n		
+		ret_val= dal.save.object("tdisg831")
+		
+		if ret_val <> 0 then
+			return(DALHOOKERROR)	
+		endif
+	endselect
+	
+	
+	select 	sum(tdisg832.bivl):o.bivl,
+		tdisg832.nins
+	from	tdisg832
+	where	tdisg832.edrn = {:tdisg831.edrn}
+	and	tdisg832.nins <> 0 
+	group by tdisg832.nins
+	selectdo
+		select 	tppin020.cprj:o.cprj
+		from	tppin020 for update
+		where	tppin020._index1 = {:tdisg831.cprj,:tdisg831.ofbp,:tdisg832.nins}
+		selectdo
+			put.var(pid,"tppin020.cdf_insa",o.bivl)
+			db.update(ttppin020,db.retry,e)
+		endselect
+	endselect
+	
+	
+	return(0)
+}										|#ISG001041.en	
+
+function extern long unfreeze.record()
+{
+	long ret_val
+	domain	tccprj		o.cprj
+	domain	tcmcs.str13m	v.sess					|#ISGEC016036.n
+	
+	get.var(pid,"prog.name$",v.sess)				|#ISGEC016036.n	
+| 	db.retry.point()
+	select	tdisg831.stat						|#GT.30062014.n
+		, tdisg831.rtby						|#ISGEC016036.n
+		, tdisg831.rton						|#ISGEC016036.n	
+	from	tdisg831 for update
+	where	tdisg831._index1 = {:tdisg831.edrn}
+	selectdo
+		dal.change.object("tdisg831")
+		dal.set.field("tdisg831.stat", tdisg.stat.created)	|#GT.30062014.n
+		on	case	v.sess					|#ISGEC016036.sn
+		case	"tdisg8531m700":	
+			dal.set.field("tdisg831.rtby", logname$)			
+			dal.set.field("tdisg831.rton", utc.num())			
+			break
+		case	"tdisg8131m100":
+			dal.set.field("tdisg831.cirb", logname$)
+			dal.set.field("tdisg831.ciro", utc.num())
+			break
+		endcase						|#ISGEC016036.en
+		
+		ret_val= dal.save.object("tdisg831")
+		
+		if ret_val <> 0 then
+			return(DALHOOKERROR)	
+		else
+			commit.transaction()				|IR164178
+		endif
+	endselect
+	
+
+	
+	return(0)	
+}
+
+function extern long insert.tpisg038()					|#ISG001041.sn
+{ 	
+	long ret_val,v.sern
+	v.sern = 0
+	
+	select 	tdisg832.*
+	from 	tdisg832
+	where	tdisg832._index1 = {:tdisg831.edrn}			
+	selectdo
+| 		v.sern = v.sern + 1
+		select	max(tpisg038.srno):v.sern
+		from	tpisg038
+		where	tpisg038._index1 = {:tdisg831.cprj,:tdisg831.ofbp,:tdisg832.nins}	|GT.30062014.n
+		selectdo
+		selectempty
+			v.sern = 0
+		endselect
+			v.sern = v.sern + 1
+
+		
+		select 	whisg312.cprj,whisg312.cspa,whisg312.cact,whisg312.ccco
+		from	whisg312
+		where	whisg312._index1 = {:tdisg832.rcno,:tdisg832.rcln}
+		selectdo
+		endselect
+		
+		select	tpisg032.cpro
+		from	tpisg032
+		where	tpisg032._index1 = {:tdisg831.cprj,:tdisg831.ofbp,:tdisg832.nins,:whisg312.cspa}	|GT.30062014.n
+		selectdo
+		selectempty
+			tpisg032.cpro = ""
+		endselect
+		
+		select	tpppc215.amoc,tpppc215.koor,tpppc215.orno,tpppc215.pono,tpppc215.srnb,tpppc215.trsl,tpppc215.sern,
+			tpppc215.quan,tpppc215.svat.l,tpppc215.ccco
+		from	tpppc215
+		where	tpppc215._index1 = {:tdisg831.cprj,:whisg312.cspa,:tdisg832.item}
+		and	tpppc215.koor = tckoor.project.man
+		and	tpppc215.orno = :tdisg832.worn
+		and	tpppc215.pono = :tdisg832.wlin
+		and	tpppc215.srnb = :tdisg832.wseq
+		and	tpppc215.trsl = tppdm.yeno.no
+		selectdo
+		selectempty
+			tpppc215.amoc = 0
+		endselect
+		
+		dal.new.object("tpisg038")
+		
+		dal.set.field("tpisg038.cprj", tdisg831.cprj)
+		dal.set.field("tpisg038.ofbp", tdisg831.ofbp)
+		dal.set.field("tpisg038.nins", tdisg832.nins)	|GT.30062014.o
+		dal.set.field("tpisg038.srno", v.sern)
+		dal.set.field("tpisg038.cspa", whisg312.cspa)
+		dal.set.field("tpisg038.item", tdisg832.item)
+		dal.set.field("tpisg038.sern", tpppc215.sern)
+		dal.set.field("tpisg038.cpro", tpisg032.cpro)
+		dal.set.field("tpisg038.btyp", tpbilling.type.material)
+		dal.set.field("tpisg038.scel", "")
+		dal.set.field("tpisg038.camt", tpppc215.amoc)
+		dal.set.field("tpisg038.samt", tdisg832.bivl)
+		dal.set.field("tpisg038.aamt", tdisg832.bivl)
+		dal.set.field("tpisg038.trin", tcyesno.no)
+		dal.set.field("tpisg038.invd", tcyesno.no)
+		dal.set.field("tpisg038.cact", whisg312.cact)
+		dal.set.field("tpisg038.quan", tpppc215.quan)
+		dal.set.field("tpisg038.cvat", tpppc215.svat.l)
+		dal.set.field("tpisg038.ccco", tpppc215.ccco)
+		dal.set.field("tpisg038.rcno", tdisg832.rcno)
+		dal.set.field("tpisg038.pono", tdisg832.rcln)
+		
+		ret_val= dal.save.object("tpisg038")
+		
+		if ret_val <> 0 then
+			return(DALHOOKERROR)
+		else
+			if	i.comm = tcyesno.yes	then
+				commit.transaction()
+			endif
+		endif
+	endselect	
+	
+	return(0)
+}										
+
+function extern long update.tpppc215()					|#ISG001041.sn
+{ 	
+	long ret_val
+	
+	select 	tdisg832.*
+	from 	tdisg832
+	where	tdisg832._index1 = {:tdisg831.edrn}			
+	selectdo
+		select 	whisg312.cprj,whisg312.cspa,whisg312.cact,whisg312.ccco
+		from	whisg312
+		where	whisg312._index1 = {:tdisg832.rcno,:tdisg832.rcln}
+		selectdo
+		endselect
+		
+		select	tpppc215.amos,tpppc215.pris,tpppc215.quan,tpppc215.koor,tpppc215.orno,tpppc215.pono,
+			tpppc215.srnb,tpppc215.trsl
+		from	tpppc215 for update
+		where	tpppc215._index1 = {:tdisg831.cprj,:whisg312.cspa,:tdisg832.item}
+		and	tpppc215.koor = tckoor.project.man
+		and	tpppc215.orno = :tdisg832.worn
+		and	tpppc215.pono = :tdisg832.wlin
+		and	tpppc215.srnb = :tdisg832.wseq
+		and	tpppc215.trsl = tppdm.yeno.no
+		selectdo
+			dal.change.object("tpppc215")
+		
+			dal.set.field("tpppc215.amos", tdisg832.bivl)
+			dal.set.field("tpppc215.pris", (tdisg832.bivl/tpppc215.quan))
+			
+			ret_val= dal.save.object("tpppc215")
+			
+			if ret_val <> 0 then
+				return(DALHOOKERROR)
+			else
+				if	i.comm = tcyesno.yes	then
+					commit.transaction()
+				endif
+			endif
+		endselect	
+	endselect
+
+	return(0)
+}
+				|GT.01072014.sn
+function extern long update.tpppc215_tpisg038()					
+{ 	
+	long ret_val
+	
+	select	tdisg831.edrn,tdisg831.cprj
+	from	tdisg831
+	where	tdisg831._index4 = {:tpisg038.cprj,:tpisg038.ofbp}
+	selectdo
+	endselect
+	
+	select 	tdisg832.*
+	from 	tdisg832			
+	where	tdisg832._index1 = {:tdisg831.edrn}			
+	selectdo
+		select 	whisg312.cprj,whisg312.cspa,whisg312.cact,whisg312.ccco
+		from	whisg312
+		where	whisg312._index1 = {:tdisg832.rcno,:tdisg832.rcln}
+		selectdo
+		endselect
+		
+		select	tpppc215.amos,tpppc215.pris,tpppc215.quan,tpppc215.koor,tpppc215.orno,tpppc215.pono,
+			tpppc215.srnb,tpppc215.trsl
+		from	tpppc215 for update
+		where	tpppc215._index1 = {:tdisg831.cprj,:whisg312.cspa,:tdisg832.item}
+		and	tpppc215.koor = tckoor.project.man
+		and	tpppc215.orno = :tdisg832.worn
+		and	tpppc215.pono = :tdisg832.wlin
+		and	tpppc215.srnb = :tdisg832.wseq
+		and	tpppc215.trsl = tppdm.yeno.no
+		selectdo
+			dal.change.object("tpppc215")
+		
+			dal.set.field("tpppc215.amos", tpisg038.aamt)
+			dal.set.field("tpppc215.pris", (tpisg038.aamt/tpppc215.quan))
+			
+			ret_val= dal.save.object("tpppc215")
+			
+			if ret_val <> 0 then
+				return(DALHOOKERROR)
+			else
+				if	i.comm = tcyesno.yes	then
+					commit.transaction()
+				endif
+			endif
+		endselect
+	endselect
+
+	return(0)
+}
+				|GT.01072014.en
+
+function	extern long	update.country.port()
+{
+	long	ret_val
+	
+	return(0)
+}											|#ISG001041.en	
+
+function boolean export.domestic()
+{
+	select	tppdm600.ncmp,tppdm600.ccur
+	from	tppdm600
+	where	tppdm600._index1 = {:tdisg831.cprj}
+	selectdo
+		select	tppdm740.ofbp,tccom100.cadr
+		from	tppdm740,tccom100
+		where 	tppdm740._index1 = {:tdisg831.cprj,:tdisg831.ofbp}
+		and	tppdm740.ofbp refers to tccom100
+		selectdo
+			select	tccom130.ccty
+			from	tccom130
+			where	tccom130._index1 = {:tccom100.cadr}
+			selectdo
+			selectempty
+				tccom130.ccty = ""
+			endselect
+		selectempty
+			tccom130.ccty = ""	
+		endselect		
+		
+		select	tcemm170.lcur
+		from	tcemm170
+		where	tcemm170._index1 = {:tppdm600.ncmp}
+		and	tcemm170.lcur = :tppdm600.ccur
+		selectdo
+			select	tccom000.ccty
+			from	tccom000
+			where	tccom000._index1 = {0,:tppdm600.ncmp}
+			selectdo
+				if tccom000.ccty <> tccom130.ccty then
+					return(true)
+				endif
+			endselect		
+		selectempty
+			return(true)
+		endselect
+	endselect
+	
+	return(false)
+}
+
+function	get_status()
+{
+	select	tdisg831.stat:i.status
+	from	tdisg831
+	where	tdisg831._index1 = {:tdisg831.edrn}
+	selectdo
+	endselect
+}
+
+function	get_packing_status()
+{
+	select	tdisg831.nvst:i.packing.status
+	from	tdisg831
+	where	tdisg831._index1 = {:tdisg831.edrn}
+	selectdo
+	endselect
+}
+
+function	get_invoice()
+{
+	select	tdisg831.invn:i.invoice
+	from	tdisg831
+	where	tdisg831._index1 = {:tdisg831.edrn}
+	selectdo
+	endselect
+}
+
+|***********	DISABLE ENABLE TAX CLASSIFICATION FIELDS *****************
+function boolean disable.tax.classification.fields()
+{
+	on case tdisg831.stat
+		case	tdisg.stat.freeze:
+			if tdisg831.flag <> 0 then
+				return(true)
+			else
+				return(false)
+			endif
+			break
+		case	tdisg.stat.process:
+		case	tdisg.stat.created:
+			break
+	endcase
+	
+	return(true)
+}
+|***********	DISABLE ENABLE EXPORT FIELDS *******************
+
+function extern boolean disable.export.fields()
+{
+	
+|***
+|* If Billing Advice Type is Domestic 
+|* Export Fields are Disables
+|***
+
+	on case tdisg831.type
+		case	tdisg.type.domestic:
+			return(true)
+			break
+		case	tdisg.type.export:
+			on case calling.session
+				case 0:
+					return(true)
+					break
+				case 1:
+					if tdisg831.stat <> tdisg.stat.created then
+						return(true)
+					endif
+					break
+				case 2:
+				case 3:
+					if tdisg831.stat = tdisg.stat.freeze or tdisg831.stat = tdisg.stat.process then
+						if 	tdisg831.nvst = tdisg.nvst.postship or 
+							tdisg831.nvst = tdisg.nvst.cominv or 			|#ISGECDV001114.n
+							tdisg831.nvst = tdisg.nvst.transfer then
+							return(true)
+						endif
+					endif
+					
+					break
+				case 4:
+					break
+				endcase
+			
+			break
+			
+	endcase
+		
+	return(false)
+}
+
+
+
+					|#ISGECDV001002.sn
+function boolean check.line.exists
+			(
+				domain	tcorno		i.edrn		|Billing Advice
+			)
+{
+	domain	tcorno		o.edrn
+	
+	select 	tdisg832.edrn:o.edrn
+	from	tdisg832
+	where	tdisg832._index1 = {:i.edrn}
+	as set with 1 rows
+	selectdo
+		return(true)
+	endselect
+	
+	return(false)
+	
+}
+					|#ISGECDV001002.en
+
+function boolean check.invoice.number(domain tcorno		i.invn)		|#ISGECDV001112.sn
+{
+	select tdisg831.invn
+	from   tdisg831
+	where  tdisg831._index2 = {:i.invn}
+	as set with 1 rows
+	selectdo
+		return(true)
+	endselect
+	
+	return(false)
+}
+
+function boolean check.length(domain tcorno		i.invn)
+{
+	if len(trim$(i.invn)) then
+		return(true)
+	endif
+	
+	return(false)
+}
+										|#ISGECDV001112.en
+|*********  FIELD DEPENDENCIES **************************
+
+function void	define.field.dependencies()
+{
+	dal.init.field.dependencies()
+	dal.field.depends.on("tdisg831.fovv", HOOK_UPDATE, "tdisg831.amti","tdisg831.insu",
+					"tdisg831.frgt","tdisg831.comm","tdisg831.disc",
+							"tdisg831.pcki","tdisg831.othr")
+												
+	dal.field.depends.on("tdisg831.dcty", HOOK_UPDATE,"tdisg831.lcno","tdisg831.cprj")
+	dal.field.depends.on("tdisg831.ptds", HOOK_UPDATE,"tdisg831.lcno","tdisg831.cprj")
+	dal.field.depends.on("tdisg831.ctyd", HOOK_UPDATE,"tdisg831.cprj")
+						|#GT.19062014.sn
+	dal.field.depends.on("tdisg831.chnm", HOOK_UPDATE,"tdisg831.cprj")
+	dal.field.depends.on("tdisg831.cons", HOOK_UPDATE,"tdisg831.cprj")
+	dal.field.depends.on("tdisg831.motp", HOOK_UPDATE,"tdisg831.cprj")
+	dal.field.depends.on("tdisg831.bpid", HOOK_UPDATE,"tdisg831.cprj")
+						|#GT.19062014.en
+	dal.field.depends.on("tdisg831.ofbp", 
+					HOOK_IS_MANDATORY + 
+					HOOK_UPDATE,
+					"tdisg831.cprj")
+	dal.field.depends.on("tdisg831.type",HOOK_UPDATE,"tdisg831.ofbp")
+	
+	dal.field.depends.on("tdisg831.ccty",
+					HOOK_UPDATE,"tdisg831.cprj","tdisg831.ofbp")
+	
+	dal.field.depends.on("tdisg831.cvat",
+					HOOK_UPDATE,"tdisg831.cprj","tdisg831.ofbp")
+					
+	dal.field.depends.on("tdisg831.ccvt",								|GH489CR000.a
+					HOOK_UPDATE,"tdisg831.cprj","tdisg831.ofbp")
+	
+	dal.field.depends.on("tdisg831.bptc",
+					HOOK_UPDATE,"tdisg831.cprj","tdisg831.ofbp")
+	
+	dal.field.depends.on("tdisg831.rnso.l",
+					HOOK_UPDATE,"tdisg831.cprj","tdisg831.ofbp")	
+	
+	dal.field.depends.on("tdisg831.rnsb.l",
+					HOOK_UPDATE,"tdisg831.cprj","tdisg831.ofbp")
+	dal.field.depends.on("tdisg831.xref",HOOK_UPDATE,"tdisg831.cprj")				
+	
+	dal.field.depends.on("tdisg831.lubu",HOOK_UPDATE,"tdisg831.efms")		|#ISGEC016036.n					
+| 	dal.field.depends.on("tdisg831.lcod",HOOK_UPDATE,"tdisg831.invn", "tdisg831.cvat")		|#ISGEC002032.n			|GH429CR754.a
+	dal.field.depends.on("tdisg831.lcod",HOOK_UPDATE,"tdisg831.invn", "tdisg831.ccvt")		|#ISGEC002032.n  |GH489CR000.n
+| 	dal.field.depends.on("tdisg831.eist",HOOK_UPDATE, "tdisg831.cvat")		|GH429CR754.a
+	dal.field.depends.on("tdisg831.eist",HOOK_UPDATE, "tdisg831.ccvt")		|GH429CR754.a	|GH489CR000.n
+		
+	dal.finalize.field.dependencies()
+}
+
+
+
+|**************  Export Form Commands ****************************************
+| Form Command		Generate Custom Invoice		cont.generate		- 10
+| Form Command		Freeze				cont.postship		-20
+| Form Command		Unfreeze 			cont.modify		-30
+| Form Command		Sent Back To Projects		sent_back_project	-40
+| Form Command		Shipping Bill 			shipping 		-50
+
+
+function extern boolean cont.generate.is.allowed()
+{
+	if form.command.is.allowed(10) then
+		return(true)
+	endif
+	
+	return(false)
+}
+
+function extern boolean cont.postship.is.allowed()
+{
+	if form.command.is.allowed(20) then
+		return(true)
+	endif
+	
+	return(false)
+}
+
+function extern boolean sent_back_project.is.allowed()
+{
+	if form.command.is.allowed(40) then
+		return(true)
+	endif
+	
+	return(false)
+}
+
+function extern boolean shipping.is.allowed()
+{
+	if form.command.is.allowed(50) then
+		return(true)
+	endif
+	
+	return(false)
+}
+
+function extern boolean cont.modify.is.allowed()
+{
+	if form.command.is.allowed(30) then
+		return(true)
+	endif
+	
+	return(false)
+}
+
+
+function extern boolean form.command.is.allowed(long COMMAND_VALUE)
+{
+	if tdisg831.type = tdisg.type.export then
+		on case tdisg831.nvst
+			case 	tdisg.nvst.free:
+				on case COMMAND_VALUE
+					case 	10:
+					case 	40:
+						if len(strip$(shiftl$(tdisg831.invn))) <> 9 then
+							return(true)
+						endif
+					break	
+				endcase
+			break
+			case 	tdisg.nvst.preship:
+			case 	tdisg.nvst.modify:
+				on case COMMAND_VALUE
+					case 	20:
+					case	40:
+					case	50:
+						return(true)
+						break	
+				endcase		
+			break
+			
+			case 	tdisg.nvst.postship:
+				on case	COMMAND_VALUE
+					case	30:
+						return(true)
+						break
+				endcase
+					
+			break
+			
+| 			case 	tdisg.nvst.modify: 
+				
+		endcase
+	endif
+
+	return(false)
+}
+
+							|#ISGECDV001034.so
+
+|******************************* Form Command ********************************
+
+|*****************
+|	Form Command Name	Description 				Session 		FORM COMMAND VALUE
+| 1. process.cont		Process		 			tdisg8131m000		
+| 2. cont.generate		Generate Packing List & Invoice		tdisg8131m100		10
+| 3. cont.preship		Freeze Preshipment Invoice		tdisg8131m100		20
+| 4. cont.modify		Modify					tdisg8131m100		30
+| 5. cont.postship		Freeze Postshipment Invoice		tdisg8131m100		40
+| 6. cont.cancel		Cancel					tdisg8131m100		50
+
+| function extern boolean process.cont.is.allowed()
+| {
+| 	on case tdisg831.edst
+| 		case 	tdisg.edst.open:
+| 			break
+| 		case 	tdisg.edst.release:
+| 		case	tdisg.edst.cancel:
+| 			return(false)
+| 			break
+| 	endcase
+| 	
+| 	if tdisg831.stat = tdisg.stat.process then
+| 		return(false)
+| 	else
+| 		if not export.domestic() then
+| 			return(true)
+| 		else
+| 			return(false)
+| 		endif
+| 	endif	
+| 		
+| 	return(true)
+| }
+
+| function extern boolean cont.generate.is.allowed()
+| {
+| 	if form.command.allowed(10) then
+| 		return(true)
+| 	endif
+| 	
+| 	return(false)
+| 	
+| }
+
+| function extern boolean cont.preship.is.allowed()
+| {
+| 	if form.command.allowed(20) then
+| 		return(true)
+| 	endif
+| 	
+| 	return(false)
+| }
+
+
+| function extern boolean cont.modify.is.allowed()
+| {
+| 	if form.command.allowed(30) then
+| 		return(true)
+| 	endif
+| 	
+| 	return(false)
+| }
+|********* sent_back_project **********************
+
+| function extern boolean sent_back_project.is.allowed()
+| {
+| 	with.old.object.values.do(get_status)
+| 	if i.status = tdisg.stat.created then
+| 		return(true)
+| 	endif
+| 	
+| 	return(false)
+| }
+
+
+| function extern boolean cont.postship.is.allowed()
+| {
+| 	if form.command.allowed(40) then
+| 		return(true)
+| 	endif
+| 	
+| 	return(false)
+| }
+
+
+| function extern boolean cont.cancel.is.allowed()
+| {
+| 	if form.command.allowed(50) then
+| 		return(true)
+| 	endif
+| 	
+| 	return(false)
+| }
+
+						|#ISGECDV001034.eo		
+function extern boolean cont.update.invoice()
+{
+	if tdisg831.stat = tdisg.stat.process then
+		return(true)
+	endif
+	
+	return(false)
+}
+						|#ISGECDV001034.so
+| function boolean form.command.allowed(long command_value)
+| {
+
+| 	|******** 40 is now 20 *******************
+| 	on case tdisg831.nvst
+| 	case 	tdisg.nvst.free:
+| 		on case command_value
+| 			case 10:
+| 				if	len(strip$(tdisg831.invn)) <> 9 then
+| 				else
+| 					return(false)	
+| 				endif
+| 					
+| 				break
+| 			case 20: 
+| 				return(false)	
+| 				break
+| 			case 30:
+| 			case 50:
+| 				return(false)
+| 				break	
+| 			break
+| 		endcase
+| 		break
+| 	case 	tdisg.nvst.preship:
+| 	case 	tdisg.nvst.modify :	
+| 		on case command_value
+| 			case 10:
+| 			case 20:
+| 			case 30:	
+| 				return(false)
+| 				break
+| 	| 			case 40:
+| 			case 50:
+| 				break
+| 		endcase
+| 		break	
+| 		
+| 	case 	tdisg.nvst.postship:
+| 		return(false)
+| 		break
+| 	endcase
+| 		
+| 	return(true)	
+| 		
+| }
+
+							|#ISGECDV001034.eo							
+							|#ISGEC002037.sn
+function	update.billed.value()
+{
+	if	tdisg831.type	=	tdisg.type.domestic	then
+		tdisg831.bill	=	tcyesno.yes
+	endif
+}
+							|#ISGEC002037.en
+		|#ISGEC017006.sn
+function assign.GSTIN()
+{
+	if tdisg831.stat <> tdisg.stat.process then
+		select	tpisg122.gstn.b:tdisg831.rnsb.l,	|* Bill To(Customer) GSTIN
+		 	tpisg122.gstn.c:tdisg831.rnso.l,	|* Isgec(Company) GSTIN
+		 	tpisg122.gstn.s:tdisg831.gstn.s		|* Ship To GSTIN
+		from	tpisg122
+		where	tpisg122._index1 = {:tdisg831.cprj}
+		selectdo
+		selectempty
+			tdisg831.rnsb.l = 0
+			tdisg831.rnso.l = 0
+			tdisg831.gstn.s = 0
+		endselect
+	endif
+}
+		|#ISGEC017006.en
+		
