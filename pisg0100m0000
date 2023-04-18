@@ -1,0 +1,134 @@
+|******************************************************************************
+|* tfmsl0100m000  0  VRC B61U a7 liv 
+|* Finance Customize Parameter
+|* MSL Tools                     
+|* 2013-12-31
+|******************************************************************************
+|* Main table tfisg000 Finance Customize Parameter, Form Type 1
+|******************************************************************************
+|* IDENT EMB501007,  Manish Kumar , IT0303 , 31-12-2013 , VRC B61U a7 liv
+|* Requirement Of a new Parameter Session.Coding for Parameter Session
+|* Done on DAL Script
+|* IDENT EMB501007 rev1 , Manish Kumar , IT0303 , 27-01-2014,VRC B61U a7 liv
+|* Payment Method Field Changed To Tax Code Field
+|*
+|* ID ISGEC001102,	Sujeet Kumar,		2014-10-15
+|* 3 New fields added for Defaulting the Cash Flow Auto Insertation Line.
+|* Functional: Mr. Deepak Rawat
+|*
+
+|****************************** declaration section ***************************
+declaration:
+#ident "@(#)EMB5-01007 MANISH KUMAR ,IT0303 , 31-12-2013 , VRC B61U a7 liv" 
+	table	ttfisg000	| Finance Customize Parameter
+	table	ttcmcs050	| First Free Numbers
+	table	ttcmcs051	| Number Group
+	table	ttfgld011	| Transaction Types
+	table	ttcmcs036	| Tax Codes By Country
+	
+	extern	domain	tcdesc 		result
+	extern	domain	tcdsca		v.dsca
+|****************************** program section ********************************
+| before.program:
+| 	select tfisg000.indt
+| 	from   tfisg000
+| 	as set with 1 rows
+| 	selectdo
+| 	selectempty
+| 		tfisg000.indt = 0
+| 		result	=  sprintf$("UTC: %u(%02d/%02m/%04Y) %U(%02h%x%02m%x%02s %a)", utc.num(), utc.num())
+| 		tfisg000.dsca = "Actual set defined on " & result
+| 			
+| 		db.insert(ttfisg000,db.retry)
+| 		commit.transaction()
+| 	endselect
+| before.display.object:
+| 	if tfisg000.indt = 0 then
+| 		enable.commands(modify.set)
+| 	else
+| 		disable.commands(modify.set)
+| 	endif
+							|#ISGEC001102.sn
+before.display.object:
+	set.enum.values.for.field("tfisg000.resn.1",tfreasons.reason.advance,tfreasons.reason.receipt,
+			tfreasons.reason.misc,tfreasons.reason.erection,tfreasons.reason.service,
+			tfreasons.reason.userin,tfreasons.reason.retentio,tfreasons.reason.ser.tax,
+			tfreasons.reason.exp.inc,tfreasons.reason.cap.rec,tfreasons.reason.over.rec)
+			
+	set.enum.values.for.field("tfisg000.resn.2",tfreasons.reason.inter,tfreasons.reason.pay,
+			tfreasons.reason.proj,tfreasons.reason.other1,tfreasons.reason.other2,
+			tfreasons.reason.admin,tfreasons.reason.capital,tfreasons.reason.user,
+			tfreasons.reason.staff.ex)
+							|#ISGEC001102.en
+|******************************Choice section **********************************
+choice.update.db:
+after.choice:
+	refresh.parent(-1)
+|****************************** Fields section *********************************
+| Field.tfisg000.dsca:
+| before.field:
+| 	if tfisg000.indt = 0 then
+| 		enable.fields(READONLY,"tfisg000.dsca",actual.occ)
+| 	else
+| 		disable.fields(READONLY,"tfisg000.dsca",actual.occ)
+| 	endif
+	
+| Field.tfisg000.nrgr:
+| when.field.changes:
+| 	tfisg000.seri = ""
+	
+Field.tfisg000.seri:
+| check.input:
+| 	select	tcmcs050.seri
+| 	from	tcmcs050
+| 	where	tcmcs050._index1 = {:tfisg000.nrgr,:tfisg000.seri}
+| 	selectdo
+| 	selectempty
+| 		message("Series No. is Invalid ")
+| 		set.input.error("",e)
+| 	endselect
+before.zoom:
+	clear.query.extend.in.zoom()
+	query.extend.where.in.zoom("tcmcs050.nrgr = "&quoted.string(tfisg000.nrgr))
+| Field.tfisg000.seri:
+after.field:
+	select	tcmcs050.dsca
+	from	tcmcs050
+	where	tcmcs050._index1 = {:tfisg000.nrgr,:tfisg000.seri}
+	selectdo
+	selectempty
+		tcmcs050.dsca = ""
+	endselect
+	
+field.tfisg000.pser:
+before.zoom:
+	clear.query.extend.in.zoom()
+	query.extend.where.in.zoom("tcmcs050.nrgr = "&quoted.string(tfisg000.pngp))
+
+after.field:
+	select	tcmcs050.dsca
+	from	tcmcs050
+	where	tcmcs050._index1 = {:tfisg000.pngp,:tfisg000.pser}
+	selectdo
+	selectempty
+		tcmcs050.dsca = ""
+	endselect
+	
+	
+Field.tfisg000.ttyp:
+| check.input:
+| 	if not check.transaction.type() then
+| 		message("Transaction Type is not Valid")
+| 		set.input.error("",e)
+| 	endif
+before.zoom:
+	clear.query.extend.in.zoom()
+	query.extend.where.in.zoom("tfgld011.catg = tfgld.catg.cash")
+	
+field.tfisg000.bpid:
+before.zoom:
+	query.extend.where.in.zoom("tccom100.sndr = tcyesno.yes")
+	
+field.tfisg000.ctyp:
+before.zoom:
+	query.extend.where.in.zoom("tfgld011.catg = tfgld.catg.purchase.cred")

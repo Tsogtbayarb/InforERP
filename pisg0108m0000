@@ -1,0 +1,494 @@
+|******************************************************************************
+|* tcisg0108m000  0  VRC B61U a7 isg 
+|* Maintain Form Number
+|* Installation User             
+|* 2015-04-17
+|******************************************************************************
+|* Main table tcisg008 Purchase Form Tracking Table, Form Type 1
+|******************************************************************************
+|* IDENT PATCH002034, Mani Sharma , Dt - 24-04-2015  VRC B61U a7 isg  
+|******************************************************************************
+|* ID ISGEC01132, IT0327, Ritu Shrivastava, dt. 11-08-2015, VRC B61U a7 isg
+|* Modification to update form code through AFS.
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttcisg008 | Purchase Form Tracking Table
+  table   ttfacp100
+  table   ttfacp251
+  table   ttctax940
+  table   ttdpur401
+  table   ttfisg002
+  table   ttfisg003
+  table   ttccom139
+  table   ttfgld005
+  table   ttfacp200
+  table   ttccom949
+  table   ttccom948
+  #include <bic_dam>
+	extern domain tccom.bpid	i.bpid
+	extern domain tctax.txnb.l	i.regn
+	extern domain tccean		i.type
+	extern domain tfgld.year	i.year
+	extern domain tfgld.prod 	i.prod,i.prod.t
+	extern domain tfgld.prod 	prod,prod.t
+	extern domain tcmcs.str50	registration.no
+	extern domain tfgld.docn 	ir.packing.slip
+	extern domain tfgld.date 	ir.date
+	extern domain tcorno 		ir.order
+	extern domain tccprj           ir.project
+	extern domain tcncmp 		current.company
+	extern domain tccean 		ir.form.code
+	extern domain tcorno           str.pksp
+	extern domain tcdsca           desc,dsca,i.fnum,i.enum
+	extern domain tcyndf		i.filt
+	extern domain tcmcs.str100m    str.query
+	extern domain tcpono           i.change,i.e.change,i,return.value,issue.var
+	extern domain tcpono           i.var,t
+	extern domain tcdsca           f.array(50),e.array(50),tax.num
+	domain tcdsca ot.fmct
+	domain tcdsca ot.toct
+	long ret.val,ret.val1
+	
+	string error(100), error1(100)					|#ISGEC01132.n
+	
+#pragma	used dll ottstpapihand						|#ISGEC01132.n
+|****************************** program section ********************************
+
+before.program:
+	import("bpid",i.bpid)
+	import("type",i.type)
+	import("year",i.year)
+	import("prod",i.prod)
+	import("prod.t",i.prod.t)
+	import("filt",i.filt)
+	current.company = get.compnr()
+	i.change = 1
+	i.e.change = 1
+	display.remaining.ptr.in.form()
+	if i.type = "" and i.year = 0 and i.prod = 1 and i.prod.t = 12 then
+		query.extension = "tcisg008._index2 = {:i.bpid}"
+	endif	
+	if i.type <> "" and i.year = 0 and i.prod = 1 and i.prod.t = 12 then
+		query.extension = "tcisg008._index2 = {:i.bpid,:i.type}"
+	endif	
+	if  i.type <> "" and i.year <> 0 and i.prod = 1 and i.prod.t = 12 then
+		query.extension = "tcisg008._index2 = {:i.bpid,:i.type,:i.year}"
+	endif	
+	if  i.type <> "" and i.year <> 0 and i.prod <> 1 and i.prod.t = 12  then
+		query.extension = "tcisg008._index2 inrange {:i.bpid,:i.type,:i.year,:i.prod} and {:i.bpid,:i.type,:i.year,:i.prod.t}"
+	endif	
+	if  i.type <> "" and i.year <> 0 and i.prod.t <> 12  then
+		query.extension = "tcisg008._index2 inrange {:i.bpid,:i.type,:i.year,:i.prod} and {:i.bpid,:i.type,:i.year,:i.prod.t}"
+	endif	
+| 	
+before.display.object:
+		if strip$(shiftl$(tcisg008.type)) <> "C"  then
+			disable.fields("tcisg008.enum",actual.occ)
+		endif	
+		if tcisg008.issu = tcyesno.yes then
+			disable.fields("tcisg008.fnum",actual.occ)
+		endif
+
+		if tcisg008.eissu = tcyesno.yes then
+			disable.fields("tcisg008.enum",actual.occ)
+		endif
+| 		
+| ****************************** group section **********************************
+after.form.read:
+	enable.save.on.occ.change()
+
+|******************************* field section **********************************
+
+
+
+field.desc:
+before.display:
+	desc = ot.fmct
+	
+field.dsca:
+before.display:
+	dsca = ot.toct
+
+field.prod:
+when.field.changes:
+	prod.t = prod
+
+choice.update:
+on.choice:
+	issue.var = 1
+	if not isspace(tcisg008.fnum) then
+| 		dal.start.business.method("tcisg008","process.into.tccom949",ret.val)				|#ISGEC01132.so
+| 		disable.fields("tcisg008.fnum","tcisg008.enum")
+| 		if ret.val <> 0 then
+|	 		abort.transaction()
+| 			message("Error in Process")
+| 		else
+| 			commit.transaction()
+| 			message("Form "& tcisg008.fnum &" linked Successfully with Document "& str$(tcisg008.docn))
+| 			if not isspace(tcisg008.enum) then
+| 				dal.start.business.method("tcisg008","process.e.form",ret.val1)
+| 				if ret.val1 <> 0 then
+| 					abort.transaction()
+| 					message("Error while linking E Form")
+| 				else
+| 					commit.transaction()
+| 					message("Form "& tcisg008.enum &" linked Successfully with Document "& str$(tcisg008.docn))
+| 				endif	
+| 			endif	
+| 		endif												|#ISGEC01132.eo
+														|#ISGEC01132.sn
+		AFS.to.update.form(tcisg008.fnum,tcisg008.ttyp,tcisg008.docn,0,tcisg008.type,tcisg008.regn)
+		
+		if not isspace(tcisg008.enum) then
+			AFS.to.update.form(tcisg008.enum,tcisg008.ttyp,tcisg008.docn,0,"E",tcisg008.regn)
+		endif
+														|#ISGEC01132.en
+	endif	
+	disable.fields("tcisg008.fnum",actual.occ)
+	disable.fields("tcisg008.enum",actual.occ)
+choice.issue:
+on.choice:
+	issue.var = 2
+	dal.start.business.method("tcisg008","issue.form",return.value)
+	if return.value <> 0 then
+		abort.transaction()
+		message("Error while issuing")
+	else	
+		commit.transaction()
+		message("Form Issued Successfully")
+	endif
+
+field.tcisg008.orno:
+after.display:
+	set.default()
+	display("tcisg008.regn")
+	
+field.tcisg008.regn:
+after.field:
+	tax.num = tcisg008.regn
+	
+| when.field.changes:	
+| 	select tcisg008.regn
+| 	from    tcisg008 for update
+| 	where   tcisg008._index1 = {:tcisg008.bpid,:tcisg008.type,:tcisg008.year,:tcisg008.prod,:tcisg008.ninv}
+| 	selectdo
+| 		tcisg008.regn = tcisg008.regn
+| 		db.update(ttcisg008,db.retry,e)
+| 	endselect
+
+field.tcisg008.fnum:
+before.zoom:
+	tccom948.fcod	=	tcisg008.type
+	 
+| 		tccom948.rseq = tctax940.regn
+		tccom948.rseq = tax.num
+	
+	query.extend.where.in.zoom("tccom948.fsts = tccom.fsts.received")
+after.zoom:
+	i.fnum = tcisg008.fnum 
+when.field.changes:
+	 if i.change = 1 then
+		i.fnum = tcisg008.fnum 
+	endif
+	i.change = i.change + 1 
+	
+before.input:
+	tcisg008.fnum = i.fnum
+
+	
+	
+field.tcisg008.enum:
+before.zoom:
+	tccom948.fcod	=	"E"
+
+	tccom948.rseq = tax.num
+		
+	query.extend.where.in.zoom("tccom948.fsts = tccom.fsts.received")
+	
+after.zoom:
+	i.enum = tcisg008.enum 
+when.field.changes:
+	 if i.e.change = 1 then
+		i.enum = tcisg008.enum 
+	endif
+	i.e.change = i.e.change + 1 
+	
+before.input:
+	tcisg008.enum = i.enum	
+	
+
+	
+functions:
+
+function display.remaining.ptr.in.form()
+{
+
+| 	Delete.Records(i.bpid)
+	
+	select tfacp100.*
+	from   tfacp100
+	where  tfacp100._index2 = {:i.bpid}
+	and     tfacp100.stin = (tfacp.stin.copied)
+	selectdo
+		if tcisg008.ninv = tfacp100.ninv and tfacp100.ifbp = tcisg008.bpid then
+			continue
+		endif	
+		tcisg008.ninv = tfacp100.ninv				|1
+		tcisg008.bpid = tfacp100.ifbp				|2
+		tcisg008.isup = tfacp100.isup				|3
+		tcisg008.invd = tfacp100.invd				|4
+		
+		tcisg008.ttyp = tfacp100.ctyp				|6
+		tcisg008.docn = tfacp100.cinv				|7
+		get.ptr.amount()
+		get.var(pid,"tfacp100.cdf_irdt",ir.date)
+		get.var(pid,"tfacp100.cdf_pono",ir.order)
+		get.var(pid,"tfacp100.cdf_cprj",ir.project)
+		get.var(pid,"tfacp100.cdf_code",ir.form.code)
+		
+		tcisg008.type = ir.form.code				|8
+		tcisg008.irdt = ir.date					|9
+		tcisg008.cprj = ir.project				|10
+		
+		get.fiscal.details(tfacp100.invd)
+		str.pksp = str$(tfacp100.ninv)
+		str.pksp = shiftl$(strip$(str.pksp))
+		
+		select tfacp251.*
+		from    tfacp251
+		where   tfacp251._index1 = {:current.company,:tfacp100.ctyp,:tfacp100.cinv,:current.company,:str.pksp}
+		as set with 1 rows
+		selectdo
+			tcisg008.orno = tfacp251.orno			|11
+			tcisg008.pono = tfacp251.pono			|12
+		endselect
+		Get_gr_detail(tfacp100.ninv)
+		db.insert(ttcisg008, db.skip.dupl)
+	endselect	
+	commit.transaction()
+}
+
+
+function extern get.fiscal.details(domain tfgld.date in.date)
+{
+	long yearno  
+	long monthno  
+	long month_dayno  
+	long no_of_days
+	
+	select tfgld005.year,tfgld005.prno,tfgld005.stdt
+	from   tfgld005
+	where  tfgld005._index1 = {tfgld.ptyp.financial}
+	and    tfgld005.stdt <= {:in.date}
+	and    tfgld005.corr = tcyesno.no
+	order by tfgld005.stdt desc 
+	as set with 1 rows
+	selectdo
+		tcisg008.year = tfgld005.year				|18
+		tcisg008.prod = tfgld005.prno				|19
+	endselect
+}
+
+
+function extern Get_gr_detail(domain tfgld.docn in.pksp)
+{
+		
+		
+	
+	select	tfisg002.grno, tfisg002.grdt, tfisg002.grbp
+	from	tfisg002
+	where	tfisg002._index1 = {:in.pksp}
+	as set with 1 rows
+	selectdo
+		tcisg008.grno  = tfisg002.grno  			|14
+		tcisg008.grdt = tfisg002.grdt				|15
+		
+		select	tfisg003.plcf, tfisg003.plct,
+			tfisg003.cctf, tfisg003.cctt,tfisg003.citf,tfisg003.citt
+		from	tfisg003
+		where	tfisg003._index1 = {:tfisg002.grno, :tfisg002.grbp, :tfisg002.grdt}
+		selectdo
+			get.state.desc(tfisg003.cctf, tfisg003.plcf,ot.fmct)
+			get.state.desc(tfisg003.cctt, tfisg003.plct,ot.toct)
+		endselect
+		tcisg008.citf = tfisg003.plcf				|16
+		tcisg008.citt = tfisg003.plct				|17
+		
+	
+
+	endselect	
+
+}
+
+
+function extern get.state.desc(
+		domain	tcccty		in.ccty,
+		domain	tcmcs.cste	in.cste,
+	ref	domain	tcdsca		ot.dsca
+			)
+{
+	ot.dsca = ""
+	select tcmcs143.dsca:ot.dsca
+	from    tcmcs143
+	where   tcmcs143._index1 = {:in.ccty,:in.cste}
+	selectdo
+	endselect
+	
+}
+
+
+function Delete.Records(
+			domain	tccom.bpid		in.bpid
+			)
+{
+	long	d.ret
+	
+	d.ret = 0
+	select	tcisg008.*
+	from	tcisg008 for update
+	where	tcisg008._index1 = {:in.bpid}
+	selectdo
+		d.ret = dal.destroy.object("tcisg008")
+		commit.transaction()
+	endselect
+	
+}	
+
+function get.ptr.amount()
+{
+	select tfacp200.amth
+	from    tfacp200
+	where   tfacp200._index1 = {:tfacp100.ctyp,:tfacp100.cinv}
+	and      tfacp200.tdoc = ""
+	and      tfacp200.docn = 0 
+	as set with 1 rows
+	selectdo
+		tcisg008.amnt = tfacp200.amth(1)					|5
+	selectempty
+		tcisg008.amnt = 0
+	endselect	
+}
+
+
+function void set.default()
+{
+	if isspace(tcisg008.fnum) and isspace(tcisg008.enum)  then
+		select tctax940.regn
+		from   tctax940
+		where  tctax940.fico = :current.company
+		and     tctax940.stpv = "UP"
+		and     tctax940.catg = tctax.catg.l.cst
+		and     tctax940.cdf_cadr = "ISG000001"
+		selectdo
+			if isspace(tcisg008.regn) then
+				select tcisg008.regn
+				from    tcisg008 for update
+				where   tcisg008._index2 = {:tcisg008.bpid,:tcisg008.type,:tcisg008.year,:tcisg008.prod,:tcisg008.ninv}
+				selectdo
+					tcisg008.regn = tctax940.regn
+					db.update(ttcisg008,db.retry,e)
+				endselect
+			
+			endif
+		selectempty
+			tctax940.regn = ""
+		endselect
+	endif
+}
+
+													|#ISGEC01132.sn
+function AFS.to.update.form(domain tcmcs.str30		i.num,
+			     domain tfgld.ttyp		i.ttyp,
+			     domain tfgld.docn		i.docn,
+			     domain tfgld.lino		i.line,
+			     domain tccean		i.type,
+			     domain tctax.txnb.l	i.regn
+			     )
+{
+	select tccom949.*
+	from   tccom949
+	where  tccom949._index3 = {:current.company,:i.ttyp,:i.docn,:i.line,:i.type,:i.regn,:i.num}
+	selectdo
+		skip.io("")
+	selectempty
+		stpapi.put.field("tfacp2520m000","tfacp200.ifbp", tcisg008.bpid)
+		stpapi.put.field("tfacp2520m000","tfacp200.ttyp", i.ttyp)
+		stpapi.put.field("tfacp2520m000","tfacp200.ninv", str$(i.docn))
+		stpapi.put.field("tfacp2520m000","tfacp200.line", str$(0))
+		ret.val = stpapi.find("tfacp2520m000", error)
+		if ret.val = 1	then 
+			ret.val1 = stpapi.mark("tfacp2520m000", error1)
+			if ret.val1 = 1 then
+				ret.val = stpapi.synchronize.dialog("tfacp2520m000", "modify", error1)
+				if ret.val = 1 then
+					stpapi.form.command("tfacp2100s000",5,"start.form.tracking.lines",error1)
+					if isspace(error1)then
+						stpapi.handle.subproc("tfacp2100s000","tccom9149m00l", "modify")
+						stpapi.put.field("tccom9149m00l", "tccom949.icpo", str$(current.company))
+						stpapi.put.field("tccom9149m00l", "tccom949.ityp", i.ttyp)
+						stpapi.put.field("tccom9149m00l", "tccom949.idoc", str$(i.docn))
+						stpapi.put.field("tccom9149m00l", "tccom949.idli", str$(0))
+						stpapi.put.field("tccom9149m00l", "tccom949.styp", str$(ltoe(3)))
+						stpapi.put.field("tccom9149m00l", "tccom949.oorg", str$(ltoe(20)))
+						stpapi.put.field("tccom9149m00l", "tccom949.fcod", i.type)
+						stpapi.put.field("tccom9149m00l", "tccom949.rseq", i.regn)
+						stpapi.put.field("tccom9149m00l", "tccom949.fpon", i.num)
+						stpapi.put.field("tccom9149m00l", "tccom949.amnt", str$(tcisg008.amnt))
+						stpapi.put.field("tccom9149m00l", "tccom949.adat", str$(utc.num()))
+						ret.val = stpapi.insert("tccom9149m00l", true, error1)
+						if not isspace(error1) then
+							message("%s", error1)
+							stpapi.end.session("tccom9149m00l", error1)
+							stpapi.end.session("tfacp2100s000", error1)
+							stpapi.end.session("tfacp2520m000", error1)
+						else
+							stpapi.end.session("tccom9149m00l", error1)
+							stpapi.end.session("tfacp2100s000", error1)
+							stpapi.end.session("tfacp2520m000", error1)
+							update.tccom948.amount(i.type, 
+									       i.regn, 
+									       i.num, 
+									       tcisg008.bpid,
+									       tcisg008.amnt)
+						endif
+					else
+						message("%s", error)
+						stpapi.end.session("tccom9149m00l", error1)
+						stpapi.end.session("tfacp2100s000", error1)
+						stpapi.end.session("tfacp2520m000", error1)
+					endif
+				else
+					message("%s", error1)
+					stpapi.end.session("tfacp2520m000", error)
+				endif
+			else
+				message("%s", error1)
+				stpapi.end.session("tfacp2520m000", error)
+			endif
+		else
+			message("Record does not exist")
+			stpapi.end.session("tfacp2520m000", error)
+		endif
+	endselect
+		
+}
+
+function update.tccom948.amount(domain tccean		i.fcod,
+				 domain tctax.txnb.l	i.rseq,
+				 domain tcmcs.str30	i.fpon,
+				 domain tccom.bpid	i.bpid,
+				 domain tcamnt		i.amnt)
+{
+	select tccom948.*
+	from	tccom948 for update
+	where	tccom948._index1 = {:i.fcod, :i.rseq, :i.fpon}
+	and	tccom948.bpid = :i.bpid
+	and	tccom948.fsts = tccom.fsts.allocated
+	selectdo
+		tccom948.amnt = tccom948.amnt + i.amnt
+		db.update(ttccom948,db.retry,e)
+		commit.transaction()
+	endselect
+}
+													|#ISGEC01132.en													

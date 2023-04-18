@@ -1,0 +1,195 @@
+|******************************************************************************
+|* tdisg0110m000  0  VRC B61U a7 isg 
+|* Maintain NCDR Details
+|* user 05                       
+|* 2015-02-21
+|******************************************************************************
+|* Main table tdisg010 Tabe for uploading NCDR, Form Type 1
+|******************************************************************************
+|* IDENT ISGEC01065, Mani sharma  
+|* ISGEC01091, Mani sharma , add status field on table
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttdisg010 | Tabe for uploading NCDR
+  table   ttcmcs052
+  table   ttcmcs050
+  table   ttcisg000
+  table   ttdpur401
+  table   ttccom100
+  table   ttpmsl000
+  
+  extern domain  tcffno    no    
+  extern domain  tcnama    nama
+  extern domain  tcorno    gene
+  extern domain  tcseri    seri
+  extern domain  tcdesc    name
+|****************************** program section ********************************
+before.display.object:
+	
+	
+| 	tcmcs050.nrgr = tcisg000.ncdg
+	if  not isspace(tdisg010.cprj)  and  not isspace(tdisg010.orno) then
+| 		
+			disable.fields("tdisg010.code",actual.occ)
+| 			disable.fields("tdisg010.orno",actual.occ)
+| 			disable.fields("tdisg010.item",actual.occ)
+| 			disable.fields("tdisg010.bpid",actual.occ)
+| 			disable.fields("tdisg010.sbpi",actual.occ)
+	else	
+			enable.fields("tdisg010.code",actual.occ)
+| 			enable.fields("tdisg010.item",actual.occ)
+| 			enable.fields("tdisg010.bpid",actual.occ)
+| 			enable.fields("tdisg010.sbpi",actual.occ)
+	endif
+		
+| 	
+|******************************************************************************
+choice.db.update:
+after.choice:
+	refresh.parent(-1)
+|****************************** group section **********************************
+field.nama:
+before.display:
+	select tcmcs052.dsca
+	from    tcmcs052
+	where  tcmcs052._index1 = {:tdisg010.cprj}
+	selectdo
+		nama = tcmcs052.dsca
+	selectempty
+		nama = ""
+	endselect
+field.name:
+before.display:
+	select tccom100.nama 
+	from    tccom100
+	where  tccom100._index1 = {:tdisg010.bpid}
+	selectdo
+		name = tccom100.nama
+	selectempty
+		name = ""
+	endselect
+	
+field.tdisg010.bpid:
+check.input:
+	select tdpur400.otbp
+	from    tdpur400
+	where   tdpur400._index2 = {:tdisg010.bpid}
+	selectdo
+	selectempty
+		message("Business partner is not valid")
+	endselect	
+	
+field.tdisg010.orno:
+check.input:
+	if isspace(tdisg010.orno)  then
+		message(" Order is Mandatory")
+			set.input.error("",e)
+	endif
+
+	select tdpur400.orno
+	from   tdpur400
+	where  tdpur400._index1 = {:tdisg010.orno}
+	selectdo
+	selectempty
+		message("Order is not valid")
+		set.input.error("",e)
+	endselect	
+
+when.field.changes:
+	select tcisg000.ncdg
+	from   tcisg000
+	where  tcisg000._index1 = 0
+	selectdo
+		select tcmcs050.seri
+		from   tcmcs050
+		where  tcmcs050._index1 = {:tcisg000.ncdg}
+		selectdo
+			tdisg010.code = tcmcs050.seri
+		endselect
+	endselect
+	
+	select tdpur401.cprj
+	from   tdpur401
+	where  tdpur401._index1 = {:tdisg010.orno}
+	as set with 1 rows
+	selectdo
+		tdisg010.cprj = tdpur401.cprj
+	selectempty
+		tdisg010.cprj = ""
+	endselect
+	
+	select tdpur401.otbp
+	from    tdpur401
+	where   tdpur401._index1 = {:tdisg010.orno}
+	and      tdpur401.cprj = {:tdisg010.cprj}
+	selectdo
+		tdisg010.bpid = tdpur401.otbp
+	selectempty
+		tdisg010.bpid = ""
+	endselect
+	
+field.tdisg010.cprj:
+check.input:
+	if isspace(tdisg010.cprj)  then
+		message("Project Code is Mandatory")
+			set.input.error("",e)
+	endif	
+
+	select tcmcs052.cprj
+	from   tcmcs052
+	where  tcmcs052._index1 = {:tdisg010.cprj}
+	selectdo
+	selectempty
+		message("Project is not valid")
+		set.input.error("",e)
+	endselect
+	
+
+
+field.tdisg010.ncdr:
+check.input:
+	if isspace(tdisg010.cprj)  then
+		message("NCDR Code is Mandatory")
+			set.input.error("",e)
+	endif	
+field.tdisg010.date:
+check.input:
+	if isspace(tdisg010.date)  then
+		message("NCDR Date is Mandatory")
+			set.input.error("",e)
+	endif	
+		
+
+field.tdisg010.code:
+before.zoom:
+		select tcisg000.ncdg
+		from   tcisg000
+		where   tcisg000._index1 = {0}
+		selectdo
+		endselect
+		tcmcs050.nrgr = tcisg000.ncdg
+check.input:
+	if isspace(tdisg010.code)  then
+		message("NCDR Code is Mandatory")
+		set.input.error("",e)
+	endif	
+
+main.table.io:
+before.write:
+	
+	select tcmcs050.nrgr, tcmcs050.seri, tcmcs050.ffno
+	from tcmcs050 for Update
+	where tcmcs050.seri = {:tdisg010.code}
+	and   tcmcs050.nrgr = {:tcisg000.ncdg}
+	selectdo
+		tcmcs050.ffno = tcmcs050.ffno + 1
+		db.update(ttcmcs050,db.retry,e)
+		no = tcmcs050.ffno
+		gene = trim$(tcmcs050.seri)&sprintf$("%@999999@",no)
+		tdisg010.code = gene
+		
+	selectempty
+		tdisg010.code = ""
+	endselect
+	

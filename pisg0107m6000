@@ -1,0 +1,121 @@
+|******************************************************************************
+|* tdisg0105m000  0  VRC B61U a7 live
+|* Bill Of Material Receipt
+|* Tools                         
+|* 2014-05-23
+|******************************************************************************
+|* Main table tdisg007 Bill Of Material Receipt, Form Type 1
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+  table   	ttdisg007 | Bill Of Material Receipt
+  table		twhinh312
+  table		ttdpur401
+  table		ttcisg004
+  table		ttdisg831
+  
+	extern domain tcqiv1 wght.t
+
+	extern	domain	tcmcs.str16	progname
+	extern	domain	whinh.shpm	import.rcno
+	extern	domain	tcpono		import.rcln
+	extern	domain	tcorno		import.edrn
+	
+#include <bic_dam>
+| #include "itdisgdll0003"
+|****************************** program section ********************************
+before.program:
+	import("prog.name$", progname)
+	import("tdisg832.rcno",import.rcno)
+	import("tdisg832.rcln",import.rcln)
+	import("tdisg832.edrn",import.edrn)
+| 	query.extension = "tdisg007._index1 = {:import.rcno,:import.rcln}"
+	query.extend.where("tdisg007._index1 = {:import.rcno,:import.rcln}")
+	inputfield.invisible("tdisg007.item.segment.1")
+	
+before.display.object:
+	set.command.enable.disable()	
+|****************************** choice section **********************************
+| choice.freeze:
+| on.choice:
+| 	update_tdisg007()
+| 	delete_from_tdisg007()
+| 	commit.transaction()
+	
+field.wght.t:
+before.display:
+	select	sum(tdisg007.wght):wght.t
+	from	tdisg007
+	where	tdisg007._index1 = {:import.rcno,:import.rcln}
+	selectdo
+	selectempty
+		wght.t = 0
+	endselect	
+
+field.tdisg007.psds:
+before.input:
+	tdisg007.psds = tdisg007.desc
+	
+|**************************************** function section **********************************
+functions:
+
+function update_tdisg007()
+{
+	select	tdisg007.stat, tdisg007.slct
+	from	tdisg007 for update
+	where	tdisg007._index1 = {:import.rcno,:import.rcln}
+	and	tdisg007.slct = tcyesno.yes
+	selectdo
+		dal.change.object("tdisg007")
+		dal.set.field("tdisg007.stat", tcyesno.yes)
+		dal.save.object("tdisg007")
+	endselect	
+}
+
+function delete_from_tdisg007()
+{
+| 	select tdisg007.sern
+	select tdisg007.rcno
+	from	tdisg007 for update
+	where	tdisg007._index1 = {:import.rcno,:import.rcln}
+	and	tdisg007.slct = tcyesno.no
+	selectdo
+		db.delete(ttdisg007,db.retry,e)
+	endselect
+	commit.transaction()
+	
+}
+
+function extern boolean modify.set.is.allowed()
+{
+ 	if tdisg007.stat =  tcyesno.yes then
+		return(false)
+	endif
+	return(true)
+}
+
+function extern boolean mark.delete.is.allowed()
+{	
+ 	if tdisg007.stat =  tcyesno.yes then
+		return(false)
+	endif
+	return(true)
+}
+
+function set.command.enable.disable()
+{
+	if	trim$(progname) = "tdisg8132m600"	then
+		select	tdisg831.stat
+		from	tdisg831
+		where	tdisg831._index1 = {:import.edrn}
+		selectdo
+		endselect
+		if	tdisg831.stat = tdisg.stat.created	then
+			enable.commands(add.set, modify.set, mark.delete, dupl.occur)
+		else
+			disable.commands(add.set, modify.set, mark.delete, dupl.occur)
+		endif
+	endif	
+}

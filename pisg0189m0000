@@ -1,0 +1,523 @@
+|******************************************************************************
+|* tdisg4100m200  0  VRC B61U a7 live
+|* Purchase Order Approval
+|* Installation user             
+|* 2014-12-08
+|******************************************************************************
+|* Main table tdmsl400 Purchase Order Ion Tracking, Form Type 1
+|******************************************************************************
+|* ISGEC001150, IT0352, Abhishek Singh, 2015-02-06
+|* Email Alert when PO is approved/Rejected        
+|*
+|* ISGEC002016, IT0352, Abhishek Singh, 16-06-2015
+|* Modification in Email Alert when PO is approved/Rejected  
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttdmsl400 | Purchase Order Ion Tracking
+	table	ttdisg083
+	table	ttdisg084
+	table	ttdisg085
+	table	ttdisg086
+	table	ttdisg087
+	table	ttdisg088
+	table	ttdisg089
+	table	ttdpur400
+	
+					|#ISGEC001150.sn
+                #include               <bic_cmf>
+                #pragma used dll ottdllbw 
+		table	ttccom001
+		table	tbpmdm001
+		table	ttccom100
+		table	ttcmcs052
+		table	ttdpur401
+					|#ISGEC001150.en
+					
+	|********************* Form Variables ************
+	extern	domain	tccom.bpid	var.suno
+	extern	domain	tcnama		var.snnm
+	extern	domain	tcemno		var.buyr
+	extern	domain	tcnama		var.bynm
+	extern	domain	tcdate		var.odat
+	extern	domain	tdpur.hdst	var.hdst
+	extern	domain	tcdate		var.ddta
+	extern	domain	tccprj		var.cprj
+	extern	domain	tcdsca		var.pjdc
+	extern	domain	tcamnt		var.obsc
+	extern	domain	tcamnt		var.oexc
+	extern	domain	tcamnt		var.osrv
+	extern	domain	tcamnt		var.ocst
+	extern	domain	tcamnt		var.ostx
+	extern	domain	tcamnt		var.olct
+	extern	domain	tcamnt		var.ogrs
+	extern	domain	tcccty		var.reas
+	extern	domain	tcmcs.st150m	var.rsdc
+	extern	domain	tcdate		var.rvdt
+	extern	domain	tdmsl.work	var.work
+	extern	domain	tcyesno		var.stat
+	extern	domain	tclogn		var.apby
+	
+	|********************* Script Variables ***********
+	extern	domain	tclogn		curr.logn
+		string			str(300), question.rem(100)
+		long			v.appr
+
+#include<bic_dam>
+|****************************** program section ********************************
+before.program:
+	curr.logn = logname$
+
+|****************************** group section **********************************
+|****************************** choice section **********************************
+choice.approve:
+before.choice:
+	if	not PO_Sent_Approval()	then
+		message("PO is not Sent for Approval")
+		choice.again()
+	endif
+	
+	if	not Login_Authorized()	then
+		message("Login not Authorized")
+		choice.again()
+	endif	
+	
+on.choice:
+	question.rem = ""
+	question.rem = "Do you want to Approve."
+	if	ask.enum("tcbod00003", tcyesno.no, question.rem) = tcyesno.yes	then		
+		|%1$s Continue?
+		Approve()
+		v.appr = 1					|#ISGEC001150.sn
+		if send.mail.alert() <> 0 then					
+			message("Alert email failed")
+		endif						|#ISGEC001150.en
+	else
+		choice.again()
+	endif
+
+choice.reject:
+before.choice:
+	if	not PO_Sent_Approval()	then
+		message("PO is not Sent for Approval")
+		choice.again()
+	endif
+	
+	if	not Login_Authorized()	then
+		message("Login not Authorized")
+		choice.again()
+	endif	
+	
+on.choice:
+	question.rem = ""
+	question.rem = "Do you want to Reject."
+	if	ask.enum("tcbod00003", tcyesno.no, question.rem) = tcyesno.yes	then		
+		|%1$s Continue?
+		Reject()
+		v.appr = 2					|#ISGEC001150.sn
+		if send.mail.alert() <> 0 then			
+			message("Alert email failed")
+		endif						|#ISGEC001150.en
+	else
+		choice.again()
+	endif
+	
+|****************************** field section **********************************
+field.var.odat:
+before.display:
+	Initialize_Variables()
+	tdisg.dll0002.Get_PO_Details(tdisg089.orno, tdisg089.revi,
+				var.suno,	
+				var.snnm,	
+				var.buyr,	
+				var.bynm,	
+				var.odat,	
+				var.hdst,	
+				var.ddta,	
+				var.cprj,	
+				var.pjdc,	
+				var.obsc,	|Basic Value	
+				var.oexc,	|Excise Value
+				var.osrv,	|Service Tax
+				var.ocst,	|CST/VAT
+				var.ostx,	|S.Tax
+				var.olct,	|LC Value
+				var.ogrs	|Gross Value
+				)
+	Get_Reason(tdisg089.orno, tdisg089.revi,
+			var.reas,
+			var.rsdc
+			)
+	Get_Approval_Detail()		
+
+field.tdisg089.orno:
+before.zoom:
+	str = "tdpur400.orno in ("
+	str = str & "select tdmsl400.orno from tdmsl400 where tdmsl400.work = tdmsl.work.yes and tdmsl400.stat = tcyesno.no)"
+	query.extend.where.in.zoom(str)
+|*********************** function section ***********************
+Functions:
+
+function Initialize_Variables()
+{
+	var.suno = ""	
+	var.snnm = ""	
+	var.buyr = ""	
+	var.bynm = ""	
+	var.odat = 0	
+	var.hdst = empty	
+	var.ddta = 0	
+	var.cprj = ""	
+	var.pjdc = ""	
+	var.obsc = 0	|Basic Value	
+	var.oexc = 0	|Excise Value
+	var.osrv = 0	|Service Tax
+	var.ocst = 0	|CST/VAT
+	var.ostx = 0	|S.Tax
+	var.olct = 0	|LC Value
+	var.ogrs = 0
+	var.reas = ""
+	var.rsdc = ""
+	var.rvdt = 0
+	var.work = empty
+	var.stat = empty
+	var.apby = ""
+}
+
+function boolean Login_Authorized()
+{
+	select	tdisg083.role
+	from	tdisg083
+	where	tdisg083._index2 = {:curr.logn}
+	as set with 1 rows
+	selectdo
+		select	tdpur400.cotp
+		from	tdpur400
+		where	tdpur400._index1 = {:tdisg089.orno}
+		selectdo
+			select	tdisg084.*
+			from	tdisg084
+			where	tdisg084._index1 = {:tdisg083.role, :tdpur400.cotp}
+			and	tdisg084.strv <= :tdisg089.revi
+			order by tdisg084.strv desc
+			as set with 1 rows
+			selectdo
+				if	(tdisg084.stmt <= var.obsc)	and
+					(tdisg084.edmt >= var.obsc)	then
+					return(true)
+				endif
+			endselect
+		endselect	
+	endselect	
+	return(false)
+}
+
+function Approve()
+{
+	domain	tcdate		v.date
+	long	i.ret, d.ret, u.ret
+	
+	v.date = utc.num()
+	select	tdisg089.*
+	from	tdisg089 for update
+	where	tdisg089._index1 = {:tdisg089.orno, :tdisg089.revi}
+	selectdo
+		dal.new.object("tdisg086")
+		dal.set.field("tdisg086.orno", tdisg089.orno)
+		dal.set.field("tdisg086.revi", tdisg089.revi)
+		dal.set.field("tdisg086.date", v.date)
+		dal.set.field("tdisg086.appr", tcyesno.yes)
+		dal.set.field("tdisg086.user", curr.logn)
+		i.ret = dal.save.object("tdisg086")
+			
+		select	tdisg088.*
+		from	tdisg088 for update
+		where	tdisg088._index1 = {:tdisg089.orno, :tdisg089.revi}
+		selectdo
+			dal.new.object("tdisg087")
+			dal.set.field("tdisg087.orno", tdisg089.orno)
+			dal.set.field("tdisg087.revi", tdisg089.revi)
+			dal.set.field("tdisg087.date", v.date)
+			dal.set.field("tdisg087.reas", tdisg088.reas)
+			dal.set.field("tdisg087.rema", tdisg088.rema)
+			i.ret = dal.save.object("tdisg087")
+			
+			d.ret = dal.destroy.object("tdisg088")
+		endselect
+		select	tdmsl400.*
+		from	tdmsl400 for update
+		where	tdmsl400._index1 = {:tdisg089.orno, :tdisg089.revi}
+		selectdo
+			dal.change.object("tdmsl400")
+			dal.set.field("tdmsl400.stat", tcyesno.yes)
+			dal.set.field("tdmsl400.work", tdmsl.work.completed)
+			dal.set.field("tdmsl400.apdt", v.date)
+			dal.set.field("tdmsl400.apby", curr.logn)
+			u.ret = dal.save.object("tdmsl400")
+		endselect
+		
+		d.ret = dal.destroy.object("tdisg089")
+	endselect
+	commit.transaction()
+	message("Approved...!!!")
+}
+
+function Reject()
+{
+	domain	tcdate		v.date
+	long	i.ret, d.ret, u.ret
+	
+	v.date = utc.num()
+	
+	select	tdisg089.*
+	from	tdisg089 for update
+	where	tdisg089._index1 = {:tdisg089.orno, :tdisg089.revi}
+	selectdo
+		dal.new.object("tdisg086")
+		dal.set.field("tdisg086.orno", tdisg089.orno)
+		dal.set.field("tdisg086.revi", tdisg089.revi)
+		dal.set.field("tdisg086.date", v.date)
+		dal.set.field("tdisg086.appr", tcyesno.no)
+		dal.set.field("tdisg086.user", curr.logn)
+		i.ret = dal.save.object("tdisg086")
+		select	tdisg088.*
+		from	tdisg088 for update
+		where	tdisg088._index1 = {:tdisg089.orno, :tdisg089.revi}
+		selectdo
+			dal.new.object("tdisg087")
+			dal.set.field("tdisg087.orno", tdisg089.orno)
+			dal.set.field("tdisg087.revi", tdisg089.revi)
+			dal.set.field("tdisg087.date", v.date)
+			dal.set.field("tdisg087.reas", tdisg088.reas)
+			dal.set.field("tdisg087.rema", tdisg088.rema)
+			i.ret = dal.save.object("tdisg087")
+			
+			d.ret = dal.destroy.object("tdisg088")
+		endselect
+		select	tdmsl400.*
+		from	tdmsl400 for update
+		where	tdmsl400._index1 = {:tdisg089.orno, :tdisg089.revi}
+		selectdo
+			dal.change.object("tdmsl400")
+			dal.set.field("tdmsl400.stat", tcyesno.no)
+			dal.set.field("tdmsl400.work", tdmsl.work.no)
+			dal.set.field("tdmsl400.apdt", v.date)
+			dal.set.field("tdmsl400.apby", curr.logn)
+			u.ret = dal.save.object("tdmsl400")
+		endselect
+		d.ret = dal.destroy.object("tdisg089")
+	endselect
+	
+	commit.transaction()
+	message("Rejected...!!!")
+}
+
+function boolean PO_Sent_Approval()
+{
+	if	(var.work = tdmsl.work.yes	and
+		var.stat = tcyesno.no)	then
+		return(true)
+	endif
+	
+	return(false)
+}
+
+function Get_Reason(
+			domain	tcorno		i.orno,
+			domain	tcsern		i.vrsn,
+		ref	domain	tcccty		o.reas,
+		ref	domain	tcmcs.st150m	o.rsdc
+			)
+{
+	select	tdpur400.*
+	from	tdpur400
+	where	tdpur400._index1 = {:i.orno}
+	selectdo
+		if	tdisg.dll0002.Get_Highest_Version(i.orno) <> i.vrsn	then
+			tdisg.dll0002.select.header.from.history(i.orno, i.vrsn)
+		endif
+		get.var(pid, "tdpur400.cdf_reas", o.reas)
+		select	tdisg400.desc:o.rsdc
+		from	tdisg400
+		where	tdisg400._index1 = {:o.reas}
+		selectdo
+		endselect
+	endselect
+}
+
+function Get_Approval_Detail()
+{
+	select	tdmsl400.apdt:var.rvdt,
+		tdmsl400.work:var.work,
+		tdmsl400.stat:var.stat,
+		tdmsl400.apby:var.apby
+	from	tdmsl400
+	where	tdmsl400._index1 = {:tdisg089.orno, :tdisg089.revi}
+	selectdo
+	endselect
+}
+
+									|* ISGEC001150.sn
+function long send.mail.alert()
+{
+	string tmp.file(200),line(500)
+	long fp
+	domain tcemno	emno.code
+	domain	tfgld.user	user.code
+	
+	long    message.ID
+        long    to.ID
+        long    attachment.ID
+        long    ret
+
+        domain ttcmf.prov service       
+                        |Infor ERP Enterprise eMessage Connector service for 
+                        |transporting messages
+        long stat       |Variable to hold return values
+        long mid        |CMF message id
+
+	select	tdpur401.cprj,tcmcs052.dsca				|#ISGEC002016.sn
+	from	tdpur401,tcmcs052
+	where	tdpur401._index1 = {:tdisg089.orno}
+	and	tdpur401.cprj refers to tcmcs052
+	as set with 1 rows
+	selectdo
+	endselect	
+	
+| 	select	tdpur400.ccon,tdpur400.refa	|#ISGEC002016.o
+	select	tdpur400.ccon,tdpur400.refa, tccom100.nama,tdpur400.otbp	|#ISGEC002016.n
+| 	from	tdpur400	|#ISGEC002016.o
+	from	tdpur400, tccom100	|#ISGEC002016.n
+	where	tdpur400._index1 = {:tdisg089.orno}
+	and	tdpur400.otbp refers to tccom100
+	selectdo
+	endselect
+	
+	tmp.file = creat.tmp.file$(bse.tmp.dir$())
+	fp = seq.open(tmp.file,"w+")
+	if fp <=0 then
+		message("Temp file can not be created")
+		return(1)
+	endif
+
+	if v.appr = 1 then					|#ISGEC002016.sn
+		line = ""
+		line = strip$(line) & " Your Purchase Order/Revision No. " & tdisg089.orno & "/" & str$(tdisg089.revi) |& " has been approved by approving authority in system " & chr$(13)&chr$(10)
+		line = strip$(line) & " from " & strip$(shiftl$(tccom100.nama)) & " for Project " & strip$(shiftl$(tdpur401.cprj)) & " " & strip$(shiftl$(tcmcs052.dsca))
+		line = strip$(line) & " and Item " & strip$(shiftl$(tdpur400.refa))  & " has been approved by approving authority in system " & chr$(13)&chr$(10)
+| 		line = strip$(line) & " Your Purchase Order " & tdisg089.orno & " has been approved by approving authority in system " & chr$(13)&chr$(10)
+		seq.write(line,len(line),fp)
+	else
+		if v.appr = 2 then	
+			line = ""
+| 			line = strip$(line) & " Your Purchase Order/Revision No. " & tdisg089.orno & "/" & str$(tdisg089.revi) & " has been rejected by approving authority in system " & chr$(13)&chr$(10)
+			line = strip$(line) & " Your Purchase Order/Revision No. " & tdisg089.orno & "/" & str$(tdisg089.revi) |& " has been approved by approving authority in system " & chr$(13)&chr$(10)
+			line = strip$(line) & " from " & strip$(shiftl$(tccom100.nama)) & " for Project " & strip$(shiftl$(tdpur401.cprj)) & " " & strip$(shiftl$(tcmcs052.dsca))
+			line = strip$(line) & " and Item " & strip$(shiftl$(tdpur400.refa))  & " has been rejected by approving authority in system " & chr$(13)&chr$(10)
+			seq.write(line,len(line),fp)
+		endif	
+	endif		
+	
+	ret = seq.close(fp)
+	
+	user.code = logname$
+	select bpmdm001.mail,tccom001.nama from tccom001,bpmdm001
+	where tccom001._index4 = {:user.code}
+	and	tccom001.emno refers to bpmdm001
+	as set with 1 rows
+	selectdo
+	selectempty
+		bpmdm001.mail = ""
+		
+	endselect
+	if isspace(bpmdm001.mail) then
+		message("Email ID for user " & user.code & " Not maintained")
+		return(1)
+	endif		
+	|******* Email Header
+        message.ID = cmf.create()
+	
+	if v.appr = 1 then
+		line = "ALERT : PURCHASE ORDER APPROVED " & tdisg089.orno 
+	else
+		if v.appr = 2 then
+			line = "ALERT : PURCHASE ORDER REJECTED " & tdisg089.orno 
+		endif
+	endif
+	
+        ret = cmf.setClass(message.ID, "CMF.NOTE.EMAIL")
+        ret = cmf.setSubject(message.ID,line)
+	
+	|******** from ID
+	to.ID = cmf.createRecipient(message.ID, ttcmf.role.from)  
+	ret = cmf.setRecipientName(to.ID,tccom001.nama)
+        ret = cmf.setRecipientAddress(to.ID, bpmdm001.mail)	
+	ret = cmf.setRecipientType(to.ID, "SMTP")
+ 
+	|******** to ID
+	if isspace(tdpur400.ccon) then
+		select 	tdisg083.emno,bpmdm001.mail,tccom001.nama 
+		from 	tccom001,bpmdm001,tdisg083
+		where 	tdisg083._index1 = {tdrole.lead.buyr}
+		and	tdisg083.emno refers to  tccom001
+		and	tccom001.emno refers to bpmdm001
+		and	bpmdm001.mail <> ""
+		selectdo
+			to.ID = cmf.createRecipient(message.ID, ttcmf.role.to)  
+			ret = cmf.setRecipientName(to.ID,tccom001.nama)
+			ret = cmf.setRecipientAddress(to.ID, bpmdm001.mail)	
+			ret = cmf.setRecipientResponsibility(to.ID, "TRUE")		
+			ret = cmf.setRecipientType(to.ID, "SMTP")
+		selectempty
+			message("Email ID for lead buyer not maintained" )
+			return(1)
+		endselect
+	else
+		select bpmdm001.mail,tccom001.nama from tccom001,bpmdm001
+		where tccom001._index1 = {:tdpur400.ccon}
+		and	tccom001.emno refers to bpmdm001
+		as set with 1 rows
+		selectdo
+		selectempty
+			bpmdm001.mail = ""
+		endselect
+		if isspace(bpmdm001.mail) then
+			message("Email ID for Buyer " & tdpur400.ccon & " Not maintained")
+			return(1)
+		else
+			to.ID = cmf.createRecipient(message.ID, ttcmf.role.to)  
+			ret = cmf.setRecipientName(to.ID,tccom001.nama)
+			ret = cmf.setRecipientAddress(to.ID, bpmdm001.mail)	
+			ret = cmf.setRecipientResponsibility(to.ID, "TRUE")		
+			ret = cmf.setRecipientType(to.ID, "SMTP")
+		endif		
+	endif
+	
+	|********* Mail Body
+	attachment.ID = cmf.createAttachment(message.ID)
+	ret = cmf.setAttachmentBody(attachment.ID,ttyeno.yes)
+	ret = cmf.setAttachmentMIME(attachment.ID,"text/plain")                       
+	ret = cmf.setAttachmentFileName(attachment.ID,tmp.file,"abc.txt")
+
+
+	|*********  Send mail
+        if message.ID <>0 then
+                stat = cmf.startService("SMTP",2)
+                if stat<>0 then
+                        message("Message could not be sent "&
+                                "(Infor ERP Enterprise eMessage Connector"&
+                                " service did not start)")
+                        return(1)
+                endif
+                stat = cmf.send(message.ID,"SMTP")
+                if stat<>0 then
+                        message("Message could not be sent "& "(Infor ERP Enterprise eMessage Connector "&
+                                "service refused message)")
+                        cmf.stopService("SMTP",2)
+                        return(1)
+                endif
+                stat = cmf.stopService("SMTP",2)
+        endif
+	return(0)
+}
+									|* ISGEC001150.en

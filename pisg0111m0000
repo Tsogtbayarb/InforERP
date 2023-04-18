@@ -1,0 +1,456 @@
+|******************************************************************************
+|* tpisg0111  0  VRC B61U a7 live
+|* Sanction Control
+|* Tools                         
+|* 2014-02-25
+|******************************************************************************
+|* Main table tpisg011 Sanction Control, Form Type 1
+|******************************************************************************
+|* ESSP INCIDENT - 3823,	Sujeet Kumar,	2014-06-05                                                                                
+|*
+|* ID ISGEC001131,	Sujeet Kumar		2014-11-24
+|* Server: .139
+|* Contract Amount field is added, when the Sanction is Launched.
+|* Initial Contribution Amount is Added.
+|* Functional: Mr. Vikas Yadav
+|*
+|* |* ISGEC004001, Dharmendra, 08-01-2-15,B61U a7 isg
+
+|* ISGEC01069, Gokul Chaurasia, 26/02/2015, VRC B61U a7 isg
+|* This tpisg061 duplicated to tpisg091
+|*
+|* PATCH001002, Dharmendra, 11-03-2015
+|*
+|* ISGEC004018, Dharmendra, 10-04-2015
+
+|* ISGEC015063, Shilpa Janardanan, 23-09-2015
+|****************************** declaration section ***************************
+declaration:
+
+table   ttpisg011 | Sanction Control
+table	ttpisg012
+
+table	ttpisg007
+table	ttpisg008
+table	ttppdm740
+
+table	ttpisg100		|#ISGEC001131.n
+| table	ttpisg061		|#ISGEC004001.n - old
+
+| table	ttpisg091		|#ISGEC01069.n - new
+table	ttpisg082		|# ISGEC004018.n
+
+
+string record.buff(1) MB BASED
+
+extern	 domain tcpric old.ver,version
+long ret
+
+extern	domain	tppdm.aalc	contract.amnt,contract.hc.amnt,contingency.amnt
+extern	domain	tcccur		contract.ccur,com.ccur
+domain	tcncmp			curr.comp
+#include<bic_dam>
+
+
+								|#3823.sn
+	domain	tpisg.sanction		next_act1	
+	domain	tcccty			o.reas
+	extern	domain	tccdis		sanction.reas
+	extern	domain	tfgld.date	current.date		|# PATCH001002.n	
+	
+	
+	extern	domain	tppdm.aalc	ini.contingency		|#ISGEC001131.n
+|****************************** program section ********************************
+before.display.object:
+	set.enum.values.for.field("tpisg011.act1",	tpisg.sanction.free,
+							tpisg.sanction.approval,
+							tpisg.sanction.approved)
+
+								|#3823.en
+|****************************** field section **********************************
+field.tpisg011.reas:
+after.field:
+	select	tppdm740.copr:contract.amnt,
+		tppdm740.ccur:com.ccur,
+		tppdm740.rate
+	from	tppdm740
+	where	tppdm740._index1 = {:tpisg011.cprj}
+	as set with 1 rows
+	selectdo
+	endselect
+	
+	curr.comp = get.compnr()
+	
+	select 	tcemm170.fcua:contract.ccur
+	from	tcemm170
+	where	tcemm170._index1 = {:curr.comp}
+	as set with 1 rows
+	selectdo
+	endselect
+	
+	contract.hc.amnt =  tppdm740.rate(1) * contract.amnt
+	
+	select 	tpisg012.totl
+	from	tpisg012
+	where	tpisg012._index1 = {:tpisg011.cprj,:tpisg011.vers}
+	and	tpisg012.levl = 0
+	as set with 1 rows
+	selectdo
+	selectempty
+		contingency.amnt = 0
+	endselect
+							|# ISGEC004018.sn
+	select	tpisg082.totl
+	from	tpisg082
+	where	tpisg082._index1 = {:tpisg011.cprj}
+	and	tpisg082.parn = ""
+	selectdo
+	selectempty
+		tpisg082.totl = 0
+	endselect
+
+	select	tpisg082.budg
+	from	tpisg082
+	where	tpisg082._index1 = {:tpisg011.cprj}
+	and	tpisg082.parn = ""
+	selectdo
+	selectempty
+		tpisg082.budg = 0
+	endselect
+							|# ISGEC004018.en
+| 	contingency.amnt = contract.hc.amnt - tpisg012.totl		|# ISGEC004018.o
+	contingency.amnt = contract.hc.amnt + tpisg082.totl - tpisg012.totl	|# ISGEC004018.n
+	
+| 	contingency.amnt = contract.hc.amnt - tpisg012.totl			|#ISGEC015063.o
+| 	ini.contingency =  (tppdm740.rate(1) * tpisg011.copr) - tpisg012.totl		|#ISGEC001131.n	|# ISGEC004018.o
+	ini.contingency =  (tppdm740.rate(1) * tpisg011.copr) - tpisg012.totl + tpisg082.budg	|# ISGEC004018.n
+|****************************** choice section *********************************
+
+choice.cont.contribution:
+on.choice:
+	if tpisg011.acti = tpisg.sanction.complete then
+		current.date = date.num()			|# PATCH001002.n
+		
+		select 	tpisg100.totl
+		from	tpisg100
+		where	tpisg100._index1 = {:tpisg011.cprj,:tpisg011.vers}	|# PATCH001002.o
+| 		where	tpisg100._index1 = {:tpisg011.cprj,:current.date}
+		and	tpisg100.levl = 0
+		as set with 1 rows
+		selectdo
+		selectempty							|# PATCH001002.sn
+			select 	tpisg100.totl
+			from	tpisg100
+			where	tpisg100._index1 = {:tpisg011.cprj}
+| 			and	tpisg100.date < :current.date
+			and	tpisg100.levl = 0
+| 			order by tpisg100.date desc
+			as set with 1 rows
+			selectdo
+			endselect						|# PATCH001002.en
+		endselect
+
+			select	tpisg082.totl
+			from	tpisg082
+			where	tpisg082._index1 = {:tpisg011.cprj}
+			and	tpisg082.parn = ""
+			selectdo
+			selectempty
+				tpisg082.totl = 0
+			endselect
+
+| 		message("New Contribution Amount Will be %f",(contract.hc.amnt - tpisg100.totl))	|# ISGEC004018.o
+		message("New Contribution Amount Will be %f",(contract.hc.amnt + tpisg082.totl - tpisg100.totl))|# ISGEC004018.n
+	endif
+
+choice.cont.send.for.approval:
+| before.choice:
+		
+on.choice:
+|** 
+|* Once the Send For Approval Button Clicked
+|* Status Will Change From Launch To Send For Approval
+	
+	next_act1 =  tpisgdll0011.Determine_Next_Approval_Activity(tpisg011.acti,
+						tpisg011.acti,tpisg011.act1)
+	if next_act1 <> empty then					
+		if tpisgdll0011.Update_Sanction_Submit_Status(tpisg011.cprj,tpisg011.vers,
+			tpisg011.acti,tpisg011.acti,tpisg011.act1,next_act1) then
+			show.dal.messages(MSG.ALL)
+			abort.transaction()
+		endif
+		commit.transaction()
+	endif	
+
+	if tpisg011.acti = tpisg.sanction.l4revise then
+		approve_form_command()
+	endif
+	
+							|#ISGEC001131.sn
+							
+	long row.len,ret,no_keys,no_columns,int_length,real_length
+	ret = rdi.table( "tpisg012", no_keys,no_columns, int_length, real_length )
+	alloc.mem(record.buff,int_length)
+	
+	if tpisg011.acti = tpisg.sanction.complete then	
+		
+		select 	tpisg100.cprj
+		from	tpisg100 for update
+		where	tpisg100._index1 = {:tpisg011.cprj}
+		selectdo
+			db.delete(ttpisg100,db.retry,e)
+		endselect
+		commit.transaction()
+		
+		select tpisg012.*
+		from	tpisg012
+		where	tpisg012._index1 = {:tpisg011.cprj,:tpisg011.vers}
+		selectdo
+			copy.mem(record.buff,rcd.ttpisg012 )
+			rcd.ttpisg100 = record.buff
+			db.insert(ttpisg100,db.retry,e)
+		endselect
+		commit.transaction()
+		
+		tpisgdll050_11.update_transfer_amount(tpisg011.cprj,tpisg011.vers)
+		commit.transaction()
+		
+		select 	tpisg100.totl
+		from	tpisg100
+		where	tpisg100._index1 = {:tpisg011.cprj,:tpisg011.vers}
+		and	tpisg100.levl = 0
+		as set with 1 rows
+		selectdo
+		endselect
+		
+		message("New Contribution Amount Will be %f",(contract.hc.amnt - tpisg100.totl))
+		
+
+	endif
+	commit.transaction()			
+	change_incentive_status(tpisg.sanction.approval)	|# ISGEC004018.sn
+							|#ISGEC001131.en
+	
+		
+choice.approve:
+before.choice:
+	if contingency.amnt < 0 then
+		message("Contribution Amount is Less than Contract Amount")
+| 		choice.again()
+	endif	
+	
+	if ask.enum("tpisg0111.0010",tcyesno.yes) = tcyesno.no then
+		choice.again()
+	endif
+	
+on.choice:
+	approve_form_command()
+	change_incentive_status(tpisg.sanction.approved)		|# ISGEC001018.n
+	
+choice.revise:
+before.choice:
+	if ask.enum("tpisg012.0010",tcyesno.yes) = tcyesno.no then
+		choice.again()
+	endif
+	
+	if tpisgdll0012.Sanction_Approval_Matrix(tpisg.sanction.complete,o.reas) then		
+		if not tpisgdll0012.Employee_Responsible_By_Project(tpisg011.cprj,tpisg.sanction.complete) then
+			message("Sanction Approval Role Matrix Not Defined!!!")
+			choice.again()
+		endif
+		
+	else
+		message("Approval Matrix is Not Defined !!!")
+		choice.again()
+	endif	
+	
+on.choice:
+	tpisgdll0011.Sanction_History(tpisg011.cprj,tpisg011.vers)
+	commit.transaction()
+	tpisgdll0011.Revise_Sanction_Control(tpisg011.cprj,tpisg011.vers,
+				tpisg.sanction.complete,tpisg.sanction.free,o.reas,1.0)
+				
+	commit.transaction()			
+	change_incentive_status(tpisg.sanction.free)			|# ISGEC004018.n
+
+choice.part:
+before.choice:
+	if ask.enum("tpisg012.0010",tcyesno.yes) = tcyesno.no then
+		choice.again()
+	endif
+	
+	if tpisgdll0012.Sanction_Approval_Matrix(tpisg.sanction.partial,o.reas) then		
+		if not tpisgdll0012.Employee_Responsible_By_Project(tpisg011.cprj,tpisg.sanction.partial) then
+			message("Sanction Approval Role Matrix Not Defined!!!")
+			choice.again()
+		endif
+		
+	else
+		message("Approval Matrix is Not Defined !!!")
+		choice.again()
+	endif
+
+on.choice:
+	tpisgdll0011.Sanction_History(tpisg011.cprj,tpisg011.vers)
+	tpisgdll0011.Revise_Sanction_Control(tpisg011.cprj,tpisg011.vers,
+				tpisg.sanction.partial,tpisg.sanction.free,o.reas,0.1)
+	commit.transaction()
+	change_incentive_status(tpisg.sanction.free)				|# ISGEC004018.n
+
+choice.cont.l4revise:
+before.choice:
+	
+	if ask.enum("tpisg012.0010",tcyesno.yes) = tcyesno.no then
+		choice.again()
+	endif
+	
+	if tpisgdll0012.Sanction_Approval_Matrix(tpisg.sanction.l4revise,o.reas) then		
+		if not tpisgdll0012.Employee_Responsible_By_Project(tpisg011.cprj,tpisg.sanction.l4revise) then
+			message("Sanction Approval Role Matrix Not Defined!!!")
+			choice.again()
+		endif
+		
+	else
+		message("Approval Matrix is Not Defined !!!")
+		choice.again()
+	endif	
+	
+	
+on.choice:
+	
+	tpisgdll0011.Sanction_History(tpisg011.cprj,tpisg011.vers)
+	tpisgdll0011.Revise_Sanction_Control(tpisg011.cprj,tpisg011.vers,
+				tpisg.sanction.l4revise,tpisg.sanction.free,o.reas,0.1)
+		
+	commit.transaction()
+| 	if logname$ = "tools1" then
+		Parent_Child_Relation_for_Sanction(tpisg011.cprj,tpisg011.aver,tpisg011.vers)
+		commit.transaction()
+| 	endif
+	
+| 	tpisgdll0011.delete.l4.revise.relations(tpisg011.cprj,tpisg011.vers)
+| 	tpisgdll0011.populate.L4Revise.Elements(tpisg011.cprj,tpisg011.vers)
+| 	commit.transaction()
+	
+choice.cont.cancel:
+before.choice:
+	start.session(MODAL,"tpisg0211m100","","")
+
+	select 	tcmcs005.cdis
+	from	tcmcs005
+	where	tcmcs005._index1 = {:tpisg011.cdis}
+	as set with 1 rows
+	selectdo
+	selectempty
+		message("Please Enter Rejection Reason")
+		choice.again()
+	endselect
+	
+	sanction.reas = tpisg011.cdis
+on.choice:
+	select 	tpisg011.cdis
+	from	tpisg011 for update
+	where	tpisg011._index1 = {:tpisg011.cprj}
+	selectdo
+		tpisg011.cdis = sanction.reas
+		db.update(ttpisg011,db.retry,e)
+	endselect
+	
+	if tpisgdll0011.Update_Sanction_Status(tpisg011.cprj,tpisg011.vers,
+					tpisg011.acti,tpisg011.acti,tpisg011.act1,tpisg.sanction.free) then
+					show.dal.messages(MSG.ALL)
+					abort.transaction()
+	endif
+	commit.transaction()
+
+choice.cont.tree.view:
+on.choice:
+	wait.and.activate("otpisg7500")
+	|#3823.en
+|******************************* function section ***************************
+functions:
+function approve_form_command()
+{
+	on case tpisg011.acti
+		case tpisg.sanction.launch:
+			if not tpisgdll0012.Employee_Approval_By_Project(tpisg011.cprj,tpisg.sanction.launch) then
+				message("Sanction Approval Role Matrix Not Defined!!!")
+				choice.again()	
+			endif
+			break
+		case tpisg.sanction.complete: 
+			if not tpisgdll0012.Employee_Approval_By_Project(tpisg011.cprj,tpisg.sanction.complete) then
+				message("Sanction Approval Role Matrix Not Defined!!!")
+				choice.again()	
+			endif
+			break
+		case tpisg.sanction.partial:
+			if not tpisgdll0012.Employee_Approval_By_Project(tpisg011.cprj,tpisg.sanction.partial) then
+				message("Sanction Approval Role Matrix Not Defined!!!")
+				choice.again()	
+			endif
+			break
+		case tpisg.sanction.l4revise:
+			if not tpisgdll0012.Employee_Approval_By_Project(tpisg011.cprj,tpisg.sanction.l4revise) then
+				message("Sanction Approval Role Matrix Not Defined!!!")
+				choice.again()	
+			endif
+			break
+	endcase
+	
+	
+	
+
+	on case tpisg011.acti
+		case tpisg.sanction.launch:
+		case tpisg.sanction.complete:
+				
+			tpisgdll0011.update_transfer_amount(tpisg011.cprj,tpisg011.vers)
+			commit.transaction()
+
+			
+			break
+		case tpisg.sanction.partial:
+			tpisgdll0011.Transfer_Credit(tpisg011.cprj,tpisg011.vers)
+			commit.transaction()
+			break
+		case tpisg.sanction.l4revise:
+			tpisgdll0011.L4Revise(tpisg011.cprj,tpisg011.vers)
+			commit.transaction()
+			break
+	endcase
+		
+	next_act1 =  tpisgdll0011.Determine_Next_Approval_Activity(tpisg011.acti,
+								tpisg011.acti,tpisg011.act1)
+			if next_act1 <> empty then					
+				if tpisgdll0011.Update_Sanction_Status(tpisg011.cprj,tpisg011.vers,
+					tpisg011.acti,tpisg011.acti,tpisg011.act1,next_act1) then
+					show.dal.messages(MSG.ALL)
+					abort.transaction()
+				endif
+				commit.transaction()
+			endif	
+
+	tpisgdll0011.isgec_dream_for_distribution_amount(tpisg011.cprj,tpisg011.vers)
+| 	tpisgdll0011.sanction_control_lines_for_distribution(tpisg011.cprj,tpisg011.vers)	
+| 	tpisgdll0011.isgec_dream_for_sanction_control(tpisg011.cprj,tpisg011.vers)
+	
+	commit.transaction()
+	
+}
+
+						|# ISGEC001018.sn
+function change_incentive_status(domain tpisg.sanction status)
+{
+	select	tpisg082.stat
+	from	tpisg082 for update
+	where	tpisg082._index1 = {:tpisg011.cprj}
+	selectdo
+		tpisg082.stat = status
+		db.update(ttpisg082, db.retry)
+	endselect
+	commit.transaction()
+}
+ 
+
+						|# ISGEC001018.en	

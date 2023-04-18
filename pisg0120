@@ -1,0 +1,969 @@
+|******************************************************************************
+|* tpisg012  0  VRC B61U a7 live
+|* Sanction Control Lines
+|* tools1
+|* 14-03-01 [06:34]
+|******************************************************************************
+|* Script Type: DALla
+|******************************************************************************
+|* 29032014, Arjit Gupta, as suggested by Nishant Verma
+|* Transfer Aount should get subtracted upto the top most parent level's element of "Transfer From Element"
+|*
+|* ID ISGECDV001047, Sujeet Kumar,	2014-09-19
+|* Element Validation
+|* Element Must be Standard Element
+|*
+|* Transfer From Element Validation.
+|* Transfer From Element Must be Exists in Sanction Control of the Same Project & Version
+|* Functional : Mr. Vikas Yaday
+|*
+|* ID ISGECDV001113, 	Sujeet Kumar,		2014-10-16
+|* Multiple L4 Transfer From Element At Same Revision
+|* Functional: Mr. Vikas Yaday
+|*
+|* ID ISGECDV001151,	Sujeet Kumar,		2014-10-16
+|* Complete Revise Calculation Changes for Zero Transfer Amount
+|* Functional: Mr. Vikas Yadav
+|*
+|* ID ISGEC001131,	Sujeet Kumar		2014-11-24
+|* Server: .139
+|* Contract Amount field is added, when the Sanction is Launched.
+|* Functional: Mr. Vikas Yadav
+|********************************************************************************
+     
+table	ttpest200
+table	ttpptc101
+table	ttpest120
+table	ttpisg012
+table	ttpisg008
+table	ttpisg007
+table	ttpisg011
+table	ttpisg002
+table	ttpmsl000
+table	ttpisg003
+table	ttppdm740		|#ISGEC001131.n
+
+extern	domain	tccprj		cprj.f,main.cprj
+extern	domain	tpest.vers	vers.f
+extern	domain	tpest.sern	sern.f
+extern	domain	tpest.sern	sern.t
+extern	domain	tcamnt		v.cosa,v.totl, v.avai, v.dist,trf.amnt,differ_amt,main.trfm,old.trfm
+extern	domain	tcorno		o.version,version,old.ver,main.vers
+extern	domain	tppdm.cspa	var.elem,o.element,trf.element,main.elem,main.tran
+extern domain	tcccty		main.reas
+extern		string		error(1000)
+extern		long		ret,re,ret_val
+extern	domain	tcqrd1		re.avai
+extern	domain	tcqrd1		budget_value
+extern	domain	tppdm.cspa	d.element		|#29032014.Arjit.n
+extern	domain	tcdsca		desc
+	
+#include <bic_dal2>
+
+|********************************************************************************
+function extern long before.open.object.set()
+{
+
+	dal.field.depends.on("tpisg012.reas",
+					HOOK_IS_APPLICABLE, +
+					HOOK_IS_MANDATORY,"tpisg012.tran")
+					
+	dal.field.depends.on("tpisg012.trfm",
+					HOOK_IS_APPLICABLE, "tpisg012.reas")
+	dal.field.depends.on("tpisg012.diff",
+					HOOK_UPDATE,"tpisg012.trfm")
+	
+	return(0)
+}
+
+function extern long before.save.object(long type)
+{
+						|#ISGECDV001151.sn
+	domain	tpisg.sanction		o.act1,o.acti
+	o.acti = tpisgdll0011.Sanction_Header_Revision_Type(tpisg012.cprj,tpisg012.vers)
+	
+	on case o.acti
+	case	tpisg.sanction.complete:
+		
+		if not isspace(tpisg012.reas) then
+			tpisg012.diff = tpisg012.trfm - tpisg012.totl
+		else
+			tpisg012.diff = 0
+			
+		endif
+		break
+	endcase
+						|#ISGECDV001151.sn
+	
+	return(0)
+}
+
+function extern long after.save.object(long type)
+{
+	return(0)
+}
+
+							|#3823.sn
+function extern boolean method.is.allowed(long type)
+{
+	domain	tpisg.sanction		o.act1,o.acti
+	
+	on case type
+	case 	DAL_NEW :
+		|********
+		|* New Button is Only Enabled when
+		|* Reason Type - Launch/Complete Revise
+		|* Status - Free
+		o.acti = tpisgdll0011.Sanction_Header_Revision_Type(tpisg012.cprj,tpisg012.vers)
+		o.act1 = tpisgdll0011.Sanction_Header_Approval_Status(tpisg012.cprj,tpisg012.vers)
+		on case o.acti
+			case 	tpisg.sanction.launch:
+			case	tpisg.sanction.complete:
+			case	tpisg.sanction.l4revise:
+				on case  o.act1
+					case 	tpisg.sanction.free:
+						break
+				default:
+					return(false)	
+				endcase	
+			break
+		default:
+			return(false)
+		endcase
+			
+		break
+	endcase
+	
+	return(true)
+}
+
+| function extern boolean tpisg012.avai.is.valid()
+| {
+| 	
+| 	if tpisg012.avai < 0 then
+| 		dal.set.error.message("@ Sanction Available Amount Cann't be Negative")
+| 		return(DALHOOKERROR)
+| 	endif
+| 	
+| 	return(true)
+| }
+
+					|#ISGECDV001047.sn
+
+function extern boolean tpisg012.elem.is.mandatory()
+{
+	if isspace(tpisg012.elem) then
+		dal.set.error.message("@ Element is Mandatory")
+		return(true)
+	endif
+	
+	return(false)
+}
+
+| function extern boolean tpisg012.elem.is.valid()
+| {
+| 	select tppdm090.cspa
+| 	from	tppdm090
+| 	where	tppdm090._index1 = {:tpisg012.elem}
+| 	as set with 1 rows
+| 	selectdo
+| 	selectempty
+| 		dal.set.error.message("@ Enter Valid Standard Element")
+| 		return(DALHOOKERROR)
+| 	endselect
+| 	
+| 	return(true)
+| }
+					|#ISGECDV001047.en
+
+function extern boolean tpisg012.exha.is.valid()
+{
+	if tpisg012.exha < 0 then
+		dal.set.error.message("@ Sanction Exhausted Amount Cann't be Negative")
+		return(DALHOOKERROR)
+	endif
+	
+	return(true)
+}
+
+function extern boolean tpisg012.smnt.is.valid()
+{
+	if tpisg012.smnt < 0 then
+		dal.set.error.message("@ Sanction Soft Allocation Amount Cann't be Negative")
+		return(DALHOOKERROR)
+	endif
+	
+	return(true)
+}
+							|#3823.en
+
+function extern boolean tpisg012.totl.is.derived()
+{
+							|#3823.sn
+	if not tpisgdll0012.Total_Budget_Allowed(tpisg012.cprj,tpisg012.vers) then
+		return(true)
+	endif
+							|#3823.sn
+	return(false)
+}
+
+						|#3823.eo
+|*******  tpisg012.tran Transferred From Element
+						|#3823.sn
+						
+function extern boolean tpisg012.tran.is.valid()
+{
+	domain	tppdm.cspa	o.elem 
+								|#ISGECDV001047.sn
+
+	boolean			o.found				
+	domain	tcpono		allowed.levl
+	
+	allowed.levl = 0
+	
+	select 	tpisg011.acti
+	from	tpisg011
+	where	tpisg011._index1 = {:tpisg012.cprj}
+	as set with 1 rows
+	selectdo
+	endselect
+	
+		with.object.set.do(check.transfer.from.element.exists,tpisg012.cprj,tpisg012.vers,tpisg012.tran,o.found)
+		if not o.found then
+			dal.set.error.message("@ Transfer From Element Not Exists")
+			return(DALHOOKERROR)
+		endif
+	
+	on case tpisg011.acti
+	case	tpisg.sanction.l4revise:
+		
+		tcmcs.dll0095.read.parm("tpmsl000")
+		allowed.levl = tpmsl000.levl + 1
+		
+		select 	tpisg013.levl
+		from	tpisg013
+		where	tpisg013._index1 = {:tpisg012.cprj,:tpisg012.vers,:tpisg012.elem,:tpisg012.tran}
+		and	tpisg013.levl >=:allowed.levl 
+		as set with 1 rows
+		selectdo
+		selectempty
+			dal.set.error.message("@ Enter Valid Transfer From Element")
+			return(DALHOOKERROR)
+		endselect
+	
+		break
+	case	tpisg.sanction.partial:
+		select 	tpisg002.elem
+		from	tpisg002
+		where	tpisg002._index1 = {:tpisg012.tran}
+		as set with 1 rows
+		selectdo
+		selectempty
+			dal.set.error.message("@ Enter Valid Transfer From Element")
+			return(DALHOOKERROR)
+		endselect
+		break
+		
+	endcase
+	
+	
+								|#ISGECDV001047.en
+	
+	return(true)
+}
+
+function extern boolean tpisg012.tran.is.applicable()
+{
+	domain	tpisg.sanction		o.act1,o.acti
+	
+	o.acti = tpisgdll0011.Sanction_Header_Revision_Type(tpisg012.cprj,tpisg012.vers)
+	
+	o.act1 = tpisgdll0011.Sanction_Header_Approval_Status(tpisg012.cprj,tpisg012.vers)
+	
+	tcmcs.dll0095.read.parm("tpmsl000")
+	on case o.acti
+		
+		case 	tpisg.sanction.partial:
+			on case o.act1
+			case 	tpisg.sanction.free:
+| 					dal.set.error.message("@ Enter Valid Reason")
+					if tpisg012.levl = (tpmsl000.levl + 1) then
+						return(true)
+					endif
+					break
+			endcase
+		break
+		case 	tpisg.sanction.l4revise:
+			on case o.act1
+				case tpisg.sanction.free:
+					if tpisg012.levl > (tpmsl000.levl + 1) then
+						return(true)
+					endif
+					break
+				endcase
+		break	
+		
+| 		case 	tpisg.sanction.complete:
+| 			on case o.act1
+| 			case 	tpisg.sanction.free:
+| 				if tpisg012.levl = (tpmsl000.levl + 1) then
+| 					return(true)
+| 				endif
+| 				break
+| 			endcase
+| 		break
+		
+	endcase
+		
+	return(false)
+}
+						|#3823.en
+|*******  tpisg012.trfm Transferred Amount
+
+						|#3823.sn
+function extern boolean tpisg012.trfm.is.applicable()
+{
+	domain	tpisg.sanction		o.act1
+	o.act1 = tpisgdll0011.Sanction_Header_Approval_Status(tpisg012.cprj,tpisg012.vers)
+	if o.act1 = tpisg.sanction.free and not isspace(tpisg012.reas) then
+		return(true)
+	endif
+	
+	return(false)
+}
+
+function extern boolean tpisg012.trfm.is.valid()
+{
+	domain	tcamnt		o.amnt,o.aamt
+	domain	tcamnt		o.avai, o.totl
+	domain	tcpono		o.levl,param.levl
+	domain	tpisg.sanction		o.act1,o.acti
+	
+	domain	tcamnt		o.used.trfm
+	
+	o.acti = tpisgdll0011.Sanction_Header_Revision_Type(tpisg012.cprj,tpisg012.vers)
+	tcmcs.dll0095.read.parm("tpmsl000")
+	param.levl = tpmsl000.levl + 1
+	
+	
+	if o.acti <> tpisg.sanction.complete then
+		with.object.set.do(get.transfer.element.amount,tpisg012.cprj,tpisg012.vers,
+				tpisg012.tran,o.amnt,o.aamt,o.avai,o.totl,o.levl) 	
+	
+		if o.acti = tpisg.sanction.l4revise then
+			if tpisg012.trfm < 0 then
+				if (tpisg012.avai + tpisg012.trfm) < 0 then
+					dal.set.error.message("@ Insufficient Amount to be distributed/transferred")
+					return(DALHOOKERROR)
+				endif
+			endif
+			
+									|#ISGECDV001113.sn
+			|************
+			|* Calculate Consumed Amount Against Transfer From Element
+			o.used.trfm = 0
+			with.object.set.do(get.used.transfer.from.element.amount,tpisg012.cprj,tpisg012.vers,
+							tpisg012.elem,tpisg012.tran,o.used.trfm)
+							
+			if o.levl > param.levl then
+				if ((o.used.trfm + tpisg012.trfm) > o.avai) then
+					dal.set.error.message("@ Insufficient Amount to be distributed/transferred")
+					return(DALHOOKERROR)
+				endif
+			else
+			if ((o.used.trfm + tpisg012.trfm) > o.amnt) then
+				dal.set.error.message("@ Insufficient Amount to be distributed/transferred")
+				return(DALHOOKERROR)
+			endif
+			endif
+									|#ISGECDV001113.en	
+			
+		endif
+		
+	
+		if o.levl > param.levl then
+			if tpisg012.trfm > o.avai then
+				dal.set.error.message("@Insufficient Amount to be distributed/transferred")
+				return(DALHOOKERROR)
+			endif
+									|#ISGECDV001113.sn
+			|************
+			|* Calculate Consumed Amount Against Transfer From Element
+			o.used.trfm = 0
+			with.object.set.do(get.used.transfer.from.element.amount,tpisg012.cprj,tpisg012.vers,
+							tpisg012.elem,tpisg012.tran,o.used.trfm)
+							
+			if ((o.used.trfm + tpisg012.trfm) > o.avai) then
+				dal.set.error.message("@ Insufficient Amount to be distributed/transferred")
+				return(DALHOOKERROR)
+			endif
+									|#ISGECDV001113.en
+			
+			
+		else
+			if tpisg012.trfm > o.amnt then
+				dal.set.error.message("@Insufficient Amount to be distributed/transferred")
+				return(DALHOOKERROR)
+			endif
+									|#ISGECDV001113.sn
+			|************
+			|* Calculate Consumed Amount Against Transfer From Element
+			o.used.trfm = 0
+			with.object.set.do(get.used.transfer.from.element.amount,tpisg012.cprj,tpisg012.vers,
+							tpisg012.elem,tpisg012.tran,o.used.trfm)
+							
+			if ((o.used.trfm + tpisg012.trfm) > o.amnt) then
+				dal.set.error.message("@ Insufficient Amount to be distributed/transferred")
+				return(DALHOOKERROR)
+			endif
+									|#ISGECDV001113.en
+			
+		endif
+	else
+		with.object.set.do(get.transfer.element.amount,tpisg012.cprj,tpisg012.vers,
+				tpisg012.elem,o.amnt,o.aamt,o.avai,o.totl,o.levl) 	
+				
+		if tpisg012.trfm < o.aamt then
+			dal.set.error.message("@ Amount is Less than Already Distributed Amount")
+			return(DALHOOKERROR)
+		endif
+	endif
+	
+	return(true)
+}
+
+function get.transfer.element.amount
+			(
+				domain	tccprj		i.cprj,		|Project
+				domain	tcorno		i.orno,		|Revision
+				domain	tppdm.cspa	i.cspa,		|Element
+			ref	domain	tcamnt		o.amnt,		|Undistributed Amount
+			ref	domain	tcamnt		o.aamt,		|Distributed Amount
+			ref 	domain	tcamnt		o.avai,		|Available Amount
+			ref 	domain	tcamnt		o.totl,		|Total Budget Amount
+			ref	domain	tcpono		o.levl		|Level
+			
+			)
+{
+	select 	tpisg012.amnt:o.amnt,
+		tpisg012.aamt:o.aamt,
+		tpisg012.avai:o.avai,
+		tpisg012.totl:o.totl,
+		tpisg012.levl:o.levl
+	from	tpisg012
+	where	tpisg012._index1 = {:i.cprj,:i.orno,:i.cspa}
+	as set with 1 rows
+	selectdo
+	endselect
+	
+}
+
+function extern boolean tpisg012.trfm.is.mandatory()
+{
+
+			|#ISGECDV001151.sn
+
+	domain	tpisg.sanction		o.act1,o.acti
+	
+	o.acti = tpisgdll0011.Sanction_Header_Revision_Type(tpisg012.cprj,tpisg012.vers)
+	
+	on case o.acti
+	case 	tpisg.sanction.complete :
+		if not isspace(tpisg012.reas) and tpisg012.aamt <> 0 and tpisg012.trfm = 0 then
+			dal.set.error.message("@ Amount is Less than Already Distributed Amount")
+			return(true)
+		endif
+		break
+	endcase
+						|#ISGECDV001151.en
+
+| 	if not isspace(tpisg012.reas) and tpisg012.trfm = 0 then
+| 	if not isspace(tpisg012.reas) then
+| 		dal.set.error.message("@ Enter Revised/Transfer Amount")
+| 		return(true)
+| 	endif
+	
+	return(false)
+}
+				|#3823.so
+| function extern boolean tpisg012.trfm.is.valid()
+| {
+| 	domain	tcqrd1	avai.val
+| 	avai.val = get_available_amount()
+| 	| |	avai.val = get_available_amount_old()
+| 	| 	if tpisg012.part = tcyesno.yes then
+| 		if tpisg012.trfm > avai.val then
+| 			dal.set.error.message("tpisg0120001")
+| 			return(DALHOOKERROR)
+| 		endif
+		|endif	
+| 	return(true)
+| }
+				|#3823.eo
+
+|*******  tpisg012.reas Reason Code
+
+						|#3823.sn
+function extern boolean tpisg012.reas.is.mandatory()
+{
+	domain	tpisg.sanction		o.act1,o.acti
+	
+	o.acti = tpisgdll0011.Sanction_Header_Revision_Type(tpisg012.cprj,tpisg012.vers)
+	
+	o.act1 = tpisgdll0011.Sanction_Header_Approval_Status(tpisg012.cprj,tpisg012.vers)
+
+	on case o.acti
+		case 	tpisg.sanction.l4revise:
+		case 	tpisg.sanction.partial:
+			on case o.act1
+				case 	tpisg.sanction.free:
+					if not isspace(tpisg012.tran) and isspace(tpisg012.reas) then
+						return(true)
+					endif
+					break
+			endcase
+		break
+	endcase
+	
+	return(false)
+}
+
+function extern boolean tpisg012.reas.is.applicable()
+{
+	domain	tpisg.sanction		o.act1,o.acti
+	
+	o.acti = tpisgdll0011.Sanction_Header_Revision_Type(tpisg012.cprj,tpisg012.vers)
+	
+	o.act1 = tpisgdll0011.Sanction_Header_Approval_Status(tpisg012.cprj,tpisg012.vers)
+	tcmcs.dll0095.read.parm("tpmsl000")
+	on case o.acti
+		case 	tpisg.sanction.l4revise:
+		case 	tpisg.sanction.partial:
+			on case o.act1
+				case 	tpisg.sanction.free:
+					if not isspace(tpisg012.tran) then
+						return(true)
+					endif
+					break
+			endcase
+		break
+		case 	tpisg.sanction.launch:
+| 		case	tpisg.sanction.complete:
+			on case o.act1
+				case 	tpisg.sanction.free:
+					return(true)
+					break
+			endcase
+		break
+		
+		case 	tpisg.sanction.complete:
+			on case o.act1
+				case 	tpisg.sanction.free:
+					if tpisg012.levl = (tpmsl000.levl + 1) then
+						return(true)
+					endif
+				break
+			endcase
+		break
+			
+			
+	endcase	
+	
+	return(false)
+}
+
+function extern boolean tpisg012.reas.is.valid()
+{
+	domain	tpisg.sanction		o.acti
+	
+	o.acti = tpisgdll0011.Sanction_Header_Revision_Type(tpisg012.cprj,tpisg012.vers)
+	
+	if	not tpisgdll0011.get_description(o.acti,tpisg012.reas,desc) then
+		dal.set.error.message("tpisg0120002")
+		return(DALHOOKERROR)
+	endif
+	
+	return(true)
+}
+| function extern boolean tpisg012.reas.is.readonly()
+| {
+| 	domain	tpisg.sanction		o.act1
+| 	
+| 	o.act1 = tpisgdll0011.Sanction_Header_Approval_Status(tpisg012.cprj,tpisg012.vers)
+| 	if o.act1 = tpisg.sanction.free then
+| 		return(false)
+| 	endif
+| 	
+| 	return(true)
+| }
+						|#3823.en
+|*********** tpisg012.trfm *****************************
+
+				|#3823.so
+| function extern boolean tpisg012.tran.is.valid()
+| {
+| 	if ((tpisg012.part = tcyesno.yes) and  (not isspace(tpisg012.tran))) then
+| 		select	tpisg002.elem
+| 		from	tpisg002
+| 		where	tpisg002._index1 = {:tpisg012.tran}
+| 		selectdo
+| 			select	tra.cprj
+| 			from	tpisg012 tra
+| 			where	tra._index1 = {:tpisg012.cprj,:tpisg012.vers,:tpisg012.elem}
+| 			selectdo
+| 				return(true)
+| 			selectempty
+| 				dal.set.error.message("@ Transfer Element Not Present in Standard Element")
+| 				return(DALHOOKERROR)
+| 			endselect
+| 		selectempty
+| 			dal.set.error.message("@ Transfer Element Not Present in Standard Element")
+| 			return(DALHOOKERROR)
+| 		endselect
+| 	endif
+| 	
+| 	return(true)
+| }
+						|#3823.eo
+
+
+|******** tpisg012.diff 	Difference Amount ******************	
+function extern tpisg012.diff.update()
+{
+				|#ISGECDV001151.sn
+	domain	tpisg.sanction		o.act1,o.acti
+	o.acti = tpisgdll0011.Sanction_Header_Revision_Type(tpisg012.cprj,tpisg012.vers)
+	
+	on case o.acti
+	case	tpisg.sanction.complete:
+			break
+	default:
+			
+	tpisg012.diff = tpisg012.trfm - tpisg012.totl
+	endcase
+				|#ISGECDV001151.en
+}
+
+function insert_tpisg012()
+{
+	tpisg012.cprj = tpisg012.cprj
+	tpisg012.vers = tpisg011.vers
+	tpisg012.elem = tpisg012.elem
+	tpisg012.levl = tpisg012.levl
+	tpisg012.totl = tpisg012.totl
+	tpisg012.avai = tpisg012.avai
+	tpisg012.exha = tpisg012.exha
+	tpisg012.tran = ""				|#29032014.Arjit.n
+	tpisg012.reas = ""				|#29032014.Arjit.n
+	tpisg012.trfm = 0				|#29032014.Arjit.o
+	tpisg012.tfrd = tcyesno.no			|#29032014.Arjit.n
+	db.insert(ttpisg012,db.skip.dupl,e)
+}
+
+						|#3823.sn
+function extern long	lunch
+			(
+				domain	tcccty		o.reas			
+			)
+						|#3823.en
+{
+	domain	tppdm.aalc	o.cosa
+	domain	tcratc		o.rtcc
+	
+	select	tpest200.psel|,sum(tpest200.cosa):v.cosa
+	from	tpest200
+	where	tpest200._index2 inrange {:cprj.f,:vers.f,:sern.f} 
+					and {:cprj.f,:vers.f,:sern.t}
+	and	tpest200.laun = tppdm.yeno.no
+	and	tpest200.psel <> ""
+	group by tpest200.psel
+	selectdo
+		
+		v.cosa = 0
+		o.cosa = 0
+		o.rtcc = 0
+		
+		select 	tpest200.cosa:o.cosa,
+			tpest200.rtcc(1):o.rtcc
+		from	tpest200
+		where	tpest200._index2 inrange {:cprj.f,:vers.f,:sern.f}
+					and	{:cprj.f,:vers.f,:sern.t}
+		and	tpest200.psel = :tpest200.psel
+		selectdo
+			v.cosa = v.cosa + (o.cosa * o.rtcc)
+		endselect
+		
+		
+		if not isspace(tpest200.psel) then
+			var.elem = tpest200.psel
+			get_level(var.elem)
+			
+			v.dist = 0.00
+			v.avai = v.cosa
+			
+			insert_sanction_ctrl_header(o.reas,"1.0")		|#3823.n
+			Insert_In_Sanction_Ctrl("1.0")
+			
+			Update_Launched()
+			
+			while not isspace(var.elem)
+				select	tpptc101.cspp
+				from	tpptc101
+				where	tpptc101._index2 = {:cprj.f,:var.elem}
+				selectdo
+				selectempty
+					tpptc101.cspp = ""
+				endselect
+				var.elem = tpptc101.cspp
+				get_level(var.elem)
+				
+				v.dist = v.cosa
+				v.avai = 0.00
+				if not isspace(var.elem) then
+					Insert_In_Sanction_Ctrl("1.0")
+				endif				
+			endwhile
+		endif		
+	selectempty
+		dal.set.error.message("@ Project %s Already Launched",cprj.f)
+		show.dal.messages()
+	endselect
+	return(ret_val)
+}
+
+function insert_sanction_ctrl_header
+			(
+				domain tcccty	o.reas,		|Reason
+				domain	tcorno	i.vers		|Version
+			)
+{
+	select	tpisg011.*
+	from	tpisg011 for update
+	where	tpisg011._index1 = {:cprj.f,:i.vers}
+	selectdo
+	selectempty
+						|#ISGEC001131.sn
+		select tppdm740.copr
+		from	tppdm740
+		where	tppdm740._index1 = {:cprj.f}
+		as set with 1 rows
+		selectdo
+		endselect
+						|#ISGEC001131.en
+		
+		dal.new.object("tpisg011")
+		
+		dal.set.field("tpisg011.cprj",cprj.f)
+| 		dal.set.field("tpisg011.vers",1.0)
+		dal.set.field("tpisg011.vers",i.vers)
+		dal.set.field("tpisg011.reas",o.reas)			|#3823.n
+		dal.set.field("tpisg011.aver",vers.f)
+		dal.set.field("tpisg011.acti",tpisg.sanction.launch)
+		dal.set.field("tpisg011.act1",tpisg.sanction.free)
+		dal.set.field("tpisg011.copr",tppdm740.copr)		|#ISGEC001131.n
+		ret = dal.save.object("tpisg011",error)
+		if ret <> 0 then
+			show.dal.messages()
+		endif
+	endselect
+	ret_val = commit.transaction()
+}
+
+function Insert_In_Sanction_Ctrl
+			(
+				domain	tcorno		i.vers
+			)
+{
+	select	tpisg012.*
+	from	tpisg012 for update
+	where	tpisg012._index1 = {:cprj.f,:i.vers,:var.elem}
+	selectdo
+		dal.change.object("tpisg012")
+		
+		dal.set.field("tpisg012.levl",tpest120.levl)
+		dal.set.field("tpisg012.totl",tpisg012.totl + v.cosa)
+		dal.set.field("tpisg012.avai",(tpisg012.totl - (tpisg012.smnt + tpisg012.exha)))
+		
+		ret = dal.save.object("tpisg012")
+		if ret <> 0 then
+			show.dal.messages()
+		endif
+		
+	selectempty
+		dal.new.object("tpisg012")
+		
+		dal.set.field("tpisg012.cprj",cprj.f)
+		dal.set.field("tpisg012.vers",i.vers)
+		dal.set.field("tpisg012.elem",var.elem)
+		dal.set.field("tpisg012.levl",tpest120.levl)
+		dal.set.field("tpisg012.cspa",tpest120.pele)
+		dal.set.field("tpisg012.totl",v.cosa)
+		dal.set.field("tpisg012.avai",(tpisg012.totl - (tpisg012.smnt + tpisg012.exha)))
+		
+		ret = dal.save.object("tpisg012",error)
+		if ret <> 0 then
+			show.dal.messages()
+		endif
+	endselect
+	ret_val = commit.transaction()
+			
+}
+
+function Update_Launched()
+{
+	if ret = 0 then
+		select	tpest200.laun
+		from	tpest200 for update
+		where	tpest200._index2 inrange {:cprj.f,:vers.f,:sern.f} 
+					and {:cprj.f,:vers.f,:sern.t}
+		and	tpest200.laun = tppdm.yeno.no
+		and	tpest200.psel = :var.elem
+		selectdo
+			dal.change.object("tpest200")
+			dal.set.field("tpest200.laun",tppdm.yeno.yes)
+			re = dal.save.object("tpest200")
+			if re <> 0 then
+				show.dal.messages()
+			endif
+		endselect
+	endif
+}
+
+function get_level(domain tppdm.cspa v.elem)
+{
+	select	tpest120.levl,
+		tpest120.pele
+	from	tpest120
+	where	tpest120._index1 = {:cprj.f,:vers.f}
+	and	tpest120.sele = :v.elem
+	selectdo
+	selectempty
+		tpest120.levl = 0
+	endselect
+}
+
+function extern domain tcorno get_version
+					(
+						domain	tccprj	i.cprj
+					)
+{
+	select	tpisg012.vers
+	from	tpisg012
+	where	tpisg012._index1 = {:i.cprj}
+	selectdo
+	selectempty
+		tpisg012.vers = "0"
+	endselect
+	
+	return(tpisg012.vers)
+}
+
+function domain tcqrd1 get_available_amount()
+{
+	domain	tccprj		fn.cprj
+	domain	tcorno		fn.vers
+	domain	tppdm.cspa	fn.elem
+	
+	re.avai = 0
+	fn.cprj = tpisg012.cprj
+	fn.vers = tpisg012.vers
+	fn.elem = tpisg012.tran
+	
+	select	tpisg012.avai:re.avai
+	from	tpisg012
+	where	tpisg012._index1 = {:tpisg012.cprj,:tpisg012.vers,:tpisg012.tran}
+	as set with 1 rows
+	selectdo
+	selectempty
+		re.avai = 0
+	endselect
+	
+	return(re.avai)
+}
+
+function domain tcqrd1 get_available_amount_old()
+{
+	select	tpisg012.avai
+	from	tpisg012
+	where	tpisg012._index1 = {:tpisg012.cprj,:tpisg012.vers,:tpisg012.tran}
+	as set with 1 rows
+	selectdo
+	endselect
+	
+	return(tpisg012.avai)
+}
+
+function extern long transfer_element_available()
+{
+	select	tpisg002.elem
+	from	tpisg002
+	where	tpisg002._index1 = {:tpisg012.tran}
+	selectdo
+		select	tra.cprj
+		from	tpisg012 tra
+		where	tra._index1 = {:main.cprj,:main.vers,:tpisg002.elem}
+		selectdo
+			return(1)
+		selectempty
+			return(0)
+		endselect
+	selectempty
+		return(0)
+	endselect
+	return(1)
+}
+
+								|#ISGECDV001047.sn
+
+function check.transfer.from.element.exists
+				(
+					domain	tccprj		i.cprj,		|Project
+					domain	tcorno		i.vers,		|Version
+					domain	tppdm.cspa	i.elem,		|Element
+				ref	boolean			o.found		|Record Found
+				)
+{
+	domain	tppdm.cspa	o.elem 
+	select 	tpisg012.elem:o.elem
+	from	tpisg012
+	where	tpisg012._index1 = {:i.cprj,:i.vers,:i.elem}
+	as set with 1 rows
+	selectdo
+		o.found = true
+	selectempty
+		o.found = false
+	endselect
+							
+}
+								|#ISGECDV001047.en
+
+
+
+function get.used.transfer.from.element.amount
+				(
+					domain	tccprj		i.cprj,
+					domain	tcorno		i.vers,
+					domain	tppdm.cspa	i.elem,
+					domain	tppdm.cspa	i.tran,
+				ref 	domain	tcamnt		o.trfm
+				)
+{
+	domain	tcamnt		o.tpisg012.trfm
+	domain	tppdm.cspa	o.elem 
+	
+	select 	tpisg012.elem:o.elem,
+		tpisg012.trfm:o.tpisg012.trfm
+	from	tpisg012
+	where	tpisg012._index1 = {:i.cprj,:i.vers}
+	and	tpisg012.tran = :i.tran
+	selectdo
+		if o.elem = i.elem then
+			continue
+		else
+			o.trfm = o.trfm + o.tpisg012.trfm
+		endif
+
+	endselect
+
+}
+								|#ISGECDV001047.en

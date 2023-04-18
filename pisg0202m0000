@@ -1,0 +1,95 @@
+|******************************************************************************
+|* dmisg0202m000  0  VRC B61U a7 isg 
+|* Update Unit Weight
+|* Installation user             
+|* 2014-09-06
+|******************************************************************************
+|* Main table dmisg002 Incoming Document Child, Form Type 4
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+	table	tdmisg002 | Incoming Document Child
+	table	tdmisg001
+	table	tdmisg005
+	table	ttcisg004
+
+	extern	domain	dmdoc.docid	docn.f    fixed
+	extern	domain	dmdoc.revv	revn.f    fixed
+		domain	tcwght		temp.wght
+	
+
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+choice.update:
+on.choice:
+	if	not isspace(docn.f)	and	not isspace(revn.f)	then
+		read.main.table()
+		message("Updated...!!!")
+	else
+		message("Please Specify Document No. and Revision")
+		choice.again()
+	endif	
+	
+|****************************** field section ********************************
+field.revn.f:
+before.zoom:
+| 	dmisg001.docn = docn.f
+	query.extend.where.in.zoom("dmisg001._index1 = " & quoted.string(docn.f))
+	
+|****************************** Function section ********************************
+functions:
+
+function read.main.table()
+{
+	db.retry.point()
+	select	dmisg001.cprj, dmisg001.cspa, dmisg001.stat
+	from	dmisg001
+	where	dmisg001._index1 = {:docn.f, :revn.f}
+	selectdo
+	selectempty
+		dmisg001.cprj = ""
+		dmisg001.cspa = ""
+		dmisg001.stat = empty
+	endselect
+	
+	
+	select	dmisg002.*
+	from	dmisg002 for update
+	where	dmisg002._index1 = {:docn.f, :revn.f}
+	and	dmisg002.wght <> 0
+	and	dmisg002.qnty <> 0
+	selectdo
+		temp.wght = 0
+		temp.wght = dmisg002.wght / dmisg002.qnty
+		dmisg002.wght = temp.wght
+		|if	dmisg001.stat = dmstat.process	then
+			select	dmisg005.*
+			from	dmisg005 for update
+			where	dmisg005._index1 = {:dmisg001.cprj, :dmisg001.cspa, :dmisg002.docn, :dmisg002.revn, :dmisg002.item}
+			selectdo
+				if	dmisg005.stat = dmstat.released	then
+					select	tcisg004.wght
+					from	tcisg004 for update
+					where	tcisg004._index1 = {:dmisg005.cprj, :dmisg005.cspa, :dmisg005.loti, :dmisg005.item}
+					selectdo
+						tcisg004.wght = temp.wght
+						db.update(ttcisg004, db.retry, e)
+					endselect
+				endif	
+				dmisg005.wght = temp.wght
+				db.update(tdmisg005, db.retry, e)
+			endselect
+		|endif	
+		db.update(tdmisg002, db.retry, e)
+		commit.transaction()
+	endselect	
+}

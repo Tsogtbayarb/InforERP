@@ -1,0 +1,167 @@
+|******************************************************************************
+|* tpisg0181m000  0  VRC B61U a7 isg 
+|* Maintain Project Wise Element Wise Transferres Status
+|* user07                        
+|* 2015-02-25
+|******************************************************************************
+|* Main table tpisg081 Project Wise Element Wise Transferred Status, Form Type 1
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+	table	ttpisg081 | Project Wise Element Wise Transferred Status
+	table	ttcmcs052
+	table	ttpest120
+	table	ttpptc101
+	table	ttpisg082
+	table	ttpptc100
+
+	extern	domain	tppdm.cspa	var.elem
+	extern	domain	tcamnt		initial.amount, yet.to.receive, total.incentive
+|****************************** program section ********************************
+
+|****************************** choice section *********************************
+
+choice.trans_update:
+before.choice:
+	select	tpisg082.cprj
+	from	tpisg082
+	where	tpisg082._index1 = {:tpisg081.cprj}
+	as set with 1 rows
+	selectdo
+		message("Export Incentive already Launched")
+		choice.again()
+	endselect
+	
+	
+on.choice:
+	transfer_incentive()
+
+before.display.object:
+	if tpisg081.tran = tcyesno.yes then
+		disable.commands("trans_update")
+	else
+		enable.commands("trans_update")
+	endif
+|****************************** group section **********************************
+
+|****************************** field section ***********************************
+
+field.tcmcs052.dsca:
+before.display:
+	select	tcmcs052.dsca
+	from	tcmcs052
+	where	tcmcs052._index1 = {:tpisg081.cprj}
+	selectdo
+	selectempty
+		tcmcs052.dsca = ""
+	endselect
+	
+field.tpisg081.elmt:
+before.zoom:
+	tpest120.cprj = tpisg081.cprj
+	tpest120.vers = tpisg081.esti
+	query.extend.where.in.zoom("tpest120.levl = " & str$(3))
+
+field.tpptc100.desc:
+before.display:
+	select	tpptc100.desc
+	from	tpptc100
+	where	tpptc100._index1 = {:tpisg081.cprj, :tpisg081.elmt}
+	selectdo
+	selectempty
+		tpptc100.desc = ""
+	endselect
+	
+functions:
+
+function transfer_incentive()
+{
+	select	tpisg081.*
+	from	tpisg081
+	where	tpisg081._index1 = {:tpisg081.cprj, :tpisg081.esti}
+	selectdo
+		var.elem = tpisg081.elmt
+		get_level(var.elem)
+		initial.amount = 0
+		yet.to.receive = 0
+		total.incentive = 0
+		
+		
+		insert_data_tpisg082()
+
+		while not isspace(var.elem)
+			select	tpptc101.cspp
+			from	tpptc101
+			where	tpptc101._index2 = {:tpisg081.cprj,:var.elem}
+			selectdo
+			selectempty
+				tpptc101.cspp = ""
+			endselect
+			
+			var.elem = tpptc101.cspp
+			get_level(var.elem)
+			
+			if not isspace(var.elem) then
+				insert_data_tpisg082()
+			endif				
+		endwhile
+	endselect
+	
+	select	tpisg081.tran
+	from	tpisg081 for update
+	where	tpisg081._index1 = {:tpisg081.cprj, :tpisg081.esti}
+	selectdo
+		tpisg081.tran = tcyesno.yes
+		db.update(ttpisg081,db.retry,e)
+		commit.transaction()	
+	endselect
+
+}
+
+function get_level(domain tppdm.cspa v.elem)
+{
+	select	tpest120.levl,
+		tpest120.pele
+	from	tpest120
+	where	tpest120._index1 = {:tpisg081.cprj, :tpisg081.esti}
+	and	tpest120.sele = :v.elem
+	selectdo
+	selectempty
+		tpest120.levl = 0
+	endselect
+}
+
+function insert_data_tpisg082()
+{
+	select	tpisg082.*
+	from	tpisg082 for update
+	where	tpisg082._index1 = {:tpisg081.cprj, :var.elem}
+	selectdo
+		tpisg082.budg = tpisg082.budg + tpisg081.ibud
+		tpisg082.yetl = tpisg082.yetl + tpisg081.ibud
+		tpisg082.totl = tpisg082.totl + tpisg081.ibud
+		initial.amount = tpisg082.budg
+		yet.to.receive = tpisg082.yetl
+		total.incentive = tpisg082.totl		
+		db.update(ttpisg082, db.retry)
+		commit.transaction()
+	selectempty
+		tpisg082.cprj = tpisg081.cprj
+		tpisg082.stat = tpisg.sanction.free
+		tpisg082.cspa = var.elem
+		tpisg082.parn = tpest120.pele
+		tpisg082.levl = tpest120.levl
+		tpisg082.budg = tpisg081.ibud
+		tpisg082.yetl = tpisg081.ibud
+		tpisg082.totl = tpisg081.ibud
+		initial.amount = tpisg082.budg
+		yet.to.receive = tpisg082.yetl
+		total.incentive = tpisg082.totl
+		db.insert(ttpisg082, db.retry)
+		commit.transaction()
+	endselect
+
+}
+
+

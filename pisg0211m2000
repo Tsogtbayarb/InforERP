@@ -1,0 +1,103 @@
+|******************************************************************************
+|* tpisg0211m200  0  VRC B61U a7 live
+|* Sanction Control Status Update
+|* Installation user             
+|* 2014-11-03
+|******************************************************************************
+|* Form Type 4
+|******************************************************************************
+|* ID ISGECDV001135,	Sujeet Kumar		2014-11-03
+|* Sanction Status Modification from Partial Revise or Complete Revise To L4 Revise
+|* Functional: Mr. Vikas Yadav
+|*
+
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttpisg011
+	table	ttpisg012
+	
+	extern	domain	tccprj		cprj.f
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+
+|****************************** choice section **********************************
+choice.cont.update:
+on.choice:
+	change.sanction.status(cprj.f)
+after.choice:
+	execute(end.program)
+	
+|****************************** Functions section **********************************
+
+functions:
+function change.sanction.status
+			(
+				domain	tccprj		i.cprj
+			)
+{
+	select 	tpisg011.cprj,
+		tpisg011.vers,
+		tpisg011.reas
+	from	tpisg011 for update
+	where	tpisg011._index1 = {:i.cprj}
+	and	tpisg011.acti in (tpisg.sanction.partial,tpisg.sanction.complete)
+	and	tpisg011.act1 = tpisg.sanction.free
+	as set with 1 rows
+	selectdo
+		if not check.transafer.from.element(tpisg011.cprj,tpisg011.vers) then
+			tpisg011.acti = tpisg.sanction.l4revise
+			tpisg011.act1 = tpisg.sanction.free
+			tpisgdll0012.Sanction_Approval_Matrix(tpisg.sanction.l4revise,tpisg011.reas)
+			db.update(ttpisg011,db.retry,e)
+			
+			select tpisg012.tran,
+				tpisg012.reas
+			from	tpisg012 for update
+			where	tpisg012._index1 = {:tpisg011.cprj,:tpisg011.vers}
+			selectdo
+				tpisg012.tran = ""
+				tpisg012.reas = ""
+				db.update(ttpisg012,db.retry,e)
+			endselect
+			
+			commit.transaction()
+			message("Status Changed To L4 Revised")
+		else
+			message("Kindly Remove Transfer /Revised Amount") 
+		endif
+		
+		
+	selectempty
+		message("Sanction Status is not free, Can't be Changed")
+	endselect
+	
+}
+
+
+function boolean check.transafer.from.element
+			(
+				domain	tccprj		i.cprj,
+				domain	tcorno		i.vers
+			)
+{
+	select 	tpisg012.trfm
+	from	tpisg012
+	where	tpisg012._index1 = {:i.cprj,:i.vers}
+	and	tpisg012.trfm <> 0
+	as set with 1 rows
+	selectdo
+	selectempty
+		return(false)
+	endselect
+	
+	return(true)
+	
+}

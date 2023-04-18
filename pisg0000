@@ -1,0 +1,135 @@
+|******************************************************************************
+|* tfisg000  0  VRC B61U a7 liv 
+|* DAL For tfisg000
+|* tools
+|* 14-01-06 [11:23]
+|******************************************************************************
+|* Script Type: DAL
+|******************************************************************************
+
+#include <bic_dal2>
+#include "itcmcs2000"	|* DAL(-GUI) Support Defines
+
+	table	ttfisg000	|Finance Customize Parameter
+	
+	string	result(200)
+	
+function extern long before.open.object.set()
+{
+| 	select tfisg000.indt
+| 	from   tfisg000
+| 	as set with 1 rows
+| 	selectdo
+| 	selectempty
+| 		tfisg000.indt = 0
+| 		result	=  sprintf$("UTC: %u(%02d/%02m/%04Y) %U(%02h%x%02m%x%02s %a)", utc.num(), utc.num())
+| 		tfisg000.dsca = "Actual set defined on " & result
+| 		db.insert(ttfisg000,db.retry)
+| 		commit.transaction()
+| 	endselect
+	DAL.FIELD.DEPENDS.ON("tfisg000.dsca",HOOK_IS_APPLICABLE,"tfisg000.indt")
+	DAL.FIELD.DEPENDS.ON("tfisg000.seri",HOOK_UPDATE + HOOK_IS_VALID,"tfisg000.nrgr")
+	DAL.FIELD.DEPENDS.ON("tfisg000.rnso.l",HOOK_UPDATE + HOOK_IS_MANDATORY,"tfisg000.ccty")
+	DAL.FIELD.DEPENDS.ON("tfisg000.ttyp",HOOK_IS_VALID,"tfisg000.indt")
+	
+	
+	return(0)
+}
+
+function extern long before.save.object(long type)
+{
+	on case type
+		case DAL_NEW:
+			tfisg000.indt = 0
+			break
+		case DAL_UPDATE:
+			if	tfisg000.indt <> 0	then
+				|* only datetime=0 current records should be updated
+				dal.set.error.message("tcmcs009502")
+				|* Modifying historical parameter settings is not
+				|* allowed
+				return(DALHOOKERROR)
+			endif
+			break
+	ENDCASE		
+	tfisg000.dsca	= "Actual set defined on " &
+			sprintf$("%u(%02d/%02m/%04Y) %U(%02h%x%02m%x%02s %a)", utc.num(), utc.num())
+	return(0)
+}
+function extern long after.save.object(long type)
+{
+	tfisg000.indt = utc.num()
+	tfisg000.dsca	= "Actual set defined on " &
+			sprintf$("%u(%02d/%02m/%04Y) %U(%02h%x%02m%x%02s %a)", utc.num(), utc.num())
+	db.insert(ttfisg000,db.retry)
+	return(0)
+}
+function extern boolean METHOD.IS.ALLOWED(long mode)
+{
+	on case mode
+	case DAL_UPDATE :
+		break
+	endcase
+	return(true)
+}
+function extern boolean tfisg000.dsca.is.applicable(long mode)
+{
+	if tfisg000.indt = 0 then
+		return(true)
+	endif
+	return(false)
+}
+function extern boolean tfisg000.ttyp.is.valid(long mode)
+{
+	if not check.transaction.type() then
+		dal.set.error.message("@Transaction Type is not Valid")
+		return(false)
+	endif
+	return(true)
+}
+
+function extern boolean tfisg000.seri.is.valid(long mode)
+{
+	select	tcmcs050.seri
+	from	tcmcs050
+	where	tcmcs050._index1 = {:tfisg000.nrgr,:tfisg000.seri}
+	selectdo
+		return(true)
+	selectempty
+		dal.set.error.message("@Series No. is Invalid ")
+		return(false)
+	endselect
+	return(true)
+}
+function extern tfisg000.seri.update(long mode)
+{
+	tfisg000.seri = ""
+}
+
+
+
+function extern boolean tfisg000.rnso.l.is.mandatory(long mode)
+{
+| 	return(true)
+	return(false)
+}
+function extern tfisg000.rnso.l.update()
+{
+	tfisg000.rnso.l = 0
+}
+function boolean check.transaction.type()
+{
+	select	tfgld011.ttyp
+	from	tfgld011
+	where	tfgld011._index1 = {:tfisg000.ttyp}
+	and	tfgld011.catg = tfgld.catg.cash
+	selectdo
+		return(true)
+	selectempty
+		dal.set.error.message("@Invalid Transaction Types")
+		return(false)
+	endselect
+	return(false)
+}
+
+

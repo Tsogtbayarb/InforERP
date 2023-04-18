@@ -1,0 +1,683 @@
+|******************************************************************************
+|* dmisg0101m300  0  VRC B61U a7 live
+|* Document Review Functionality
+|* Installation user             
+|* 2014-12-23
+|******************************************************************************
+|* Main table dmisg001 Incoming Document Master, Form Type 1
+|******************************************************************************
+|* ISGECDV001211, IT0047, Dharmendra, Dt. 05-01-2015, VRC B61U a7 live
+|* Changes done as discussed with Nishant Kaushik 
+|*
+|* ISGEC004003, IT0047, Dharmendra, Dt. 12-01-2015, VRC B61U a7 isg
+|******************************************************************************
+|* PATCH002030, IT0376, Mani sharma , Dt. 14-04-2015 , vrc b61u a7 isg
+|* Send Email on Accept/ Reject
+
+|* ISGEC015042, Shilpa Janardanan, Dt. 20-08-2015, Vrc B61U a7 isg
+|* Linking Document master session
+|*
+|* ISGECMOD021, Atul Ojha, 30/03/2018, B61U a7 isg
+|* Changes in Zoom Condition 
+|*
+|* ID: ISGEC01157,Bharti Garg, 22-01-2019
+|* Add a new mail 
+|****************************** declaration section ***************************
+declaration:
+
+  table   tdmisg001 | Incoming Document Master
+  table   tdmisg101					|#ISGEC004003.n
+  table   tbpmdm001
+  table   ttccom001
+	table	ttppdm600			|ISGEC01157.n
+	table	ttdisg003
+	table	ttdisg002
+	table	ttdpur400
+	extern	domain	tcemno		o.emno
+	extern	domain tcemm.grid	division	|#ISGEC004003.sn
+	extern	domain	tcccty		grouped	
+		domain	tcsern		selected.records
+	string	query.string1(500)			|#ISGEC004003.en
+
+	string	query.string(500)
+	extern	domain	tclogn		logon.code
+#include <bic_cmf>
+|****************************** program section ********************************
+before.program:
+	if not dmisgdll0100.approval.rule.document.master(logname$,o.emno) then
+		message("You are not Authorized!!!")
+		exit()
+	endif
+	
+	logon.code = logname$
+	show.underreview()
+
+choice.cont.generate:
+before.choice:
+	selected.records = 0
+	do.selection(false, before_new_function_for_generate)
+
+on.choice:
+	if selected.records = 0 then
+		message("No Records selected for process")
+	else
+		do.selection(false, on_new_function_for_generate)
+		message("Process Complete.")
+		
+								|#sujeet20150513.so
+| 		if send.email.alert() then				|PATCH002030.sn
+| 			message("Sending Email Failed")
+| 		endif							|PATCH002030.en
+								|#sujeet20150513.eo
+	endif	
+	
+								|#ISGEC004003.sn
+
+before.display.object:	
+	set.enum.values.for.field("dmisg001.wfst", dmisg.wfst.underreview, dmisg.wfst.underapproval, dmisg.wfst.released, dmisg.wfst.withdrawn)
+
+
+|****************************** field section ********************************
+field.dmisg001.rusr:
+before.zoom:
+	division = ""
+	grouped = ""
+	query.string1= ""
+	select 	dmisg101.*
+	from	dmisg101
+	where	dmisg101._index2 = {:o.emno, dmisg.cact.designer}
+	as set with 1 rows
+	selectdo
+		division = dmisg101.eunt
+		grouped = dmisg101.grup
+	endselect
+	
+	if not isspace(grouped) then
+| 		query.string1 = "tccom001.emno in(select dmisg101.emno from dmisg101 where dmisg101._index1 = {" & quoted.string(division)	|#ISGECMOD021.so
+| 		query.string1 = strip$(query.string1) & " , " & quoted.string(grouped) & "}" 							|#ISGECMOD021.eo
+		
+		query.string1 = "dmisg101.emno in (select tccom001.emno from tccom001)"										|#ISGECMOD021.n
+		query.string1 = strip$(query.string1) & " and dmisg101.eunt = " & quoted.string(division)
+		query.string1 = strip$(query.string1) & " and dmisg101.grup = " & quoted.string(grouped)
+		query.string1 = strip$(query.string1) & " and dmisg101.cact = dmisg.cact.reviewer"
+		query.extend.where.in.zoom(query.string1)
+	else
+| 		query.string1 = "tccom001.emno in(select dmisg101.emno from dmisg101 where dmisg101._index1 = {" & quoted.string(division) & "}"	|#ISGECMOD021.o
+		
+		query.string1 = "dmisg101.emno in (select tccom001.emno from tccom001)"									|#ISGECMOD021.n
+		query.string1 = strip$(query.string1) & " and dmisg101.eunt = " & quoted.string(division)
+		query.string1 = strip$(query.string1) & " and dmisg101.cact = dmisg.cact.reviewer"
+		query.extend.where.in.zoom(query.string1)
+	endif
+	
+field.dmisg001.ausr:
+before.zoom:
+	division = ""
+	grouped = ""
+	query.string1= ""
+	select 	dmisg101.*
+	from	dmisg101
+	where	dmisg101._index2 = {:o.emno, dmisg.cact.reviewer}
+	as set with 1 rows
+	selectdo
+		division = dmisg101.eunt
+		grouped = dmisg101.grup
+	endselect
+	
+	if not isspace(grouped) then
+| 		query.string1 = "tccom001.emno in(select dmisg101.emno from dmisg101 where dmisg101._index1 = {" & quoted.string(division)
+| 		query.string1 = strip$(query.string1) & " , " & quoted.string(grouped) & "}" 
+		
+		query.string1 = "dmisg101.emno in (select tccom001.emno from dmisg001)"
+		query.string1 = strip$(query.string1) & " and dmisg101.eunt = " & quoted.string(division)
+		query.string1 = strip$(query.string1) & " and dmisg101.grup = " & quoted.string(grouped)
+		query.string1 = strip$(query.string1) & " and dmisg101.cact = dmisg.cact.approver"
+		query.extend.where.in.zoom(query.string1)
+	else
+| 		query.string1 = "tccom001.emno in(select dmisg101.emno from dmisg101 where dmisg101._index1 = {" & quoted.string(division) & "}"
+		
+		query.string1 = "dmisg101.emno in (select tccom001.emno from dmisg001)"
+		query.string1 = strip$(query.string1) & " and dmisg101.eunt = " & quoted.string(division)
+		query.string1 = strip$(query.string1) & " and dmisg101.cact = dmisg.cact.approver"
+		query.extend.where.in.zoom(query.string1)
+	endif
+								|#ISGECDV001211.en
+
+functions:
+
+function before_new_function_for_generate()
+{
+	selected.records = selected.records + 1
+	if not check_approver() then
+		message("Enter Approver.")
+		choice.again()
+	endif	
+	
+}
+
+function boolean check_approver()
+{
+	if dmisg001.ract.2 = tcyesno.yes and isspace(dmisg001.ausr) then
+		return(false)
+	endif
+	return(true)
+
+}
+
+
+
+function on_new_function_for_generate()
+{	
+	select 	dmisg001.ract,
+		dmisg001.ract.1,
+		dmisg001.ract.2,
+		dmisg001.user,				|ISGEC01157.sn
+		dmisg001.ausr,
+		dmisg001.ausr				|ISGEC01157.en
+	from	dmisg001 for update
+	where	dmisg001._index1 = {:dmisg001.docn,:dmisg001.revn}
+	selectdo
+		if dmisg001.ract.1 = tcyesno.yes then
+			dmisg001.wfst = dmisg.wfst.submitted
+			dmisg001.rdat = utc.num()
+			dmisg001.ract = dmisg.act.reject
+			
+			if send.email.alert() then				|#sujeet20150513.sn
+				message("Sending Email Failed")
+			endif
+										|#sujeet20150513.en
+									
+			suspend(600)			|ISGEC01157.sn
+										
+			if mail.with.table() then			
+				message("Sending mail failed")
+			endif							|ISGEC01157.en
+		endif
+		
+		if dmisg001.ract.2 = tcyesno.yes then
+			dmisg001.wfst = dmisg.wfst.underapproval
+			dmisg001.rdat = utc.num()
+			dmisg001.ract = dmisg.act.accept
+			
+			if send.email.alert() then				|#sujeet20150513.sn
+				message("Sending Email Failed")
+			endif
+										|#sujeet20150513.en
+			
+			suspend(600)			|ISGEC01157.sn							
+										
+			if mail.with.table() then				
+				message("Sending mail failed")
+			endif							|ISGEC01157.en
+			
+		endif
+		db.update(tdmisg001,db.retry,e)
+	endselect
+	
+	commit.transaction()
+
+}
+
+function extern view.underreview()
+{
+	show.underreview()
+	rebuild.query()
+	execute(find.data)
+}
+
+function show.underreview()
+{
+	query.extend.where("dmisg001.rusr = :o.emno and dmisg001.wfst = dmisg.wfst.underreview", EXTEND_OVERWRITE)
+}
+
+function extern under.approval()
+{
+	query.extend.where("dmisg001.rusr = :o.emno and dmisg001.wfst = dmisg.wfst.underapproval", EXTEND_OVERWRITE)
+	rebuild.query()
+	execute(find.data)
+}
+
+function extern view.released()
+{
+	query.extend.where("dmisg001.rusr = :o.emno and dmisg001.wfst = dmisg.wfst.released", EXTEND_OVERWRITE)
+	rebuild.query()
+	execute(find.data)
+}
+
+function extern withdrawn()
+{
+	query.extend.where("dmisg001.rusr = :o.emno and dmisg001.wfst = dmisg.wfst.withdrawn", EXTEND_OVERWRITE)
+	rebuild.query()
+	execute(find.data)
+}
+
+function extern underrevision()
+{
+	query.extend.where("dmisg001.rusr = :o.emno and dmisg001.wfst = dmisg.wfst.underrevision", EXTEND_OVERWRITE)
+	rebuild.query()
+	execute(find.data)
+}
+
+function extern superseded()
+{
+	query.extend.where("dmisg001.rusr = :o.emno and dmisg001.wfst = dmisg.wfst.superseded", EXTEND_OVERWRITE)
+	rebuild.query()
+	execute(find.data)
+}
+
+function extern underdcr()
+{
+	query.extend.where("dmisg001.rusr = :o.emno and dmisg001.wfst = dmisg.wfst.underdcr", EXTEND_OVERWRITE)
+	rebuild.query()
+	execute(find.data)
+}
+
+function extern underdesign()
+{
+	query.extend.where("dmisg001.rusr = :o.emno and dmisg001.wfst = dmisg.wfst.underdesign", EXTEND_OVERWRITE)
+	rebuild.query()
+	execute(find.data)
+}
+
+
+
+								|#ISGEC004003.en
+
+function long send.email.alert()						|PATCH002030.sn
+{
+	string tmp.file(200),line(500)
+	long   fp,srno
+	domain	tclogn	user.id
+	long    message.ID
+        long    to.ID
+        long    attachment.ID
+        long    ret
+
+        domain ttcmf.prov service       
+                        |Infor ERP Enterprise eMessage Connector service for 
+                        |transporting messages
+        long stat       |Variable to hold return values
+        long mid        |CMF message id
+	
+	tmp.file = creat.tmp.file$(bse.tmp.dir$())
+	fp = seq.open(tmp.file,"w+")
+	if fp <=0 then
+		message("Temp file can not be created")
+		return(1)
+	endif
+	
+	select tccom001.nama
+	from    tccom001
+| 	where   tccom001._index4 = {:dmisg001.user}		|#sujeet20150513.o
+	where   tccom001._index1 = {:dmisg001.rusr}		|#sujeet20150513.n
+	selectdo
+	endselect	
+	
+	line = ""
+	if dmisg001.ract.2 = tcyesno.yes then
+		line = strip$(line) & "Document No. " & dmisg001.docn & " and "
+		line = strip$(line) & " Revision No " & dmisg001.revn & " has been Reviewed and Submitted for Approval"
+		line = strip$(line) & " by" & tccom001.nama & "."
+	else
+		line = strip$(line) & "Document No. " & dmisg001.docn & " and "
+		line = strip$(line) & " Revision No " & dmisg001.revn & " has been Reviewed and Rejected"
+		line = strip$(line) & " by" & strip$(tccom001.nama) & ". "
+		
+	endif
+	line = strip$(line) & " Review Remarks:" & strip$(dmisg001.rere) 		|#sujeet20150513.n
+	seq.write(line,len(line),fp)
+	ret = seq.close(fp)
+	
+	user.id = logname$
+	
+	select 	bpmdm001.mail,tccom001.nama 
+	from 	tccom001,bpmdm001
+	where 	tccom001._index4 = {:user.id}
+	and	tccom001.emno refers to bpmdm001
+	as set with 1 rows
+	selectdo
+	selectempty
+		bpmdm001.mail = ""
+	endselect
+	
+	if isspace(bpmdm001.mail) then
+		message("Email ID for Approver/Rejector " & tccom001.nama & " Not maintained")
+		return(1)
+	endif		
+	|******* Email Header
+        message.ID = cmf.create()
+	
+	if dmisg001.ract.2 = tcyesno.yes then
+		line = "For Approval:" & " Document No. " & strip$(str$(dmisg001.docn)) & " and Revision No." & strip$(str$(dmisg001.revn))
+	else
+		line = "Rejected:" & " Document No. " & strip$(str$(dmisg001.docn)) & " and Revision No." & strip$(str$(dmisg001.revn))
+	endif
+        ret = cmf.setClass(message.ID, "CMF.NOTE.EMAIL")
+        ret = cmf.setSubject(message.ID,line)
+	
+	|******** from ID
+	to.ID = cmf.createRecipient(message.ID, ttcmf.role.from)  
+	ret = cmf.setRecipientName(to.ID,tccom001.nama)
+        ret = cmf.setRecipientAddress(to.ID, bpmdm001.mail)	
+	ret = cmf.setRecipientType(to.ID, "SMTP")
+ 
+	|******** to ID
+	if dmisg001.ract.2 = tcyesno.yes then 
+		select 	bpmdm001.mail,tccom001.nama 
+		from 	tccom001,bpmdm001
+		where 	tccom001._index1 = {:dmisg001.ausr}
+		and	tccom001.emno refers to bpmdm001
+		selectdo
+			to.ID = cmf.createRecipient(message.ID, ttcmf.role.to)  
+			ret = cmf.setRecipientName(to.ID,tccom001.nama)
+			ret = cmf.setRecipientAddress(to.ID, bpmdm001.mail)	
+			ret = cmf.setRecipientResponsibility(to.ID, "TRUE")		
+			ret = cmf.setRecipientType(to.ID, "SMTP")
+		selectempty
+			message("Email ID for Approver" &tccom001.nama&" not maintained" )
+			return(1)
+		endselect
+	endif
+	if dmisg001.ract.1 = tcyesno.yes then 
+		select 	bpmdm001.mail,tccom001.nama 
+		from 	tccom001,bpmdm001
+| 		where 	tccom001._index1 = {:dmisg001.user}			|#sujeet20150513.o
+		where 	tccom001._index4 = {:dmisg001.user}			|#sujeet20150513.n
+		and	tccom001.emno refers to bpmdm001
+		selectdo
+			to.ID = cmf.createRecipient(message.ID, ttcmf.role.to)  
+			ret = cmf.setRecipientName(to.ID,tccom001.nama)
+			ret = cmf.setRecipientAddress(to.ID, bpmdm001.mail)	
+			ret = cmf.setRecipientResponsibility(to.ID, "TRUE")		
+			ret = cmf.setRecipientType(to.ID, "SMTP")
+		selectempty
+			message("Email ID for Vault user" &tccom001.nama&" not maintained" )
+			return(1)
+		endselect
+	endif
+		
+	|********* Mail Body
+	attachment.ID = cmf.createAttachment(message.ID)
+	ret = cmf.setAttachmentBody(attachment.ID,ttyeno.yes)
+	ret = cmf.setAttachmentMIME(attachment.ID,"text/plain")                       
+	ret = cmf.setAttachmentFileName(attachment.ID,tmp.file,"abc.txt")
+
+
+	|*********  Send mail
+        if message.ID <>0 then
+                stat = cmf.startService("SMTP",2)
+                if stat<>0 then
+                        message("Message could not be sent "&
+                                "(Infor ERP Enterprise eMessage Connector"&
+                                " service did not start)")
+                        return(1)
+                endif
+                stat = cmf.send(message.ID,"SMTP")
+                if stat<>0 then
+                        message("Message could not be sent "& "(Infor ERP Enterprise eMessage Connector "&
+                                "service refused message)")
+                        cmf.stopService("SMTP",2)
+                        return(1)
+                endif
+                stat = cmf.stopService("SMTP",2)
+        endif
+	return(0)
+}
+							|# PATCH002030.en
+							
+							
+							
+function long mail.with.table()					|ISGEC01157.sn
+{
+
+	domain	tcnama	nama
+	domain	tclogn	user.id
+	
+	string tmp.file(200),line(500)
+	long stat.fp,to.ID,cc.ID,from.ID,attachment.ID,message.ID,ret,stat
+	
+	tmp.file = creat.tmp.file$(bse.tmp.dir$()) & ".html"				
+	stat.fp = seq.open(tmp.file,"w+")
+	if stat.fp <=0 then
+		message("Temp file can not be created")
+	endif
+	
+	select	tdisg002.orno,tdisg002.pono
+	from	tdisg002
+	where	tdisg002.docn = {:dmisg001.docn}
+	and	tdisg002.revi = {:dmisg001.revn}
+	selectdo
+		select	tdpur400.otbp,tdpur400.ccon
+		from	tdpur400
+		where	tdpur400._index1 = {:tdisg002.orno}
+		selectdo
+		endselect
+	endselect
+	
+	select	tdisg003.rqno,tdisg003.pono,tdisg003.item
+	from	tdisg003
+	where	tdisg003.docn = {:dmisg001.docn}
+	and	tdisg003.revi = {:dmisg001.revn}
+	selectdo
+	endselect
+	
+	seq.puts("<HTML>",stat.fp)
+	seq.puts("<HEAD>",stat.fp)
+	seq.puts("</HEAD>",stat.fp)
+	seq.puts("<BODY>",stat.fp)
+	
+	
+
+	|------------------- New Code ----------------------------------------
+	seq.puts("<table border=""1""; cellpadding=""0"" cellspacing=""0"" width=""100%"" >", stat.fp)
+	seq.puts("<tr height=""20"" width=""100%"" >",stat.fp)
+	seq.puts("<td colspan =""1"" align=""center"" width=""100%"">" & "Drawing Reviewal Status" &"</td>",stat.fp)
+	seq.puts("</tr>",stat.fp)
+	
+	seq.puts("<tr height=""20"" width=""100%"" >",stat.fp)
+	if dmisg001.ract.2 = tcyesno.yes then
+		seq.puts("<td colspan =""1"" align=""center"" width=""100%"" >" & "Drawing Accepted" &"</td>",stat.fp)
+	else
+		seq.puts("<td colspan =""1"" align=""center"" width=""100%"">" & "Drawing Rejected" &"</td>",stat.fp)
+	endif
+	seq.puts("</tr>",stat.fp)
+	seq.puts("</table>", stat.fp)
+	
+	|----------------------- END ------------------------------------------------
+	seq.puts("<table border=""1""; cellpadding=""0"" cellspacing=""0"" width=""100%"" >", stat.fp)
+	
+	
+	|*************Table fields************
+	seq.puts("<tr style=""height:15.75pt"" height=""21"">",stat.fp)
+	
+	seq.puts("<td colspan=""1"" >"&"Document ID"&"</td>",stat.fp)	|1
+	seq.puts("<td colspan=""1"" >"&"Rev No."&"</td>",stat.fp)	|2
+	seq.puts("<td colspan=""1"" >"&"Indent No."&"</td>",stat.fp)	|3
+	seq.puts("<td colspan=""1"">"&"Indent Line"&"</td>",stat.fp)	|4
+	seq.puts("<td colspan=""1"">"&"Lot Item"&"</td>",stat.fp)	|5
+	seq.puts("<td colspan=""1"">"&"PO No."&"</td>",stat.fp)		|6
+	seq.puts("<td colspan=""1"">"&"PO Line"&"</td>",stat.fp)	|7
+	seq.puts("<td colspan=""1"">"&"Supplier"&"</td>",stat.fp)	|8
+	seq.puts("<td colspan=""1"">"&"Document Title"&"</td>",stat.fp)	|9
+	seq.puts("</tr>",stat.fp)
+	
+	
+	|************** values ***************
+	seq.puts("<tr style=""height:15.0pt"" height=""20"">",stat.fp)
+	seq.puts("<td colspan=""1"" >" & trim$(dmisg001.docn) & "</td>",stat.fp)		|1
+	seq.puts("<td colspan=""1"" >" & trim$(dmisg001.revn)& "</td>",stat.fp)		|2
+	seq.puts("<td colspan=""1"" >" & trim$(tdisg003.rqno) & "</td>",stat.fp)		|3
+	seq.puts("<td colspan=""1"" >" & str$(tdisg003.pono) & "</td>",stat.fp)		|4
+	seq.puts("<td colspan=""1"" >" & trim$(tdisg003.item) & "</td>",stat.fp)		|5
+	seq.puts("<td colspan=""1"" >" & tdisg002.orno & "</td>",stat.fp)		|6
+	seq.puts("<td colspan=""1"" >" & str$(tdisg002.pono) & "</td>",stat.fp)		|7
+	seq.puts("<td colspan=""1"" >" & trim$(tdpur400.otbp) & "</td>",stat.fp)		|8
+	seq.puts("<td colspan=""1"" >" & trim$(dmisg001.dttl) & "</td>",stat.fp)		|9
+	seq.puts("</tr>",stat.fp)
+	seq.puts("</TABLE>", stat.fp)
+	
+	seq.puts("</BODY>",stat.fp)
+	seq.puts("</HTML>",stat.fp)
+	seq.close(stat.fp)
+
+	user.id = logname$
+	
+	select 	bpmdm001.mail,tccom001.nama 
+	from 	tccom001,bpmdm001
+	where 	tccom001._index4 = {:user.id}
+	and	tccom001.emno refers to bpmdm001
+	as set with 1 rows
+	selectdo
+	selectempty
+		bpmdm001.mail = ""
+	endselect
+	
+	if isspace(bpmdm001.mail) then
+		message("Email ID for Approver/Rejector " &trim$(tccom001.nama) & " Not maintained")
+		return(1)
+	endif		
+	
+	|******* Email Header
+        message.ID = cmf.create()
+	line = "Drawing " & trim$(dmisg001.docn) & " Receipt " & trim$(dmisg001.revn) & " is "	
+	if dmisg001.ract.2 = tcyesno.yes then
+		line = line & "approved " & ":" & " Project " & dmisg001.cprj & tppdm600.seak
+	endif
+	
+	if dmisg001.ract.1 = tcyesno.yes then
+		line = line & "rejected " & ":" & " Project " & dmisg001.cprj & tppdm600.seak
+	endif
+	ret = cmf.setClass(message.ID, "CMF.NOTE.EMAIL")
+        ret = cmf.setSubject(message.ID,line)
+	
+	|******** from ID
+	from.ID = cmf.createRecipient(message.ID, ttcmf.role.from)  
+	ret = cmf.setRecipientName(from.ID,tccom001.nama)
+        ret = cmf.setRecipientAddress(from.ID, bpmdm001.mail)	
+	ret = cmf.setRecipientType(from.ID, "SMTP")
+
+	
+	select	tppdm600.seak
+	from	tppdm600
+	where	tppdm600._index1 = {:dmisg001.cprj}
+	selectdo
+	endselect
+	
+	
+	
+
+	|******** to ID
+	if dmisg001.ract.2 = tcyesno.yes then 
+		select 	bpmdm001.mail,tccom001.nama 
+		from 	tccom001,bpmdm001
+| 		where 	tccom001._index1 = {:dmisg001.user}
+		where 	tccom001._index4 = {:dmisg001.user}
+		and	tccom001.emno refers to bpmdm001
+		and 	bpmdm001.mail <> ""
+		selectdo
+			to.ID = cmf.createRecipient(message.ID, ttcmf.role.to)  
+			ret = cmf.setRecipientName(to.ID,tccom001.nama)
+			ret = cmf.setRecipientAddress(to.ID, bpmdm001.mail)	
+			ret = cmf.setRecipientResponsibility(to.ID, "TRUE")		
+			ret = cmf.setRecipientType(to.ID, "SMTP")
+		selectempty
+			message("Email ID for Creator" &trim$(tccom001.nama)&" not maintained" )
+			return(1)
+		endselect
+		
+		select 	bpmdm001.mail,tccom001.nama 
+		from 	tccom001,bpmdm001
+		where 	tccom001._index1 = {:dmisg001.rusr}
+		and	tccom001.emno refers to bpmdm001
+		and 	bpmdm001.mail <> ""
+		selectdo
+			cc.ID = cmf.createRecipient(message.ID, ttcmf.role.cc)  
+			ret = cmf.setRecipientName(cc.ID,tccom001.nama)
+			ret = cmf.setRecipientAddress(cc.ID, bpmdm001.mail)	
+			ret = cmf.setRecipientResponsibility(cc.ID, "TRUE")		
+			ret = cmf.setRecipientType(cc.ID, "SMTP")
+		selectempty
+			message("Email ID for Reviewer" &trim$(tccom001.nama)&" not maintained" )
+			return(1)
+		endselect
+		
+		if dmisg001.revn <> "00" then
+			select 	bpmdm001.mail,tccom001.nama 
+			from 	tccom001,bpmdm001
+| 			where 	tccom001._index1 = {:dmisg001.ausr}
+			where 	tccom001._index1 = {:tdpur400.ccon}
+			and	tccom001.emno refers to bpmdm001
+			and 	bpmdm001.mail <> ""
+			selectdo
+				cc.ID = cmf.createRecipient(message.ID, ttcmf.role.cc)  
+				ret = cmf.setRecipientName(cc.ID,tccom001.nama)
+				ret = cmf.setRecipientAddress(cc.ID, bpmdm001.mail)	
+				ret = cmf.setRecipientResponsibility(cc.ID, "TRUE")		
+				ret = cmf.setRecipientType(cc.ID, "SMTP")
+			selectempty
+				message("Email ID for Buyer" &trim$(tccom001.nama)&" not maintained" )
+				return(1)
+			endselect
+		endif
+	endif
+	if dmisg001.ract.1 = tcyesno.yes then 
+		select 	bpmdm001.mail,tccom001.nama 
+		from 	tccom001,bpmdm001
+		where 	tccom001._index4 = {:dmisg001.user}
+		and	tccom001.emno refers to bpmdm001
+		and 	bpmdm001.mail <> ""
+		selectdo
+			to.ID = cmf.createRecipient(message.ID, ttcmf.role.to)  
+			ret = cmf.setRecipientName(to.ID,tccom001.nama)
+			ret = cmf.setRecipientAddress(to.ID, bpmdm001.mail)	
+			ret = cmf.setRecipientResponsibility(to.ID, "TRUE")		
+			ret = cmf.setRecipientType(to.ID, "SMTP")
+		selectempty
+			message("Email ID for Creator" &trim$(tccom001.nama)&" not maintained" )
+			return(1)
+		endselect
+		
+		select 	bpmdm001.mail,tccom001.nama 
+		from 	tccom001,bpmdm001
+		where 	tccom001._index1 = {:dmisg001.rusr}
+		and	tccom001.emno refers to bpmdm001
+		and 	bpmdm001.mail <> ""
+		selectdo
+			cc.ID = cmf.createRecipient(message.ID, ttcmf.role.cc)  
+			ret = cmf.setRecipientName(cc.ID,tccom001.nama)
+			ret = cmf.setRecipientAddress(cc.ID, bpmdm001.mail)	
+			ret = cmf.setRecipientResponsibility(cc.ID, "TRUE")		
+			ret = cmf.setRecipientType(cc.ID, "SMTP")
+		selectempty
+			message("Email ID for Reviewer" &trim$(tccom001.nama)&" not maintained" )
+			return(1)
+		endselect
+	endif
+	
+	attachment.ID = cmf.createAttachment(message.ID)
+	ret = cmf.setAttachmentBody(attachment.ID,ttyeno.yes)
+	ret = cmf.setAttachmentMIME(attachment.ID,"text/HTML")
+	ret = cmf.setAttachmentFileName(attachment.ID,tmp.file)
+	
+	|*********  Send mail
+        if message.ID <>0 then
+                stat = cmf.startService("SMTP",2)
+                if stat<>0 then
+                        message("Message could not be sent "&
+                                "(Infor ERP Enterprise eMessage Connector"&
+                                " service did not start)")
+                        return(1)
+                endif
+                stat = cmf.send(message.ID,"SMTP")
+                if stat<>0 then
+                        message("Message could not be sent "& "(Infor ERP Enterprise eMessage Connector "&
+                                "service refused message)")
+                        cmf.stopService("SMTP",2)
+                        return(1)
+                endif
+                stat = cmf.stopService("SMTP",2)
+        endif
+	return(0)
+
+}							|ISGEC01157.en	
+

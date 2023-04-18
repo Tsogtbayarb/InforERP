@@ -1,0 +1,1038 @@
+|******************************************************************************
+|* tpisg0212m600  0  VRC B61U a7 isg 
+|* Cost/Commitment Details
+|* Installation user             
+|* 2014-09-23
+|******************************************************************************
+|* Main table tpisg012 Sanction Control Lines, Form Type 4
+|******************************************************************************
+|*
+|* PATCH001052, Dharmendra, 27-03-2015
+
+|* ISGEC015004, Shilpa Janardanan, 13/05/2015
+|* Calculation Of Exhausted amount not to be skipped in Hard Commitment when Order type is Purchase
+|*
+|* ID ISGEC015026, Ankit Sharma, 2015-07-17
+|* changed logic for project type posting for table tpppc275
+|*
+|* GH616CR000, RAvi Kumar, 26-07-2021
+|* Modification in Sanction Consumption Logic and cost commitment report
+|****************************** declaration section ***************************
+declaration:
+
+	table   ttpisg012 | Sanction Control Lines
+	table	ttpppc210
+	table	ttpppc211
+	table	ttpppc215
+	table	ttpppc231
+	table	ttpppc270
+	table	ttpppc271
+	table	ttpppc275
+	table	ttpppc235
+	table	ttpppc250
+	table	ttpppc251
+	table	ttpppc255
+	table	ttpppc290
+	table	ttpppc291
+	table	ttpppc295
+	table	ttdpur202
+	table	ttdpur402
+	table	ttdpur200
+	table	ttpisg014			|# PATCH001052.n
+	table	ttcmcs008			|GH616CR000.a
+	
+
+   extern  	domain 	tccprj          cprj.f    fixed
+   extern  	domain 	tccprj          cprj.t    fixed
+   extern	domain	tppdm.cspa	cspa.f
+   extern	domain	tppdm.cspa	cspa.t
+   
+string 	line(1048)
+long ret2
+long stat.fp
+string err.file(100)
+string file.name(100)
+#pragma used dll ottdllbw
+|****************************** program section ********************************
+
+field.cprj.f:
+when.field.changes:
+	cprj.t = cprj.f
+
+field.cspa.f:
+when.field.changes:
+	cspa.t = cspa.f
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section **********************************
+
+choice.cont.generate:
+on.choice:
+	generate.file(1)
+	
+choice.cont.soft.allocation:
+on.choice:
+	generate.file(2)
+
+functions:
+function extern generate.file(long type)
+{
+	err.file = bse.tmp.dir$() & str$(utc.num()) & ".xls"
+	file.name = "C:\temp\" & str$(utc.num())  & ".xls"
+	stat.fp = seq.open(err.file, "w+")
+	
+	if stat.fp >0 then
+ 		seq.seek(0, 0, stat.fp)
+	endif
+	if type = 1 then
+		generate.header()
+		
+		read.main.table(cprj.f,cprj.t,cspa.f,cspa.t)
+	else
+		generate.header.for.soft.allocation()
+		read.main.table.1(cprj.f,cprj.t,cspa.f,cspa.t)
+	endif
+	
+	
+	seq.close(stat.fp)
+| 	ret2 = server2client(err.file,"",1)
+	ret2 = server2client(err.file,file.name,1)
+	ret2 = app_start(file.name,"c:","","","")
+}
+
+function generate.header()
+{
+	line = concat$("	",
+			sprintf$("Table"),
+			sprintf$("Project"),
+			sprintf$("Element"),
+			sprintf$("Purchase Order"),
+			sprintf$("Position Number"),
+			sprintf$("Posting Type"),
+			sprintf$("Amount"),
+			sprintf$("Skip"),
+			sprintf$("Transaction Date"),
+			sprintf$("Cost/Comm. Seq"),
+			sprintf$("PO Seq"),
+			sprintf$("Item"),
+			sprintf$("Quantity"),
+			sprintf$("Unit"),
+			sprintf$("Price"),
+			sprintf$("Amount"),
+			sprintf$("Tran Type"),
+			sprintf$("Document"))
+			
+
+	line = strip$(shiftl$(line))
+
+	seq.puts(line,stat.fp)
+}
+
+function write.detail
+		(
+			domain	tcdsca		i.table.dsca,	|Table Description
+			domain	tccprj		i.cprj,		|Project
+			domain	tppdm.cspa	i.cspa,		|Element
+			domain	tcorno		i.orno,		|Order Number
+			domain	tcpono		i.pono,		|Position
+			domain	tcdsca		i.type,		|Posting Type
+			domain	tcamnt		i.amnt,		|Amount
+			domain	tcmcs.str10	i.skip,		|Skip
+			domain	tcdate		i.trdt,		|Transaction Date
+			domain	tppdm.serd	i.sern,		|Sequence No.
+			domain	tcpono		i.srnb,		|PO Sequence
+			domain	tcitem		i.item,		|Item
+			domain	tppdm.qajc	i.quan,		|Quantity
+			domain	tccuni		i.cuni,		|unit
+			domain	tppdm.aajc	i.pric,		|Price,
+			domain	tppdm.aalc	i.amoc,		|Amount,
+			domain	tcttyp		i.ftty,		|Tran Type
+			domain	tpppc.cdoc	i.cdoc		|Document
+		)
+{
+	line = concat$("	",
+			sprintf$("%s",i.table.dsca),
+			sprintf$("%s",i.cprj),
+			sprintf$("%s",i.cspa),
+			sprintf$("%s",i.orno),
+			sprintf$("%d",i.pono),
+			sprintf$("%s",i.type),
+			sprintf$("%f",i.amnt),
+			sprintf$("%s",i.skip),
+			sprintf$("%u(%02d/%02m/%04Y)", i.trdt),
+			sprintf$("%s",i.sern),
+			sprintf$("%s",i.srnb),
+			sprintf$("%s",i.item),
+			sprintf$("%s",i.quan),
+			sprintf$("%s",i.cuni),
+			sprintf$("%s",i.pric),
+			sprintf$("%s",i.amoc),
+			sprintf$("%s",i.ftty),
+			sprintf$("%s",i.cdoc))
+			
+			
+	line = strip$(shiftl$(line))
+	seq.puts(line,stat.fp)
+}
+
+function generate.header.for.soft.allocation()
+{
+	line = concat$("	",
+			sprintf$("Requistion Number"),
+			sprintf$("Position Number"),
+			sprintf$("Conversion Type"),
+			sprintf$("Requistion Status"),
+			sprintf$("Amount"),
+			sprintf$("Purchase Order"))
+| 			sprintf$("Position"),
+| 			sprintf$("Sequence"))
+			
+	line = strip$(shiftl$(line))
+	seq.puts(line,stat.fp)
+}
+
+function write.detail.for.soft.allocation
+			(
+				domain	tcrqno		i.rqno,		|Requistion
+				domain	tcpono		i.rpno,		|Position
+				domain	tcdsca		i.cnty,		|Conversion Type Description
+				domain	tcdsca		i.rqst,		|Requistion Status
+				domain	tcamnt		i.amnt,		|Requistion Amount
+				domain	tcorno		i.orno		|Purchase Order
+| 				domain	tcpono		i.pono,		|Position
+| 				domain	tcpono		i.sqnb		|Sequence
+			)
+{
+	line = concat$("	",
+			sprintf$("%s",i.rqno),
+			sprintf$("%d",i.rpno),
+			sprintf$("%s",i.cnty),
+			sprintf$("%s",i.rqst),
+			sprintf$("%f",i.amnt),
+			sprintf$("%s",i.orno))
+| 			sprintf$("%d",i.pono),
+| 			sprintf$("%d",i.sqnb))
+	line = strip$(shiftl$(line))
+	seq.puts(line,stat.fp)
+			
+}
+
+function read.main.table.1
+			(
+				domain	tccprj		i.cprj.f,	|From Project
+				domain	tccprj		i.cprj.t,	|To Project
+				domain	tppdm.cspa	i.cspa.f,	|From Element
+				domain	tppdm.cspa	i.cspa.t	|To Element
+			)
+{
+		domain	tfgld.amnt	none.amnt,rfq.amnt,pur.amnt,total.amnt
+	domain	tdpur.hdst	o.hdst
+	domain	tccom.bpid	o.bpid
+	
+	domain	tcrqno		o.rqno
+	domain	tcpono		o.pono
+	domain	tdpur.cnty	o.cnty
+	domain	tcamnt		o.oamt
+	
+	
+	domain	tcccur		o.ccur
+	domain	tcdate		o.rdat
+	
+	domain	tcemm.expu	o.expu	|Exchange Rate Type
+ 	domain	tcccur		o.fcua	|Currency
+	domain	tcratc		o.rate
+	
+	domain	tccprj		i.cprj
+	
+	none.amnt = 0
+	rfq.amnt = 0
+	pur.amnt = 0
+	total.amnt = 0
+	
+	select 	tdpur201.rqno:o.rqno,
+		tdpur201.pono:o.pono,
+		tdpur201.cnty:o.cnty,
+		tdpur201.oamt:o.oamt,
+		tdpur200.ccur:o.ccur,
+		tdpur200.rdat:o.rdat,
+		tdpur201.cprj:i.cprj,
+		tdpur200.rqst
+	from	tdpur201,tdpur200
+	where	tdpur201._index2 inrange {:i.cprj.f} and {:i.cprj.t}
+	and	tdpur201.cspa inrange :i.cspa.f and :i.cspa.t
+	and 	tdpur201.rejc = tcyesno.no
+	and	tdpur201.rqno refers to tdpur200			|#VY.n
+	and	tdpur200.rqst not in (tdpur.rqst.created,tdpur.rqst.canceled,tdpur.rqst.rejected,tdpur.rqst.modified)			|#VY.n
+	selectdo
+		get.companies.data (get.compnr(),o.expu,o.fcua)
+		get.exchange.rate.type(i.cprj,o.expu)
+		get.exchange.rate(o.fcua,o.ccur,o.expu,o.rdat,o.rate)
+		
+		if o.fcua = o.ccur then
+			o.rate = 1.0
+		endif
+		
+		on case o.cnty
+			case tdpur.cnty.none:
+| 				none.amnt = none.amnt + o.oamt * o.rate
+				
+				write.detail.for.soft.allocation(o.rqno,o.pono,
+								enum.descr$("tdpur.cnty",o.cnty),
+								enum.descr$("tdpur.rqst",tdpur200.rqst),
+								(o.oamt * o.rate),
+								"")
+				break
+			case tdpur.cnty.rfq:
+				select 	tdpur202.qono,
+					tdpur202.qpon,
+					tdpur202.qseq
+				from	tdpur202
+				where	tdpur202._index1 = {:o.rqno,:o.pono}
+				as set with 1 rows
+				selectdo
+					if isspace(tdpur202.qono) then
+						rfq.amnt = rfq.amnt + o.oamt * o.rate
+					else
+						select 	tdpur402.orno
+						from	tdpur402
+						where	tdpur402._index6 = {:tdpur202.qono,:tdpur202.qpon,:tdpur202.qseq}
+						as set with 1 rows
+						selectdo
+							select 	tdpur400.otbp:o.bpid
+							from	tdpur400
+							where	tdpur400._index1 = {:tdpur402.orno}
+							and	(tdpur400.hdst = tdpur.hdst.created)| or tdpur400.hdst = tdpur.hdst.modified)
+							as set with 1 rows
+							selectdo
+								pur.amnt = pur.amnt  + o.oamt * o.rate
+							endselect
+						selectempty
+							rfq.amnt = rfq.amnt + o.oamt * o.rate
+						endselect
+					endif
+					
+				selectempty
+					rfq.amnt = rfq.amnt + o.oamt * o.rate
+				endselect
+				
+				break
+			case tdpur.cnty.pur:
+				select 	tdpur202.prno
+				from	tdpur202
+				where	tdpur202._index1 = {:o.rqno,:o.pono}
+				as set with 1 rows
+				selectdo
+					
+					if isspace(tdpur202.prno) then
+| 						pur.amnt = pur.amnt  + o.oamt * o.rate
+						write.detail.for.soft.allocation(o.rqno,o.pono,
+								enum.descr$("tdpur.cnty",o.cnty),
+								enum.descr$("tdpur.rqst",tdpur200.rqst),
+								(o.oamt * o.rate),
+								"")
+					else
+						select 	tdpur400.otbp:o.bpid
+						from	tdpur400
+						where	tdpur400._index1 = {:tdpur202.prno}
+						and	(tdpur400.hdst = tdpur.hdst.created )|or tdpur400.hdst = tdpur.hdst.modified)
+						as set with 1 rows
+						selectdo
+| 							pur.amnt = pur.amnt  + o.oamt * o.rate
+							write.detail.for.soft.allocation(o.rqno,o.pono,
+								enum.descr$("tdpur.cnty",o.cnty),
+								enum.descr$("tdpur.rqst",tdpur200.rqst),
+								(o.oamt * o.rate),
+								tdpur202.prno)
+						endselect
+					endif
+				selectempty
+| 					pur.amnt = pur.amnt  + o.oamt * o.rate
+					write.detail.for.soft.allocation(o.rqno,o.pono,
+								enum.descr$("tdpur.cnty",o.cnty),
+								enum.descr$("tdpur.rqst",tdpur200.rqst),
+								(o.oamt * o.rate),
+								"")
+				endselect
+				
+				break
+		endcase
+	endselect
+
+}
+
+function extern get.companies.data
+			(
+				domain	tcncmp		i.ncmp,	|Company
+			ref 	domain	tcemm.expu	o.expu,	|Exchange Rate Type
+			ref 	domain	tcccur		o.fcua	|Currency
+			)
+{
+	select 	tcemm170.expu:o.expu,
+		tcemm170.fcua:o.fcua
+	from	tcemm170
+	where	tcemm170._index1 = {:i.ncmp}
+	as set with 1 rows
+	selectdo
+	endselect
+	
+}
+
+function extern get.exchange.rate.type
+			(
+				domain	tccprj		i.cprj,		|Project
+			ref 	domain	tcrtyp		o.rtyp		|Exchange Rate Type
+			)
+{
+	select 	tppdm600.rtyp:o.rtyp
+	from	tppdm600
+	where	tppdm600._index1 = {:i.cprj}
+	as set with 1 rows
+	selectdo
+	endselect
+	
+}
+
+| function extern get.exchange.rate  |Commented whole funciton by Veena on 16th Aug 2021 for GH 626
+| 			(
+| 				domain	tcccur		i.bcur,		|Base Currency
+| 				domain	tcccur		i.ccur,		|Currency
+| 				domain	tcrtyp		i.rtyp,		|Exchange Rate Type
+| 				domain	tcdate		i.stdt,		|Effective Date
+| 			ref 	domain	tcratc		o.rate		|Rate
+| 			)
+| {
+| 	domain	tcdate		o.stdt
+| 	
+| 	select 	tcmcs008.rate:o.rate,
+| 		tcmcs008.stdt:o.stdt,
+| 		tcmcs008.excb					|GH616CR000.a
+| 	from	tcmcs008
+| 	where	tcmcs008._index1 = {:i.bcur,:i.ccur,:i.rtyp}
+| 	and	tcmcs008.stdt <= :i.stdt
+| 	and	tcmcs008.rapr = tcyesno.yes
+| 	order by tcmcs008.stdt desc
+| 	as set with 1 rows
+| 	selectdo
+| 		if tcmcs008.excb = tcyesno.yes then		|GH616CR000.a.s	
+| 			o.rate = 1/o.rate
+| 		endif						|GH616CR000.a.e
+| 	selectempty
+| 		o.rate = 1.0
+| 	endselect
+| 		
+| }
+
+function extern get.exchange.rate  |Created new funcitonn defination by Veena on 16th Aug 2021 for GH 626
+			(
+				domain	tcccur		i.bcur,		|Base Currency
+				domain	tcccur		i.ccur,		|Currency
+				domain	tcrtyp		i.rtyp,		|Exchange Rate Type
+				domain	tcdate		i.stdt,		|Effective Date
+			ref 	domain	tcratc		o.rate		|Rate
+			)
+{
+	domain	tcdate		o.stdt
+	
+	select 	tcmcs008.stdt:o.stdt,
+		tcmcs008.excb					|GH616CR000.a
+	from	tcmcs008
+	where	tcmcs008._index1 = {:i.bcur,:i.ccur,:i.rtyp}
+	and	tcmcs008.stdt <= :i.stdt
+	and	tcmcs008.rapr = tcyesno.yes
+	order by tcmcs008.stdt desc
+	as set with 1 rows
+	selectdo
+		if tcmcs008.excb = tcyesno.yes then		|GH616CR000.a.s	
+			o.rate = 1/o.rate
+		endif						|GH616CR000.a.e
+	selectempty
+		o.rate = 1.0
+	endselect
+		
+}
+
+
+function read.main.table
+			(
+				domain	tccprj		i.cprj.f,	|From Project
+				domain	tccprj		i.cprj.t,	|To Project
+				domain	tppdm.cspa	i.cspa.f,	|From Element
+				domain	tppdm.cspa	i.cspa.t	|To Element
+			)
+{
+	|Material Table
+	domain	tcdsca		table.dsca,desc,type 
+	domain	tcratc 		o.rtcc
+	domain	tcorno		o.orno,ptr.orno.1
+	domain	tcpono		o.pono,ptr.pono.1
+	domain	tcdate		o.rdat			|GH616CR000.a
+	
+	table.dsca = tt.table.desc("tpppc210",desc)
+	
+	select 	tpppc210.orno:o.orno,
+		tpppc210.pono:o.pono,
+		tpppc210.cprj,
+		tpppc210.cspa
+	from	tpppc210
+	where	tpppc210._index6 inrange {:i.cprj.f,:i.cspa.f} and {:i.cprj.t,:i.cspa.t}
+	group by tpppc210.cprj,tpppc210.cspa,tpppc210.orno,tpppc210.pono
+	selectdo
+|		Sequence No. - sern
+|Receipt Sequence. – srnb
+|Csub/item
+|Quantity - quan
+|Unit - cuni
+|Price - pric
+|Cost Amount - amoc
+|Transaction Type Finance- ftty
+|Document Financial Transaction - fdoc
+
+		select 	tpppc210.amoc,
+| 			tpppc210.rtcc(1):o.rtcc,				|GH616CR000.com |uncommented by Veena on 16th Aug 2021 for GH#626
+			tpppc210.ltdt:o.rdat,
+			tpppc210.ccur, tpppc210.rtyp,				|GH616CR000.a
+			tpppc210.teta,
+			tpppc210.koor,tpppc210.ifbp, tpppc210.otbp, tpppc210.ltdt,	|#ISGEC015004.n
+			tpppc210.sern,tpppc210.srnb,tpppc210.item,tpppc210.quan,tpppc210.cuni,
+			tpppc210.pric,tpppc210.amoc,tpppc210.cdoc
+		from	tpppc210
+		where	tpppc210._index6 = {:tpppc210.cprj,:tpppc210.cspa}
+		and	tpppc210.orno = :o.orno 
+		and	tpppc210.pono = :o.pono
+		selectdo
+			get.exchange.rate("INR", tpppc210.ccur, tpppc210.rtyp, o.rdat, o.rtcc)		|GH616CR000.a
+			type = enum.descr$("tpppc.teta",tpppc210.teta)
+			
+			if o.rtcc = 0 then
+				o.rtcc = 1
+			endif
+			
+			if tpppc210.teta = tpppc.teta.deliver.wh and tpppc210.amoc < 0 then
+				if tpppc210.koor = ltoe(2) and tpppc210.ifbp <> "" and tpppc210.otbp <> "" then		|#ISGEC015004.sn
+ 					write.detail(table.dsca,tpppc210.cprj,tpppc210.cspa,
+ 					o.orno,o.pono,type,(tpppc210.amoc * o.rtcc),"NO",tpppc210.ltdt,
+ 					tpppc210.sern,tpppc210.srnb,tpppc210.item,tpppc210.quan,tpppc210.cuni,
+ 					tpppc210.pric,tpppc210.amoc,"",tpppc210.cdoc)
+
+					continue
+				else
+ 					write.detail(table.dsca,tpppc210.cprj,tpppc210.cspa,
+ 					o.orno,o.pono,type,(tpppc210.amoc * o.rtcc),"YES",tpppc210.ltdt,
+ 					tpppc210.sern,tpppc210.srnb,tpppc210.item,tpppc210.quan,tpppc210.cuni,
+ 					tpppc210.pric,tpppc210.amoc,"",tpppc210.cdoc)
+				continue
+				endif
+			endif
+			
+			if tpppc210.teta = tpppc.teta.deliver.tp.rev then		
+				write.detail(table.dsca,tpppc210.cprj,tpppc210.cspa,
+					o.orno,o.pono,type,(tpppc210.amoc * o.rtcc),"YES",tpppc210.ltdt,
+					tpppc210.sern,tpppc210.srnb,tpppc210.item,tpppc210.quan,tpppc210.cuni,
+					tpppc210.pric,tpppc210.amoc,"",tpppc210.cdoc)
+				continue
+			endif
+						
+			write.detail(table.dsca,tpppc210.cprj,tpppc210.cspa,
+					o.orno,o.pono,type,(tpppc210.amoc * o.rtcc),"NO",tpppc210.ltdt,
+					tpppc210.sern,tpppc210.srnb,tpppc210.item,tpppc210.quan,tpppc210.cuni,
+					tpppc210.pric,tpppc210.amoc,"",tpppc210.cdoc)
+		endselect
+	endselect
+	
+	
+	o.rtcc = 0
+	
+	o.orno = ""
+	o.pono = 0
+	table.dsca = tt.table.desc("tpppc211",desc)
+	
+	select 	tpppc211.orno:o.orno,
+		tpppc211.pono:o.pono,
+		tpppc211.cprj,
+		tpppc211.cspa
+	from	tpppc211
+	where	tpppc211._index8 inrange {:i.cprj.f,:i.cspa.f} and {:i.cprj.t,:i.cspa.t}
+	group by tpppc211.cprj,tpppc211.cspa,tpppc211.orno,tpppc211.pono
+	selectdo
+		select 	tpppc211.amoc,
+ 			tpppc211.rtcc(1):o.rtcc,				|GH616CR000.com |uncommented by Veena on 16th Aug 2021 for GH#626
+			tpppc211.ltdt:o.rdat,
+			tpppc211.curc, tpppc211.rtyp,				|GH616CR000.a |updated by Veena on 16th Aug 2021 for GH#626
+			tpppc211.tetb,tpppc211.ltdt,
+			tpppc211.sern,tpppc211.srnb,tpppc211.item,tpppc211.quan,tpppc211.cuni,
+			tpppc211.pric,tpppc211.amoc,tpppc211.ftty,tpppc211.fdoc
+		from	tpppc211
+		where	tpppc211._index8 = {:tpppc211.cprj,:tpppc211.cspa}
+		and	tpppc211.orno = :o.orno
+		and	tpppc211.pono = :o.pono
+		selectdo
+			get.exchange.rate("INR", tpppc211.curc, tpppc211.rtyp, o.rdat, o.rtcc)		|GH616CR000.a ||updated by Veena on 16th Aug 2021 for GH#626
+			type = enum.descr$("tpppc.tetb",tpppc211.tetb)
+			
+			if o.rtcc = 0 then
+				o.rtcc = 1
+			endif
+			
+			if tpppc211.tetb = tpppc.tetb.stock or tpppc211.tetb = tpppc.tetb.invoice or 
+				tpppc211.tetb = tpppc.tetb.order.invoice then	
+				
+				write.detail(table.dsca,tpppc211.cprj,tpppc211.cspa,
+					o.orno,o.pono,type,(tpppc211.amoc * o.rtcc),"YES",tpppc211.ltdt,
+					tpppc211.sern,tpppc211.srnb,tpppc211.item,tpppc211.quan,tpppc211.cuni,
+					tpppc211.pric,tpppc211.amoc,tpppc211.ftty,str$(tpppc211.fdoc))		
+				continue
+			endif
+			
+			
+			
+			write.detail(table.dsca,tpppc211.cprj,tpppc211.cspa,
+					o.orno,o.pono,type,(tpppc211.amoc * o.rtcc),"NO",tpppc211.ltdt,
+					tpppc211.sern,tpppc211.srnb,tpppc211.item,tpppc211.quan,tpppc211.cuni,
+					tpppc211.pric,tpppc211.amoc,tpppc211.ftty,str$(tpppc211.fdoc))
+		endselect
+	endselect	
+
+
+	o.rtcc = 0
+	
+	o.orno = ""
+	o.pono = 0
+	table.dsca = tt.table.desc("tpppc215",desc)
+	
+	select 	tpppc215.orno:o.orno,
+		tpppc215.pono:o.pono,
+		tpppc215.cprj,
+		tpppc215.cspa
+		
+	from	tpppc215
+	where	tpppc215._index1 inrange {:i.cprj.f,:i.cspa.f} and {:i.cprj.t,:i.cspa.t}
+	group by tpppc215.cprj,tpppc215.cspa,tpppc215.orno,tpppc215.pono
+	selectdo
+		select 	tpppc215.amoc,
+ 			tpppc215.rtcc(1):o.rtcc,				|GH616CR000.com |uncommented by Veena on 16th Aug 2021 for GH#626
+			tpppc215.ltdt:o.rdat,
+			tpppc215.curc, tpppc215.rtyp,				|GH616CR000.a |updated by Veena on 16th Aug 2021 for GH#626
+			tpppc215.tetd,
+			tpppc215.koor, tpppc215.ifbp,tpppc215.otbp, tpppc215.ltdt,	|#ISGEC015004.n
+			tpppc215.sern,tpppc215.srnb,tpppc215.item,tpppc215.quan,tpppc215.cuni,
+			tpppc215.pric,tpppc215.amoc,tpppc215.ftty,tpppc215.fdoc
+		from	tpppc215
+		where	tpppc215._index1 = {:tpppc215.cprj,:tpppc215.cspa}
+		and	tpppc215.orno = :o.orno
+		and	tpppc215.pono = :o.pono
+		selectdo
+			get.exchange.rate("INR", tpppc215.curc, tpppc215.rtyp, o.rdat, o.rtcc)	|GH616CR000.a |updated by Veena on 16th Aug 2021 for GH#626
+			type = enum.descr$("tpppc.tetd",tpppc215.tetd)
+			
+			if o.rtcc = 0 then
+				o.rtcc = 1
+			endif
+			
+			if tpppc215.tetd = tpppc.tetd.stock then
+				write.detail(table.dsca,tpppc215.cprj,tpppc215.cspa,
+					o.orno,o.pono,type,(tpppc215.amoc * o.rtcc),"YES",tpppc215.ltdt,
+					tpppc215.sern,tpppc215.srnb,tpppc215.item,tpppc215.quan,tpppc215.cuni,
+			tpppc215.pric,tpppc215.amoc,tpppc215.ftty,str$(tpppc215.fdoc))
+				continue
+			endif
+			
+			if tpppc215.tetd = tpppc.tetd.expect.hard.wh and tpppc215.amoc < 0 then
+				if tpppc215.koor = ltoe(2) and tpppc215.ifbp <> "" and tpppc215.otbp <> "" then		|#ISGEC015004.sn
+					write.detail(table.dsca,tpppc215.cprj,tpppc215.cspa,
+					o.orno,o.pono,type,(tpppc215.amoc * o.rtcc),"NO",tpppc215.ltdt,
+					tpppc215.sern,tpppc215.srnb,tpppc215.item,tpppc215.quan,tpppc215.cuni,
+			tpppc215.pric,tpppc215.amoc,tpppc215.ftty,str$(tpppc215.fdoc))
+					continue
+				else
+															|#ISGEC015004.en
+				write.detail(table.dsca,tpppc215.cprj,tpppc215.cspa,
+					o.orno,o.pono,type,(tpppc215.amoc * o.rtcc),"YES",tpppc215.ltdt,
+					tpppc215.sern,tpppc215.srnb,tpppc215.item,tpppc215.quan,tpppc215.cuni,
+			tpppc215.pric,tpppc215.amoc,tpppc215.ftty,str$(tpppc215.fdoc))
+				continue
+				endif
+			endif
+			
+
+			write.detail(table.dsca,tpppc215.cprj,tpppc215.cspa,
+					o.orno,o.pono,type,(tpppc215.amoc * o.rtcc),"NO",tpppc215.ltdt,
+					tpppc215.sern,tpppc215.srnb,tpppc215.item,tpppc215.quan,tpppc215.cuni,
+			tpppc215.pric,tpppc215.amoc,tpppc215.ftty,str$(tpppc215.fdoc))
+		endselect
+	endselect
+	
+	
+	o.rtcc = 0
+	
+	o.orno = ""
+	o.pono = 0
+	table.dsca = tt.table.desc("tpppc270",desc)
+	
+	select	tpppc270.orno:o.orno,
+		tpppc270.pono:o.pono,
+		tpppc270.cprj,
+		tpppc270.cspa
+	from	tpppc270
+	where	tpppc270._index6 inrange {:i.cprj.f,:i.cspa.f} and {:i.cprj.t,:i.cspa.t}
+	group by tpppc270.cprj,tpppc270.cspa,tpppc270.orno,tpppc270.pono
+	selectdo
+		select 	tpppc270.amoc,
+ 			tpppc270.rtcc(1):o.rtcc,				|GH616CR000.com |uncommented by Veena on 16th Aug 2021 for GH#626
+			tpppc270.ltdt:o.rdat,
+			tpppc270.ccur, tpppc270.rtyp,				|GH616CR000.a
+			tpppc270.teta,tpppc270.ltdt,
+			tpppc270.sern,tpppc270.srnb,tpppc270.csub,tpppc270.quan,tpppc270.cuni,
+			tpppc270.pric,tpppc270.amoc,tpppc270.cdoc
+		from	tpppc270
+		where	tpppc270._index6 = {:tpppc270.cprj,:tpppc270.cspa}
+		and	tpppc270.orno = :o.orno
+		and	tpppc270.pono = :o.pono
+		selectdo
+			get.exchange.rate("INR", tpppc270.ccur, tpppc270.rtyp, o.rdat, o.rtcc)	|GH616CR000.a
+			type = enum.descr$("tpppc.teta",tpppc270.teta)
+			
+			if o.rtcc = 0 then
+				o.rtcc = 1
+			endif
+			
+			if tpppc270.teta =  tpppc.teta.deliver.tp.rev and tpppc270.amoc < 0 then
+				write.detail(table.dsca,tpppc270.cprj,tpppc270.cspa,
+					o.orno,o.pono,type,(tpppc270.amoc * o.rtcc),"YES",tpppc270.ltdt,
+					tpppc270.sern,tpppc270.srnb,tpppc270.csub,tpppc270.quan,tpppc270.cuni,
+			tpppc270.pric,tpppc270.amoc,"",str$(tpppc270.cdoc))
+				continue
+			endif
+			
+			if tpppc270.teta =  tpppc.teta.deliver.tp.rev and tpppc270.amoc > 0 then
+				tpppc270.amoc =  tpppc270.amoc * -1
+			endif
+			
+
+			write.detail(table.dsca,tpppc270.cprj,tpppc270.cspa,
+					o.orno,o.pono,type,(tpppc270.amoc * o.rtcc),"NO",tpppc270.ltdt,
+					tpppc270.sern,tpppc270.srnb,tpppc270.csub,tpppc270.quan,tpppc270.cuni,
+			tpppc270.pric,tpppc270.amoc,"",str$(tpppc270.cdoc))
+		endselect
+	endselect
+	
+	
+	o.rtcc = 0
+	
+	o.orno = ""
+	o.pono = 0
+	table.dsca = tt.table.desc("tpppc271",desc)
+	
+	select	tpppc271.orno:o.orno,
+		tpppc271.pono:o.pono,
+		tpppc271.cprj,
+		tpppc271.cspa
+	from	tpppc271
+	where	tpppc271._index8 inrange {:i.cprj.f,:i.cspa.f} and {:i.cprj.t,:i.cspa.t}
+	group by tpppc271.cprj,tpppc271.cspa,tpppc271.orno,tpppc271.pono
+	selectdo
+		select 	tpppc271.amoc,
+ 			tpppc271.rtcc(1):o.rtcc,				|GH616CR000.com |uncommented by Veena on 16th Aug 2021 for GH#626
+			tpppc271.ltdt:o.rdat,
+			tpppc271.curc, tpppc271.rtyp,				|GH616CR000.a |updated by Veena on 16th Aug 2021 for GH#626
+			tpppc271.tetf,tpppc271.ltdt,
+			tpppc271.sern,tpppc271.srnb,tpppc271.csub,tpppc271.quan,tpppc271.cuni,
+			tpppc271.pric,tpppc271.amoc,tpppc271.ftty,tpppc271.fdoc
+		from	tpppc271
+		where	tpppc271._index8 = {:tpppc271.cprj,:tpppc271.cspa}
+		and	tpppc271.orno = :o.orno
+		and	tpppc271.pono = :o.pono
+		selectdo
+			get.exchange.rate("INR", tpppc271.curc, tpppc271.rtyp, o.rdat, o.rtcc)	|GH616CR000.a |updated by Veena on 16th Aug 2021 for GH#626
+			type = enum.descr$("tpppc.tetf",tpppc271.tetf)
+			
+			if o.rtcc = 0 then
+				o.rtcc = 1
+			endif
+			
+| 			if tpppc271.tetf = tpppc.tetf.order.invoice then 
+| 				write.detail(table.dsca,tpppc271.cprj,tpppc271.cspa,
+| 					o.orno,o.pono,type,(tpppc271.amoc * o.rtcc),"YES")
+| 				continue
+| 			endif
+			
+			
+				write.detail(table.dsca,tpppc271.cprj,tpppc271.cspa,
+					o.orno,o.pono,type,(tpppc271.amoc * o.rtcc),"NO",tpppc271.ltdt,
+			tpppc271.sern,tpppc271.srnb,tpppc271.csub,tpppc271.quan,tpppc271.cuni,
+			tpppc271.pric,tpppc271.amoc,tpppc271.ftty,str$(tpppc271.fdoc))
+		endselect
+	endselect
+	
+	o.rtcc = 0
+	
+	o.orno = ""
+	o.pono = 0
+	table.dsca = tt.table.desc("tpppc275",desc)
+	
+	select 	tpppc275.orno:o.orno,
+		tpppc275.pono:o.pono,
+		tpppc275.cprj,
+		tpppc275.cspa
+	from	tpppc275
+	where	tpppc275._index1 inrange {:i.cprj.f,:i.cspa.f} and {:i.cprj.t,:i.cspa.t}
+	group by tpppc275.cprj,tpppc275.cspa,tpppc275.orno,tpppc275.pono
+	selectdo
+		select 	tpppc275.amoc,
+ 			tpppc275.rtcc(1):o.rtcc,				|GH616CR000.com |uncommented by Veena on 16th Aug 2021 for GH#626
+			tpppc275.ltdt:o.rdat,
+			tpppc275.curc, tpppc275.rtyp,				|GH616CR000.a |updated by Veena on 16th Aug 2021 for GH#626
+			tpppc275.tetg,tpppc275.ltdt,							|#ISGEC015026.n
+			tpppc275.sern,tpppc275.srnb,tpppc275.csub,tpppc275.quan,tpppc275.cuni,
+			tpppc275.pric,tpppc275.amoc,tpppc275.ftty,tpppc275.fdoc,tpppc275.ncmp
+		from	tpppc275
+		where	tpppc275._index1 = {:tpppc275.cprj,:tpppc275.cspa}
+		and	tpppc275.orno = :o.orno
+		and	tpppc275.pono = :o.pono
+		selectdo
+| 			type = ""	
+			get.exchange.rate("INR", tpppc275.curc, tpppc275.rtyp, o.rdat, o.rtcc)	|GH616CR000.a |updated by Veena on 16th Aug 2021 for GH#626								|#ISGEC015026.o
+			type = enum.descr$("tpppc.tetg",tpppc275.tetg)				|#ISGEC015026.n	
+			if o.rtcc = 0 then
+				o.rtcc = 1
+			endif
+			
+			get.ptr.po(tpppc275.ncmp,tpppc275.ftty,tpppc275.fdoc,ptr.orno.1,ptr.pono.1)
+| 		)
+
+
+			write.detail(table.dsca,tpppc275.cprj,tpppc275.cspa,
+					o.orno,o.pono,type,(tpppc275.amoc * o.rtcc),"NO",tpppc275.ltdt,							|#ISGEC015026.n
+			tpppc275.sern,tpppc275.srnb,tpppc275.csub,tpppc275.quan,tpppc275.cuni,
+			tpppc275.pric,tpppc275.amoc,tpppc275.ftty,str$(tpppc275.fdoc))
+		endselect
+	endselect
+
+
+	|** Labor
+	table.dsca = tt.table.desc("tpppc231",desc)
+	o.orno = ""
+	o.pono = 0
+	type = ""
+	
+	select 	tpppc231.amoc,
+		tpppc231.rtcc(1):o.rtcc,
+		tpppc231.cprj,
+		tpppc231.cspa,tpppc231.ltdt
+	from	tpppc231
+	where	tpppc231._index7 inrange {:i.cprj.f,:i.cspa.f} and {:i.cprj.t,:i.cspa.t}
+	selectdo
+		if o.rtcc = 0 then
+			o.rtcc = 1
+		endif
+
+		write.detail(table.dsca,tpppc231.cprj,tpppc231.cspa,
+					o.orno,o.pono,type,(tpppc231.amoc * o.rtcc),"NO",tpppc231.ltdt,							|#ISGEC015026.n
+			0,0,"",0.00,"",0.00,0.00,"","")
+	endselect
+	
+
+	table.dsca = tt.table.desc("tpppc235",desc)
+	o.orno = ""
+	o.pono = 0
+	type = ""
+	
+	
+	
+	select 	tpppc235.amoc,
+		tpppc235.rtcc(1):o.rtcc,
+		tpppc235.cprj,
+		tpppc235.cspa,tpppc235.ltdt
+	from	tpppc235
+	where	tpppc235._index1 inrange {:i.cprj.f,:i.cspa.f} and {:i.cprj.t,:i.cspa.t}
+	selectdo
+		if o.rtcc = 0 then
+			o.rtcc = 1
+		endif
+
+		write.detail(table.dsca,tpppc235.cprj,tpppc235.cspa,
+					o.orno,o.pono,type,(tpppc235.amoc * o.rtcc),"NO",tpppc235.ltdt,							|#ISGEC015026.n
+			0,0,"",0.00,"",0.00,0.00,"","")
+	endselect
+	
+	table.dsca = tt.table.desc("tpppc250",desc)
+	o.orno = ""
+	o.pono = 0
+	type = ""
+	
+	|** Equipment
+	
+	
+	
+	select 	tpppc250.amoc,
+		tpppc250.rtcc(1):o.rtcc,
+		tpppc250.cprj,
+		tpppc250.cspa,tpppc250.ltdt
+	from	tpppc250
+	where	tpppc250._index6 inrange {:i.cprj.f,:i.cspa.f} and {:i.cprj.t,:i.cspa.t}
+	selectdo
+		if o.rtcc = 0 then
+			o.rtcc = 1
+		endif
+
+		write.detail(table.dsca,tpppc250.cprj,tpppc250.cspa,
+					o.orno,o.pono,type,(tpppc250.amoc * o.rtcc),"NO",tpppc250.ltdt,							|#ISGEC015026.n
+			0,0,"",0.00,"",0.00,0.00,"","")
+	endselect
+	
+	table.dsca = tt.table.desc("tpppc251",desc)
+	o.orno = ""
+	o.pono = 0
+	type = ""
+	
+	
+	
+	select 	tpppc251.amoc,
+ 		tpppc251.rtcc(1):o.rtcc,					|GH616CR000.com |uncommented by Veena on 16th Aug 2021 for GH#626
+		tpppc251.ltdt:o.rdat,
+		tpppc251.curc, tpppc251.rtyp,				|GH616CR000.a |updated by Veena on 16th Aug 2021 for GH#626
+		tpppc251.cprj,
+		tpppc251.cspa,tpppc251.ltdt
+	from	tpppc251
+	where	tpppc251._index8 inrange {:i.cprj.f,:i.cspa.f} and {:i.cprj.t,:i.cspa.t}
+	selectdo
+		get.exchange.rate("INR", tpppc251.curc, tpppc251.rtyp, o.rdat, o.rtcc)		|GH616CR000.a
+		if o.rtcc = 0 then
+			o.rtcc = 1
+		endif
+		
+		write.detail(table.dsca,tpppc251.cprj,tpppc251.cspa,
+					o.orno,o.pono,type,(tpppc251.amoc * o.rtcc),"NO",tpppc251.ltdt,							|#ISGEC015026.n
+			0,0,"",0.00,"",0.00,0.00,"","")
+
+	endselect
+	
+	table.dsca = tt.table.desc("tpppc255",desc)
+	o.orno = ""
+	o.pono = 0
+	type = ""
+
+	
+	select 	tpppc255.amoc,
+		tpppc255.rtcc(1):o.rtcc,
+		tpppc255.cprj,
+		tpppc255.cspa,tpppc255.ltdt
+	from	tpppc255
+	where	tpppc255._index1 inrange {:i.cprj.f,:i.cspa.f} and {:i.cprj.t,:i.cspa.t}
+	selectdo
+		if o.rtcc = 0 then
+			o.rtcc = 1
+		endif
+
+		write.detail(table.dsca,tpppc255.cprj,tpppc255.cspa,
+					o.orno,o.pono,type,(tpppc255.amoc * o.rtcc),"NO",tpppc255.ltdt,							|#ISGEC015026.n
+			0,0,"",0.00,"",0.00,0.00,"","")
+	endselect
+	
+	table.dsca = tt.table.desc("tpppc290",desc)
+	o.orno = ""
+	o.pono = 0
+	type = ""
+	
+	|** Sundry Cost
+	
+	
+	select 	tpppc290.amoc,
+		tpppc290.rtcc(1):o.rtcc,
+		tpppc290.cprj,
+		tpppc290.cspa,tpppc290.ltdt
+	from	tpppc290
+	where	tpppc290._index5 inrange {:i.cprj.f,:i.cspa.f} and {:i.cprj.t,:i.cspa.t}
+	selectdo
+		if o.rtcc = 0 then
+			o.rtcc = 1
+		endif
+
+		write.detail(table.dsca,tpppc290.cprj,tpppc290.cspa,
+					o.orno,o.pono,type,(tpppc290.amoc * o.rtcc),"NO",tpppc290.ltdt,							|#ISGEC015026.n
+			0,0,"",0.00,"",0.00,0.00,"","")
+	endselect
+	
+	table.dsca = tt.table.desc("tpppc291",desc)
+	o.orno = ""
+	o.pono = 0
+	type = ""
+
+	select 	tpppc291.amoc,
+		tpppc291.rtcc(1):o.rtcc,
+		tpppc291.cprj,
+		tpppc291.cspa,tpppc291.ltdt
+	from	tpppc291
+	where	tpppc291._index8 inrange {:i.cprj.f,:i.cspa.f} and {:i.cprj.t,:i.cspa.t}
+	selectdo
+		if o.rtcc = 0 then
+			o.rtcc = 1
+		endif
+
+		write.detail(table.dsca,tpppc291.cprj,tpppc291.cspa,
+					o.orno,o.pono,type,(tpppc291.amoc * o.rtcc),"NO",tpppc291.ltdt,							|#ISGEC015026.n
+			0,0,"",0.00,"",0.00,0.00,"","")
+	endselect
+
+	table.dsca = tt.table.desc("tpppc295",desc)
+	o.orno = ""
+	o.pono = 0
+	type = ""
+	
+	
+	select 	tpppc295.amoc,
+		tpppc295.rtcc(1):o.rtcc,
+		tpppc295.cprj,
+		tpppc295.cspa,tpppc295.ltdt
+	from	tpppc295
+	where	tpppc295._index1 inrange {:i.cprj.f,:i.cspa.f} and {:i.cprj.t,:i.cspa.t}
+	selectdo
+		if o.rtcc = 0 then
+			o.rtcc = 1
+		endif
+
+		write.detail(table.dsca,tpppc295.cprj,tpppc295.cspa,
+					o.orno,o.pono,type,(tpppc295.amoc * o.rtcc),"NO",tpppc295.ltdt,							|#ISGEC015026.n
+			0,0,"",0.00,"",0.00,0.00,"","")
+	endselect
+				
+								|# PATCH001052.sn
+	table.dsca = tt.table.desc("tpisg014",desc)
+	o.orno = ""
+	o.pono = 0
+	type = "Adjustment"
+	
+	select	tpisg014.*
+	from	tpisg014
+	where	tpisg014._index1 inrange {:i.cprj.f,:i.cspa.f} and {:i.cprj.t,:i.cspa.t}
+	selectdo
+		o.pono = o.pono + 1
+		write.detail(table.dsca,tpisg014.cprj,tpisg014.cspa,
+					o.orno,o.pono,type,(tpisg014.amnt),"NO",tpisg014.appd,							|#ISGEC015026.n
+			0,0,"",0.00,"",0.00,0.00,"","")
+	endselect
+	
+
+
+
+								|# PATCH001052.en
+}
+
+function get.ptr.po
+		(
+				domain	tccomp		i.comp,
+				domain	tcttyp		i.ftty,			|Tran Type
+				domain	tpint.gld.docn	i.cdoc,			|Document
+			ref	domain	tcorno		ptr.orno,		|Order Number
+			ref	domain	tcpono		ptr.pono		|Position
+		)
+{
+	select icom,ityp,idoc,orno:ptr.orno,pono:ptr.pono
+	from tfacp251 
+	where tfacp251._index1 = {:i.comp,:i.ftty,:i.cdoc}
+	selectdo
+	endselect
+}

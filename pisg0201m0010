@@ -1,0 +1,179 @@
+|******************************************************************************
+|* dmisg0201m001  0  VRC B61U a7 live
+|* Upload XML DATA
+|* Tools                         
+|* 2014-04-25
+|******************************************************************************
+|* Main table dmisg001 Incoming Document Master, Form Type 4
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+  table   tdmisg001 | Incoming Document Master
+
+	extern 	domain	dmdoc.docid      docn.f    fixed
+	extern 	domain	dmdoc.docid      docn.t    fixed
+	extern 	domain 	dmdoc.revv       revn.f    fixed
+	extern 	domain 	dmdoc.revv       revn.t    fixed
+
+			long 		fd
+			long 		xml.id, dir_ptr,text.id 
+		domain tcorno 		file.orno
+	extern	domain	tcdate		curr.date
+	extern 	domain 	tcmcs.str15 	uniqueid
+	extern	domain 	tcmcs.cste 	mm1,dd1,hh1,mi1,ss1
+			long		sub.item.id,sub.item.id1,sub.item.id2,sub.item.id3,sub.item.id4,
+					yyyy,srno,mm,dd,hh,mi,ss,mm2,sub.item.first,sub.item.last
+			long 		ret.val
+			string		error_string(120)
+			string 		file_name(120)
+			string 		f.path(100)
+   
+			string 		xml.isg001.docn(50)
+			string 		xml.isg001.revn(50)
+			string 		xml.isg001.dcid(50)
+			string 		xml.isg001.dsca(50)
+			string 		xml.isg001.dttl(50)
+			
+			string 		xml.isg001.cspa(30)	|CITY
+			
+			string 		xml.isg001.erec(35)	|ADD
+			string 		xml.isg001.prod(50)
+			string 		xml.isg001.info(50)
+			string 		xml.isg001.appr(50)
+				
+			string 		xml.isg001.resp(100)
+			string 		xml.data9(100)
+			string 		xml.data10(100)
+			string 		xml.data11(100)
+			
+			string 		xml.data12(50)
+			string 		xml.data13(50)
+			string 		xml.data14(50)
+			string 		xml.data15(50)
+			string 		xml.data16(50)
+			string 		xml.data17(50)
+		| 	string 		xml.data18(50)
+			string 		xml.data19(50)
+			string 		xml.data20(1024)
+			string 		xml.data21(50)
+			
+#include <bic_text>
+#pragma used dll        ottdllbw
+
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** function section **********************************
+functions:
+function continue.xmlfile()
+{
+	u.path = "e:\\exchnage\\"
+	|p.path = strip$(tccus000.upat)
+	|e.path = strip$(tccus000.epat)	
+
+	dir_ptr = dir.open(u.path)
+	
+	if  dir_ptr > 0 then
+
+		dir.rewind(dir_ptr)
+
+		file_name = dir.entry( dir_ptr, TFILE , TFILE , 0, STAT_READABLE)
+
+		while not isspace(file_name) 
+			
+			if toupper$(file_name(1;10)) <> "SALESORDER"  then
+				message("File name should be SalesOrder_<OrderNumber>")
+				continue
+			endif
+			
+			if string.scan(file_name(12;20), "%s", file.orno) = 0 then
+				message("File name should be SalesOrder_<OrderNumber>")
+				continue
+			endif
+
+			read.xml(u.path & file_name)
+			file_name = dir.entry( dir_ptr, TFILE , TFILE , 0, STAT_READABLE)
+				
+		endwhile
+	endif
+}
+
+function read.xml(string v.file_name(120))
+{	
+| 	long  	yyyy,mm,dd,hh,mi,ss,mm2
+	curr.date = utc.num()
+	
+	long hold.succ.flag
+	long ret
+
+	utc.to.date(curr.date,yyyy,mm,dd,hh,mi,ss) 
+	mm1 = sprintf$("%@99@",str$(mm))
+	dd1 = sprintf$("%@99@",str$(dd))
+	hh1 = sprintf$("%@99@",str$(hh))
+	mi1 = sprintf$("%@99@",str$(mi))
+	ss1 = sprintf$("%@99@",str$(ss))
+| 	dd = sprintf$("@99@",str$(dd))
+	mm2 = lval(mm1)	
+	
+| 	select 	max(tdmsl022.srno):srno
+| 	from	tdmsl022
+| 	where 	tdmsl022.yrno  = {:yyyy}
+| 	and 	tdmsl022.prno =  {:mm2}
+| 	selectdo
+|		srno = tdmsl022.srno
+| 	selectempty
+| 		srno = 0
+| 	endselect
+| 	srno = srno+1	
+	
+| 	uniqueid = str$(yyyy) & mm1 & sprintf$("%@999999@",str$(srno))	
+	
+	domain	tcpono	v.pono,v.pono1
+
+  	fd = seq.open (v.file_name, "r" )
+
+| 	|* Parse the xml file
+ 	xml.id = xmlread(fd, error_string)
+| 	
+ 	
+ 	sub.item.id = xmlFindFirst("SaleOrderHeader", xml.id)
+	
+	hold.succ.flag = 0 
+
+	db.retry.point()
+	
+	ret.val = so.header() 
+	hold.succ.flag = ret.val
+	
+	ret.val = so.line() 
+	hold.succ.flag = hold.succ.flag  and ret.val
+
+	ret.val = sold.to.bp()
+	hold.succ.flag = hold.succ.flag  and ret.val
+
+	ret.val = ship.to.bp() 
+	hold.succ.flag = hold.succ.flag  and ret.val
+
+	ret.val = pay.receipt()  
+	hold.succ.flag = hold.succ.flag  and ret.val
+	
+	seq.close(fd)
+
+	if hold.succ.flag then
+		commit.transaction()
+		ret = file.mv(u.path  & file_name, p.path & file_name)
+
+	else
+		abort.transaction()
+		ret = file.mv(u.path  & file_name, e.path & file_name)
+	endif
+	 	
+}

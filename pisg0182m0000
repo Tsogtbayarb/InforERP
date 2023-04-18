@@ -1,0 +1,138 @@
+|******************************************************************************
+|* tpisg0182m000  0  VRC B61U a7 isg 
+|* Export Incentive
+|* user07                        
+|* 2015-02-25
+|******************************************************************************
+|* Main table tpisg082 Export Incentives, Form Type 1
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttpisg082 | Export Incentives
+  table		ttcmcs052
+  table		ttpest120
+  
+  extern domain tcdsca	dsca1, dsca2	
+  extern domain tcmcs.str3 levl.f
+	domain	tppdm.sern	highest.level
+	domain	tcamnt	tot.ini, tot.act, tot.yet, tot.tot	
+	domain	tppdm.cspa	parent.ele
+	domain	tccprj		project
+
+|****************************** program section ********************************
+| before.display.object:
+| 	if tpisg082.stat = tpisg.sanction.approved then
+| 		disable.commands("approve")
+| 	else
+| 		enable.commands("approve")
+| 	endif
+
+| after.form.read:
+| enable.save.on.occ.change()
+|****************************** group section **********************************
+field.tcmcs052.dsca:
+before.display:
+	select	tcmcs052.dsca
+	from	tcmcs052
+	where	tcmcs052._index1 = {:tpisg082.cprj}
+	selectdo
+	selectempty
+		tcmcs052.dsca = ""
+	endselect
+
+| field.tpisg082.cspa:
+| before.zoom:
+| 	tpest120.cprj = tpisg082.cprj
+| after.zoom:
+| 	tpisg082.parn = tpest120.pele
+| 	tpisg082.levl = tpest120.levl	
+	
+field.dsca1:
+before.display:
+	select	tpptc100.desc:dsca1
+	from	tpptc100
+	where	tpptc100._index1 = {:tpisg082.cprj, :tpisg082.cspa}
+	selectdo
+	selectempty
+		dsca1 = ""
+	endselect
+
+
+field.dsca2:
+before.display:
+	select	tpptc100.desc:dsca2
+	from	tpptc100
+	where	tpptc100._index1 = {:tpisg082.cprj, :tpisg082.parn}
+	selectdo
+	selectempty
+		dsca2 = ""
+	endselect
+
+
+field.levl.f:
+before.field:
+	levl.f = "L" & str$(tpisg082.levl + 1)
+	
+
+functions:
+
+function extern calculate()
+{
+	select	max(tpisg082.levl):highest.level
+	from	tpisg082
+	where	tpisg082._index1 = {:tpisg082.cprj}
+	selectdo
+	endselect
+	
+	select	tpisg082.*
+	from	tpisg082 for update
+	where	tpisg082._index1 = {:tpisg082.cprj}
+	and	tpisg082.levl < :highest.level
+	selectdo
+		tpisg082.actl = 0
+		tpisg082.budg = 0
+		tpisg082.yetl = 0
+		tpisg082.totl = 0
+		db.update(ttpisg082, db.retry)
+	endselect
+	commit.transaction()
+	
+	while highest.level > 0
+		select	isg082.cprj:project,
+			isg082.parn:parent.ele,
+			sum(isg082.budg):tot.ini,
+			sum(isg082.actl):tot.act,
+			sum(isg082.yetl):tot.yet,
+			sum(isg082.totl):tot.tot
+		from	tpisg082 isg082
+		where	isg082._index1 = {:tpisg082.cprj}
+		and	isg082.levl = :highest.level
+		group by isg082.cprj, isg082.parn
+		selectdo
+			update_tpisg082.values()
+		endselect	
+		highest.level = highest.level - 1	
+	endwhile
+	
+}
+
+function update_tpisg082.values()
+{
+	select	tpisg082.*
+	from	tpisg082 for update
+	where	tpisg082._index1 = {:project}
+	and	tpisg082.cspa = :parent.ele
+	and	tpisg082.levl = :highest.level - 1 
+	selectdo
+		tpisg082.budg = tot.ini
+		tpisg082.actl = tot.act
+		tpisg082.yetl = tot.yet
+		tpisg082.totl = tot.tot
+		db.update(ttpisg082, db.retry)
+	endselect
+	commit.transaction()
+
+}
+

@@ -1,0 +1,477 @@
+|******************************************************************************
+|* tcisg008  0  VRC B61U a7 isg 
+|* DAL Form Tracking
+|* baan
+|* 15-04-23 [10:14]
+|******************************************************************************
+|* Script Type: DAL
+|*****************************************************************************
+|* IDENT PATCH002034 , Mani sharma  , Dt .24-05-2015 VRC B61U a7 isg 
+|*****************************************************************************
+|* ID: ISGEC01132, IT0327, Ritu Shrivastava, Dt. 11-08-2015, VRC B61U a7 isg
+|* Modification to issue form those have status as allocated.
+|******************************************************************************
+                                                                                
+#include <bic_dal2>
+ table  ttcisg008
+ table  ttccom948
+ table  ttccom949
+ table  ttfacp100
+ table  ttctax940
+ 
+ extern domain tcyesno	form.input
+ extern domain tcncmp current.company
+ extern domain tcyndf  i.filt
+ extern domain tcpono  i.var.times,issue.var
+ extern domain tcmcs.str30  prev.form.no,prev.form.e
+ extern domain tcdsca           f.array(50),e.array(50)
+ extern domain tcdsca   tax.num
+ extern domain tcncmp   i.ncmp
+
+
+function extern  long before.open.object.set()
+{
+	dal.field.depends.on("tcisg008.fnum",HOOK_IS_DERIVED,"tcisg008.ttyp","tcisg008.docn","tcisg008.type")
+	dal.field.depends.on("tcisg008.enum",HOOK_IS_DERIVED,"tcisg008.ttyp","tcisg008.docn")
+	
+return(0)
+}
+
+function extern long before.save.object(long type)
+{
+	return(0)
+}
+
+function extern long after.get.object(long type)
+{	
+	if etol(i.filt) = 2 then
+		if issue.var <> 1 then
+			show.only.empty.form()				|Function shows only Document No. having null Form Number.
+		endif	
+	endif
+	if etol(i.filt) = 1 then 
+		if issue.var <> 1 then
+			show.only.linked.form()                         |Function to show only Document No having linked Form Number
+		endif	
+	endif
+	if etol(i.filt) = 3 then
+		if issue.var <> 1 then
+			show.all()
+		endif	
+	endif	
+	return(0)
+
+}
+
+function extern boolean tcisg008.fnum.is.derived(long mode)
+{
+	if not isspace(tcisg008.fnum) then
+		select tccom949.ityp,
+			tccom949.idoc
+		from    tccom949
+		where   tccom949._index1 = {3}
+		and     tccom949.fcod = :tcisg008.type
+		and     tccom949.icpo = :current.company
+		and      tccom949.ityp = :tcisg008.ttyp
+		and      tccom949.idoc = :tcisg008.docn
+		selectdo
+			return(true)
+		endselect
+	endif	
+return(false)
+}
+
+function extern boolean tcisg008.enum.is.derived(long mode)
+{
+	if not isspace(tcisg008.enum) then
+		select tccom949.ityp,
+			tccom949.idoc
+		from   tccom949
+		where  tccom949._index1 = {3}
+		and    tccom949.fcod = "E"
+		and    tccom949.icpo = :current.company
+		and    tccom949.ityp = :tcisg008.ttyp
+		and     tccom949.idoc = :tcisg008.docn
+		selectdo
+			return(true)
+		endselect
+	endif	
+return(false)
+}
+
+
+function long set.object.defaults()
+{	
+	tcisg008.fnum = tcisg008.fnum
+	tcisg008.enum = tcisg008.enum
+| 	set.default()
+	return(0)
+}
+
+function extern boolean tcisg008.fnum.is.valid(long mode)
+{
+
+		
+	select tccom948.fpon
+	from    tccom948
+	where   tccom948._index1 = {:tcisg008.type,:tax.num,:tcisg008.fnum}
+	selectdo
+	selectempty
+		dal.set.error.message("@Form No. is not Valid")
+		return(false)
+	endselect
+return(true)
+}
+
+function extern boolean tcisg008.enum.is.valid(long mode)
+{	
+	select tccom948.fpon
+	from    tccom948
+	where   tccom948._index1 = {"E",:tax.num,:tcisg008.enum}
+	selectdo
+	selectempty
+		dal.set.error.message("@Form No. is not Valid")
+		return(false)
+	endselect
+return(true)
+}
+
+function extern long process.into.tccom949()
+{	
+	long ret_val, var,ret_val1,ret_val2,t
+	string var1
+	i.var.times = 1 
+	prev.form.no = ""
+	prev.form.e = ""
+	t = 0
+	
+	select  tccom949.*
+	from    tccom949
+	where   tccom949._index1 = {3}
+	and     tccom949.icpo = :current.company
+	and      tccom949.ityp = :tcisg008.ttyp
+	and      tccom949.idoc = :tcisg008.docn
+	selectdo
+		skip.io("")
+	selectempty
+		var1 = ""
+| 		var = insert.into.form.code.master()
+| 		if var <> 0 then
+| 			return(var)
+| 		endif
+		dal.new.object("tccom949")
+		dal.set.field("tccom949.styp",tccom.fdoc.typ.purchase.invoic)
+		dal.set.field("tccom949.fcod",tcisg008.type)
+		dal.set.field("tccom949.rseq",tax.num)
+		dal.set.field("tccom949.fpon",tcisg008.fnum)
+		dal.set.field("tccom949.icpo",current.company)
+		dal.set.field("tccom949.ityp",tcisg008.ttyp)
+		dal.set.field("tccom949.idoc",tcisg008.docn)
+		dal.set.field("tccom949.amnt",tcisg008.amnt)
+		dal.set.field("tccom949.adat",utc.num())
+		dal.set.field("tccom949.scpo",0)
+		dal.set.field("tccom949.sdoc",var1)
+		dal.set.field("tccom949.slin",0)
+		dal.set.field("tccom949.idli",0)
+		dal.set.field("tccom949.oorg",tccom.fdoc.typ.not.applicable)
+		ret_val = dal.save.object("tccom949")
+		if ret_val <> 0 then
+			show.dal.messages(MSG.ALL)
+			return(dalhookerror)
+		endif
+		ret_val1 = check.tfacp100.code()
+		if ret_val1 <> 0 then
+			show.dal.messages(MSG.ALL)
+			return(DALHOOKERROR)
+		endif		
+	endselect
+return (0)
+}
+
+
+function extern long insert.into.form.code.master()
+{	
+	long e.temp
+	domain tcamnt sum.amnt
+	sum.amnt = tcisg008.amnt
+	if i.var.times = 1 then
+		select tccom948.*
+		from    tccom948
+		where   tccom948._index1 = {:tcisg008.type,:tax.num,:tcisg008.fnum}
+		selectdo
+		selectempty
+			dal.new.object("tccom948")
+			dal.set.field("tccom948.fcod",tcisg008.type)
+			dal.set.field("tccom948.fpon",tcisg008.fnum)
+			dal.set.field("tccom948.rseq",tax.num)
+			dal.set.field("tccom948.bpid","")
+| 			dal.set.field("tccom948.fsts",tccom.fsts.received)					|temporary
+			dal.set.field("tccom948.fsts",tccom.fsts.allocated)					|temporary
+			dal.set.field("tccom948.rdat",utc.num())
+| 			dal.set.field("tccom948.amnt",tcisg008.amnt)
+			e.temp = dal.save.object("tccom948")
+			if e.temp <> 0 then 
+				show.dal.messages(MSG.ALL)
+				return(DALHOOKERROR)
+			endif
+		endselect
+	endif
+	
+	if i.var.times = 2 then
+		select tccom948.*
+		from    tccom948
+		where   tccom948._index1 = {"E",:tax.num,:tcisg008.enum}
+		selectdo
+		selectempty
+			dal.new.object("tccom948")
+			dal.set.field("tccom948.fcod","E")
+			dal.set.field("tccom948.fpon",tcisg008.enum)
+			dal.set.field("tccom948.rseq",tax.num)
+			dal.set.field("tccom948.bpid","")
+| 			dal.set.field("tccom948.fsts",tccom.fsts.received)					|temporary
+			dal.set.field("tccom948.fsts",tccom.fsts.allocated)
+			dal.set.field("tccom948.rdat",utc.num())
+| 			dal.set.field("tccom948.amnt",tcisg008.amnt)
+			e.temp = dal.save.object("tccom948")
+			if e.temp <> 0 then 
+				show.dal.messages(MSG.ALL)
+				return(DALHOOKERROR)
+			endif
+		endselect
+		prev.form.e = tcisg008.enum
+	endif
+return(0)
+}
+
+function extern long check.tfacp100.code()
+{
+	long temp.val
+	
+	select tfacp100.ninv,tfacp100.cdf_form
+	from    tfacp100 for update
+	where   tfacp100._index2 = {:tcisg008.bpid,:tcisg008.ninv}
+	and     tfacp100.cdf_form = tcyesno.no
+	selectdo
+		get.var(pid,"tfacp100.cdf_form",form.input)
+		dal.change.object("tfacp100")
+		if form.input = tcyesno.no then
+| 			put.var(pid,"tfacp100.cdf_form",tcyesno.yes)
+			dal.set.field("tfacp100.cdf_form",tcyesno.yes)
+		endif
+		
+		temp.val = dal.save.object("tfacp100")
+		if temp.val <> 0 then
+			show.dal.messages(MSG.ALL)
+			return (DALHOOKERROR)
+		endif
+	endselect	
+return(0)
+}
+
+
+function extern show.only.empty.form()
+{
+	select tccom949.ityp,tccom949.idoc
+	from   tccom949
+	where  tccom949._index1 = {tccom.fdoc.typ.purchase.invoic}
+	and    tccom949.ityp = :tcisg008.ttyp
+	and    tccom949.idoc = :tcisg008.docn
+	selectdo
+		skip.io("")
+	endselect	
+}
+
+function extern show.only.linked.form()
+{
+	long ret.temp
+	
+	select tccom949.ityp,tccom949.idoc,tccom949.fpon
+	from   tccom949
+	where  tccom949._index1 = {tccom.fdoc.typ.purchase.invoic}
+	and    tccom949.ityp = :tcisg008.ttyp
+	and    tccom949.idoc = :tcisg008.docn
+	selectdo
+		select tcisg008.fnum
+		from    tcisg008 for update
+		where   tcisg008.ttyp = :tcisg008.ttyp
+		and     tcisg008.docn = :tcisg008.docn
+		selectdo
+			if isspace(tcisg008.fnum)  then
+				dal.change.object("tcisg008")
+				dal.set.field("tcisg008.fnum",tccom949.fpon) 
+				ret.temp = dal.save.object("tcisg008")
+			endif	
+		endselect	
+	selectempty	
+		skip.io("")
+	endselect	
+
+}
+
+function extern show.all()
+{
+	long ret.temp1
+	
+	select tccom949.ityp,tccom949.idoc,tccom949.fpon
+	from   tccom949
+	where  tccom949._index1 = {tccom.fdoc.typ.purchase.invoic}
+	and    tccom949.ityp = :tcisg008.ttyp
+	and    tccom949.idoc = :tcisg008.docn
+	selectdo
+		select tcisg008.fnum
+		from    tcisg008 for update
+		where   tcisg008.ttyp = :tcisg008.ttyp
+		and     tcisg008.docn = :tcisg008.docn
+		selectdo
+			if isspace(tcisg008.fnum)  then
+				dal.change.object("tcisg008")
+				dal.set.field("tcisg008.fnum",tccom949.fpon) 
+				ret.temp1 = dal.save.object("tcisg008")
+			endif	
+		endselect
+	endselect	
+}
+
+function extern long issue.form()
+{
+	long e.temp1 ,t.ret
+	if  not isspace(tcisg008.fnum) then
+		select tccom948.bpid,tccom948.fsts,tccom948.amnt,tccom948.idat
+		from    tccom948 for update
+		where   tccom948._index1= {:tcisg008.type,:tax.num,:tcisg008.fnum}
+		and	tccom948.fsts = tccom.fsts.allocated				|#ISGEC01132.n
+| 		and      tccom948.bpid = ""						|#ISGEC01132.o
+		selectdo
+			dal.change.object("tccom948")
+| 			dal.set.field("tccom948.bpid",tcisg008.bpid)			|#ISGEC01132.o
+			dal.set.field("tccom948.fsts",tccom.fsts.issued)
+| 			dal.set.field("tccom948.amnt",tcisg008.amnt)			|#ISGEC01132.o
+			dal.set.field("tccom948.idat",utc.num())
+			e.temp1 = dal.save.object("tccom948")
+			if e.temp1 <> 0 then 
+				show.dal.messages(MSG.ALL)
+				return (DALHOOKERROR)
+			endif
+		endselect
+		select tcisg008.issu
+		from    tcisg008 for update
+		where   tcisg008.ttyp = :tcisg008.ttyp
+		and     tcisg008.docn = :tcisg008.docn
+		and     tcisg008.fnum = :tcisg008.fnum
+		selectdo
+			if tcisg008.issu = tcyesno.no then
+				dal.change.object("tcisg008")
+				dal.set.field("tcisg008.issu",tcyesno.yes)
+				t.ret = dal.save.object("tcisg008")
+				if t.ret <> 0 then
+					show.dal.messages(MSG.ALL)
+					return(DALHOOKERROR)
+				endif
+			endif
+		endselect
+	endif
+	if  not isspace(tcisg008.enum) then
+		select tccom948.bpid,tccom948.fsts,tccom948.amnt,tccom948.idat
+		from    tccom948 for update
+		where   tccom948._index1= {"E",:tax.num,:tcisg008.enum}
+		and	tccom948.fsts = tccom.fsts.allocated			|#ISGEC01132.n
+| 		and     tccom948.bpid = ""					|#ISGEC01132.o
+		selectdo
+			dal.change.object("tccom948")
+| 			dal.set.field("tccom948.bpid",tcisg008.bpid)		|#ISGEC01132.o
+			dal.set.field("tccom948.fsts",tccom.fsts.issued)
+| 			dal.set.field("tccom948.amnt",tcisg008.amnt)		|#ISGEC01132.o
+			dal.set.field("tccom948.idat",utc.num())
+			e.temp1 = dal.save.object("tccom948")
+			if e.temp1 <> 0 then 
+				return (DALHOOKERROR)
+			endif
+		endselect
+		select tcisg008.eissu
+		from    tcisg008 for update
+		where   tcisg008.ttyp = :tcisg008.ttyp
+		and     tcisg008.docn = :tcisg008.docn
+		and     tcisg008.enum = :tcisg008.enum
+		selectdo
+			if tcisg008.eissu = tcyesno.no then
+				dal.change.object("tcisg008")
+				dal.set.field("tcisg008.eissu",tcyesno.yes)
+				t.ret = dal.save.object("tcisg008")
+				if t.ret <> 0 then
+					show.dal.messages(MSG.ALL)
+					return(DALHOOKERROR)
+				endif
+			endif
+		endselect
+	endif	
+return(0)
+}
+
+
+function extern long process.e.form()
+{
+	long ret_val, var,ret_val1,ret_val2
+	string var1
+	i.var.times = 2 
+	
+	select  tccom949.*
+	from    tccom949
+	where   tccom949._index1 = {3}
+	and     tccom949.icpo = :current.company
+	and      tccom949.ityp = :tcisg008.ttyp
+	and      tccom949.idoc = :tcisg008.docn
+	and      tccom949.fcod = "E"
+	selectdo
+		skip.io("")
+	selectempty
+		var1 = ""
+| 		var = insert.into.form.code.master()
+| 		if var <> 0 then
+| 			return(var)
+| 		endif
+		dal.new.object("tccom949")
+		dal.set.field("tccom949.styp",tccom.fdoc.typ.purchase.invoic)
+		dal.set.field("tccom949.fcod","E")
+		dal.set.field("tccom949.rseq",tax.num)
+		dal.set.field("tccom949.fpon",tcisg008.enum)
+		dal.set.field("tccom949.icpo",current.company)
+		dal.set.field("tccom949.ityp",tcisg008.ttyp)
+		dal.set.field("tccom949.idoc",tcisg008.docn)
+		dal.set.field("tccom949.amnt",tcisg008.amnt)
+		dal.set.field("tccom949.adat",utc.num())
+		dal.set.field("tccom949.scpo",0)
+		dal.set.field("tccom949.sdoc",var1)
+		dal.set.field("tccom949.slin",0)
+		dal.set.field("tccom949.idli",0)
+		dal.set.field("tccom949.oorg",tccom.fdoc.typ.not.applicable)
+		ret_val = dal.save.object("tccom949")
+		if ret_val <> 0 then
+			show.dal.messages(MSG.ALL)
+			return(dalhookerror)
+		endif
+		ret_val1 = check.tfacp100.code()
+		if ret_val1 <> 0 then
+			show.dal.messages(MSG.ALL)
+			return(DALHOOKERROR)
+		endif
+	endselect
+return (0)
+
+}
+
+function void set.default()
+{
+	if isspace(tcisg008.fnum) and isspace(tcisg008.enum)  then
+		select tctax940.regn
+		from   tctax940
+		where  tctax940.fico = :current.company
+		and     tctax940.stpv = "UP"
+		and     tctax940.catg = tctax.catg.l.cst
+		and     tctax940.cdf_cadr = "ISG000001"
+		selectdo
+			tcisg008.regn = tctax940.regn
+		selectempty
+			tctax940.regn = ""
+		endselect
+	endif
+}

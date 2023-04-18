@@ -1,0 +1,215 @@
+|******************************************************************************
+|* tfisg0102m000  0  VRC B61U a7 live
+|* Maintain GR Details
+|* Installation user             
+|* 2014-03-04
+|******************************************************************************
+|* Main table tfisg002 Maintain GR Details, Form Type 1
+|******************************************************************************
+|* IDENT ISG001012 , Manish Kumar , IT0303 , 20-02-2014, VRC B61U a7 live                                                                                
+|******************************************************************************
+|* ESSP INCIDENT: 3739, Sujeet Kumar, 03-06-2014,      B61U a7 live
+|* Changed table and table index
+|*
+|* ISGECDV001126, IT0205, Arjit Gupta, VRC B61U a7 isg, Dt. 29-10-2014
+|* Now When Session trigerred from "tfisg0101m000" it will do manual entry &
+|* when trigerred from "tfisg0501m200" it link through "tfisg0103m000".
+|*
+|* ID:ISGEC016015,Manav Singh,21-01-2019,VRC B61U a7 live
+|* Modification Regarding New Commanad button
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttfisg002 | Maintain GR Details
+	table	twhinh310
+	table	twhinh312
+	table	ttfisg003
+	table	ttfacp100
+	table	ttfisg001
+	
+	domain	tfgld.docn	i.irno
+	domain	whinh.pksp	i.dino
+	extern	domain	tcsess		i.session
+	extern	long		flag
+	extern	domain	tfgld.docn	im.irno	
+	extern	domain	tccom.bpid	im.bpid	,bpid
+	extern	domain	tcncmp		im.ncmp
+		domain	tfacp.isup	n.grno
+		domain	tccom.bpid	n.grbp
+		domain	tcncmp		n.gcmp
+	domain	tfgld.date		grdt
+	domain	tcncmp			ncmp
+	extern domain tcmcs.str1	var
+	extern	boolean 		zoom.used
+	extern	domain	whinh.pksp	irno					|#ISGEC016015.n
+|****************************** program section ********************************
+before.program:
+	flag = 2
+	
+	import("prog.name$",i.session)
+	import("whinh310.dino",i.dino)
+	
+	on case i.session
+		case "whinh3512m000":
+			i.irno = lval(i.dino)
+			query.extend.where("tfisg002.irno = "&str$(i.irno))
+			break
+		case "tfisg0101m000":
+		case "tfisg0501m200":			|#ISGECDV001126.n	
+			import("tfisg001.irno", im.irno)
+			query.extend.where("tfisg002._index1 = {:im.irno}")
+			break
+	endcase
+
+after.form.read:
+	enable.save.on.occ.change  ()
+	zoom.used = false
+	
+before.display.object:				|#ISGEC016015.sn			
+| 	disable_new_for_delivery_term()			|#ISGEC016015.en			|#Sahil.Sharma.19.02.2019.o
+								
+|****************************** Field Section **********************************
+
+field.tfisg002.grno:
+before.zoom:
+	zoom.used = true
+after.zoom:
+	bpid = tfisg003.bpid
+	grdt = tfisg003.grdt
+	ncmp = tfisg003.ncmp
+	
+	tfisg002.grbp = bpid
+	tfisg002.grdt = grdt
+	tfisg002.gcmp = ncmp
+	display("tfisg002.grbp")
+	display("tfisg002.grdt")
+	display("tfisg002.gcmp")
+
+|****************************** group section **********************************
+group.1:
+init.group:
+	tfisg002.irno = i.irno
+	
+|***************************** main table section ****************************
+
+
+|****************************** Choice Setction *******************************
+choice.add.set:								|#3797.sn
+before.choice:
+| 	if ask.enum("tfisg0010",tcyesno.yes) = tcyesno.yes then	|#ISGECDV001126.o
+							|#ISGECDV001126.sn	
+	on case trim$(i.session)
+		case "tfisg0501m200":
+							|#ISGECDV001126.en
+			session.zoomindex = 2
+		| 	start.session(MODAL,"tfisg0103m000","","")
+			get.ir.bpid(tfisg002.irno, im.bpid, im.ncmp)
+		| 	start.synchronized.child("tfisg0103m000","tfisg002.irbp","tfisg003.bpid",MULTI_OCC)
+			start.synchronized.child("tfisg0103m000","im.bpid","tfisg003.bpid",MULTI_OCC)
+			choice.again()
+			break					|#ISGECDV001126.n
+	ENDCASE					|#ISGECDV001126.n
+| 	endif							|#ISGECDV001126.o
+
+choice.con.unlink:
+on.choice:
+	select tfacp100.stin from tfacp100 where ninv = :tfisg002.irno
+	selectdo
+		if tfacp100.stin <> tfacp.stin.copied then
+		
+			if	number.of.marks = 0	then
+				if ask.enum("tfisg0001",tcyesno.no) = tcyesno.yes then
+					select 	tfisg002.gcmp:n.gcmp,
+						tfisg002.grno:n.grno,
+						tfisg002.grbp:n.grbp
+					from	tfisg002
+			| 		where	tfisg002._index1 = {:tfisg002.icmp,:tfisg002.irno,:tfisg002.irbp}
+					where	tfisg002._index1 = {:tfisg002.irno}
+					selectdo
+						Unlink_GR(n.grno, n.grbp)
+						delete.link.gr(n.gcmp, n.grno, n.grbp)
+					endselect
+				else
+		| 			Unlink_GR()
+		| 			delete.link.gr()
+				endif
+			else
+				Unlink_GR(tfisg002.grno, tfisg002.grbp)
+				delete.link.gr(tfisg002.gcmp, tfisg002.grno, tfisg002.grbp)
+			endif				
+			commit.transaction()
+		endif
+	endselect
+	
+after.choice:
+	refresh(-1)
+|********************************* Functions *********************		
+functions:
+function Unlink_GR(domain	tfacp.isup	i.grno,
+			domain	tccom.bpid	i.grbp)
+{
+	select tfisg003.sele,
+		tfisg003.link
+	from	tfisg003 for update
+| 	where	tfisg003._index1 = {:tfisg002.gcmp,:tfisg002.grno,:tfisg002.grbp}
+	where	tfisg003._index1 = {:i.grno, :i.grbp}
+	and	tfisg003.sele = tcyesno.yes
+	and	tfisg003.link = tcyesno.yes
+	selectdo
+		tfisg003.sele = tcyesno.no
+		tfisg003.link = tcyesno.no
+		db.update(ttfisg003,db.retry,e)
+	endselect
+			
+			
+}
+
+function delete.link.gr(domain	tcncmp		i.gcmp,
+			domain	tfacp.isup	i.grno,
+			domain	tccom.bpid	i.grbp)
+{
+	select 	tfisg002.irno
+	from	tfisg002 for update
+| 	where	tfisg002._index1 = {:tfisg002.icmp,:tfisg002.irno,:tfisg002.irbp,
+	where	tfisg002._index1 = {:tfisg002.irno,
+			:i.gcmp,:i.grno,:i.grbp}
+	selectdo
+		db.delete(ttfisg002,db.retry,e)
+	endselect
+}
+												|#3797.en
+function get.ir.bpid(domain	tfgld.docn	r.docn,
+		ref	domain	tccom.bpid	r.bpid,
+		ref	domain	tcncmp		r.ncmp)
+{
+	select	a_tfisg001.ncmp:r.ncmp,
+		a_tfisg001.bpid:r.bpid
+	from	tfisg001 a_tfisg001
+	where	a_tfisg001._index1 = {:r.docn}
+	selectdo
+	selectempty
+		r.ncmp = 0
+		r.bpid = ""
+	endselect	
+}
+
+| function  disable_new_for_delivery_term()				|#ISGEC016015.sn		|#Sahil.Sharma.19.02.2019.so
+| {
+| 	select	tfisg001.*
+| 	from	tfisg001
+| 	where	tfisg001._index1 = {:tfisg002.irno}
+| 	selectdo 
+| 		irno = str$(tfisg001.irno)
+| 		select whinh310.*
+| 		from	whinh310
+| 		where	whinh310.dino    = :irno
+| 		and	whinh310.sfbp    = :tfisg001.bpid
+| 		and	whinh310.cdf_cdec = "FOR"
+| 		selectdo
+| 			disable.commands(add.set,actual.occ)
+| 		endselect
+| 	selectempty
+| 		irno = ""	
+| 	endselect	
+| 	
+| }									|#ISGEC016015.en		|#Sahil.Sharma.19.02.2019.eo

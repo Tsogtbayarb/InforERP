@@ -1,0 +1,1498 @@
+|******************************************************************************
+|* tfisg0131m000  0  VRC B61U a  live
+|* Petty Cash Voucher Request
+|* MCS user (Merino)             
+|* 2010-08-04
+|******************************************************************************
+|* Main table tfisg031 Patty Cash Voucher Request, Form Type 1
+|******************************************************************************
+|* IDENT  ISG001016  Arjit Gupta 10/03/2014 VRC B61U a  live 
+|******************************************************************************
+|* IDENT  ISG001021  Somak Mondal 21-03-2014	  VRC B61U a7  live 
+|****************************** declaration section ***************************
+declaration:
+#include <bic_dam>
+#pragma used dll ottstpapihand
+
+table   ttfisg031 | Patty Cash Voucher Request
+| 	table 	ttdmsl000	|ISGEC.so.28022014
+table 	ttfmsl036	|ISGEC.sn.28022014|Finance Parameter Table
+table 	ttcmcs050
+table 	ttcmcs051
+table 	ttccom001
+table 	ttcmcs065
+table 	ttfisg032
+table 	ttfisg030
+table 	ttcemm170
+table 	ttfgld006
+table 	ttfcmg001
+table 	ttfgld100
+table 	ttfgld008
+table	ttfgld011
+table 	ttppdm040
+table 	ttccom000
+table 	ttpppc000
+table 	ttcemm110
+table 	ttpppc291
+table 	ttppdm600
+table 	ttfgld102
+table 	ttssoc240
+table 	ttfcmg204
+table 	ttfgld101
+table 	ttfgld110
+table	ttppdm600
+table	ttcemm110
+table	ttcemm030
+table	ttssoc200
+table	ttfcmg205
+table	ttfgld005
+extern domain  	tfgld.date 	curr.date
+extern domain  	tccomp	 	curr.comp
+extern domain  	tcpono 		pono,seqn,lino1,docn1
+| 	extern	domain	tcdate		curr.date
+| 	extern	domain	tcncmp		curr.comp
+extern	domain	tfgld.user	curr.user
+extern	domain	tfgld.date	dued	
+extern	domain	tfgld.year	year	
+extern	domain	tfgld.prod	prod
+extern	domain	tfgld.serl	serl
+extern	domain	tfgld.srno	srno
+extern	domain	tcdsca		dsca
+string docn(10),lino(10)
+
+extern	domain	tfcmg.bank	pymt.bank
+extern	domain	tfcmg.paym	pymt.paym
+extern	domain	tfcmg.cheq	pymt.cheq
+extern	domain	tfgld.user	curr.user
+extern	domain	tcratf		fact(3)
+| 	extern	domain	tcdate		curr.date
+extern	domain	tcccur		pymt.ccur
+extern	domain	tcamnt		pymt.amnt,tot.line.amnt,amnt,v.aamt
+extern	domain	tfgld.amnt	amount.var(3),amount.var1,amount.var2,amount.var3
+extern	domain	tcratc		rate.var(3),rate.var1,rate.var2,rate.var3
+extern	domain	tcratf		fact.var1,fact.var2,fact.var3
+extern	domain	tfmsl.temp.typ	tmtp.var
+extern	domain	tcpono		line
+extern	domain	tfgld.amnt	debit.amnt, credit.amnt		|#ISG001016.n
+		long		ret_val, ret, i, counter,btno,yy,mm,dd,tt,rt1,found
+		string 		error(500), error.msg(400), x.batch(10),error1(500)
+		string 		remk(500),remk1(500),line.serl(10)
+		long     	process.id.kill,process.id.parent,last.id,error.found,line.upd
+|****************************** program section ********************************
+before.program:
+	
+	|ISGEC.so.28022014
+| 	select tdmsl000.*,tcmcs051.lngt
+| 	from tdmsl000,tcmcs051
+| 	where tdmsl000._index1 = {0}
+| 	and	tdmsl000.nglc refers to tcmcs051
+| 	as set with 1 rows
+| 	selectdo
+| 	endselect
+	|ISGEC.eo.28022014	
+							|ISGEC.sn.28022014
+	select 	tfmsl036.*,tcmcs051.lngt
+	from 	tfmsl036,tcmcs051
+	where 	tfmsl036._index1 = {0}
+	and	tfmsl036.pngp refers to tcmcs051
+	as set with 1 rows
+	selectdo
+	endselect
+							|ISGEC.en.28022014
+	curr.date = date.num()
+	curr.comp = get.compnr()
+	curr.user = logname$
+	
+	tcmcs.dll0095.read.parm("tfmsl036")
+|#sujeet.sn	
+before.display.object:
+	Disable_Enable_fields()
+	Disable_Enable_Commands()
+|#sujeet.en	
+|****************************** choice section **********************************
+choice.sent_finance:
+before.choice:
+	amnt = 0
+	
+	select	sum(tfisg032.amnt):amnt
+	from	tfisg032
+	where	tfisg032._index1 = {:tfisg031.reqn}
+	selectdo
+	selectempty
+		amnt = 0
+	endselect
+	if	amnt <= 0 then
+		message("Gross Amount can not be equal or greater than 0")
+		choice.again()
+	endif
+	
+	get.apprvd.amnt()							|ISG001021.sn
+	if v.aamt = 0 then
+		v.aamt = amnt	
+	endif									|ISG001021.en
+	
+on.choice:
+	submit_finance()
+after.choice:
+	refresh.parent(-1)
+
+choice.posted_finance:
+before.choice:
+	if tfisg031.pstd = 0 then
+		message("Posting date not entered")
+		choice.again()
+	else
+		if isspace(tfisg031.ttyp) then
+			message("First Enter Transaction Type")
+			choice.again()
+		endif
+	endif
+									|#ISG001016.sn
+	debit.amnt = 0
+	credit.amnt = 0
+	select	sum(tfisg032.amnt):debit.amnt
+	from	tfisg032
+	where	tfisg032._index1 = {:tfisg031.reqn}
+	and	tfisg032.dbcr = tfgld.dbcr.debit
+	selectdo
+	selectempty
+		debit.amnt = 0
+	endselect
+	select	sum(tfisg032.amnt):credit.amnt
+	from	tfisg032
+	where	tfisg032._index1 = {:tfisg031.reqn}
+	and	tfisg032.dbcr = tfgld.dbcr.credit
+	selectdo
+	selectempty
+		credit.amnt = 0
+	endselect
+	if	debit.amnt <= 0 then
+		message("Gross Amount can not be equal or greater than 0")
+		choice.again()
+	else
+		if	debit.amnt <> credit.amnt	then
+			message("Debit and Credit amount are not equal")
+			choice.again()
+		endif
+	endif
+									|ISG001016.en
+	
+on.choice:
+	|posted_finance()	|#ISG001016.o
+	afs.jv()		|#ISG001016.n
+after.choice:
+	refresh.parent(-1)
+|****************************** group section **********************************
+|****************************** field section **********************************
+field.tfisg031.reqn:
+before.zoom:
+| 	tcmcs050.nrgr = tdmsl000.regr		|ISGEC.so.28022014
+	tcmcs050.nrgr = tfmsl036.pngp		|ISGEC.sn.28022014
+	
+before.input:
+| 	tfisg031.reqn = tdmsl000.resr		|ISGEC.eo.28022014
+	tfisg031.reqn = tfmsl036.pser		|ISGEC.eo.28022014
+
+after.field:
+|#sujeet.so	
+| 	select tfisg032.* from tfisg032
+| 	where tfisg032._index1 = {:tfisg031.reqn}
+| 	and	tfisg032.amnt <> 0
+| 	selectdo
+| 		if tfisg031.stat = ltoe(10) then
+| 			enable.commands("sent_finance")
+| 			disable.commands("posted_finance")
+| 		else
+| 			disable.commands("sent_finance")
+| 			enable.commands("posted_finance")
+| 		endif
+| 	selectempty
+| 		disable.commands("sent_finance")
+| 		disable.commands("posted_finance")
+| 	endselect
+|#sujeet.eo
+
+field.tfisg031.crdt:
+before.input:
+	tfisg031.crdt = date.num()
+	
+field.tfisg031.rqnm:
+check.input:
+	if isspace(tfisg031.rqnm) then
+		message("Requester not allowed")
+		set.input.error("",e)
+	endif
+after.input:
+	select	tccom001.cwoc from tccom001
+	where	tccom001._index1 = {:tfisg031.rqnm}
+	selectdo
+		tfisg031.dept = tccom001.cwoc
+		select tcmcs065.comp from tcmcs065
+		where tcmcs065._index1 = {:tccom001.cwoc}
+		selectdo
+			tfisg031.comp = tcmcs065.comp
+		selectempty
+			tfisg031.comp = 0
+		endselect
+	selectempty
+		tfisg031.dept = ""
+	endselect
+
+field.tfisg031.temp:
+before.field:
+| 	if strip$(tfisg031.reqn) = strip$(tdmsl000.resr) then		|ISGEC.so.28022014
+| 		enable.fields("tfisg031.temp")
+| 	else
+| 		disable.fields("tfisg031.temp")
+| 	endif
+									|ISGEC.so.28022014
+	
+	if strip$(tfisg031.reqn) = strip$(tfmsl036.pser) then		|ISGEC.sn.28022014
+		enable.fields("tfisg031.temp")
+	else
+		disable.fields("tfisg031.temp")
+	endif	
+field.tfisg031.stat:
+before.display:
+	|#sujeet.so
+| 	if tfisg031.stat = ltoe(10) then
+| 		disable.fields("tfisg031.ttyp")
+| 		enable.fields("tfisg031.crdt")
+| 	else
+| 		enable.fields("tfisg031.ttyp")
+| 		disable.fields("tfisg031.crdt")
+| 		if tfisg031.stat = ltoe(20) then
+| 			disable.fields("tfisg031.rqnm")
+| 			disable.fields("tfisg031.dept")
+| 			disable.fields("tfisg031.comp")
+| 			disable.fields("tfisg031.temp")
+| 			disable.fields("tfisg031.sbto")
+| 		else
+| 			
+| 		endif
+| 	endif
+	|#sujeet.eo
+	if tfisg031.stat = ltoe(70) then
+		disable.commands(modify.set,add.set,mark.delete,global.delete,dupl.occur)
+		disable.commands("posted_finance")
+		disable.commands("sent_finance")
+	else
+		enable.commands(modify.set,add.set,mark.delete,global.delete,dupl.occur)
+	endif
+
+field.tmtp.var:
+before.display:
+	select	tfisg030.tmtp from tfisg030
+	where	tfisg030._index1 = {:tfisg031.temp}
+	selectdo
+		tmtp.var = tfisg030.tmtp
+	selectempty
+		tmtp.var = ltoe(0)
+	endselect
+field.amnt:
+before.display:
+	amnt = 0
+	select	sum(tfisg032.amnt):amnt,tfisg032.reqn 
+	from	tfisg032
+	where	tfisg032._index1 = {:tfisg031.reqn}
+	and	tfisg032.dbcr = tfgld.dbcr.debit 
+	group by tfisg032.reqn
+	as set with 1 rows
+	selectdo
+	endselect
+	
+field.tfisg031.ttyp:
+before.zoom:
+| 	query.extend.where.in.zoom("tfgld011.catg = 10")					|#ISG001016.o
+	query.extend.where.in.zoom("tfgld011.catg = 1 and tfgld011.ses1 = 'tfgld1115m000'")	|#ISG001016.n
+check.input:
+	if etol(tfisg031.stat) > 10 then
+		select	tfgld011.ccur from tfgld011
+		where	tfgld011._index1 = {:tfisg031.ttyp}
+		as set with 1 rows
+		selectdo
+			if not isspace(tfgld011.ccur) then
+				select	tfisg032.ccur from tfisg032
+				where	tfisg032._index1 = {:tfisg031.reqn}
+				and	tfisg032.amnt <> 0
+				as set with 1 rows
+				selectdo
+					if tfgld011.ccur <> tfisg032.ccur then
+						message("Transaction type Currency and Transaction Currency not same")
+						set.input.error("",e)
+					endif
+				endselect
+			endif	
+		selectempty
+			message("Transaction type not allowed")
+			set.input.error("",e)
+		endselect
+	endif
+|****************************** on.main.table section **********************************
+main.table.io:
+before.write:
+	get.fiscal.year(tfisg031.pstd)
+	generate.no()
+	populate_line()
+	Disable_Enable_Commands()		|ISG001021.sn
+before.rewrite:
+	Disable_Enable_Commands()		|ISG001021.sn
+|****************************** on.main.table section **********************************
+functions:
+
+function generate.no()
+{
+	long length
+	|ISGEC.so.28022014
+| 	select tcmcs050.* from tcmcs050 for update
+| 	where tcmcs050._index1 = {:tdmsl000.regr,:tfisg031.reqn}
+| 	as set with 1 rows
+| 	selectdo
+| 		length = 9 - tcmcs051.lngt
+| 		length = length - len(str$(tcmcs050.ffno))
+| 		tfisg031.reqn = tfisg031.reqn(1;tcmcs051.lngt) & string.set$("0", length) & str$(tcmcs050.ffno)
+| 		tcmcs050.ffno = tcmcs050.ffno + 1
+| 		db.update(ttcmcs050,db.retry)
+| 	endselect
+	|ISGEC.so.28022014
+	
+	select 	tcmcs050.* from tcmcs050 for update
+	where 	tcmcs050._index1 = {:tfmsl036.pngp,:tfisg031.reqn}
+	as set with 1 rows
+	selectdo
+		length = 9 - tcmcs051.lngt
+		length = length - len(str$(tcmcs050.ffno))
+		tfisg031.reqn = tfisg031.reqn(1;tcmcs051.lngt) & string.set$("0", length) & str$(tcmcs050.ffno)
+		tcmcs050.ffno = tcmcs050.ffno + 1
+		db.update(ttcmcs050,db.retry)
+	endselect
+}
+
+function submit_finance()
+{
+	select	tfisg031.* 
+	from	tfisg031 for update
+	where	tfisg031._index1 = {:tfisg031.reqn}
+	selectdo
+		tfisg031.stat = ltoe(20)
+		tfisg031.smdt = date.num()
+		db.update(ttfisg031,db.retry)
+	endselect
+	commit.transaction()
+}
+
+function posted_finance()
+{
+	found = 1
+	select	tfisg032.* from tfisg032
+	where	tfisg032._index1 = {:tfisg031.reqn}
+	and	tfisg032.amnt <> 0
+	as set with 1 rows
+	selectdo
+		afs.payment()
+		if found = 1 then
+			db.retry.point()
+			select tfisg031.* from tfisg031 for update
+			where tfisg031._index1 = {:tfisg031.reqn}
+			selectdo
+				tfisg031.stat = ltoe(70)
+| 				tfisg031.pstd = date.num()
+				tfisg031.docn = docn
+				tfisg031.btno = btno
+				db.update(ttfisg031,db.retry)
+			endselect
+			commit.transaction()
+		else
+			delete_record()
+		endif
+	endselect	
+}
+
+function populate_line()
+{
+
+| 	select tcemm170.fcua from tcemm170
+| 	where tcemm170._index1 = {:tfisg031.comp}
+| 	selectdo
+| 	endselect
+	select	tcemm170.fcua from tcemm170
+	where	tcemm170._index1 = {:curr.comp}
+	selectdo
+	endselect
+	select	tfisg032.* from tfisg032 for update
+	where	tfisg032._index1 = {:tfisg031.reqn}
+	selectdo
+	selectempty
+		pono = 0
+		select	tfisg030.* from tfisg030
+		where	tfisg030._index1 = {:tfisg031.temp}
+		selectdo
+			db.set.to.default( ttfisg032 )
+			pono = pono + 10
+			tfisg032.reqn = tfisg031.reqn
+			tfisg032.srno = pono
+			tfisg032.leac = tfisg030.leac
+			tfisg032.comp = tfisg031.comp
+			tfisg032.ccur = tcemm170.fcua
+			tfisg032.cpcp = tfisg030.cpcp
+			tfisg032.cico = tfisg030.cico
+			db.insert(ttfisg032,db.retry)
+		endselect
+	endselect
+	
+}
+
+function afs.payment()
+{	
+	select tfgld006.year from tfgld006
+	where tfgld006._index2 >= {:tfisg031.pstd}	| curr.date
+	order by tfgld006.year 
+	as set with 1 rows
+	selectdo
+	endselect
+	btno = create.batch(tfgld006.year,tfcmg001.otyp)
+	if btno <> 0 then
+		afs.line()
+	endif
+}
+
+function long create.batch(	domain tfgld.year 	year,
+				domain tfgld.ttyp	ttyp)
+{
+	remk =  " Cash Voucher #" & sprintf$("%s",tfisg031.reqn)
+	x.batch = ""
+	ret_val = dal.new.object("tfgld100")
+| 	dal.set.field("tfgld100.year",year)
+	dal.set.field("tfgld100.tedt",tfisg031.pstd)
+	dal.set.field("tfgld100.bref",remk)
+	ret_val = dal.save.object("tfgld100")
+	
+	if ret_val  = 0 then
+		btno = tfgld100.btno
+		year = tfgld100.year
+		prod = tfgld100.fprd
+	else
+		error = ""
+		rt1 = dal.count.error.messages()
+		for i = rt1 to 1 step -1
+			ret_val = dal.get.error.message(error1)
+			message("%s",error1)
+		endfor
+		abort.transaction()
+		btno = 0
+	endif
+	
+	if btno then
+		ret_val = dal.new.object("tfgld101")
+		dal.set.field("tfgld101.year",year)
+		dal.set.field("tfgld101.btno",btno)
+		dal.set.field("tfgld101.ttyp",tfisg031.ttyp)
+		ret_val = dal.save.object("tfgld101")
+		if ret_val  = 0 then
+			commit.transaction()
+		else
+			error = ""
+			rt1 = dal.count.error.messages()
+			for i = rt1 to 1 step -1
+				ret_val = dal.get.error.message(error1)
+				message("%s",error1)
+			endfor
+			abort.transaction()
+			btno = 0
+		endif
+	endif
+	return(btno)
+}
+
+function afs.line()
+{
+	domain tcccur	vou.ccur
+	string amount(20)
+	select tcemm170.fcua from tcemm170
+	where tcemm170._index1 = {:tfisg031.comp}
+	selectdo
+	endselect
+	
+	select sum(tfisg032.amnt):tot.line.amnt from tfisg032
+	where tfisg032._index1 = {:tfisg031.reqn}
+	selectdo
+	endselect
+	
+	select tfisg032.ccur:vou.ccur from tfisg032
+	where tfisg032._index1 = {:tfisg031.reqn}
+	and	tfisg032.amnt <> 0
+	as set with 1 rows
+	selectdo
+	endselect
+	select tfgld011.ccur from tfgld011
+	where tfgld011._index1 = {:tfisg031.ttyp}
+	as set with 1 rows
+	selectdo
+	endselect
+	
+	stpapi.put.field("tfgld1101m100", "tfgld101.year", str$(tfgld006.year))
+	stpapi.put.field("tfgld1101m100", "tfgld101.btno", str$(btno))
+	stpapi.put.field("tfgld1101m100", "tfgld101.ttyp", tfisg031.ttyp)
+	ret_val = stpapi.find("tfgld1101m100", error)
+	if ret_val then
+		ret = stpapi.mark("tfgld1101m100", error.msg) 
+		if ret then
+			stpapi.handle.subproc("tfgld1101m100","tfcmg2100s000", "add")
+			if not isspace(tfgld011.ccur) then
+				stpapi.handle.subproc("tfgld1101m100","tfcmg2101s000", "add")
+			endif
+			stpapi.form.command("tfgld1101m100",5,"enter.transactions",error)
+			if not isspace(tfgld011.ccur) then
+				stpapi.get.field("tfcmg2101s000","tfcmg205.obam", amount)
+				select tfcmg205.* from tfcmg205
+				where tfcmg205._index1 = {:tfgld006.year,:btno,:tfisg031.ttyp}
+				as set with 1 rows 
+				selectdo
+				endselect
+				stpapi.put.field("tfcmg2101s000","tfcmg205.cbam", str$(tfcmg205.obam - tot.line.amnt))
+				stpapi.continue.process("tfcmg2101s000", error.msg)
+				stpapi.end.session("tfcmg2101s000", error)
+			endif
+			stpapi.put.field("tfcmg2100s000","tfcmg204.tran", "7")
+			stpapi.put.field("tfcmg2100s000","tfcmg204.ccur", vou.ccur) 
+			stpapi.put.field("tfcmg2100s000","tfcmg204.amnt", str$(tot.line.amnt)) 
+			if tot.line.amnt > 0 then
+				stpapi.put.field("tfcmg2100s000","tfcmg204.dbcr", "2") 
+			else
+				stpapi.put.field("tfcmg2100s000","tfcmg204.dbcr", "1") 
+			endif
+			
+			stpapi.put.field("tfcmg2100s000","tfcmg204.refr", remk) 
+			ret_val = stpapi.insert("tfcmg2100s000", true, error)
+			if not ret_val then
+				message("Error %s",error)
+				found = 0
+			else
+				stpapi.get.field("tfcmg2100s000","tfcmg204.docn", docn)
+				stpapi.get.field("tfcmg2100s000","tfcmg204.lino", lino)
+				stpapi.handle.subproc("tfcmg2100s000","tfcmg2120s000", "add")
+				stpapi.form.command("tfcmg2100s000",5,"exec.cont.process",error)
+				select tfisg032.*,tfgld008.*  from tfisg032,tfgld008
+				where tfisg032._index1 = {:tfisg031.reqn}
+				and tfisg032.amnt <> 0
+				and	tfisg032.leac refers to tfgld008
+				selectdo
+					get.tar.comp()
+					seqn = 0
+					line.upd = 1
+					line.serl = ""
+					if etol(tfgld008.iprj) = 2 or etol(tfgld008.iprj) = 5 then
+						project.ledger()
+					else
+						ledger.other()
+					endif
+					if not line.upd then
+						update.tfisg032()
+					endif
+| 					if tfisg030.tmtp <> ltoe(3) then
+| 						project.ledger()
+| 					else
+| 						ledger.other()
+| 					endif
+				endselect
+			endif
+			stpapi.end.session("tfcmg2120s000", error)
+			stpapi.end.session("tfcmg2100s000", error)
+			stpapi.end.session("tfgld1101m100", error)			
+		endif
+	endif
+}
+
+
+function get.seqn()
+{
+	select	tpppc291.sern 
+	from	tpppc291
+| 	where	tpppc291._index1 = {:tfisg032.cprj}|,:tfisg032.cico}		|ISG001021.o	
+	where	tpppc291._index1 = {:tfisg032.cprj,:tfisg032.cico}		|ISG001021.n
+	order by tpppc291.sern desc
+	as set with 1 rows
+	selectdo 
+		seqn = tpppc291.sern
+	selectempty
+		seqn = 0
+	endselect	
+}
+
+
+function ledger.other()
+{
+	stpapi.put.field("tfcmg2120s000","tfgld102.tcom", str$(tcemm030.fcmp)) 
+	stpapi.put.field("tfcmg2120s000","tfgld102.leac", tfisg032.leac) 
+| 	stpapi.put.field("tfcmg2120s000","tfgld102.cvat", tdmsl000.txcd) |ISGEC.so.28022014
+	stpapi.put.field("tfcmg2120s000","tfgld102.cvat", tfmsl036.ptax) |ISGEC.so.28022014
+	stpapi.put.field("tfcmg2120s000","form.amount", str$(abs(tfisg032.amnt)))
+	if tfisg032.amnt < 0 then
+		stpapi.put.field("tfcmg2120s000","tfgld102.dbcr", "2")
+	else
+		stpapi.put.field("tfcmg2120s000","tfgld102.dbcr", "1")
+	endif
+	stpapi.put.field("tfcmg2120s000","tfgld102.dim2", tfisg032.cprj)
+	stpapi.put.field("tfcmg2120s000","tfgld102.dim3", tfisg032.emno)
+	stpapi.put.field("tfcmg2120s000","tfgld102.dim5", tfisg032.antc)
+	stpapi.put.field("tfcmg2120s000","tfgld102.refr", tfisg032.refr)
+	ret_val = stpapi.insert("tfcmg2120s000", true, error)
+	if not ret_val then
+		message("%s",error)
+		found = 0
+		line.upd = 0
+	else
+		stpapi.get.field("tfcmg2120s000","tfgld102.serl", line.serl)
+	endif
+}
+
+function project.ledger()
+{
+	
+	stpapi.put.field("tfcmg2120s000","tfgld102.tcom", str$(tcemm030.fcmp)) 
+	stpapi.put.field("tfcmg2120s000","tfgld102.leac", "311100110") 
+| 	stpapi.put.field("tfcmg2120s000","tfgld102.cvat", tdmsl000.txcd) |ISGEC.so.28022014
+	stpapi.put.field("tfcmg2120s000","tfgld102.cvat", tfmsl036.ptax) |ISGEC.so.28022014
+	stpapi.put.field("tfcmg2120s000","form.amount", str$(abs(tfisg032.amnt)))
+	if tfisg032.amnt < 0 then
+		stpapi.put.field("tfcmg2120s000","tfgld102.dbcr", "2")
+	else
+		stpapi.put.field("tfcmg2120s000","tfgld102.dbcr", "1")
+	endif
+	stpapi.put.field("tfcmg2120s000","tfgld102.dim2", tfisg032.cprj)
+	stpapi.put.field("tfcmg2120s000","tfgld102.dim3", tfisg032.emno)
+	stpapi.put.field("tfcmg2120s000","tfgld102.dim5", tfisg032.antc)
+	stpapi.put.field("tfcmg2120s000","tfgld102.refr", tfisg032.refr)
+	
+	ret_val = stpapi.insert("tfcmg2120s000", true, error)
+	
+	if not ret_val then
+		message("%s",error)
+		found = 0
+		line.upd = 0
+	else
+		stpapi.get.field("tfcmg2120s000","tfgld102.serl", line.serl)
+		stpapi.put.field("tfcmg2120s000","tfgld102.leac", tfisg032.leac) 
+		ret_val = stpapi.update("tfcmg2120s000", true, error)
+		
+		if not ret_val then
+			message("%s",error)
+			found = 0
+			line.upd = 0
+		else
+			select tfisg030.tmtp from tfisg030
+			where tfisg030._index1 = {:tfisg031.temp}
+			as set with 1 rows
+			selectdo
+				if tfisg030.tmtp = ltoe(1) then
+					update.cost()
+				else
+| 					update.cost.service()
+					update.cost.service1()
+				endif
+			endselect
+		endif
+		
+| 		update.cost()
+| 		update.thru.dal()
+| 		handle.sundry.cost()
+	endif
+}
+
+function update.cost()
+{
+	select	tppdm040.cuni 
+	from	tppdm040
+	where	tppdm040._index1 = {:tfisg032.cico}
+	selectdo
+	endselect
+| 	
+	select	tpppc000.* 					
+	from	tpppc000
+	where	tpppc000._index1 = {0}
+| 	and	tpppc000._compnr = :tcemm030.lcmp		|ISG001021.o		
+	and	tpppc000._compnr = :curr.comp			|ISG001021.n			
+	selectdo
+	endselect						
+	
+	select	tppdm600.cpla 
+	from	tppdm600
+	where	tppdm600._index1 = {:tfisg032.cprj}
+	selectdo
+	endselect
+	lino1 = lval(strip$(lino))
+	docn1 = lval(strip$(docn))
+
+	select	tfgld102.rate,tfgld102.fact 
+	from	tfgld102
+	where	tfgld102._index1 = {:curr.comp,:tfgld006.year,:btno,:tfisg031.ttyp,:docn1,:lino1}
+| 	where tfgld102._index1 = {:tcemm030.fcmp,:tfgld006.year,:btno,:tfisg031.ttyp,:docn1,:lino1}
+| 	where tfgld102._index1 = {:tfisg031.comp,:tfgld006.year,:btno,:tfisg031.ttyp,:docn1,:lino1}
+	selectdo
+	endselect
+	
+	select	tcemm170.* 
+	from	tcemm170
+	where	tcemm170._index1 ={:curr.comp}
+	selectdo
+	endselect
+	
+| 	switch.to.company(tcemm030.lcmp)			|ISG001021.o
+	switch.to.company(curr.comp)				|ISG001021.n	
+	get.seqn()
+	seqn = seqn + 1
+	ret_val = dal.new.object("tpppc291")
+	dal.set.field("tpppc291.cprj",tfisg032.cprj)
+	dal.set.field("tpppc291.cpla",tppdm600.cpla)
+	dal.set.field("tpppc291.cact",tfisg032.accd)
+	dal.set.field("tpppc291.cico",tfisg032.cico)
+	dal.set.field("tpppc291.ccco",tfisg032.cpcp)
+| 	dal.set.field("tpppc291.amoc",tfisg032.amnt)		|ISG001021.o
+	dal.set.field("tpppc291.amoc",tfisg032.aamt)		|ISG001021.n
+	dal.set.field("tpppc291.ncmp",curr.comp)
+	dal.set.field("tpppc291.ftty",tfisg031.ttyp)
+	dal.set.field("tpppc291.cuni",tppdm040.cuni)
+	dal.set.field("tpppc291.fyea",tfgld100.year)
+	dal.set.field("tpppc291.year",tfgld100.year)
+	dal.set.field("tpppc291.cptf",tpppc000.cptf)			
+	dal.set.field("tpppc291.ryea",tfgld100.year)
+	dal.set.field("tpppc291.fper",prod)
+	dal.set.field("tpppc291.peri",prod)
+	dal.set.field("tpppc291.rper",prod)
+	dal.set.field("tpppc291.cptc",tpppc000.cptc)			
+	dal.set.field("tpppc291.curc",tfisg032.ccur)
+	dal.set.field("tpppc291.curs",tfisg032.ccur)
+	dal.set.field("tpppc291.entu",tcemm110.grid)
+	dal.set.field("tpppc291.rtyp",tcemm170.expu)
+	dal.set.field("tpppc291.potf",ltoe(1))
+	dal.set.field("tpppc291.sern",seqn)
+	dal.set.field("tpppc291.fdoc",lval(docn))
+	dal.set.field("tpppc291.flin",lval(lino))
+	dal.set.field("tpppc291.fsrl",lval(strip$(line.serl)))
+	dal.set.field("tpppc291.teti",ltoe(2))
+	dal.set.field("tpppc291.rgdt",tfisg031.pstd)
+	dal.set.field("tpppc291.ltdt",utc.num())
+	dal.set.field("tpppc291.desc",remk)
+	dal.set.field("tpppc291.loco",logname$)
+	
+	ret_val = dal.save.object("tpppc291")
+	if ret_val  = 0 then
+		commit.transaction()
+		update_tpppc291()
+	else
+		error = ""
+		rt1 = dal.count.error.messages()
+		for i = rt1 to 1 step -1
+			ret_val = dal.get.error.message(error)
+			message("%s",error)
+		endfor
+		abort.transaction()
+		found = 0
+	endif
+	switch.to.company(curr.comp)	
+}
+
+function update_tpppc291()
+{
+	db.retry.point()
+	select	tpppc291.* 
+	from	tpppc291 for update
+	where	tpppc291._index1 = {:tfisg032.cprj,:tfisg032.cico,:seqn}
+	selectdo
+		tpppc291.rtcc = tfgld102.rate
+		tpppc291.rtfc = tfgld102.fact
+		tpppc291.rtcs = tfgld102.rate
+		tpppc291.rtfs = tfgld102.fact
+		db.update(ttpppc291,db.retry)
+	endselect
+	commit.transaction()
+}
+
+function update.cost.service1()
+{
+	select	tppdm040.cuni from tppdm040
+	where	tppdm040._index1 = {:tfisg032.cico}
+	selectdo
+	endselect
+	select	tcemm110.grid from tcemm110
+	where	tcemm110._index1 = {3,:tfisg032.comp,:tfisg032.cprj}
+	selectdo
+	endselect
+	select	tccom000.* from tccom000
+	where	tccom000._index1 = {:curr.comp}
+	selectdo
+	endselect
+	lino1 = lval(strip$(lino))
+	docn1 = lval(strip$(docn))
+	select 	tfgld102.* from tfgld102
+	where 	tfgld102._index1 = {:curr.comp,:tfgld006.year,:btno,:tfisg031.ttyp,:docn1,:lino1}
+| 	where tfgld102._index1 = {:tfisg031.comp,:tfgld006.year,:btno,:tfisg031.ttyp,:docn1,:lino1}
+	selectdo
+	endselect
+	
+  	ret_val=stpapi.synchronize.dialog("tssoc2141m000", "ADD", error)
+	if not ret_val then
+		message("%s",error)
+		found = 0
+	else
+		stpapi.put.field("tssoc2141m000","tssoc240.orno", tfisg032.cprj)
+		stpapi.put.field("tssoc2141m000","tssoc240.acln", tfisg032.accd)
+		stpapi.put.field("tssoc2141m000","tssoc240.cotp", str$(ltoe(35)))
+		stpapi.put.field("tssoc2141m000","tssoc240.desc", remk)
+		stpapi.put.field("tssoc2141m000","tssoc240.ccmp", tfisg032.cpcp)
+		stpapi.put.field("tssoc2141m000","tssoc240.acpr", str$(tfisg032.amnt))
+		ret_val = stpapi.insert("tssoc2141m000", true, error)
+		if not ret_val then 
+			message("%s",error)
+			found = 0
+		else
+		endif
+	endif
+	stpapi.end.session("tssoc2141m000", error)
+	stpapi.end.session("tssoc2141m000", error)	
+}
+function delete_record()
+{
+	lino1 = lval(strip$(lino))
+	docn1 = lval(strip$(docn))
+	error.found = 0
+	select tfgld101.ttyp from tfgld101
+	where tfgld101._index1 = {:tfgld006.year,:btno}
+	selectdo
+		stpapi.put.field("tfgld1101m100", "tfgld101.year", str$(tfgld006.year))
+		stpapi.put.field("tfgld1101m100", "tfgld101.btno", str$(btno))
+		stpapi.put.field("tfgld1101m100", "tfgld101.ttyp", tfgld101.ttyp)
+		ret_val = stpapi.find("tfgld1101m100", error)
+		if ret_val then
+			ret = stpapi.mark("tfgld1101m100", error.msg) 
+			if ret then
+				stpapi.handle.subproc("tfgld1101m100","tfcmg2100s000", "add")
+				stpapi.form.command("tfgld1101m100",5,"enter.transactions",error)
+				delete.cmg204()
+			endif
+		else
+			message("error in deleting %s transaction",tfgld101.ttyp)
+			error.found = 0
+		endif
+	endselect
+	stpapi.end.session("tfgld1101m100", error)
+	if  error.found then
+		db.retry.point()
+		select tfgld100.* from tfgld100 for update
+		where tfgld100._index1 = {:tfgld006.year,:btno}
+		selectdo
+		endselect
+		commit.transaction()
+	endif
+}
+function delete.cmg204()
+{
+	select tfcmg204.* from tfcmg204
+	where tfcmg204._index1 = {:tfgld006.year,:btno,:tfgld101.ttyp}
+	order by tfcmg204.docn desc, tfcmg204.lino desc
+	selectdo
+		stpapi.put.field("tfcmg2100s000","tfcmg204.ttyp", tfcmg204.ttyp)
+		stpapi.put.field("tfcmg2100s000","tfcmg204.docn", str$(tfcmg204.docn))
+		stpapi.put.field("tfcmg2100s000","tfcmg204.lino", str$(tfcmg204.lino))
+		ret_val = stpapi.find("tfcmg2100s000", error)
+		if ret_val then
+			stpapi.handle.subproc("tfcmg2100s000","tfcmg2120s000", "add")
+			stpapi.form.command("tfcmg2100s000",5,"exec.cont.process",error)
+			delete.tfgld102()
+		else
+			message("Record not deleted for %s %d %d",tfcmg204.ttyp,tfcmg204.docn,tfcmg204.lino)
+			error.found = 0
+		endif
+	endselect
+	stpapi.end.session("tfcmg2100s000", error)
+}
+function delete.tfgld102()
+{
+	select tfgld102.*,tfgld008.* from tfgld102,tfgld008
+	where tfgld102._index1 = {:curr.comp,:tfgld006.year,:tfgld101.btno,:tfcmg204.ttyp,:tfcmg204.docn,:tfcmg204.lino}
+	and	tfgld102.leac refers to tfgld008
+	order by tfgld102.serl desc
+	selectdo
+		stpapi.put.field("tfcmg2120s000","tfgld102.ttyp", tfcmg204.ttyp)
+		stpapi.put.field("tfcmg2120s000","tfgld102.docn", str$(tfcmg204.docn))
+		stpapi.put.field("tfcmg2120s000","tfgld102.lino", str$(tfcmg204.lino))
+		stpapi.put.field("tfcmg2120s000","tfgld102.serl", str$(tfgld102.serl))
+		ret_val = stpapi.find("tfcmg2100s000", error)
+		if ret_val then
+			db.retry.point()
+			select tfisg032.* from tfisg032 for update
+			where tfisg032._index2 = {:tfcmg204.ttyp,:tfcmg204.docn,:tfcmg204.lino,:tfgld102.serl}
+			as set with 1 rows
+			selectdo
+				if etol(tfgld008.iprj) = 2 or etol(tfgld008.iprj) = 5 then
+					select tpppc291.* from tpppc291 for update
+					where tpppc291._index1 = {:tfisg032.cprj,:tfisg032.cico,:tfisg032.sern}
+					as set with 1 rows
+					selectdo
+						db.delete(ttpppc291,db.retry)
+					endselect
+				endif
+				tfisg032.ttyp = ""
+				tfisg032.docn = 0
+				tfisg032.lino = 0
+				tfisg032.serl = 0
+				tfisg032.sern = 0
+				db.update(ttfisg032,db.retry)
+			endselect		
+			commit.transaction()
+			ret_val = stpapi.delete("tfcmg2120s000", true, error)
+			if not ret_val then 
+				message("Record not deleted for %s %d %d",tfcmg204.ttyp,tfcmg204.docn,tfcmg204.lino)
+				error.found = 0
+			endif
+		else
+			message("Record not deleted for %s %d %d",tfcmg204.ttyp,tfcmg204.docn,tfcmg204.lino)
+			error.found = 0
+		endif		
+	endselect
+	stpapi.end.session("tfcmg2120s000", error)
+}
+
+function get.tar.comp()
+{
+	select tfisg030.tmtp from tfisg030
+	where tfisg030._index1 = {:tfisg031.temp}
+	as set with 1 rows
+	selectdo
+		tmtp.var = tfisg030.tmtp
+	selectempty
+		tmtp.var = ltoe(0)
+	endselect
+	
+	select tcemm030.* from tcemm030
+	where tcemm030.fcmp = {:tfisg032.comp}
+	as set with 1 rows
+	selectdo
+	endselect
+	
+| 	select tppdm600.cpla from tppdm600
+| 	where tppdm600._index1 = {:tfisg032.cprj}
+| 	selectdo
+| 	endselect
+	if not isspace(tfisg032.cprj) then
+		on case etol(tmtp.var)
+		case 1:
+			select tcemm110.* from tcemm110
+			where tcemm110._index1 = {7}
+			and	tcemm110.enid = :tfisg032.cprj
+			as set with 1 rows
+			selectdo
+				select tcemm030.* from tcemm030
+				where tcemm030._index1 = {:tcemm110.grid}
+				as set with 1 rows
+				selectdo
+				endselect
+			endselect
+			break
+		case 2:
+			select tssoc200.cwoc from tssoc200
+			where tssoc200._index1 = {:tfisg032.cprj}
+			as set with 1 rows
+			selectdo
+				select tcemm110.* from tcemm110
+				where tcemm110._index1 = {3}
+				and	tcemm110.enid = :tssoc200.cwoc
+				as set with 1 rows
+				selectdo
+					select tcemm030.* from tcemm030
+					where tcemm030._index1 = {:tcemm110.grid}
+					as set with 1 rows
+					selectdo
+					endselect
+				endselect
+			endselect
+			break
+		case 3:
+			tcemm030.fcmp = tfisg032.comp
+			break
+		endcase
+	else
+		tcemm030.fcmp = tfisg032.comp
+	endif
+}
+
+function update.tfisg032()
+{
+	db.retry.point()
+	select tfisg032.* from tfisg032 for update
+	where tfisg032._index1 = {:tfisg032.reqn,:tfisg032.srno}
+	as set with 1 rows
+	selectdo
+		tfisg032.ttyp = tfisg031.ttyp
+		tfisg032.docn = val(docn)
+		tfisg032.lino = val(lino)
+		tfisg032.serl = val(line.serl)
+		tfisg032.sern = seqn
+		db.update(ttfisg032,db.retry)
+	endselect
+	commit.transaction()
+	
+}
+
+function afs.jv()					|#ISG001016.sn
+{
+	select tfgld006.year from tfgld006
+	where tfgld006._index2 >= {:tfisg031.pstd}	| curr.date
+	order by tfgld006.year 
+	as set with 1 rows
+	selectdo
+	endselect
+	btno = create.batch.jv(tfgld006.year, tfisg031.ttyp)
+	if btno <> 0 then
+		afs.jv.tran.type(tfgld006.year, btno)
+	endif
+}
+
+function long create.batch.jv(	domain tfgld.year 	year,
+				domain tfgld.ttyp	ttyp)
+{
+	remk =  " Journal Voucher #" & sprintf$("%s",tfisg031.reqn)
+	x.batch = ""
+	ret_val = dal.new.object("tfgld100")
+| 	dal.set.field("tfgld100.year",year)
+	dal.set.field("tfgld100.tedt",tfisg031.pstd)
+	dal.set.field("tfgld100.bref",remk)
+	ret_val = dal.save.object("tfgld100")
+	
+	if ret_val  = 0 then
+		btno = tfgld100.btno
+		year = tfgld100.year
+		prod = tfgld100.fprd
+	else
+		error = ""
+		rt1 = dal.count.error.messages()
+		for i = rt1 to 1 step -1
+			ret_val = dal.get.error.message(error1)
+			message("%s",error1)
+		endfor
+		abort.transaction()
+		btno = 0
+	endif
+	
+	if btno then
+		ret_val = dal.new.object("tfgld101")
+		dal.set.field("tfgld101.year", year)
+		dal.set.field("tfgld101.btno", btno)
+		dal.set.field("tfgld101.ttyp", ttyp)
+		ret_val = dal.save.object("tfgld101")
+		if ret_val  = 0 then
+			commit.transaction()
+		else
+			error = ""
+			rt1 = dal.count.error.messages()
+			for i = rt1 to 1 step -1
+				ret_val = dal.get.error.message(error1)
+				message("%s",error1)
+			endfor
+			abort.transaction()
+			btno = 0
+		endif
+	endif
+	return(btno)
+}
+
+function afs.jv.tran.type(domain	tfgld.year v.yy,
+			domain	tfgld.btno	v.btno)
+{
+	string	var.year(4), var.btno(9)
+	domain	tfgld.ttyp	var.ttyp
+	domain	tcmcs.str9	jv.docn
+	long	var.ret, ret.val
+	
+
+| 	stpapi.put.field("tfgld1101m100","tfgld101.year",str$(v.yy))
+| 	stpapi.put.field("tfgld1101m100","tfgld101.btno",str$(v.btno))
+| 	var.ret = stpapi.change.view("tfgld1101m100",error)
+| 	
+| 	stpapi.put.field("tfgld1101m100", "tfgld101.year", str$(v.yy))
+| 	stpapi.put.field("tfgld1101m100", "tfgld101.btno", str$(v.btno))	
+| 	stpapi.put.field("tfgld1101m100", "tfgld101.ttyp", tfisg031.ttyp)
+| 	ret.val = stpapi.find("tfgld1101m100", error)
+| 	if ret.val then
+| 		var.ret = stpapi.mark("tfgld1101m100", error) 
+| 		if var.ret then
+| 			stpapi.handle.subproc("tfgld1101m100", "tfgld1103s000", "add")
+| 			stpapi.form.command("tfgld1101m100", 5, "enter.transactions", error)
+| 				
+			jv.docn = ""
+| 			select	tfisg032.*
+| 			from	tfisg032
+| 			where	tfisg032._index1 = {:tfisg031.reqn}
+| 			selectdo
+				if	isspace(jv.docn)	then
+					jv.docn = "13"
+				else
+				endif
+				create.debit.document(jv.docn)
+				|afs.tfgld1103s000.jv(jv.docn)
+| 			endselect
+| 		endif
+| 	endif
+| 	stpapi.end.session("tfgld1103s000",error)
+	stpapi.end.session("tfgld1101m100",error)
+}
+
+
+function long afs.tfgld1103s000.jv(ref domain tcmcs.str9 v.docn)
+{
+		long 		ret.val
+	domain	tfgld.docn	docn
+			
+	stpapi.put.field("tfgld1103s000", "tfgld102.docn", v.docn)
+	stpapi.put.field("tfgld1103s000", "dcdt.f", str$(date.num()))
+	ret.val = stpapi.change.view("tfgld1103s000",error)
+	stpapi.form.command("tfgld1103s000", 23, "add.set", error)
+	stpapi.put.field("tfgld1103s000", "tfgld102.leac", tfisg032.leac)
+	if	not isspace(tfisg032.cprj)	then
+		stpapi.put.field("tfgld1103s000", "tfgld102.dim1", tfisg032.cprj)
+	endif
+	if	not isspace(tfisg032.emno)	then
+		stpapi.put.field("tfgld1103s000", "tfgld102.dim2", tfisg032.emno)
+	endif
+	if	not isspace(tfisg032.antc)	then
+		stpapi.put.field("tfgld1103s000", "tfgld102.dim3", tfisg032.antc)
+	endif
+| 	if	not isspace(tfisg032.dimx)	then
+| 		stpapi.put.field("tfgld1103s000", "tfgld102.dim4", tfisg032.dimx)
+| 	endif
+	
+	stpapi.put.field("tfgld1103s000", "form.amnt", str$(tfisg032.amnt))
+	if	tfisg032.dbcr = tfgld.dbcr.debit	then
+		stpapi.put.field("tfgld1103s000", "tfgld102.dbcr", "1")	
+	endif
+	if	tfisg032.dbcr = tfgld.dbcr.credit	then
+		stpapi.put.field("tfgld1103s000", "tfgld102.dbcr", "2")
+	endif
+ 	stpapi.put.field("tfgld1103s000", "tfgld102.refr", tfisg032.refr)
+	stpapi.put.field("tfgld1103s000", "dcdt.f", str$(date.num()))
+	
+	ret.val = stpapi.save("tfgld1103s000", error)
+	ret.val = stpapi.insert("tfgld1103s000",true,error)
+	if not ret.val then
+		stpapi.recover("tfgld1103s000",error)
+	endif	
+	
+ 	stpapi.get.field("tfgld1103s000", "tfgld102.docn", v.docn)
+	docn = lval(v.docn)
+	
+	select	tfgld102.* 
+	from	tfgld102 for update
+	where	tfgld102._index1 = {:curr.comp, :tfgld006.year, :btno, :tfisg031.ttyp, :docn}
+	selectdo
+		tfgld102.dcdt = date.num()
+		db.update(ttfgld102,db.retry)
+	endselect
+	
+	return(ret.val)
+}
+
+function  create.debit.document(ref domain tcmcs.str9	v.docn)
+{	
+	long	ret_val, rt1
+	string	lino(4), v.ttyp(3)
+	
+	stpapi.put.field("tfgld1101m100","tfgld101.year", str$(tfgld006.year))
+	stpapi.put.field("tfgld1101m100","tfgld101.btno", str$(btno))
+	stpapi.put.field("tfgld1101m100","tfgld101.ttyp", tfisg031.ttyp)
+	ret_val  = stpapi.find("tfgld1101m100", error)
+	if ret_val = 1 then
+		rt1 = stpapi.mark("tfgld1101m100", error)
+		if rt1 = 1 then
+			stpapi.handle.subproc("tfgld1101m100","tfgld1115m000", "add")
+			stpapi.form.command("tfgld1101m100",5, "enter.transactions", error)
+			stpapi.put.field("tfgld1115m000","tfgld102.ttyp", tfisg031.ttyp)
+			stpapi.put.field("tfgld1115m000","tfgld102.docn", v.docn)
+			stpapi.put.field("tfgld1115m000","tfgld102.ctlm", str$(etol(tfgld.ctlm.both)))
+			stpapi.put.field("tfgld1115m000","tfgld102.duac", str$(etol(tfgld.duac.statutory)))
+			rt1 = stpapi.change.view("tfgld1115m000", error)
+			
+			select	tfisg032.*
+			from	tfisg032
+			where	tfisg032._index1 = {:tfisg031.reqn}
+			selectdo
+				stpapi.put.field("tfgld1115m000","tfgld102.leac", tfisg032.leac)
+				
+				if	not isspace(tfisg032.cprj)	then
+					stpapi.put.field("tfgld1115m000", "tfgld102.dim1", tfisg032.cprj)
+				endif
+				if tfisg030.tmtp = ltoe(1) then
+					if	not isspace(tfisg032.emno)	then
+						stpapi.put.field("tfgld1115m000", "tfgld102.dim2", tfisg032.emno)
+					endif
+				else
+					if	not isspace(tfisg032.elem)	then
+						stpapi.put.field("tfgld1115m000", "tfgld102.dim2", tfisg032.elem)
+					endif
+				endif
+				if tfisg030.tmtp = ltoe(1) then
+					if	not isspace(tfisg032.antc)	then					|ISG001021.so	
+						stpapi.put.field("tfgld1115m000", "tfgld102.dim3", tfisg032.antc)
+					endif										|ISG001021.eo	
+				else
+					if	not isspace(tfisg032.emno)	then
+						stpapi.put.field("tfgld1115m000", "tfgld102.dim3", tfisg032.emno)
+					endif
+				endif
+				
+| 				if	not isspace(tfisg032.antc)	then
+| 					stpapi.put.field("tfgld1115m000", "tfgld102.dim3", tfisg032.emno)
+| 				endif
+| 				if	not isspace(tfisg032.dimx)	then
+| 					stpapi.put.field("tfgld1115m000", "tfgld102.dim4", tfisg032.dimx)
+| 				endif
+				
+| 				stpapi.put.field("tfgld1115m000","tfgld102.amnt", str$(tfisg032.amnt))		|ISG001021.o
+				stpapi.put.field("tfgld1115m000","tfgld102.amnt", str$(tfisg032.aamt))		|ISG001021.n	
+				if	tfisg032.dbcr = tfgld.dbcr.debit	then
+					stpapi.put.field("tfgld1115m000", "tfgld102.dbcr", str$(1))	
+				endif				
+				if	tfisg032.dbcr = tfgld.dbcr.credit	then
+					stpapi.put.field("tfgld1115m000", "tfgld102.dbcr", str$(2))
+				endif
+				stpapi.put.field("tfgld1115m000","tfgld102.refr", tfisg032.refr)
+| 				stpapi.enum.answer("tpppc2511m000","tpppca0005",tcyesno.yes)		|ISG001021.sn
+| 				stpapi.handle.subproc("tfgld1115m000","tpppc2511m000", "last")		
+| 				stpapi.enum.answer("tpppc2511m000","tpppca0005",tcyesno.yes)		
+| 				stpapi.end.session("tpppc2511m000")					|ISG001021.en
+
+				stpapi.handle.subproc("tfgld1115m000","tpppc2811m000","kill")
+				ret_val = stpapi.insert("tfgld1115m000", true, error )
+| 				stpapi.end.session("tpppc2511m000")
+| 				stpapi.handle.subproc("tfgld1115m000","tpppc2511m000", "kill")		|ISG001021.sn
+| 				stpapi.enum.answer("tpppc2511m000","tpppca0005",tcyesno.yes)		|ISG001021.en
+				if isspace(error) then
+					stpapi.get.field("tfgld1115m000","tfgld102.ttyp", v.ttyp)
+					stpapi.get.field("tfgld1115m000","tfgld102.docn", v.docn)
+					stpapi.get.field("tfgld1115m000","tfgld102.lino", lino)
+					update.text(v.ttyp,v.docn,lino)					|ISG001021.sn
+				else
+					message("%s",error)
+					stpapi.recover("tfgld1115m000", error)					
+				endif
+			endselect
+		endif
+	endif	
+	stpapi.end.session("tfgld1115m000")
+	stpapi.end.session("tfgld1101m100")
+	if	not isspace(lino)and	not isspace(v.docn)	then
+| 		update.original.ledger()				|ISG001021.o
+		update.cost()
+		update_tfisg031(v.docn)
+	endif
+	
+}
+
+function update_tfisg031(domain tcmcs.str9 v.docn)
+{	
+	db.retry.point()
+	select	tfisg031.*
+	from	tfisg031 for update
+	where	tfisg031._index1 = {:tfisg031.reqn}
+	selectdo
+		tfisg031.stat = ltoe(30)
+		tfisg031.docn = v.docn
+		tfisg031.btno = btno
+		db.update(ttfisg031,db.retry)
+	endselect
+	commit.transaction()
+}
+									|#ISG001016.en
+									
+|* Disable Enable Fields
+|#sujeet.sn
+function Disable_Enable_fields()
+{	
+	on case tfisg031.stat
+	case tfmsl.lc.stat.crea :
+		disable.fields("tfisg031.ttyp")
+		enable.fields("tfisg031.reqn","tfisg031.crdt",
+				"tfisg031.rqnm","tfisg031.dept",
+				"tfisg031.comp","tfisg031.temp",
+				"tfisg031.smdt","tfisg031.stat",
+				"tfisg031.sbto")	
+		
+		break
+	case tfmsl.lc.stat.sfin :
+		enable.fields("tfisg031.ttyp")
+		disable.fields("tfisg031.crdt","tfisg031.rqnm",
+				"tfisg031.dept","tfisg031.comp",
+				"tfisg031.temp","tfisg031.sbto")
+		break
+	case tfmsl.lc.stat.proc :
+		disable.fields("tfisg031.crdt","tfisg031.rqnm",
+				"tfisg031.dept","tfisg031.comp",
+				"tfisg031.temp","tfisg031.sbto")
+		disable.fields("tfisg031.pstd","tfisg031.ttyp")
+		break
+	endcase
+
+	
+}
+
+function Disable_Enable_Commands()
+{	
+	if check.line.amount.is.balanced() then
+		on case tfisg031.stat 
+		case tfmsl.lc.stat.crea :
+			enable.commands("sent_finance")
+			disable.commands("posted_finance")
+			break
+		case tfmsl.lc.stat.sfin :
+			disable.commands("sent_finance")
+| 			enable.commands("posted_finance")			|ISG001021.o
+			if check.line.apprv.amount.is.balanced() then		|ISG001021.sn
+				enable.commands("posted_finance")
+			else
+				disable.commands("posted_finance")
+			endif							|ISG001021.en
+			break
+		case tfmsl.lc.stat.proc :
+			disable.commands("sent_finance")
+			disable.commands("posted_finance")	
+		endcase
+	else
+		disable.commands("sent_finance")
+		disable.commands("posted_finance")
+	endif
+	
+}
+
+function boolean check.line.amount.is.balanced()
+{
+	domain 	tfgld.amnt	debit.amnt,credit.amnt
+	debit.amnt = 0
+	credit.amnt= 0
+	
+	select 	tfisg032.amnt,
+		tfisg032.dbcr
+	from	tfisg032
+	where	tfisg032._index1 = {:tfisg031.reqn}
+	and	tfisg032.amnt <> 0
+	selectdo
+		if tfisg032.dbcr = tfgld.dbcr.debit then
+			debit.amnt = debit.amnt + tfisg032.amnt
+		else 
+			credit.amnt = credit.amnt + tfisg032.amnt
+		endif
+		
+	selectempty
+		return(false)
+	endselect
+
+	if debit.amnt <> credit.amnt then	
+		return(false)
+	endif
+	
+	return(true)
+}
+
+|#sujeet.en
+|------------------------  Text Update   ------------------------
+function update.text	(        string	ttyp(3)				|ISG001021.sn    
+			,domain tcmcs.str9	v.docn
+			,	 string		v.lino(4))
+{	
+	long ret
+	domain	tccom.long	docn
+	domain	tccom.idno	lino
+	lino =  lval(v.lino)
+	docn =  lval(v.docn)
+	if not isspace(tfisg032.text) then
+		select	tfgld102.txta
+		from	tfgld102 for update
+		where	tfgld102._index1 = {:curr.comp,:tfgld006.year,:btno,:ttyp,:docn,:lino}
+		selectdo
+			dal.change.object("tfgld102")
+			dal.set.field("tfgld102.txta", tfisg032.text)
+			ret = dal.save.object("tfgld102")
+			if ret <> 0 then
+				show.dal.messages()
+			else
+				commit.transaction()
+			endif		
+		endselect	
+	endif	
+}										
+|------------------------- Approved Lines Amount -------------------------	
+function get.apprvd.amnt()
+{
+	v.aamt = 0
+	
+	select	sum(tfisg032.aamt):v.aamt
+	from	tfisg032
+	where	tfisg032._index1 = {:tfisg031.reqn}
+	and	tfisg032.dbcr = tfgld.dbcr.debit
+	selectdo
+	selectempty
+		v.aamt = 0
+	endselect
+}
+|------------------------- Approved Amount Balanced  -------------------------
+function boolean check.line.apprv.amount.is.balanced()			
+{
+	domain 	tfgld.amnt	debit.amnt,credit.amnt
+	debit.amnt = 0
+	credit.amnt= 0
+	
+	select 	tfisg032.aamt,
+		tfisg032.dbcr
+	from	tfisg032
+	where	tfisg032._index1 = {:tfisg031.reqn}
+	and	tfisg032.amnt <> 0
+	selectdo
+		if tfisg032.dbcr = tfgld.dbcr.debit then
+			debit.amnt = debit.amnt + tfisg032.aamt
+		else 
+			credit.amnt = credit.amnt + tfisg032.aamt
+		endif
+		
+	selectempty
+		return(false)
+	endselect
+
+	if debit.amnt <> credit.amnt then	
+		return(false)
+	endif
+	
+	return(true)
+}
+|----------------------- Update Original Ledger ----------------------------------
+| function update.original.ledger()
+| {
+| 	long 	ret,ret1
+| 	string	error(500)
+| 	
+| 	select	tfgld102.leac
+| 	from	tfgld102 for update
+| 	where	tfgld102._index1 = {:tfisg031.comp,:tfisg031.year,:tfisg031.btno,
+| 				    :tfisg031.ttyp,:tfisg031.docn}
+| 	selectdo
+| 		ret = dal.change.object("ttfgld102")
+| 		dal.set.field("tfgld102.leac", tfmsl036.ledb)
+| 		ret1 = dal.save.object("ttfgld102",error)
+| 		if ret1 <> 0 then
+| 			show.dal.messages()
+| 		else
+| 			commit.transaction()
+| 		endif
+| 	endselect	
+| }									
+|------------------------ Fiscal Year --------------------------------
+function get.fiscal.year(domain tfgld.date	v.date) 
+{
+	select	tfgld005.stdt,tfgld005.year
+	from	tfgld005
+	where	tfgld005.ptyp = tfgld.ptyp.financial
+	and	tfgld005.stdt <= :v.date
+	order by tfgld005.stdt desc
+	as set with 1 rows
+	selectdo
+		tfisg031.year = tfgld005.year
+	endselect
+	
+}									|ISG001021.en	

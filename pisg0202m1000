@@ -1,0 +1,341 @@
+|******************************************************************************
+|* dmisg0202m100  0  VRC B61U a7 live
+|* Update Standard Child Item Description
+|* Installation user             
+|* 2014-09-10
+|******************************************************************************
+|* Main table dmisg002 Incoming Document Child, Form Type 4
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+	table	tdmisg002 | Incoming Document Child
+	table	tdmisg005
+	table	tdmisg001
+	table	ttcisg004
+	table	ttcisg005
+	table	ttdisg002
+	table	ttdisg003
+	table	ttdisg004
+	table	ttdisg005
+	table	ttdisg007
+	table	ttcibd001
+
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section **********************************
+choice.update:
+on.choice:
+	read.main.table()
+	Update.tcisg004.without.document()
+	message("Updated...!!!")
+|****************************** function section **********************************
+functions:
+
+function read.main.table()
+{
+	domain	tcmcs.str100m	tmp.dsca, chld.dsca
+	long	hyp.pos
+	domain	tcitem		tmp.item	fixed
+	domain	dmdoc.docid	t.docn
+	domain	dmdoc.revv	t.revi
+	
+	set.fmin(tmp.dsca)
+	set.fmin(t.docn)
+	set.fmin(t.revi)
+	
+	select	dmisg002.*
+	from	dmisg002 for update
+	where	(dmisg002.dsca = :tmp.dsca
+	or	dmisg002.dsca = "0"
+	or	dmisg002.dsca = "00"
+	or	dmisg002.dsca = "-"
+	or	dmisg002.dsca = "--")
+	and	dmisg002._index1 <> {:t.docn, :t.revi}
+	selectdo
+		select	dmisg001.cprj, dmisg001.cspa
+		from	dmisg001
+		where	dmisg001._index1 = {:dmisg002.docn, :dmisg002.revn}
+		selectdo
+		selectempty
+			dmisg001.cprj = ""
+			dmisg001.cspa = ""
+		endselect
+		
+		chld.dsca = ""
+		hyp.pos = 0
+		tmp.item = ""
+		select	tcibd001.dsca
+		from	tcibd001
+		where	tcibd001._index1 = {:dmisg002.item}
+		selectdo
+			chld.dsca = tcibd001.dsca
+		selectempty
+			hyp.pos = pos(dmisg002.item,"-")
+			if	hyp.pos = 0	then
+				hyp.pos = len(dmisg002.item)
+			else
+				hyp.pos = hyp.pos - 1
+			endif	
+			tmp.item = dmisg002.item(1;hyp.pos)
+			select	tcibd001.dsca
+			from	tcibd001
+			where	tcibd001._index1 = {:tmp.item}
+			selectdo
+				chld.dsca = tcibd001.dsca
+			selectempty
+				chld.dsca = ""
+			endselect
+		endselect
+		if	not isspace(chld.dsca)	then
+			Update.dmisg005(dmisg001.cprj, dmisg001.cspa, dmisg002.docn, dmisg002.revn, dmisg002.item, chld.dsca)
+			if	isspace(dmisg002.dsca)	or	(trim$(dmisg002.dsca) = "0")	or
+				(trim$(dmisg002.dsca) = "00")	or	(trim$(dmisg002.dsca) = "-")	or
+				(trim$(dmisg002.dsca) = "--")	then
+				dmisg002.dsca = chld.dsca
+				db.update(tdmisg002, db.retry)
+			endif	
+			commit.transaction()
+		endif	
+	endselect
+}
+
+function Update.dmisg005(
+			domain	tccprj		in.cprj,
+			domain	tppdm.cspa	in.cspa,
+			domain	dmdoc.docid	in.docn,
+			domain	dmdoc.revv	in.revn,
+			domain	tcitem		in.item,
+			domain	tcmcs.str100m	in.dsca
+			)
+{
+	select	dmisg005.loti, dmisg005.dsca
+	from	dmisg005 for update
+	where	dmisg005._index1 = {:in.cprj, :in.cspa, :in.docn, :in.revn, :in.item}
+	selectdo
+		Update.tcisg004(in.cprj, in.cspa, dmisg005.loti, in.item, in.dsca, in.docn, in.revn)
+		if	isspace(dmisg005.dsca)	or	(trim$(dmisg005.dsca) = "0")	or
+			(trim$(dmisg005.dsca) = "00")	or	(trim$(dmisg005.dsca) = "-")	or
+			(trim$(dmisg005.dsca) = "--")	then
+			dmisg005.dsca = in.dsca
+			db.update(tdmisg005, db.retry)
+		endif
+	endselect
+}
+
+function Update.tcisg004(
+			domain	tccprj		ir.cprj,
+			domain	tppdm.cspa	ir.cspa,
+			domain	tcitem		ir.loti,
+			domain	tcitem		ir.item,
+			domain	tcdsca		ir.dsca,
+			domain	dmdoc.docid	ir.docn,
+			domain	dmdoc.revv	ir.revn
+			)
+{
+	select	tcisg004.*
+	from	tcisg004 for update
+	where	tcisg004._index1 = {:ir.cprj, :ir.cspa, :ir.loti, :ir.item}
+	and	tcisg004.docn = :ir.docn
+	and	tcisg004.rvid = :ir.revn
+	selectdo
+		if	tcisg004.indt = tcyesno.yes	then
+			Update.tdisg003(ir.cprj, ir.cspa, ir.loti, ir.item, ir.dsca)
+		endif
+		if	tcisg004.refq = tcyesno.yes	then
+			Update.tdisg004(ir.cprj, ir.cspa, ir.loti, ir.item, ir.dsca)
+		endif
+		if	tcisg004.orno = tcyesno.yes	then
+			Update.tdisg002(ir.cprj, ir.cspa, ir.loti, ir.item, ir.dsca)
+		endif
+		if	tcisg004.rcpt = tcyesno.yes	then
+			Update.tdisg005(ir.cprj, ir.cspa, ir.loti, ir.item, ir.dsca)
+		endif	
+		if	isspace(tcisg004.desc)	or	(trim$(tcisg004.desc) = "0")	or
+			(trim$(tcisg004.desc) = "00")	or	(trim$(tcisg004.desc) = "-")	or
+			(trim$(tcisg004.desc) = "--")	then
+			tcisg004.desc = ir.dsca
+			db.update(ttcisg004, db.retry)
+		endif	
+	endselect
+}
+
+function Update.tcisg004.without.document()
+{
+	domain	tcdsca	min.dsca
+	domain	tcdsca	upd.dsca
+	
+	set.fmin(min.dsca)
+	select	tcisg004.*
+	from	tcisg004 for update
+	where	(tcisg004.desc = :min.dsca
+	or	tcisg004.desc = "0"
+	or	tcisg004.desc = "00"
+	or	tcisg004.desc = "-"
+	or	tcisg004.desc = "--")
+	selectdo
+		upd.dsca = ""
+		select	tcibd001.dsca:upd.dsca
+		from	tcibd001
+		where	tcibd001._index1 = {:tcisg004.item}
+		selectdo
+			if	tcisg004.indt = tcyesno.yes	then
+				Update.tdisg003(tcisg004.proj, tcisg004.elmt, tcisg004.itmh, tcisg004.item, upd.dsca)
+			endif
+			if	tcisg004.refq = tcyesno.yes	then
+				Update.tdisg004(tcisg004.proj, tcisg004.elmt, tcisg004.itmh, tcisg004.item, upd.dsca)
+			endif
+			if	tcisg004.orno = tcyesno.yes	then
+				Update.tdisg002(tcisg004.proj, tcisg004.elmt, tcisg004.itmh, tcisg004.item, upd.dsca)
+			endif
+			if	tcisg004.rcpt = tcyesno.yes	then
+				Update.tdisg005(tcisg004.proj, tcisg004.elmt, tcisg004.itmh, tcisg004.item, upd.dsca)
+			endif	
+			if	isspace(tcisg004.desc)	or	(trim$(tcisg004.desc) = "0")	or
+				(trim$(tcisg004.desc) = "00")	or	(trim$(tcisg004.desc) = "-")	or
+				(trim$(tcisg004.desc) = "--")	then
+				tcisg004.desc = upd.dsca
+				db.update(ttcisg004, db.retry)
+				commit.transaction()
+			endif
+		endselect	
+	endselect
+}
+
+
+|* Indent Child Items
+function Update.tdisg003(
+			domain	tccprj		i3.cprj,
+			domain	tppdm.cspa	i3.cspa,
+			domain	tcitem		i3.loti,
+			domain	tcitem		i3.item,
+			domain	tcdsca		i3.dsca
+			)
+{
+	select	tcisg005.orno, tcisg005.pono
+	from	tcisg005
+	where	tcisg005._index1 = {:i3.cprj, :i3.cspa, :i3.loti, :i3.item, tdisg.item.indent}
+	selectdo
+		select	tdisg003.desc
+		from	tdisg003 for update
+		where	tdisg003._index1 = {:tcisg005.orno, :tcisg005.pono, :i3.item}
+		selectdo
+			if	isspace(tdisg003.desc)	or	(trim$(tdisg003.desc) = "0")	or
+				(trim$(tdisg003.desc) = "00")	or	(trim$(tdisg003.desc) = "-")	or
+				(trim$(tdisg003.desc) = "--")	then
+				tdisg003.desc = i3.dsca
+				db.update(ttdisg003, db.retry)
+			endif
+		endselect
+	endselect
+}
+
+|* RFQ Child Items
+function Update.tdisg004(
+			domain	tccprj		i4.cprj,
+			domain	tppdm.cspa	i4.cspa,
+			domain	tcitem		i4.loti,
+			domain	tcitem		i4.item,
+			domain	tcdsca		i4.dsca
+			)
+{
+	select	tcisg005.orno, tcisg005.pono
+	from	tcisg005
+	where	tcisg005._index1 = {:i4.cprj, :i4.cspa, :i4.loti, :i4.item, tdisg.item.rfq}
+	selectdo
+		select	tdisg004.desc
+		from	tdisg004 for update
+		where	tdisg004._index1 = {:tcisg005.orno, :tcisg005.pono, :i4.item}
+		selectdo
+			if	isspace(tdisg004.desc)	or	(trim$(tdisg004.desc) = "0")	or
+				(trim$(tdisg004.desc) = "00")	or	(trim$(tdisg004.desc) = "-")	or
+				(trim$(tdisg004.desc) = "--")	then
+				tdisg004.desc = i4.dsca
+				db.update(ttdisg004, db.retry)
+			endif
+		endselect
+	endselect
+}
+
+|* PO Child Items
+function Update.tdisg002(
+			domain	tccprj		i2.cprj,
+			domain	tppdm.cspa	i2.cspa,
+			domain	tcitem		i2.loti,
+			domain	tcitem		i2.item,
+			domain	tcdsca		i2.dsca
+			)
+{
+	select	tcisg005.orno, tcisg005.pono
+	from	tcisg005
+	where	tcisg005._index1 = {:i2.cprj, :i2.cspa, :i2.loti, :i2.item, tdisg.item.order}
+	selectdo
+		select	tdisg002.desc
+		from	tdisg002 for update
+		where	tdisg002._index1 = {:tcisg005.orno, :tcisg005.pono, :i2.item}
+		selectdo
+			if	isspace(tdisg002.desc)	or	(trim$(tdisg002.desc) = "0")	or
+				(trim$(tdisg002.desc) = "00")	or	(trim$(tdisg002.desc) = "-")	or
+				(trim$(tdisg002.desc) = "--")	then
+				tdisg002.desc = i2.dsca
+				db.update(ttdisg002, db.retry)
+			endif
+		endselect
+	endselect
+}
+
+|* Receipt Child Items
+function Update.tdisg005(
+			domain	tccprj		i5.cprj,
+			domain	tppdm.cspa	i5.cspa,
+			domain	tcitem		i5.loti,
+			domain	tcitem		i5.item,
+			domain	tcdsca		i5.dsca
+			)
+{
+	select	tcisg005.orno, tcisg005.pono
+	from	tcisg005
+	where	tcisg005._index1 = {:i5.cprj, :i5.cspa, :i5.loti, :i5.item, tdisg.item.receipt}
+	selectdo
+		select	tdisg005.desc
+		from	tdisg005 for update
+		where	tdisg005._index1 = {:tcisg005.orno, :tcisg005.pono, :i5.item}
+		selectdo
+			if	isspace(tdisg005.desc)	or	(trim$(tdisg005.desc) = "0")	or
+				(trim$(tdisg005.desc) = "00")	or	(trim$(tdisg005.desc) = "-")	or
+				(trim$(tdisg005.desc) = "--")	then
+				tdisg005.desc = i5.dsca
+				db.update(ttdisg005, db.retry)
+			endif
+			Update.tdisg007(tcisg005.orno, tcisg005.pono, i5.item, i5.dsca)
+		endselect
+	endselect
+}
+
+|* Billing Advice Child Items
+function Update.tdisg007(
+			domain	whinh.shpm	i7.rcno,
+			domain	tcpono		i7.rcln,
+			domain	tcitem		i7.item,
+			domain	tcdsca		i7.dsca
+			)
+{
+	select	tdisg007.desc
+	from	tdisg007 for update
+	where	tdisg007._index1 = {:i7.rcno, :i7.rcln, :i7.item}
+	selectdo
+		if	isspace(tdisg007.desc)	or	(trim$(tdisg007.desc) = "0")	or
+			(trim$(tdisg007.desc) = "00")	or	(trim$(tdisg007.desc) = "-")	or
+			(trim$(tdisg007.desc) = "--")	then
+			tdisg007.desc = i7.dsca
+			db.update(ttdisg007, db.retry)
+		endif
+	endselect
+}

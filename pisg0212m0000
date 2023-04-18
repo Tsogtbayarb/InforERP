@@ -1,0 +1,456 @@
+|******************************************************************************
+|* tpisg0212m000  0  VRC B61U a7 live
+|* Sanction Control for Migration Data
+|* Tools                         
+|* 2014-08-07
+|******************************************************************************
+|* Main table tpisg012 Sanction Control Lines, Form Type 4
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+  table		ttpisg012 | Sanction Control Lines
+  table		ttpisg011
+  table		ttpest120
+  table		ttpptc101
+  table		ttpmsl000
+  table		ttpest100
+  table		ttpest110
+  table		ttppdm600
+  
+
+   extern  domain  tccprj           cprj.f    fixed
+   extern  domain  tccprj           cprj.t    fixed
+#pragma used dll ottstpapihand   
+#include <bic_dam>
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+
+
+field.cprj.f:
+when.field.changes:
+	cprj.t = cprj.f
+
+functions:
+function extern cont.generate()
+{
+	domain	tccprj		o.cprj
+	domain	tcorno		o.vers
+	domain	tppdm.cspa	o.elem
+	domain	tppdm.cspa	o.cspa
+	
+	domain	tppdm.cspa	var.elem
+	
+	domain	tcpono		o.levl
+	domain	tppdm.cspa	o.tpest120.cspa
+	
+|Step 1-  Update Element Level & Their Parent
+
+| 	cprj.t = cprj.f
+
+| 	estimated.version(cprj.f,cprj.t)
+	generate.project.version(cprj.f,cprj.t)
+
+	select 	tpisg012.cprj:o.cprj,
+		tpisg012.vers:o.vers,
+		tpisg012.elem:o.elem,
+		tpisg012.cspa:o.cspa
+	from	tpisg012
+	where	tpisg012._index1 inrange {:cprj.f} and {:cprj.t}
+	selectdo
+		select 	tpisg011.aver
+		from	tpisg011
+		where	tpisg011._index1 = {:o.cprj,:o.vers}
+		as set with 1 rows
+		selectdo
+		endselect
+		
+		|Update Element Level & Theri Parent Element
+		
+		select 	tpisg012.levl,
+			tpisg012.cspa
+		from	tpisg012 for update
+		where	tpisg012._index1 = {:o.cprj,:o.vers,:o.elem}
+		selectdo
+			update.element.level(o.cprj,tpisg011.aver,o.elem,o.levl,o.tpest120.cspa)
+			tpisg012.levl = o.levl
+			tpisg012.cspa = o.tpest120.cspa
+			db.update(ttpisg012,db.retry,e)
+		endselect
+	endselect
+	commit.transaction()
+|Step - 2
+
+	select 	tpisg012.cprj:o.cprj,
+		tpisg012.vers:o.vers,
+		tpisg012.elem:o.elem,
+		tpisg012.cspa:o.cspa
+	from	tpisg012
+	where	tpisg012._index1 inrange {:cprj.f} and {:cprj.t}
+	selectdo
+		
+		select 	tpisg011.aver
+		from	tpisg011
+		where	tpisg011._index1 = {:o.cprj,:o.vers}
+		as set with 1 rows
+		selectdo
+		endselect
+		
+		|* Check Parent Element Exist in Sanction Control Lines
+		if not check.parent.element.exists(o.cprj,o.vers,o.cspa) then
+			|Insert Parent Element As a Element
+			update.element.level(o.cprj,tpisg011.aver,o.cspa,o.levl,o.tpest120.cspa)
+			insert_record_in_sanction_control_line(o.cprj,o.vers,o.cspa,o.levl,o.tpest120.cspa)
+			
+			var.elem = o.cspa
+			while not isspace(var.elem)
+				select	tpptc101.cspp
+				from	tpptc101
+				where	tpptc101._index2 = {:o.cprj,:var.elem}
+				selectdo
+				selectempty
+					tpptc101.cspp = ""
+				endselect
+				var.elem = tpptc101.cspp
+				update.element.level(o.cprj,tpisg011.aver,var.elem,o.levl,o.tpest120.cspa)
+| 				get_level(var.elem)
+				
+| 				v.dist = v.cosa
+| 				v.avai = 0.00
+				if not isspace(var.elem) then
+					insert_record_in_sanction_control_line(o.cprj,o.vers,var.elem,o.levl,o.tpest120.cspa)
+				endif				
+			endwhile
+		endif
+		
+		commit.transaction()
+	endselect	
+	
+|** Remove Element Which is Blank
+	select 	tpisg012.elem
+	from	tpisg012 for update
+	where	tpisg012._index1 inrange {:cprj.f} and {:cprj.t}
+	selectdo
+		if isspace(tpisg012.elem) then
+			db.delete(ttpisg012,db.retry,e)
+		endif
+	endselect
+	commit.transaction()
+		
+|** Update Total
+	domain	tcpono		param.levl
+	domain	tcamnt		o.totl
+	
+	tcmcs.dll0095.read.parm("tpmsl000")
+	param.levl = tpmsl000.levl + 1
+	
+	o.totl = 0
+	
+		
+	select 	tpisg012.cspa,
+		tpisg012.cprj,
+		tpisg012.levl
+	from	tpisg012
+	where	tpisg012._index1 inrange {:cprj.f} and {:cprj.t}
+	and	tpisg012.levl <= :param.levl
+	order by tpisg012.levl desc
+	selectdo
+		if not isspace(tpisg012.cspa) then
+			select 	sum(tpisg012.totl):o.totl
+			from	tpisg012
+			where	tpisg012._index1 = {:tpisg012.cprj}
+			and	tpisg012.cspa = :tpisg012.cspa
+			selectdo
+			endselect
+			
+			select 	tpisg012.totl
+			from	tpisg012 for update
+			where	tpisg012._index1= {:tpisg012.cprj}
+			and	tpisg012.elem = :tpisg012.cspa
+			selectdo
+				tpisg012.totl = o.totl
+				db.update(ttpisg012,db.retry,e)
+			endselect
+		endif
+		
+		
+	endselect
+	
+	commit.transaction()
+	
+	tpisgdll0012.Update.Sanction.Control(cprj.f,cprj.t)
+	select 	tpisg011.cprj,
+		tpisg011.vers
+	from	tpisg011
+	where	tpisg011._index1 inrange {:cprj.f} and {:cprj.t}
+	selectdo
+		tpisgdll0011.isgec_dream_for_distribution_amount(tpisg011.cprj,tpisg011.vers)
+	endselect
+	commit.transaction()	
+	
+	select 	tpisg011.acti,
+		tpisg011.act1,
+		tpisg011.cprj,
+		tpisg011.vers
+	from	tpisg011
+	where	tpisg011._index1 inrange {:cprj.f} and {:cprj.t}
+| 	as set with 1 rows
+	selectdo
+		tpisgdll0011.update_transfer_amount(tpisg011.cprj,tpisg011.vers)
+		tpisgdll0011.Update_Sanction_Status(tpisg011.cprj,tpisg011.vers,
+					tpisg011.acti,tpisg011.acti,tpisg011.act1,tpisg.sanction.approved)
+	endselect
+	commit.transaction()			
+}
+
+			
+
+function update.element.level
+			(
+				domain	tccprj		i.cprj,		|Project
+				domain	tpest.vers	i.vers,		|Project Version
+				domain	tppdm.cspa	i.sele,		|Element
+			ref 	domain	tcpono		o.levl,		|Level
+			ref 	domain	tppdm.cspa	o.pele		|Parent Element
+			)
+{
+	select	tpest120.levl:o.levl,
+		tpest120.pele:o.pele
+	from	tpest120
+	where	tpest120._index1 = {:i.cprj,:i.vers}
+	and	tpest120.sele = :i.sele
+	selectdo
+	selectempty
+		tpest120.levl = 0
+	endselect
+}
+
+function boolean check.parent.element.exists
+			(
+				domain	tccprj		i.cprj,		|Project
+				domain	tcorno		i.vers,		|Version
+				domain	tppdm.cspa	i.cspa		|Parent Element
+			)
+{
+	domain	tppdm.cspa	o.elem
+	
+	select 	tpisg012.elem:o.elem
+	from	tpisg012
+	where	tpisg012._index1 = {:i.cprj,:i.vers,:i.cspa}
+	as set with 1 rows
+	selectdo
+	selectempty
+		return(false)
+	endselect
+	
+	return(true)
+}
+
+
+
+function insert_record_in_sanction_control_line
+			(
+				domain	tccprj		i.cprj,		|Project
+				domain	tcorno		i.vers,		|Version
+				domain	tppdm.cspa	i.elem,		|Element
+				domain	tcpono		i.levl,		|Level
+				domain	tppdm.cspa	i.cspa
+			)
+{
+	tpisg012.cprj = i.cprj
+	tpisg012.vers = i.vers
+	tpisg012.elem = i.elem
+	tpisg012.levl = i.levl
+	tpisg012.cspa = i.cspa
+	db.insert(ttpisg012,db.skip.dupl,e)
+	
+}
+
+
+function long generate.project.version
+			(
+				domain	tccprj		i.cprj.f,	|From Project
+				domain	tccprj		i.cprj.t	|To Project
+			)
+{
+	domain	tpest.vers	o.vers
+	domain	tpest.esid	o.stid
+	domain	tppdm.desc	o.desc
+	long ret_val
+	
+	o.stid = "ELE"
+	o.desc = "ELEMENT"
+	o.vers = "001"
+	
+	select 	tppdm600.cprj
+	from	tppdm600
+	where	tppdm600._index1 inrange {:i.cprj.f} and {:i.cprj.t}
+	selectdo
+		select 	tpest100.vers
+		from	tpest100
+		where	tpest100._index1 = {:tppdm600.cprj,:o.vers}
+		as set with 1 rows
+		selectdo
+		selectempty
+			dal.new.object("tpest100")
+			db.set.to.default(ttpest100)
+			dal.set.field("tpest100.cprj",tppdm600.cprj)
+			dal.set.field("tpest100.vers",o.vers)
+		
+		
+			dal.set.field("tpest100.rtpc","PUR")
+			dal.set.field("tpest100.curr","INR")
+			dal.set.field("tpest100.rtps","SAL")
+			dal.set.field("tpest100.txmd.l",tptax.txmd.l.na)
+			dal.set.field("tpest100.esdt",utc.num())
+			ret_val = dal.save.object("tpest100")
+			if ret_val <> 0 then
+				show.dal.messages  (MSG.ALL)
+				return(DALHOOKERROR)
+			
+			else
+				commit.transaction()
+				select 	tpest110.cprj
+				from	tpest110
+				where	tpest110._index1 = {:tppdm600.cprj,:o.vers,:o.stid}
+				as set with 1 rows
+				selectdo
+				selectempty
+					dal.new.object("tpest110")
+					dal.set.field("tpest110.cprj",tppdm600.cprj)
+					dal.set.field("tpest110.vers",o.vers)
+					dal.set.field("tpest110.stid",o.stid)
+					dal.set.field("tpest110.desc",o.desc)
+					dal.set.field("tpest110.styp",tpest.styp.element)
+					dal.set.field("tpest110.sdes","ELEMENT")
+					ret_val = dal.save.object("tpest110")
+					if ret_val <> 0 then
+						show.dal.messages  (MSG.ALL)
+						return(DALHOOKERROR)
+					else
+						select 	tpest100.vers
+						from	tpest100 for update
+						where	tpest100._index1 = {:tppdm600.cprj,:o.vers}
+						selectdo
+							dal.change.object("tpest100")
+							dal.set.field("tpest100.pstr",o.stid)
+							ret_val = dal.save.object("tpest100")
+							if ret_val <> 0 then
+								show.dal.messages  (MSG.ALL)
+								return(DALHOOKERROR)
+							else
+								commit.transaction()
+								generate.structure.element(tppdm600.cprj)
+							endif
+						endselect
+					endif
+				endselect
+			endif
+		endselect
+	endselect	
+		
+	return(0)	
+		
+}
+
+function long estimated.version
+			(
+				domain 	tccprj	i.cprj.f,		|From Project
+				domain	tccprj	i.cprj.t		|To Project
+			)
+{
+	long ret_val
+	domain	tpest.vers	o.vers
+	domain	tpest.esid	o.stid
+	domain	tppdm.desc	o.desc
+| 	long ret_val
+	string error.msg(500)
+	
+	o.stid = "ELE"
+	o.desc = "ELEMENT"
+	o.vers = "001"
+	
+	
+	select 	tppdm600.cprj
+	from	tppdm600
+	where	tppdm600._index1 inrange {:i.cprj.f} and {:i.cprj.t}
+	selectdo
+		stpapi.put.field("tpest1100m000","tpest100.cprj",tppdm600.cprj)
+		ret_val = stpapi.find("tpest1100m000",error.msg)
+		stpapi.put.field("tpest1100m000","tpest100.cprj",tppdm600.cprj)
+		ret_val = stpapi.change.view("tpest1100m000",error.msg)
+		ret_val = stpapi.synchronize.dialog("tpest1100m000", "Add", error.msg)
+		stpapi.put.field("tpest1100m000","tpest100.cprj",tppdm600.cprj)
+		stpapi.put.field("tpest1100m000","tpest100.vers",o.vers)
+		stpapi.put.field("tpest1100m000","tpest100.rtpc","PUR")
+		stpapi.put.field("tpest1100m000","tpest100.curr","INR")
+		stpapi.put.field("tpest1100m000","tpest100.rtps","SAL")
+		stpapi.put.field("tpest1100m000","tpest100.txmd.l",str$(4))
+		ret_val = stpapi.insert("tpest1100m000",true,error.msg)
+		if ret_val = 1 then
+			stpapi.save("tpest1100m000",error.msg)
+			stpapi.end.session("tpest1100m000",error.msg)
+			stpapi.end.session("tpest1100m000",error.msg)
+			
+			select 	tpest110.cprj
+			from	tpest110
+			where	tpest110._index1 = {:tppdm600.cprj,:o.vers,:o.stid}
+			as set with 1 rows
+			selectdo
+			selectempty
+				dal.new.object("tpest110")
+				dal.set.field("tpest110.cprj",tppdm600.cprj)
+				dal.set.field("tpest110.vers",o.vers)
+				dal.set.field("tpest110.stid",o.stid)
+				dal.set.field("tpest110.desc",o.desc)
+				dal.set.field("tpest110.styp",tpest.styp.element)
+				dal.set.field("tpest110.sdes","ELEMENT")
+				ret_val = dal.save.object("tpest110")
+				if ret_val <> 0 then
+					show.dal.messages  (MSG.ALL)
+					return(DALHOOKERROR)
+				else
+					commit.transaction()
+					select 	tpest100.vers
+					from	tpest100 for update
+					where	tpest100._index1 = {:tppdm600.cprj,:o.vers}
+					selectdo
+						dal.change.object("tpest100")
+						dal.set.field("tpest100.stid",o.stid)
+						ret_val = dal.save.object("tpest100")
+						if ret_val <> 0 then
+							show.dal.messages  (MSG.ALL)
+							return(DALHOOKERROR)
+						else
+							commit.transaction()
+						endif
+					endselect
+				endif
+			endselect
+		endif
+	endselect
+	
+	return(0)
+}
+
+function generate.structure.element
+			(
+				domain	tccprj		i.cprj		|Project		
+			)
+{
+	string error.msg(500)
+	stpapi.put.field("tpest1220m000","cprj",i.cprj)
+	stpapi.put.field("tpest1220m000","vers","001")
+	stpapi.put.field("tpest1220m000","print.report",str$(1))
+	stpapi.set.report("tpest1220m000","rtpest122011000","D",error.msg)
+	stpapi.form.command("tpest1220m000",5,"exec.cont.process",error.msg)
+	stpapi.end.session("tpest1220m000",error.msg)
+}

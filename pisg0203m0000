@@ -1,0 +1,127 @@
+|******************************************************************************
+|* tcisg0203m000  0  VRC B61U a7 live
+|* Free Child Item for Re-Lotting
+|* Installation user             
+|* 2014-09-11
+|******************************************************************************
+|* Main table tcisg003 Item Release header, Form Type 4
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttcisg003 | Item Release header
+	table	ttcisg004
+	table	ttcisg005
+	table	tdmisg005
+
+	extern	domain	tppdm.cspa	elmt.f    fixed
+	extern	domain	tcitem		item.f    fixed
+	extern	domain	tccprj		proj.f    fixed
+
+#include <bic_dam>
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+group.1:
+init.group:
+	get.screen.defaults()
+
+|****************************** choice section **********************************
+choice.update:
+before.choice:
+	select	tcisg003.item
+	from	tcisg003
+	where	tcisg003._index1 = {:proj.f, :elmt.f, :item.f}
+	selectdo
+	selectempty
+		message("Please Select Correct Input(s)")
+		choice.again()
+	endselect
+	
+on.choice:
+	if	ask.enum("tcisg02030001", tcyesno.no) = tcyesno.yes	then
+		|All Unused Child Item will be removed & Available for Re-Lotting. Are you sure...?
+		read.main.table()
+		message("Updated...!!!")
+	else
+		choice.again()
+	endif	
+		
+	
+|****************************** field section **********************************
+field.elmt.f:
+before.zoom:
+	query.extend.where.in.zoom("tcisg003._index1 = " & quoted.string(proj.f))
+	
+field.item.f.segment.1:
+before.zoom:
+	tcisg003.proj = proj.f
+	tcisg003.elmt = elmt.f
+	
+field.item.f.segment.2:
+before.zoom:
+	tcisg003.proj = proj.f
+	tcisg003.elmt = elmt.f
+|****************************** function section **********************************
+Functions:
+
+function read.main.table()
+{
+	long	ret
+	
+	select	tcisg004.*
+	from	tcisg004 for update
+	where	tcisg004._index1 = {:proj.f, :elmt.f, :item.f}
+	and	tcisg004.indt = tcyesno.no
+	and	tcisg004.refq = tcyesno.no
+	and	tcisg004.orno = tcyesno.no
+	and	tcisg004.rcpt = tcyesno.no
+	selectdo
+		Remove_Link_Order(tcisg004.proj, tcisg004.elmt, tcisg004.itmh, tcisg004.item)
+		Update_Status_dmisg005(tcisg004.proj, tcisg004.elmt, tcisg004.docn, tcisg004.rvid, tcisg004.itmh, tcisg004.item)
+		ret = dal.destroy.object("tcisg004")
+		commit.transaction()
+	endselect
+}
+
+function Remove_Link_Order(
+			domain	tccprj		in.proj,
+			domain	tppdm.cspa	in.elmt,
+			domain	tcitem		in.loti,
+			domain	tcitem		in.item
+			)
+{
+	long	e.ret
+	
+	select	tcisg005.*
+	from	tcisg005 for update
+	where	tcisg005._index1 = {:in.proj, :in.elmt, :in.loti, :in.item}
+	selectdo
+		e.ret = dal.destroy.object("tcisg005")
+	endselect
+}
+
+function Update_Status_dmisg005(
+			domain	tccprj		id.proj,
+			domain	tppdm.cspa	id.elmt,
+			domain	dmdoc.docid	id.docn,
+			domain	dmdoc.revv	id.revi,
+			domain	tcitem		id.loti,
+			domain	tcitem		id.item
+				)
+{
+	long	d.ret
+	
+	select	dmisg005.*
+	from	dmisg005 for update
+	where	dmisg005._index1 = {:id.proj, :id.elmt, :id.docn, :id.revi, :id.item}
+	and	dmisg005.loti = :id.loti
+	selectdo
+		dal.change.object("dmisg005")
+		dal.set.field("dmisg005.stat", dmstat.process)
+		d.ret = dal.save.object("dmisg005")
+	endselect
+}
+			

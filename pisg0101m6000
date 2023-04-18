@@ -1,0 +1,65 @@
+|******************************************************************************
+|* dmisg0101m600  0  VRC B61U a7 isg 
+|* Link Dcoument to DCR
+|* Installation user             
+|* 2015-01-13
+|******************************************************************************
+|* Main table dmisg001 Incoming Document Master, Form Type 1
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+  table   tdmisg001 | Incoming Document Master
+  table   tdmisg115
+  extern	domain	tcorno	dcr.number
+
+
+|****************************** program section ********************************
+before.program:
+	import("dmisg115.dcrn", dcr.number)
+	query.extend.where("dmisg001.link = tcyesno.no and (dmisg001.stat = dmstat.process or dmisg001.stat = dmstat.released)")
+
+|****************************** group section **********************************
+choice.process:
+on.choice:
+	select	dmisg001.*
+	from	dmisg001 for update
+	where	dmisg001._index3 = {:dmisg001.cprj, :dmisg001.cspa}
+	and	dmisg001.dcrr = tcyesno.yes
+	and	dmisg001.link = tcyesno.no
+	and	(dmisg001.stat = dmstat.process or dmisg001.stat = dmstat.released)
+	selectdo
+		dmisg001.link = tcyesno.yes
+		db.update(tdmisg001, db.retry, e)
+		
+		select	dmisg115.*
+		from	dmisg115
+		where	dmisg115._index1 = {:dcr.number, :dmisg001.docn, :dmisg001.revn}
+		selectdo
+		selectempty
+			dmisg115.dcrn = dcr.number
+			dmisg115.docd = dmisg001.docn
+			dmisg115.revn = dmisg001.revn
+			db.insert(tdmisg115, db.retry, e)
+		endselect
+	endselect
+	
+	select	dmisg115.*
+	from	dmisg115
+	where	dmisg115._index1 = {:dcr.number}
+	and	dmisg115.docd = ""
+	selectdo
+		db.delete(tdmisg115, db.retry, e)
+	endselect
+	
+	commit.transaction()
+	
+after.choice:
+	execute(end.program)
+	
+choice.end.program:
+before.choice:
+	refresh.parent(-1)
+	
+	

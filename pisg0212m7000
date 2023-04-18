@@ -1,0 +1,150 @@
+|******************************************************************************
+|* tpisg0212m700  0  VRC B61U a7 isg 
+|* Sanction Utilization
+|* Installation user             
+|* 2014-10-04
+|******************************************************************************
+|* Main table tpisg012 Sanction Control Lines, Form Type 4
+|******************************************************************************
+|* ID: ISGEC01015, IT0047, Dharmendra, VRC B61U a7 isg, DT. 03-01-2015
+|* Element Description Corection.                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttpisg012 | Sanction Control Lines
+  table		ttpptc100
+  table		ttcmcs052
+
+extern 	domain 	tccprj          cprj.f    fixed
+extern 	domain 	tccprj          cprj.t    fixed
+extern	domain	tppdm.cspa	cspa.f
+extern	domain	tppdm.cspa	cspa.t
+extern	domain	tcpono		levl.f	
+extern	domain	tcpono		levl.t
+
+string 	line(1048)
+long ret2
+long stat.fp
+string err.file(100)
+string file.name(100)
+#pragma used dll ottdllbw
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+
+
+|**************************** Field section ***********************************
+field.cprj.f:
+when.field.changes:
+	cprj.t = cprj.f
+
+field.cspa.f:
+before.zoom:
+	tpptc100.cprj = cprj.f
+when.field.changes:
+	cspa.t = cspa.f
+
+field.cspa.t:
+before.zoom:
+	tpptc100.cprj = cspa.t
+	
+|*************************** Choice section ***********************************
+
+choice.cont.generate:
+on.choice:
+	generate.file()
+
+functions:
+function extern generate.file()
+{
+	err.file = bse.tmp.dir$() & str$(utc.num()) & ".xls"
+	
+	file.name = "c:\temp\" & str$(utc.num())  & ".xls"
+	
+	stat.fp = seq.open(err.file, "w+")
+	if stat.fp >0 then
+ 		seq.seek(0, 0, stat.fp)
+	endif
+
+	generate.header()
+	
+	read.main.table()
+	
+	seq.close(stat.fp)
+	ret2 = server2client(err.file,file.name,1)
+	ret2 = app_start(file.name,"c:","","","")
+}
+
+
+function generate.header()
+{
+	line = concat$("	",
+			sprintf$("Project"),
+			sprintf$("Project Description"),
+			sprintf$("Version"),
+			sprintf$("Element"),
+			sprintf$("Element Description"),
+ 			sprintf$("Level"),
+			sprintf$("Total Budget"),
+			sprintf$("Available"),
+			sprintf$("Exhausted"),
+			sprintf$("Percentage Utilized"))
+			
+	line = strip$(shiftl$(line))
+
+	seq.puts(line,stat.fp)
+}
+
+
+function read.main.table()
+{
+	domain	tcamnt		utilized
+	domain	tcpono		levlf
+	domain	tcpono		levlt
+	levlf =  levl.f - 1
+	levlt =  levl.t - 1
+	
+	select 	tpisg012.*, tcmcs052.dsca
+	from	tpisg012, tcmcs052
+	where 	tpisg012._index1 inrange {:cprj.f} and {:cprj.t}
+	and	tpisg012.elem inrange :cspa.f and :cspa.t
+	and	tpisg012.levl between :levlf and :levlt
+	and	tpisg012.cprj refers to tcmcs052
+	selectdo
+		tpptc100.desc = ""
+		select tpptc100.desc from tpptc100
+		where tpptc100._index1 = {:tpisg012.cprj, :tpisg012.elem} 	|#ISGEC01015.n
+		selectdo
+		endselect
+		
+		
+		if tpisg012.totl <> 0 then
+			utilized = (tpisg012.exha / tpisg012.totl) * 100
+			utilized = round(utilized,2,1)
+		else
+			utilized = 0
+		endif
+		
+		line = ""
+		line = concat$("	",
+				sprintf$("%s",tpisg012.cprj),
+				sprintf$("%s",tcmcs052.dsca),
+				sprintf$("%s",tpisg012.vers),
+				sprintf$("%s",tpisg012.elem),
+				sprintf$("%s",tpptc100.desc),
+ 				sprintf$("%d",(tpisg012.levl+1)),
+				sprintf$("%f",tpisg012.totl),
+				sprintf$("%f",(tpisg012.totl - tpisg012.exha)),
+				sprintf$("%f",tpisg012.exha),
+				sprintf$("%f",utilized))
+		line = strip$(shiftl$(line))
+		seq.puts(line,stat.fp)
+	endselect
+	
+}

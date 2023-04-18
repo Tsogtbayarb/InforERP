@@ -1,0 +1,119 @@
+|******************************************************************************
+|* tfisg0201m000  0  VRC B61U a7 live
+|* Update IR Payment Processing
+|* Tools                         
+|* 2014-06-09
+|******************************************************************************
+|* Main table tfisg001 IR Details, Form Type 4
+|******************************************************************************
+|* ESSP Incident: 3739, Ritu Shrivastava, 03-06-2014,	B61U a7 live                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttfisg001 | IR Details
+  table   ttfacp100
+  table   ttfacp200
+  table   ttfcmg100
+
+   extern  domain  tccom.bpid       bpid.f    fixed
+   extern  domain  tccom.bpid       bpid.t    fixed
+   extern  domain  tfgld.docn       irno.f
+   extern  domain  tfgld.docn       irno.t
+   extern  domain  tcncmp           ncmp.f
+   extern  domain  tcncmp           ncmp.t
+   extern  domain  tcyesno  txta.txt
+	
+	    long ret_val
+
+#include <bic_dam>
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+   
+|***************************** choice section ***********************************
+choice.cont.update:
+on.choice:
+	UpdatePaymentProcess()
+
+|****************************** function ******************************************
+functions:
+
+function UpdatePaymentProcess()
+{
+	select tfisg001.stat
+	from   tfisg001
+	where  tfisg001._index3 inrange {:irno.f} and {:irno.t}
+	and    tfisg001.stat in (tfisg.status.invoice.process,tfisg.status.sent.for.pay,tfisg.status.payment.proc)
+	selectdo
+		if tfisg001.stat = tfisg.status.invoice.process then
+			dal.start.business.method("tfisg001","sent.for.payment",ret_val)
+			if ret_val <> 0 then
+				show.dal.messages(MSG.ALL)
+			else
+				UpdateIRNumberForSentToFinance()
+			endif
+		else
+			UpdateIRNumberForSentToFinance()
+		endif
+	endselect
+}
+			
+
+function UpdateIRNumberForSentToFinance()
+{
+	select	tfisg001.stat,tfisg001.irno
+	from	tfisg001 for update
+	where	tfisg001.stat in (tfisg.status.sent.for.pay,tfisg.status.payment.proc)
+	and     tfisg001._index3 inrange {:irno.f} and {:irno.t}
+	selectdo
+		select	tfacp100.ninv,tfacp100.ctyp,tfacp100.cinv
+		from	tfacp100 for update
+		where	tfacp100._index1 = {:tfisg001.irno}
+		selectdo
+			select	tfacp200.ttyp,tfacp200.ninv,tfacp200.tdoc,
+				tfacp200.docn
+			from	tfacp200
+			where	tfacp200._index1 = {:tfacp100.ctyp,:tfacp100.cinv}
+			and	tfacp200.tpay in (tfacp.tpay.normal,tfacp.tpay.anticipated)
+			selectdo
+				if isspace(tfisg001.ptyp) then
+					dal.change.object("tfisg001")
+					dal.set.field("tfisg001.ptyp",tfacp200.tdoc)
+					dal.set.field("tfisg001.pdoc",tfacp200.docn)
+					dal.set.field("tfisg001.stat", tfisg.status.payment.proc)
+					ret_val = dal.save.object("tfisg001")
+				else
+					if tfisg001.stat = tfisg.status.payment.proc then
+						select tfcmg100.ttyp, tfcmg100.docn
+						from   tfcmg100
+						where  tfcmg100.typo = {:tfacp200.tdoc}
+						and    tfcmg100.doco = {:tfacp200.docn}
+						selectdo
+							dal.change.object("tfisg001")
+							
+							dal.set.field("tfisg001.ptyp",tfcmg100.ttyp)
+							dal.set.field("tfisg001.pdoc",tfcmg100.docn)
+							dal.set.field("tfisg001.stat", tfisg.status.payment.proc)
+							
+							ret_val = dal.save.object("tfisg001")
+						selectempty
+						endselect
+					endif
+				endif
+				
+				if ret_val <> 0 then
+					show.dal.messages(MSG.ALL)
+					abort.transaction()
+				else
+					commit.transaction()
+				endif				
+				
+			endselect
+		endselect
+	endselect
+}

@@ -1,0 +1,206 @@
+|******************************************************************************
+|* tdisg005  0  VRC B61U a7 live
+|* Dal 2 for tdisg005
+|* tools1
+|* 14-06-02 [13:32]
+|******************************************************************************
+|* Script Type: DAL
+|******************************************************************************
+                                                                                
+#include <bic_dal2>
+	table	ttdisg005
+	table	twhinh312
+	table	ttdisg006
+	
+#include "itdisgdll0003"	
+	
+function extern long before.open.object.set()
+{
+	dal.field.depends.on("tdisg005.acht",HOOK_UPDATE,"tdisg005.qoor")
+	
+	return(0)
+}
+
+function extern long before.save.object(long type)
+{
+	domain	tcorno		o.orno
+	domain	tcpono		o.pono
+	domain	tccprj		o.cprj
+	domain	tppdm.cspa	o.cspa
+	domain	tcitem		o.item
+	
+| 	if tdisg005.stat = tcyesno.yes then
+| 		insert.in.tdisg006()
+| 	endif
+	on case type
+		case DAL_UPDATE:
+			if	tdisg005.stat = tcyesno.yes	then
+| 				get.purchase.order.against.receipt(tdisg005.rcno,tdisg005.rcln,o.orno,o.pono)
+| 				tcisgdll0003.Get_Order(o.orno, o.pono, o.cprj, o.cspa, o.item)
+| 				UPDATE_STATUS1(o.cprj, o.cspa, o.item, tdisg005.item, rcpt)
+				insert.in.tdisg006()
+			endif	
+			break
+	ENDCASE		
+	return(0)
+}
+
+function extern long before.destroy.object()
+{
+	domain	tcorno		o.orno
+	domain	tcpono		o.pono
+	
+	get.purchase.order.against.receipt(tdisg005.rcno,tdisg005.rcln,o.orno,o.pono)
+	
+	select 	tdisg006.orno
+	from	tdisg006 for update
+| 	where	tdisg006._index1 = {:o.orno,:o.pono,:tdisg005.rcno,:tdisg005.rcln,:tdisg005.sern}
+	where	tdisg006._index1 = {:o.orno,:o.pono,:tdisg005.rcno,:tdisg005.rcln,:tdisg005.item}
+	selectdo
+		dal.destroy.object("tdisg006")
+	endselect
+	
+	return(0)
+}
+
+function extern boolean tdisg005.qoor.is.valid()
+{
+	domain	tcqiv1		o.qoor
+	domain	tcqiv1		o.acht
+	
+| 	get.used.quantity(tdisg005.rcno,tdisg005.rcln,tdisg005.item,
+| 			o.qoor,o.acht)
+	get.receipt.quantity(tdisg005.rcno,tdisg005.rcln,tdisg005.item, o.qoor)		
+	if (tdisg005.qoor + o.qoor) > tdisg005.qnty then
+		dal.set.error.message("@ Actual Quanity exceed with total allow Quanity")
+		return(DALHOOKERROR)
+	endif
+		
+	return(true)
+}
+
+function extern boolean tdisg005.qoor.is.mandatory()
+{
+	if tdisg005.slct = tcyesno.yes and tdisg005.qoor = 0 then
+		dal.set.error.message("@ Enter Actual Receipt Quantity")
+		return(true)
+	endif
+	
+	return(false)
+}
+
+function	extern	tdisg005.acht.update()
+{
+	tdisg005.acht = (tdisg005.wght/tdisg005.qnty)*tdisg005.qoor
+}
+
+
+function get.used.quantity
+			(
+				domain	whinh.shpm		i.rcno,	|Purchase Order
+				domain	tcpono			i.rcln,	|Receipt Number
+| 				domain	tcpono			i.sern,	|Serial Number
+				domain	tcitem			i.item,	|Item
+			ref	domain	tcqiv1			o.qoor,	|Used Quanity	
+			ref	domain	tcqiv1			o.acht	|Used Weight
+			)
+{
+	select 	whinh312.orno,
+		whinh312.pono
+	from	whinh312
+	where	whinh312._index1 = {:i.rcno,:i.rcln}
+	as set with 1 rows
+	selectdo
+		select 	sum(tdisg002.qoor):o.qoor,
+			sum(tdisg002.acht):o.acht
+		from	tdisg002
+| 		where	tdisg002._index1 = {:whinh312.orno,:whinh312.pono,:i.sern}
+		where	tdisg002._index1 = {:whinh312.orno,:whinh312.pono,:i.item}
+		as set with 1 rows
+		selectdo
+		selectempty
+			o.qoor = 0
+			o.acht = 0
+		endselect
+	selectempty
+		o.qoor = 0
+		o.acht = 0
+	endselect
+}
+
+function get.receipt.quantity(domain	whinh.shpm	i.rcno,
+				domain	tcpono		i.rcln,	|Receipt Number
+				domain	tcitem		i.item,	|Item
+			ref	domain	tcqiv1		o.qoor
+			)
+{
+	select 	whinh312.orno,
+		whinh312.pono
+	from	whinh312
+	where	whinh312._index1 = {:i.rcno, :i.rcln}
+	as set with 1 rows
+	selectdo
+		select	sum(tdisg006.qoor):o.qoor
+		from	tdisg006
+		where	tdisg006._index2 = {:whinh312.orno, :whinh312.pono, :i.item}
+		selectdo
+		selectempty
+			o.qoor = 0
+		endselect
+	selectempty
+		o.qoor = 0
+	endselect	
+}			
+			
+
+function extern  insert.in.tdisg006()
+{
+	domain	tcorno		o.orno
+	domain	tcpono		o.pono
+	long	ret
+	
+	get.purchase.order.against.receipt(tdisg005.rcno,tdisg005.rcln,o.orno,o.pono)
+	
+	
+	select 	tdisg006.orno
+	from	tdisg006
+| 	where	tdisg006._index1 = {:o.orno,:o.pono,:tdisg005.rcno,:tdisg005.rcln,:tdisg005.sern}
+	where	tdisg006._index1 = {:o.orno,:o.pono,:tdisg005.rcno,:tdisg005.rcln,:tdisg005.item}
+	as set with 1 rows
+	selectdo
+	selectempty
+		dal.new.object("tdisg006")
+		dal.set.field("tdisg006.orno",o.orno)
+		dal.set.field("tdisg006.pono",o.pono)
+		dal.set.field("tdisg006.rcno",tdisg005.rcno)
+		dal.set.field("tdisg006.rcln",tdisg005.rcln)
+| 		dal.set.field("tdisg006.sern",tdisg005.sern)
+		dal.set.field("tdisg006.item",tdisg005.item)
+		dal.set.field("tdisg006.qnty",tdisg005.qnty)
+		dal.set.field("tdisg006.wght",tdisg005.wght)
+		dal.set.field("tdisg006.qoor",tdisg005.qoor)
+		dal.set.field("tdisg006.acht",tdisg005.acht)
+		dal.set.field("tdisg006.docn",tdisg005.docn)
+		dal.set.field("tdisg006.revi",tdisg005.revi)
+		ret = dal.save.object("tdisg006")
+	endselect
+	
+}
+
+function get.purchase.order.against.receipt
+			(
+				domain	whinh.shpm	i.rcno,
+				domain	tcpono		i.pono,
+			ref 	domain	tcorno		o.orno,
+			ref 	domain	tcpono		o.pono
+			)
+{
+	select 	whinh312.orno:o.orno,
+		whinh312.pono:o.pono
+	from	whinh312
+	where	whinh312._index1 = {:i.rcno,:i.pono}
+	as set with 1 rows
+	selectdo
+	endselect
+	
+}
