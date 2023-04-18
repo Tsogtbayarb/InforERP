@@ -1,0 +1,157 @@
+|******************************************************************************
+|* tdisg8165m000  0  VRC B61U a7 live
+|* Payment Breakup
+|* Installation user             
+|* 2014-07-28
+|******************************************************************************
+|* Main table tdisg865 Payment Breakup, Form Type 1
+|******************************************************************************
+|* ISGECDV001085, IT0205, Arjit Gupta, VRC B61U a7 live, Dt. 07-10-2014
+|* Block Populate Payment Breakup it should be get populated when Commercial Invoice
+|* generated.
+|*
+|* ISGECDV001089, IT0205, Arjit Gupta, Dt. 08-10-2014, VRC B61U a7 live
+|* Value must be 6 place after decimal
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttdisg865 | Payment Breakup
+  table   ttdisg831 | Billing Advice 
+  table   ttdisg824 | Payment Terms Details
+  table   ttdisg860 | LC - Payment Terms Details
+
+extern	domain	tcorno	i.cinv,i.lcno
+extern	domain	tccprj	i.cprj
+		long	ret1
+| extern	domain	tcdisc	valu				|#ISGECDV001089.o		
+extern	domain	tcratc	valu				|#ISGECDV001089.n		
+extern	domain	tcamnt	i.camt,v.amnt,old.amnt	
+|****************************** form section ********************************
+
+|****************************** program section ********************************
+before.program:
+	import("tdisg831.cinv", i.cinv)
+	import("tdisg831.lcno", i.lcno)
+	import("tdisg831.cprj", i.cprj)
+| 	import("tdisg831.camt", i.camt)
+	
+	select	sum(tdisg831.camt):i.camt
+	from	tdisg831
+	where	tdisg831._index3 = {:i.cinv}
+	selectdo
+	selectempty
+		i.camt = 0
+	endselect	
+							
+	if not isspace(i.lcno) then
+| 		get.payment.terms.details.lcno(i.lcno)					|#ISGECDV001085.o
+		change.field.label("tdisg865.lcno",1,"LC No.")  
+	else
+| 		get.payment.terms.details.cprj(i.cprj)					|#ISGECDV001085.o
+		change.field.label("tdisg865.lcno",1,"Project No.")
+	endif	
+	
+after.form.read:
+enable.save.on.occ.change()
+if not isspace(i.lcno) then
+		
+		change.field.label("tdisg865.lcno",1,"LC No.")  
+	else
+		
+		change.field.label("tdisg865.lcno",1,"Project No.")
+	endif		
+|****************************** field section **********************************
+field.valu:
+before.field:
+	if not isspace(i.lcno) then
+		select	tdisg860.pval
+		from	tdisg860
+		where	tdisg860._index1 = {:tdisg865.lcno,:tdisg865.ptcd}
+		selectdo
+			valu = tdisg860.pval
+		selectempty
+			valu = 0.0
+		endselect		
+	else
+		select	tdisg824.pval
+		from	tdisg824
+		where	tdisg824._index1 = {:tdisg865.lcno,:tdisg865.ptcd}
+		selectdo
+			valu = tdisg824.pval
+		selectempty
+			valu = 0.0
+		endselect	
+	endif
+
+field.tdisg865.amnt:
+check.input:
+	select	sum(tdisg865.amnt):v.amnt
+	from	tdisg865
+	where	tdisg865._index1 = {:tdisg865.cinv,:tdisg865.lcno}
+	selectdo
+	endselect
+	on.old.occ(get.old.amnt)
+
+	if v.amnt + (tdisg865.amnt-old.amnt) > i.camt then
+		set.input.error("",e)
+		message("Total Amount Can not be greater than Commercial Amount")
+	endif
+	
+|****************************** function section **********************************
+functions:
+function get.payment.terms.details.lcno(domain		tcorno	v.lcno)
+{	
+	select	tdisg860.*
+	from	tdisg860
+	where	tdisg860._index1 = {:v.lcno}
+	selectdo
+		select	tdisg865.*
+		from	tdisg865 
+		where	tdisg865._index1 = {:i.cinv,:tdisg860.lcno,:tdisg860.ptcd}
+		selectdo
+		selectempty
+			tdisg865.cinv = i.cinv
+			tdisg865.lcno = tdisg860.lcno
+			tdisg865.ptcd = tdisg860.ptcd
+			tdisg865.desc = tdisg860.desc
+			tdisg865.amnt = (tdisg860.pval * i.camt)/100 
+			ret1 = db.insert(ttdisg865,db.skip.dupl,e)
+		endselect	
+		if ret1 = 0 then
+			commit.transaction()
+		else
+			abort.transaction()
+		endif	
+	endselect
+}
+function get.payment.terms.details.cprj(domain		tccprj	v.cprj)
+{
+	select	tdisg824.*
+	from	tdisg824
+	where	tdisg824._index1 = {:v.cprj}
+	selectdo
+		select	tdisg865.*
+		from	tdisg865 
+| 		where	tdisg865._index1 = {:i.cinv,:tdisg824.cprj,:tdisg860.ptcd}
+		where	tdisg865._index1 = {:i.cinv,:tdisg824.cprj,:tdisg824.ptcd}
+		selectdo
+		selectempty
+			tdisg865.cinv = i.cinv
+			tdisg865.lcno = tdisg824.cprj
+			tdisg865.ptcd = tdisg824.ptcd
+			tdisg865.desc = tdisg824.desc
+			tdisg865.desc = tdisg824.desc
+			tdisg865.amnt = (tdisg824.pval * i.camt)/100 
+			ret1 = db.insert(ttdisg865,db.skip.dupl,e)
+		endselect	
+		if ret1 = 0 then
+			commit.transaction()
+		else
+			abort.transaction()
+		endif		
+	endselect
+}
+function get.old.amnt()
+{
+	old.amnt = tdisg865.amnt
+}

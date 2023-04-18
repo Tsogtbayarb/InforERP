@@ -1,0 +1,144 @@
+|******************************************************************************
+|* tdisg8157  0  VRC B61U a7 live
+|* Consumption Details
+|* Tools                         
+|* 2014-06-16
+|******************************************************************************
+|* Main table tdisg857 Consumption Details, Form Type 1
+|******************************************************************************
+|* ISG001066   Kartikeya Rao,2014-06-16 ,  B61U a7 live                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+	table  	ttdisg857 | Consumption Details
+	table	ttdisg826
+	table	ttdisg841
+	table	ttppdm740
+	table	ttdisg824
+	table	ttdisg858
+	table	ttdisg831
+	
+	extern	domain	tccprj	cprj
+	extern	domain	tccom.bpid	bpid
+	extern	domain	tcamnt	dcvl,amti,balc
+	extern	domain	tcpono	i.sern
+
+|****************************** program section ********************************
+main.table.io:
+after.write:
+	select sum(tdisg831.amti):amti
+	from	tdisg831
+	where	tdisg831._index4 = {:tdisg857.cprj,:tdisg857.bpid}
+	selectdo
+		balc = tdisg857.dcvl - amti
+	selectempty
+		balc=0
+	endselect		
+	i.sern = 0
+	select tdisg831.cinv,tdisg831.cind
+	from	tdisg831 
+	where	tdisg831._index4 = {:tdisg857.cprj,:tdisg857.bpid}
+	selectdo
+		i.sern = i.sern + 1
+		select tdisg858.*
+		from	tdisg858 for update
+		where	tdisg858._index1={:tdisg857.cprj,:i.sern}
+		selectdo
+		selectempty
+			tdisg858.cprj=tdisg857.cprj
+			tdisg858.srno=i.sern
+			tdisg858.cddt=tdisg831.cind
+			tdisg858.cinv=tdisg831.cinv
+			tdisg858.camt=amti
+			tdisg858.balc=balc
+			db.insert(ttdisg858,db.retry)
+		endselect
+	endselect
+	
+		
+
+
+|****************************** group section **********************************
+|****************************** Field section **********************************
+field.tdisg857.dctp:
+when.field.changes:
+	if tdisg857.dctp = ltoe(0) then
+		disable.fields("tdisg857.dcno")
+		disable.fields("tdisg857.dcvl")
+	else
+		enable.fields("tdisg857.dcno")
+		enable.fields("tdisg857.dcvl")
+	endif	
+field.tdisg857.dcno:
+check.input:
+	if not isspace(tdisg857.dcno) then
+		if tdisg857.dctp = tdisg.doctyp.lc then
+			select	tdisg841.lcno
+			from	tdisg841
+			where	tdisg841._index1 = {:tdisg857.dcno}
+			selectdo
+			selectempty
+				message("Document No Not Found !")
+				set.input.error("",e)
+			endselect
+		else
+			select	tdisg826.abgn
+			from	tdisg826
+			where	tdisg826.abgn = {:tdisg857.dcno}
+			selectdo
+			selectempty
+				message("Document No Not Found !")
+				set.input.error("",e)
+			endselect
+		endif
+	endif		
+before.zoom:
+	if tdisg857.dctp = tdisg.doctyp.lc then
+		attr.zoomcode=z.session
+		attr.zoomsession$="tdisg8141m001"
+		attr.zoomreturn$ ="tdisg841.lcno"
+		query.extend.where.in.zoom  ("tdisg841._index2 = "&quoted.string(tdisg857.cprj))	
+	else
+		attr.zoomcode=z.session
+		attr.zoomsession$="tdisg8126m000"
+		attr.zoomreturn$ ="tdisg826.abgn"
+		query.extend.where.in.zoom  ("tdisg826._index1 = "&quoted.string(tdisg857.cprj))	
+	endif
+	
+field.tdisg857.dcvl:
+before.display:
+	if tdisg857.dctp = tdisg.doctyp.lc then
+		select tdisg841.amnt
+		from	tdisg841
+		where	tdisg841._index1 = {:tdisg857.dcno}
+		selectdo
+			tdisg857.dcvl = tdisg841.amnt
+		selectempty
+			tdisg857.dcvl = 0
+		endselect
+	else
+		select tdisg826.ptcd
+		from	tdisg826
+		where	tdisg826._index1 = {:tdisg857.cprj,:tdisg857.dcno}
+		selectdo
+			select tdisg824.amnt
+			from	tdisg824
+			where	tdisg824._index1 = {:tdisg857.cprj,:tdisg826.ptcd}
+			selectdo
+				tdisg857.dcvl = tdisg824.amnt
+			selectempty
+				tdisg857.dcvl = 0
+			endselect
+		endselect	
+	endif		
+
+field.tdisg857.bpid:
+before.display:
+	select tppdm740.ofbp
+	from	tppdm740
+	where	tppdm740._index1 = {:tdisg857.cprj}
+	selectdo
+		tdisg857.bpid = tppdm740.ofbp
+	selectempty	
+		tdisg857.bpid =""
+	endselect	

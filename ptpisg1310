@@ -1,0 +1,562 @@
+|******************************************************************************
+|* dmisg131  0  VRC B61U a7 isg 
+|* DAL 2 for dmisg131
+|* baan
+|* 15-01-23 [17:28]
+|******************************************************************************
+|* Script Type: DAL
+|******************************************************************************
+|* ISGEC004004, IT0047, Dharmendra, Dt. 30-01-2015, B61U a7 isg
+|*
+|* ISGEC004020, IT0047, Dharmendra, Dt. 07-10-2015, B61U a7 isg
+|******************************************************************************
+        table	tdmisg131
+	table	ttcmcs050
+	table	ttpmsl000
+	table	tdmisg129
+	table	tdmisg121
+	table	ttccom001
+	table	ttcemm030
+	table	ttcmcs065
+	extern	domain	tclogn	login.user
+	extern	domain	tcpono	length
+		domain	tfgld.sess calling.prog
+		
+	#include <bic_dal2>
+	#include "itcmcs2000"	|* DAL(-GUI) Support Defines
+	
+	#define	GET_AVAILABLE_LINES
+^	get.documents.lines()	
+
+function extern long before.open.object.set()
+{
+	login.user = logname$
+	length = len(login.user)
+	
+	get.var(pid,"prog.name$",calling.prog)
+		
+	login.user = strip$(login.user) & string.set$(" ", 16-length)
+	read.parameters()
+	define.field.dependencies()
+	return(0)
+}
+
+					|#ISGEC004020.sn
+function extern long after.get.object(long type)
+{
+	if calling.prog = "dmisg1131m100" then
+		if dmisg131.stat = dmisg.doc.rec.underapp then
+			select	dmisg132.docn, dmisg121.eunt
+			from	dmisg132, dmisg121
+			where	dmisg132._index1 = {:dmisg131.tran}
+			and	dmisg132.docn refers to dmisg121
+			as set with 1 rows
+			selectdo
+				select	dmisg129.*
+				from	dmisg129
+				where	dmisg129._index3 = {:login.user, :dmisg121.eunt, :dmisg131.dprj, :dmisg131.type}
+				selectdo
+				selectempty
+					return(DALHOOKERROR)
+				endselect	
+			endselect	
+		else
+			return(DALHOOKERROR)
+		endif	
+	endif
+
+	if calling.prog = "dmisg1131m200" then
+		if dmisg131.stat = dmisg.doc.rec.underiss then
+			select	dmisg132.docn, dmisg121.eunt
+			from	dmisg132, dmisg121
+			where	dmisg132._index1 = {:dmisg131.tran}
+			and	dmisg132.docn refers to dmisg121
+			as set with 1 rows
+			selectdo
+				select	tccom001.cwoc
+				from	tccom001
+				where	tccom001._index4 = {:login.user}
+				selectdo
+					if not isspace(tccom001.cwoc) then
+						select	tcmcs065.comp, tcmcs065.ccal
+						from	tcmcs065
+						where	tcmcs065._index1 = {:tccom001.cwoc}
+						selectdo
+							select	tcemm030.eunt
+							from	tcemm030
+							where	tcemm030._index1 = {:dmisg121.eunt}
+							and	tcemm030.fcmp = :tcmcs065.comp
+							and	tcemm030.ccal = :tcmcs065.ccal
+							selectdo
+							selectempty
+								return(DALHOOKERROR)
+							endselect	
+						endselect
+					else
+						return(DALHOOKERROR)
+					endif
+				endselect
+			selectempty
+				return(DALHOOKERROR)
+			endselect	
+		else
+			return(DALHOOKERROR)
+		endif	
+	else
+		
+	endif	
+	return(0)
+}
+					|#ISGEC004020.en
+function extern long before.save.object(long type)
+{
+	on case type
+	case DAL_NEW:
+		if  tcmcs.dll0050.check.and.generate.order.number(
+				3, dmisg131.tran, tpmsl000.tran, 
+				9, dmisg131.tran) then
+			return(DALHOOKERROR)
+		endif
+		dmisg131.user = logname$
+		dmisg131.date = utc.num()
+		break
+	endcase	
+	return(0)
+}
+
+function extern boolean method.is.allowed(long type)
+{
+	domain	tfgld.sess calling.prog
+	
+	on case type
+	case	DAL_UPDATE :
+		get.var(pid,"prog.name$",calling.prog)
+		if calling.prog = "dmisg1131m200" then
+			select	dmisg132.docn, dmisg121.eunt
+			from	dmisg132, dmisg121
+			where	dmisg132._index1 = {:dmisg131.tran}
+			and	dmisg132.docn refers to dmisg121
+			as set with 1 rows
+			selectdo
+				select	tccom001.cwoc
+				from	tccom001
+				where	tccom001._index4 = {:login.user}
+				selectdo
+					if not isspace(tccom001.cwoc) then
+						select	tcmcs065.comp, tcmcs065.ccal
+						from	tcmcs065
+						where	tcmcs065._index1 = {:tccom001.cwoc}
+						selectdo
+							select	tcemm030.eunt
+							from	tcemm030
+							where	tcemm030._index1 = {:dmisg121.eunt}
+							and	tcemm030.fcmp = :tcmcs065.comp
+							and	tcemm030.ccal = :tcmcs065.ccal
+							selectdo
+								return(true)
+							selectempty
+								return(false)
+							endselect	
+						endselect
+					else
+						return(false)
+					endif
+				endselect
+			selectempty
+				return(false)
+			endselect
+		endif
+		
+		if calling.prog = "dmisg1131m100" then
+			select	dmisg129.logn
+			from	dmisg129
+			where	dmisg129._index2 = {:dmisg131.dprj, :dmisg131.type, :login.user}
+			selectdo
+			selectempty
+				return(false)
+			endselect
+		endif
+| 		if dmisg131.user <> login.user then
+| 			return(false)
+| 		endif
+		
+		if calling.prog = "dmisg1131m000" then
+			if dmisg131.stat = dmisg.doc.rec.free or dmisg131.stat = dmisg.doc.rec.returned then
+				return(true)
+			else
+				return(false)
+			endif	
+		else
+
+		endif
+		break
+		
+	case	DAL_DESTROY :
+		if dmisg131.stat = dmisg.doc.rec.free or dmisg131.stat = dmisg.doc.rec.returned then
+			return(true)
+		else
+			return(false)
+		endif	
+		
+		break
+	endcase
+	
+	return(true)
+
+}
+
+function long read.parameters()
+{
+	RETIFNOK(tcmcs.dll0095.read.parm("tpmsl000"))
+	return(0)
+}
+
+function extern long before.new.object()
+{	
+	select	tcmcs050.seri
+	from	tcmcs050
+	where	tcmcs050._index1 = {:tpmsl000.tran}
+	as set with 1 rows
+	selectdo
+	endselect
+	
+	dmisg131.tran = tcmcs050.seri
+
+	return(0)
+}
+
+function extern boolean dmisg131.tran.is.valid()
+{
+	if len(trim$(dmisg131.tran)) <> 9 then
+		select	tcmcs050.seri
+		from	tcmcs050
+		where	tcmcs050._index1 = {:tpmsl000.tran, :dmisg131.tran}
+		selectdo
+		selectempty
+			return(false)
+		endselect
+	endif
+	return(true)
+
+}
+
+function extern boolean dmisg131.bpid.is.applicable()
+{
+	if dmisg131.type = dmisg.tran.typ.customer and
+		GET_AVAILABLE_LINES then
+			return(true)	
+	endif
+	return(false)
+}
+
+function extern boolean dmisg131.bpid.is.mandatory()
+{
+	if dmisg131.type = dmisg.tran.typ.customer then
+		return(true)	
+	endif
+	return(false)
+}
+
+function extern boolean dmisg131.cadr.is.applicable()
+{
+	if dmisg131.type = dmisg.tran.typ.customer and
+		GET_AVAILABLE_LINES then
+		return(true)	
+	endif
+	return(false)
+}
+
+function extern boolean dmisg131.cadr.is.mandatory()
+{
+	if dmisg131.type = dmisg.tran.typ.customer then
+		return(true)	
+	endif
+	return(false)
+}
+
+function extern boolean dmisg131.cadr.is.valid()
+{
+	select	dmisg127.cadr
+	from	dmisg127
+	where	dmisg127._index1 = {:dmisg131.bpid, :dmisg131.cadr}
+	selectdo
+	selectempty
+		return(false)
+	endselect
+	return(true)
+
+}
+
+function extern boolean dmisg131.ofbp.is.applicable()
+{
+	if dmisg131.type = dmisg.tran.typ.vendor and
+		GET_AVAILABLE_LINES then
+		return(true)	
+	endif
+	return(false)
+}
+
+function extern boolean dmisg131.ofbp.is.mandatory()
+{
+	if dmisg131.type = dmisg.tran.typ.vendor then
+		return(true)	
+	endif
+	return(false)
+}
+
+function extern boolean dmisg131.vadr.is.applicable()
+{
+	if dmisg131.type = dmisg.tran.typ.vendor and
+		GET_AVAILABLE_LINES then
+		return(true)	
+	endif
+	return(false)
+}
+
+function extern boolean dmisg131.vadr.is.mandatory()
+{
+	if dmisg131.type = dmisg.tran.typ.vendor then
+		return(true)	
+	endif
+	return(false)
+}
+
+function extern boolean dmisg131.vadr.is.valid()
+{
+	select	dmisg128.cadr
+	from	dmisg128
+	where	dmisg128._index1 = {:dmisg131.ofbp, :dmisg131.vadr}
+	selectdo
+	selectempty
+		return(false)
+	endselect
+	return(true)
+
+}
+
+function extern boolean dmisg131.cprj.is.applicable()
+{
+	if dmisg131.type = dmisg.tran.typ.site and
+		GET_AVAILABLE_LINES then
+		return(true)	
+	endif
+	return(false)
+}
+
+function extern boolean dmisg131.cprj.is.mandatory()
+{
+	if dmisg131.type = dmisg.tran.typ.site then
+		return(true)	
+	endif
+	return(false)
+}
+
+function extern boolean dmisg131.padr.is.applicable()
+{
+	if dmisg131.type = dmisg.tran.typ.site and
+		GET_AVAILABLE_LINES then
+		return(true)	
+	endif
+	return(false)
+}
+
+function extern boolean dmisg131.padr.is.mandatory()
+{
+	if dmisg131.type = dmisg.tran.typ.site then
+		return(true)	
+	endif
+	return(false)
+}
+
+function extern boolean dmisg131.padr.is.valid()
+{
+	select	dmisg126.cadr
+	from	dmisg126
+	where	dmisg126._index1 = {:dmisg131.cprj, :dmisg131.padr}
+	selectdo
+	selectempty
+		return(false)
+	endselect
+	return(true)
+
+}
+
+function extern boolean dmisg131.logn.is.applicable()
+{
+	if dmisg131.type = dmisg.tran.typ.internal and
+		GET_AVAILABLE_LINES then
+		return(true)	
+	endif
+	return(false)
+}
+
+function extern boolean dmisg131.logn.is.mandatory()
+{
+	if dmisg131.type = dmisg.tran.typ.internal then
+		return(true)	
+	endif
+	return(false)
+}
+
+function extern boolean dmisg131.dprj.is.applicable()
+{
+	if GET_AVAILABLE_LINES then
+		return(true)	
+	endif
+	return(false)
+}
+
+function extern boolean dmisg131.dprj.is.mandatory()
+{
+	return(true)
+}
+
+function extern boolean dmisg131.dprj.is.derived()
+{
+	if dmisg131.type = dmisg.tran.typ.site then
+		dmisg131.dprj = dmisg131.cprj
+		return(true)	
+	endif
+	return(false)
+}
+
+function extern boolean dmisg131.appr.is.applicable()
+{
+	if dmisg131.rejc = tcyesno.yes then
+		return(false)
+	endif
+	return(true)
+}
+
+function extern boolean dmisg131.rejc.is.applicable()
+{
+	if dmisg131.appr = tcyesno.yes then
+		return(false)
+	endif
+	return(true)
+}
+
+function extern boolean dmisg131.iisu.is.applicable()
+{
+	if dmisg131.retn = tcyesno.yes then
+		return(false)
+	endif
+	return(true)
+}
+
+function extern boolean dmisg131.retn.is.applicable()
+{
+	if dmisg131.iisu = tcyesno.yes then
+		return(false)
+	endif
+	return(true)
+}
+
+| function extern boolean dmisg131.issu.is.applicable()
+| {
+| 	if GET_AVAILABLE_LINES then
+| 		return(true)	
+| 	endif
+| 	return(false)
+| }
+
+function extern boolean process.is.allowed()
+{
+	if calling.prog = "dmisg1131m000" then
+		if dmisg131.user = login.user and
+			(dmisg131.stat = dmisg.doc.rec.free or dmisg131.stat = dmisg.doc.rec.returned) then
+			
+			return(true)
+		else
+			return(false)
+		endif
+	else
+		return(true)	
+	endif	
+	return(false)
+}
+
+function define.field.dependencies()
+{
+	dal.field.depends.on("dmisg131.bpid",
+					HOOK_IS_APPLICABLE , "dmisg131.type")
+	dal.field.depends.on("dmisg131.cadr",
+					HOOK_IS_APPLICABLE, "dmisg131.type")
+	dal.field.depends.on("dmisg131.ofbp",
+					HOOK_IS_APPLICABLE, "dmisg131.type")
+	dal.field.depends.on("dmisg131.vadr",
+					HOOK_IS_APPLICABLE, "dmisg131.type")				
+	dal.field.depends.on("dmisg131.cprj",
+					HOOK_IS_APPLICABLE, "dmisg131.type")
+	dal.field.depends.on("dmisg131.padr",
+					HOOK_IS_APPLICABLE, "dmisg131.type")										
+	dal.field.depends.on("dmisg131.logn",
+					HOOK_IS_APPLICABLE, "dmisg131.type")
+	dal.field.depends.on("dmisg131.dprj",
+					HOOK_IS_APPLICABLE, "dmisg131.type")
+	dal.field.depends.on("dmisg131.dprj",
+					HOOK_IS_DERIVED, "dmisg131.cprj")	
+	dal.field.depends.on("dmisg131.appr",
+					HOOK_IS_APPLICABLE , "dmisg131.rejc")
+	dal.field.depends.on("dmisg131.rejc",
+					HOOK_IS_APPLICABLE , "dmisg131.appr")
+	dal.field.depends.on("dmisg131.iisu",
+					HOOK_IS_APPLICABLE , "dmisg131.retn")
+	dal.field.depends.on("dmisg131.retn",
+					HOOK_IS_APPLICABLE , "dmisg131.iisu")					
+
+}
+
+
+function boolean get.documents.lines()
+{
+	select	dmisg132.tran
+	from	dmisg132
+	where	dmisg132._index1 = {:dmisg131.tran}
+	as set with 1 rows
+	selectdo
+		return(false)
+	endselect
+	return(true)
+}
+
+function extern boolean dmisg131.tfld.is.mandatory()
+{
+	if calling.prog = "dmisg1131m000" then
+| 		if dmisg131.issu = "007" and record.found() then
+		if dmisg131.issu = "007" then
+			return(true)
+		endif
+	endif
+	
+	return(false)
+}
+
+function extern boolean dmisg131.tfld.is.valid()
+{
+	if calling.prog = "dmisg1131m000" then
+		select	dmisg015.srno
+		from	dmisg015
+		where	dmisg015._index1 = {:dmisg131.type,:dmisg131.dprj,:dmisg131.tfld}
+		as set with 1 rows
+		selectdo
+		selectempty
+			return(false)
+		endselect
+	endif
+	
+	return(true)
+}
+
+function boolean record.found()
+{
+	select	dmisg015.type
+	from	dmisg015
+	where	dmisg015._index1 = {:dmisg131.type,:dmisg131.dprj}
+	selectdo
+		return(true)
+	endselect
+	
+	return(false)
+}
+

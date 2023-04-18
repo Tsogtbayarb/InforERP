@@ -1,0 +1,1184 @@
+|******************************************************************************
+|* dmisgdll0001  0  VRC B61U a7 live
+|* ODM File Upload
+|* baan
+|* 14-08-13 [12:02]
+|******************************************************************************
+|* Script Type: Library
+|******************************************************************************
+|* ISGEC004003, IT0047, Dharmendra, Dt.21-01-2015, B61U a7 isg 
+|* Change the logic for selection in dmdoc120, It was giving error
+|* while inserting data in dmdoc440 as values for fields dmdoc440.dcid,
+|* dmdoc440.type, dmdoc440.revm were inserting BLANK
+|****************************************************************************** 
+	table	tdmdoc120
+	table	tdmdoc440
+	table	tdmdoc210
+	table	tdmdoc410
+	table	tdmdoc110
+	table	tdmdoc520
+	table	tdmdoc430
+	table	tdmdoc250
+	table	tdmsys020
+	table	tdmdoc420	|* File Names
+	table	tdmisg000
+	
+	extern	domain	dmdoc.typeid	hold.type
+	extern	domain	dmcom.shrtid	hold.libr
+	extern	domain dmdoc.docid	hold.dcid
+	extern	domain	dmdoc.docdscr	hold.dscr
+	extern	domain	tcmcs.str100	hold.flnm
+	extern 		long		sflag
+			boolean		flag_ret
+			boolean		fileid.generated
+	extern	domain	dmdoc.fltypeid	file.type
+	extern	domain	dmdoc.fltypeid	ftid
+	extern	domain	dmcom.dpcd	mask_code
+	extern	domain	dmcom.shrtid 	obj_type
+	extern	domain	dmdoc.areaid	area
+		domain	dmdoc.filename	retfilenames(1)	based	|#FP7_FLNA.n
+	extern	domain	dmdoc.filename	filename
+		domain	dmdoc.filename	flna1
+		domain	dmdoc.filename	filename1
+	extern	domain	dmdoc.fileid	flid
+	string error.mesage(200)
+	string		desc(100)
+	string		dc_type(20)
+	long		retval
+	string		err.string(300)
+	long		type.error
+	extern		long 		flag
+	extern		long 		file.exist.flag
+		long	dateChange
+	extern	domain	dmdoc.docid	document.id	
+	extern		string		thin.odm.error.mesg(9999)
+
+	#include "itcmcs2000"	|* DAL(-GUI) Support Defines
+	#include <bic_dam>
+	#pragma used dll ottstpapihand
+	
+function extern long dmisgdll0001.upload.file(
+			domain	dmdoc.typeid	i.type,
+			domain	dmcom.shrtid	i.libr,
+			domain dmdoc.docid	i.dcid,
+			domain	dmdoc.docdscr	i.dscr,
+			domain	tcmcs.str100	i.flnm,
+		ref 	domain	tcmcs.str215	o.err,
+		ref	domain	dmdoc.docid	o.docn)
+{
+	long ret
+	ret = 0
+	prcm.register("attchfiles")
+	
+	hold.type = i.type
+	hold.libr = i.libr
+	hold.dcid = i.dcid
+	hold.dscr = i.dscr
+	hold.flnm = i.flnm
+	
+	
+	select dmdoc110.* from dmdoc110
+	where dmdoc110._index1 = {:hold.dcid,:hold.type}
+	as set with 1 rows
+	selectdo
+		ret = 1
+		document.id = hold.dcid					|#ISGEC004003.n
+	selectempty
+		ret = create.document()
+	endselect
+	if not ret then 
+		o.err = error.mesage
+		return(ret)
+	endif
+	
+	sflag = 2
+	export("sflag", sflag)
+	
+	select	dmdoc120.*
+	from	dmdoc120
+| 	where	dmdoc120._index1 = {:hold.dcid,:hold.type}		|#ISGEC004003.o
+	where	dmdoc120._index1 = {:document.id,:hold.type}		|#ISGEC004003.n
+	and 	dmdoc120.stat = dmdoc.status.indesign
+	selectdo
+		dmdoc440.dcid = dmdoc120.dcid
+		dmdoc440.type = dmdoc120.type
+		dmdoc440.revm = dmdoc120.revm
+	endselect
+	
+	file.type = sel_file_type()
+	ftid = file.type
+
+	tt.align.according.domain("file_id", mask_code, "dmcom.dpcd")
+	tt.align.according.domain("FILE", obj_type, "dmcom.shrtid")
+
+	dmdoc440.flid = dmcom.dll0020.get.next.number(obj_type, 
+				 "dmdoc430.flid", 
+				 mask_code, "", "", "", 0)
+	
+
+	if not isspace(dmdoc440.flid) then
+		fileid.generated = true
+	endif
+
+	dmdoc440.fver = 1
+	dmdoc430.flid = dmdoc440.flid
+	dmdoc430.fver = 1
+	dmdoc430.ftid = ftid
+	
+	dc_type = "{" & chr$(34) & dmdoc440.type & chr$(34) & "}"
+|*
+		
+	dmdoc.dll0010.get.default.work.area(area)
+	if not choose.file() then
+		o.err = error.mesage
+		return(0)
+	endif
+	if isspace(filename) then
+		desc = tt.field.desc("dmdoc420.flna")
+| 		set.input.error("dmdoc00059", strip$(desc))
+		o.err = "You must specify a value for the " & desc & " field."
+		|* You must specify a value for the %1$s field.
+		return(0)
+	else
+		flna1 = filename
+		retval = dmdoc.dll0010.position.in.extn(filename, file.type)
+		if not retval then
+| 			set.input.error("dmdoc00062")
+			o.err = "The file name does not match the file extensions for the file type."
+			|* The file name does not match the file extensions for
+			|* the file type.
+			return(0)
+		else
+			if not isspace(filename) then
+
+				check.revn(filename, retval)
+				if retval then
+| 					set.input.error("dmdoc00396")
+					o.err = "A file with this name is already attached to another document revision.\nChoose another file or work area."
+					|* A file with this name is already
+					|* attached to another document
+					|* revision.\nChoose another file or
+					|* work area.
+					return(0)
+				endif
+			endif
+		endif
+		filename1 = dmdoc420.flna
+	endif
+	
+	select	dmdoc520.fpth
+	from	dmdoc520
+	where	dmdoc520._index1 = {:area}
+	as set with 1 rows
+	selectdo
+	endselect
+	
+| 	db.retry.point()
+	if not do.all.kind.of.checks() then
+		o.err = error.mesage
+		return(0)
+	endif
+	flid = dmdoc440.flid
+	dmdoc430.flid = dmdoc440.flid
+	ret = createfiles.true(flag)
+	dmdoc420.flna = filename
+	
+	ret = createfiles.false(flag)
+	dmdoc420.flna = filename
+	o.err = error.mesage
+	o.docn = document.id
+	return(1)
+}
+
+function long create.document()
+{
+	long rt1,ret_val
+	string seak(16),seab(16)
+	seak = toupper$(hold.dcid(1;16))
+	seab = toupper$(hold.dscr(1;16))
+	
+	rt1=stpapi.synchronize.dialog("dmdoc1510m000", "ADD", error.mesage)
+	stpapi.put.field("dmdoc1510m000","dmdoc110.type",hold.type)
+	stpapi.put.field("dmdoc1510m000","libr",hold.libr)
+	stpapi.put.field("dmdoc1510m000","dcid",hold.dcid)
+	stpapi.put.field("dmdoc1510m000","dmdoc110.dscr",hold.dscr)
+	stpapi.put.field("dmdoc1510m000","dmdoc110.seak",seak)
+	stpapi.put.field("dmdoc1510m000","dmdoc110.seab",seab)
+	ret_val = stpapi.insert( "dmdoc1510m000", true, error.mesage )
+	if ret_val = 0 then
+		message("Error while creating document %s",error.mesage)
+		error.mesage = "Error while creating document " & error.mesage
+	else
+		stpapi.get.field("dmdoc1510m000","dmdoc110.dcid",document.id)	
+	endif
+	stpapi.end.session("dmdoc1510m000", error.mesage)
+	return(ret_val)
+}
+function domain dmdoc.fltypeid sel_file_type()
+{
+	long	numb
+	
+	numb = 0
+	select	count(*):numb
+	from	dmdoc250
+	where	dmdoc250._index1 = {:dmdoc440.type}
+	as set with 1 rows
+	selectdo
+	endselect
+	if numb <> 0 then
+		select	dmdoc250.ftyp
+		from	dmdoc250
+		where	dmdoc250._index1 = {:dmdoc440.type}
+		as set with 1 rows
+		selectdo
+			return(dmdoc250.ftyp)
+		endselect
+	else
+		select	dmdoc410.ftid
+		from	dmdoc410
+		as set with 1 rows
+		selectdo
+			return(dmdoc410.ftid)
+		endselect
+	endif
+	return("")
+}
+function extern long  choose.file()
+{
+	long	nr.dims
+	long	dim.array(4)
+	long ret
+	ret = dmdoc.dll0010.check.local.or.mounted(area)
+	if ret then
+		mess("dmdoc00582", 1)
+		|* File browser cannot open the directory on a remote machine.
+		error.mesage = "File browser cannot open the directory on a remote machine." & area 
+		return(0)
+	endif
+	alloc.mem(retfilenames,256,1)
+	retfilenames(1,1) = hold.flnm
+	ret = 0
+	if ret <> -1 then
+		if ret then
+			handle.messages()
+		endif
+		array.info(retfilenames, nr.dims, dim.array)
+  		if not ret and dim.array(2) > 0 then
+			ret = alloc.mem(retfilenames, 
+					256, dim.array(2))	|#1403005.n
+			filename = retfilenames(1, 1)
+		else
+			filename = ""
+		endif
+	endif
+	return(1)
+}
+function void check.revn(domain dmdoc.filename flna, ref long return.val)
+{
+	domain	dmdoc.flnameid 	temp.fnid
+	domain	dmdoc.counter 	temp.fver
+	domain	dmdoc.counter 	temp.rver
+	domain	dmdoc.docid 	temp.dcid
+	domain	dmdoc.typeid	temp.type
+	domain	dmdoc.revv	temp.revm
+	domain	dmdoc.areaid	temp.area
+	domain	dmdoc.inout	file.status
+
+	long ret,exist
+	return.val = 0		
+	temp.fnid = 0
+	temp.fver = dmdoc440.fver
+	temp.rver = dmdoc440.rver
+
+	temp.dcid = dmdoc440.dcid
+	temp.type = dmdoc440.type
+	temp.revm = dmdoc440.revm
+	file.status = dmdoc430.fcio
+	temp.area = area
+
+	flna = strip$(flna)
+
+	select	dmdoc420.fnid:temp.fnid
+	from	dmdoc420
+	where	dmdoc420.flna = :flna
+	as set with 1 rows
+	selectdo
+	endselect
+
+	select	dmdoc430.*
+	from	dmdoc430
+	where	dmdoc430.fnid = :temp.fnid
+	selectdo
+		select	dmdoc440.*
+		from	dmdoc440
+		where	dmdoc440.flid = :dmdoc430.flid
+		and	dmdoc440.dcid = :dmdoc430.dcid
+		and	dmdoc440.type = :dmdoc430.type
+		selectdo
+			if (dmdoc430.fcio = dmdoc.inout.out and
+			strip$(dmdoc430.asid) = strip$(temp.area)) then
+				if (temp.fver = dmdoc430.fver and
+				temp.rver = dmdoc430.rver) then
+					select	dmdoc520.*
+					from	dmdoc520
+					where	dmdoc520.asid = :temp.area
+					and dmdoc520.lhst = dmcom.ynin.yes
+					as set with 1 rows
+					selectdo
+						ret = dmdoc.dll0010.file.exists(
+							flna, temp.area, 
+							exist, err.string, 
+							type.error)
+						if exist then
+							return.val = 1	
+							break
+						else
+							file.exist.flag = 1
+						endif
+					selectempty
+						return.val = 1	
+						break
+					endselect
+		  		endif
+	 		else
+				if temp.dcid <> dmdoc430.dcid and
+				   temp.type <> dmdoc430.type and
+				   strip$(dmdoc430.asid) = 
+				   		strip$(temp.area) then
+					select	dmdoc520.*
+					from	dmdoc520
+					where	dmdoc520.asid = :temp.area
+					and dmdoc520.lhst = dmcom.ynin.yes
+					as set with 1 rows
+					selectdo
+						ret = 
+						dmdoc.dll0010.file.exists(
+							flna, temp.area, 
+							exist, err.string, 
+							type.error)
+						if exist then
+							return.val = 1	
+							break
+						else
+							file.exist.flag = 1
+						endif
+					selectempty
+						return.val = not 0		
+						break
+					endselect
+				endif
+			endif
+			if (temp.fver = dmdoc430.fver and
+			   temp.rver = dmdoc430.rver) and
+			   temp.fver = 1 and
+			   strip$(dmdoc430.asid) = strip$(temp.area) then
+				select	dmdoc520.*
+				from	dmdoc520
+				where	dmdoc520.asid = :temp.area
+				and dmdoc520.lhst = dmcom.ynin.yes
+				as set with 1 rows
+				selectdo
+					ret = dmdoc.dll0010.file.exists(
+						flna, temp.area, 
+						exist, err.string, type.error)
+					if exist then
+						return.val = 1	
+						break
+					else
+						file.exist.flag = 1
+					endif
+				selectempty
+					return.val = 1		
+					break
+				endselect
+			endif
+		endselect
+		if return.val <> 0 then
+			break
+		endif
+	endselect
+
+	if return.val = 0 then
+		area = temp.area
+		dmdoc440.fver = temp.fver
+		dmdoc440.rver = temp.rver
+		dmdoc440.dcid = temp.dcid
+		dmdoc440.type = temp.type
+		dmdoc440.revm = temp.revm
+		dmdoc430.fcio = file.status
+	endif
+}
+function long do.all.kind.of.checks()
+{
+	flag_ret = true
+	dmdoc430.flid = dmdoc440.flid
+	dmdoc430.fver = dmdoc440.fver
+	
+	if isspace(area) then
+		desc = tt.field.desc("dmdoc430.asid")
+| 		mess("dmdoc00059", 1, strip$(desc))
+		error.mesage = "You must specify a value for the " & desc & " field"
+		|* You must specify a value for the %1$s field.
+		|abort.io("")
+		flag_ret = false
+		return(0)
+	else
+		if isspace(file.type) then
+			desc = tt.field.desc(
+					"dmdoc430.ftid")
+| 			mess("dmdoc00059", 1, strip$(desc))
+
+			error.mesage = "You must specify a value for the " & desc & " field"
+			|* You must specify a value for the %1$s
+			|* field.
+			|abort.io("")
+			flag_ret = false
+			return(0)
+		else
+			dmdoc430.ftid = file.type
+		endif
+	endif
+
+	if (isspace(filename)) then
+		desc = tt.field.desc("dmdoc420.flna")
+| 		mess("dmdoc00059", 1, strip$(desc))
+		|* You must specify a value for the %1$s field.
+		|abort.io("")
+		flag_ret = false
+		error.mesage = "You must specify a value for the " & desc & " field"
+		return(0)
+	endif
+
+	dmdoc420.flna = filename
+	dmdoc430.asid = area
+	
+	retval = dmdoc.dll0010.position.in.extn(dmdoc420.flna, file.type)
+	
+	if not retval then
+| 		mess("dmdoc00062", 1)
+		error.mesage = "The file name does not match the file extensions for the file type."
+		|* The file name does not match the file extensions for the file
+		|* type.
+		|abort.io("")
+		flag_ret = false
+		return(0)
+	endif
+	return(1)
+}
+function long createfiles.true( ref	long	flag)
+{
+		long 		numb
+		long 		i
+		long		nr.dims
+		long		dim.array(4)
+		boolean		exist
+	domain	dmdoc.skip	ign
+	domain	dmdoc.fileid	flid1
+
+	exist = 0
+	err.string = ""
+	type.error = 0
+
+	dmdoc420.flna = retfilenames(1, 1)
+	if not isspace(dmdoc420.flna) then
+		sel_fd()
+		flid1 = dmdoc440.flid
+		select	dmdoc430.*
+		from	dmdoc430
+		where	dmdoc430._index1 <> {:dmdoc430.flid}
+		and	dmdoc430.fnid = :dmdoc420.fnid
+		and	dmdoc430.asid = :dmdoc430.asid
+		as set with 1 rows
+		selectdo
+			dmdoc420.flna = retfilenames(1, i)
+			dmdoc430.asid = area
+			numb = 0
+| 			on.main.table(check_duplicate_file_name, 
+| 				numb, flid1, 
+| 				dmdoc420.fnid, dmdoc440.dcid, 
+| 				dmdoc440.type, dmdoc440.revm)
+			check_duplicate_file_name(
+				numb, flid1, 
+				dmdoc420.fnid, dmdoc440.dcid, 
+				dmdoc440.type, dmdoc440.revm)
+			if numb = 1 then
+				if flag = 0 then
+| 					mess("dmdoc00010", 1)
+					error.mesage = "Operation failed. There is already a file with this name in the work area, or the file is already attached to this document revision"
+					|* Operation failed. There is
+					|* already a file with this name
+					|* in the work area, or the file
+					|* is already attached to this
+					|* document revision
+					return(0)
+				endif
+				return(1)
+			else
+				retval = dmdoc.dll0010.file.exists(
+						dmdoc420.flna, 
+						dmdoc430.asid, 
+						exist, 
+						err.string, 
+						type.error)
+				if not retval and not exist then
+					retval = 
+					dmdoc.dll0010.create.file(
+							dmdoc420.flna,
+							dmdoc430.asid, 
+							exist, 
+							err.string, 
+							type.error)
+					if retval or not exist then
+						return(1)
+					endif
+				else
+					ins_file(i)
+				endif
+			endif
+		selectempty
+			dmdoc420.flna = retfilenames(1, 1)
+			dmdoc430.asid = area
+			retval = dmdoc.dll0010.file.exists(
+					dmdoc420.flna, dmdoc430.asid, 
+					exist, err.string, type.error)
+			if not retval and not exist then
+				retval = dmdoc.dll0010.create.file(
+						dmdoc420.flna, 
+						dmdoc430.asid, 
+						exist, 
+						err.string, type.error)
+				if retval or not exist then
+					if flag = 0 then
+						ign = ask.enum(
+						"dmdoc0019", 
+						|* There is problem with
+						|* authorization or
+						|* duplicate File %1$s.
+						|* Would you like to
+						|* ignore errors and
+						|* continue?
+						dmdoc.skip.ignore, 
+						strip$(dmdoc420.flna))
+						if ign = 
+					dmdoc.skip.ignore_to_all then
+							flag = 1
+						else
+							if ign = 
+						dmdoc.skip.cancel then
+							free.mem(
+							retfilenames)
+							return(1)
+							endif
+						endif
+					endif
+				else
+					retval = ins_file(i)
+				endif
+			else
+				retval = ins_file(i)
+			endif
+		endselect
+	endif
+	free.mem(retfilenames)
+	return(retval)
+}
+
+function long  ins_file(long i)
+{
+	long ret
+	domain dmdoc.counter filesize
+	domain dmdoc.areatype areatype
+
+	dmdoc420.flna = retfilenames(1, 1)
+	tt.align.according.domain("file_id", mask_code, "dmcom.dpcd")
+	tt.align.according.domain("FILE", obj_type, "dmcom.shrtid")
+
+	dmdoc440.flid = dmcom.dll0020.get.next.number(obj_type, 
+						"dmdoc430.flid", 
+						mask_code, "", "", "", 0)
+	dmdoc440.fver = 1
+	dmdoc430.flid = dmdoc440.flid
+	dmdoc430.fver = 1
+	dmdoc430.dcid = dmdoc440.dcid
+	dmdoc430.type = dmdoc440.type
+	dmdoc430.ftid = ftid
+	
+	ret = dmdoc.dll0010.check.local.or.mounted(dmdoc430.asid)
+	if not ret then
+		ret = dmdoc.dll0010.file.info.for.area(dmdoc430.asid, 
+			dmdoc420.flna, filesize, 
+			datechange, 
+			areatype, err.string, type.error)
+	else
+		ret = 0		
+	endif
+	if ret <> 0 then
+		return(0)
+| 		abort.transaction()
+	else
+		if areatype = dmdoc.areatype.work then
+			dmdoc440.sizr = filesize
+		else
+			dmdoc440.sizv = filesize
+		endif
+		dmdoc440.datc = datechange
+		dal.start.business.method  ("dmdoc440", "new.record", retval, err.string)
+		if retval then
+			return(0)
+| 			abort.transaction()
+		else
+			return(1)
+| 			commit.transaction()
+		endif
+	endif
+	return(1)
+}
+
+
+function long createfiles.false( ref	long	flag)
+{
+		long 		numb
+		long		exist,ret
+		string		certificate(30)
+		string		dest.certif(30)
+	domain	dmdoc.counter	fileSize
+	domain	dmdoc.areatype	areatype
+	domain	dmdoc.areaid	temparea
+	domain	dmdoc.iphost	hostName
+	domain	dmdoc.counter	port
+	domain	dmdoc.areapath	realAreaPath
+	domain	dmdoc.areapath	mountedAreaPath
+	domain	dmdoc.areapath	area.path
+	domain	dmdoc.filename	temp.file
+	domain	dmdoc.dateutc	ctime
+	domain	dmdoc.dateutc	atime
+	domain	dmdoc.areapath	dest.area
+	domain	dmdoc.iphost	dest.host
+
+	exist = 0
+	err.string = ""
+	type.error = 0
+
+	ret = dmdoc.dll0010.get.area.type(	area, areatype, 
+						err.string, type.error)
+	if ret then
+		handle.messages()
+	endif
+	if areatype <> dmdoc.areatype.work then
+		dmdoc.dll0010.get.default.work.area(temparea)
+		if isspace(temparea) then
+			handle.messages()
+			return(1)
+		endif
+		dmdoc420.flna = filename
+		sel_fd()
+		dmdoc430.asid = area
+	else
+		dmdoc420.flna = filename
+		sel_fd()
+		numb = 0
+| 		on.main.table(check_duplicate_file_name, numb, 
+| 			dmdoc430.flid, dmdoc420.fnid, 
+| 			dmdoc440.dcid, dmdoc440.type, dmdoc440.revm)
+		check_duplicate_file_name(numb, 
+			dmdoc430.flid, dmdoc420.fnid, 
+			dmdoc440.dcid, dmdoc440.type, dmdoc440.revm)
+		if numb = 1 then
+			if flag = 0 then
+| 				mess("dmdoc00010", 1)
+				error.mesage = " Operation failed. There is already a file with this name in the work area, or the file is already attached to this document revision"
+				|* Operation failed. There is already a file
+				|* with this name in the work area, or the file
+				|* is already attached to this document revision
+				return(0)
+			endif
+			return(1)
+		endif
+		dmdoc420.flna = filename
+		dmdoc430.asid = area
+		retval = dmdoc.dll0010.file.exists(
+				dmdoc420.flna, dmdoc430.asid, 
+				exist, err.string, type.error)
+		if retval = 0 and exist = 0 then
+			retval = dmdoc.dll0010.create.file(
+					dmdoc420.flna, dmdoc430.asid,
+					exist, err.string, type.error)
+			if retval or not exist then
+				return(1)
+			endif
+			if retval = 0 then
+				retval = dmdoc.dll0010.resolve.area.with.start(
+						hostname, realareapath, 
+						mountedareapath, areatype, 
+						port, certificate, 
+						dmdoc430.asid, 
+						err.string, type.error)
+				if not isspace(mountedareapath) then
+					area.path = mountedareapath
+				else
+					area.path = realareapath
+				endif
+				ret = dmdoc.dll0010.check.local.or.mounted(
+								dmdoc430.asid)
+				if not ret then
+					if dmdoc.dll0002.is.local.host(hostName)
+					then
+						retval = 
+					dmdoc.dll0010.file.info.for.area.path(
+								area.path, 
+								fileName,
+								fileSize, 
+								dateChange, 
+								type.error)
+					else
+						ret = dmdocdll0002.fileexists(
+							dmdoc430.asid,
+							fileName, 
+							hostName, 
+							certificate, 
+							port, 
+							exist, 
+							err.string)
+						if exist then
+							temp.file = 
+								creat.tmp.file$(
+								bse.tmp.dir$())
+							dest.area = ""
+							dest.host = hostname$()
+							ret =
+							dmdocdll0002.copyfile(
+								fileName,
+								realAreaPath, 
+								certificate, 
+								hostName, 
+								port, 
+								dest.certif, 
+								temp.file, 
+								dest.area, 
+								dest.host, 
+								0, 
+								1, 
+								0, 
+								err.string)
+							if not ret then
+								ret = file.stat(
+								strip$(
+								temp.file), 
+								fileSize, 
+								ctime, 
+								dateChange, 
+								atime)
+								ret = file.rm(
+								temp.file)
+							endif
+						endif
+					endif
+				endif
+			endif
+		else
+			if retval = 0 then
+				ret = dmdoc.dll0010.check.local.or.mounted(
+								dmdoc430.asid)
+				if not ret then
+					ret = dmdoc.dll0010.file.info.for.area(
+							dmdoc430.asid, 
+							dmdoc420.flna, 
+							filesize, datechange, 
+							areatype, 
+							err.string, type.error)
+				else
+					ret = 0
+				endif
+				if ret then
+					abort.transaction()
+					handle.messages()
+					return(not 0		)
+				else
+					if areatype = dmdoc.areatype.work then
+						dmdoc440.sizr = filesize
+					else
+						dmdoc440.sizv = filesize
+					endif
+					dmdoc440.datc = datechange
+				endif
+			endif
+		endif
+	endif
+	return(retval)
+}
+function void check_duplicate_file_name(ref	long		numb, 
+					domain	dmdoc.fileid	flid, 
+					domain	dmdoc.flnameid	fnid, 
+					domain	dmdoc.docid	dcid, 
+					domain	dmdoc.typeid	type, 
+					domain	dmdoc.revw	revm)
+{
+	numb = 0
+	select	dmdoc430.fnid
+	from	dmdoc430, dmdoc440
+	where	dmdoc430._index1 <> {:flid}
+	and	dmdoc430.fnid = :fnid
+	and	dmdoc440.dcid = :dcid
+	and	dmdoc440.type = :type
+	and	dmdoc440.revm = :revm
+	and	dmdoc440.cmbf refers to dmdoc430.cmbk
+	as set with 1 rows
+	selectdo
+		numb = 1
+	endselect
+}
+function handle.messages()
+{
+	if isspace(thin.odm.error.mesg) then
+		dmdoc.dll0010.handle.messages(err.string, type.error)
+	else
+		dmdoc.dll0010.handle.messages(thin.odm.error.mesg, type.error)
+	endif
+}
+							|#ISGEC004003.sn
+function extern long dmisgdll0001.delete.document(domain dmdoc.typeid i.type,
+						domain dmdoc.docid i.pdfd,
+					ref 	domain	tcmcs.str215 o.err)
+{
+	long ret
+	string error.msg(100), error(100)
+	
+	stpapi.put.field("dmdoc1520m000", "dmdoc120.dcid", i.pdfd)
+	stpapi.put.field("dmdoc1520m000", "dmdoc120.type", i.type)
+	ret = stpapi.find("dmdoc1520m000", error.msg)
+	
+	if ret then
+		ret = stpapi.mark("dmdoc1520m000", error.msg)
+		ret = stpapi.delete( "dmdoc1520m000", true, error.msg)
+		stpapi.enum.answer("dmdoc1520m000", "ttstpq0100", tcyesno.yes)
+		stpapi.enum.answer("dmdoc1520m000", "ttstps0177", tcyesno.yes)
+		stpapi.enum.answer("dmdoc1520m000", "dmdoc0030", tcyesno.yes)
+		stpapi.end.session("dmdoc1520m000",error)
+		if not isspace(error.msg) then
+			o.err = error.msg
+			return(0)
+		endif
+	else
+		o.err = "File doesn't exist in Document Management"
+		stpapi.end.session("dmdoc1520m000",error)
+		return(0)	
+	endif	
+	return(1)
+}
+
+function extern long dmisgdll0001.release.document(domain dmdoc.typeid i.type,
+						domain dmdoc.docid i.pdfd,
+					ref 	domain	tcmcs.str215 o.err)
+{
+	long ret
+	string error.msg(100), error(100)
+	
+	select	dmdoc120.revm
+	from	dmdoc120
+	where	dmdoc120._index1 = {:i.pdfd, :i.type}
+	selectdo
+		stpapi.put.field("dmdoc1520m000", "dmdoc120.dcid", i.pdfd)
+		stpapi.put.field("dmdoc1520m000", "dmdoc120.type", i.type)
+		stpapi.put.field("dmdoc1520m000", "dmdoc120.revm", dmdoc120.revm)
+		ret = stpapi.find("dmdoc1520m000", error.msg)
+		
+		if ret then
+			stpapi.form.command("dmdoc1520m000",5,"exec.user.4",error.msg)
+			stpapi.enum.answer("dmdoc1520m000", "dmdoc0008", tcyesno.yes)
+			stpapi.end.session("dmdoc1520m000",error)
+			if not isspace(error.msg) then
+				o.err = error.msg
+				return(0)
+			endif					
+		else
+			o.err = "File doesn't exist in Document Management"
+			stpapi.end.session("dmdoc1520m000",error)
+			return(0)				
+		endif	
+	endselect
+	
+	return(1)
+
+}
+
+
+							|#ISGEC004003.en
+| 			|******************************************************************************
+| 			|* dmisg9299m000  0  VRC B61U a7 live
+| 			|* Test for ODM AFS
+| 			|* Tools                         
+| 			|* 2014-05-12
+| 			|******************************************************************************
+| 			|* Form Type 4
+| 			|******************************************************************************
+| 													
+| 			|****************************** declaration section ***************************
+| 			declaration:
+| 				table	tdmdoc120
+| 				table	tdmdoc440
+| 				table	tdmdoc210
+| 				table	tdmdoc410
+| 				table	tdmdoc110
+| 				table	tdmdoc520
+| 				table	tdmdoc430
+| 				table	tdmdoc250
+| 				table	tdmsys020
+| 				table	tdmdoc420	|* File Names
+
+| 				extern	domain	dmdoc.typeid	type
+| 				
+| 				extern	domain	tcmcs.str256	libr
+| 				extern	domain	dmdoc.docid	dcid
+| 				extern	domain	dmdoc.docdscr	dscr
+| 				extern	domain	tcseak		seak
+| 				extern	domain	tcseak		seab
+| 				extern	domain	tcmcs.str100	f.name
+| 				extern	domain	tcitem		item.f
+| 				extern	domain	dmdoc.fltypeid	export.fltpid
+| 				extern	domain	dmdoc.docid	export.dcid
+| 				extern	domain	dmdoc.docid	export.docid
+| 				extern	domain	dmdoc.typeid	export.type
+| 				extern	domain	dmdoc.typeid	export.tpid
+| 				extern	domain	dmdoc.revw	export.revision
+| 				extern	domain	dmdoc.revw	export.revm
+| 				extern	domain	dmdoc.fltypeid	file.type
+| 					domain	dmdoc.fltypeid	ftid
+| 				extern	domain	dmdoc.areaid	area
+| 					domain	dmdoc.filename	filename1
+| 				extern	domain	dmdoc.filename	file.name		|#FP7_FLNA.n
+| 					domain	tcmcs.str256	object.key
+| 						string		file_name(40)
+| 				extern	domain	dmdoc.filename	filename
+| 			|	extern	domain	dmdoc.filename	file.name		|#FP7_FLNA.n
+| 				extern	domain	dmdoc.fileid	flid
+| 				extern		string		thin.odm.error.mesg(9999)
+| 				
+
+| 				extern		long		ret
+| 				extern 		long		sflag
+| 				extern		long 		flag
+| 						boolean		flag_ret
+| 						boolean		fileid.generated
+| 						
+| 					domain	dmcom.dpcd	mask_code
+| 					domain	dmcom.shrtid 	obj_type
+| 					
+| 					domain	dmdoc.filename	retfilenames(1)	based	|#FP7_FLNA.n
+| 						string		dc_type(20)
+| 						string		desc(100)
+| 						long		retval
+| 						string		err.string(300)
+| 						long		type.error
+| 					domain	dmdoc.dateutc	dateChange
+| 					
+| 					domain	dmdoc.filename	flna1,retrieve.file.name
+| 						long		exist
+| 				extern		long 		file.exist.flag
+
+| 			#pragma used dll ottstpapihand
+| 				long ret_val,i,rt1
+| 				string error(200),error1(200),error2(200)
+| 			#include "itcmcs2000"	|* DAL(-GUI) Support Defines
+| 			#include <bic_dam>
+| 			| #pragma used dll otccomdllrush
+| 			|****************************** program section ********************************
+
+| 			before.program:
+| 				prcm.register("attchfiles")
+
+| 			group.1:
+| 			init.group:
+| 			   get.screen.defaults()
+
+| 			functions:
+
+| 			function extern proc()
+| 			{
+| 				long dfd,return_type,filesize,mode
+| 				
+| 				dfd = dir.open  ("C:\Infor\ERPLN\bse\tmp\odm")
+| 				if dfd <= 0 then
+| 					message ("Filder can not opned")
+| 					return
+| 				endif
+| 			| 	insert.document()
+| 				type = "001"
+| 				dcid = "KULDEEP005"
+| 				while true
+| 					dir.rewind(dfd)
+| 					retrieve.file.name = dir.entry(dfd,TFILE,return_type,filesize,mode)
+| 					if isspace(retrieve.file.name) then
+| 						break
+| 					endif
+| 					dal_insert_gps()
+| 				endwhile
+| 				dir.close(dfd)
+| 					
+| 			}
+| 			|******
+| 			Function dal_insert_gps()
+| 			{
+
+| 				long ret
+| 				
+| 				sflag = 2
+| 				export("sflag", sflag)
+| 			|	 --- DMDOC120, DCID , TYPE , REVM
+| 				
+| 								|#Kuldeep.20140812.so
+| 			| 	dmdoc120.dcid = "GPS_OPEN_DOC"
+| 			| 	dmdoc120.type  = "001"
+| 			| 	dmdoc120.revm = "N-REV-032"
+| 				
+| 			| 	select	dmdoc120.*
+| 			| 	from	dmdoc120
+| 			| 	where	dmdoc120._index1 = {:dmdoc120.dcid , 
+| 			| 					:dmdoc120.type, 
+| 			| 					:dmdoc120.revm}
+| 			| 	selectdo
+| 			| 	
+| 			| 		dmdoc440.dcid = dmdoc120.dcid
+| 			| 		dmdoc440.type = dmdoc120.type
+| 			| 		dmdoc440.revm = dmdoc120.revm
+| 			| 		
+| 			| 	endselect
+| 								|#Kuldeep.20140812.eo
+
+
+| 				| select	dmdoc430.ftid:file.type
+| 				| from	dmdoc430
+| 				| where	dmdoc430._index1 = {:dmdoc440.flid, :dmdoc440.fver}
+| 				| as set with 1 rows
+| 				| selectdo
+| 					| ftid = file.type
+| 				| endselect
+| 			|*
+| 								|#Kuldeep.20140812.sn
+| 				select	dmdoc120.*
+| 				from	dmdoc120
+| 				where	dmdoc120._index1 = {:dcid,:type}
+| 				selectdo
+| 				
+| 					dmdoc440.dcid = dmdoc120.dcid
+| 					dmdoc440.type = dmdoc120.type
+| 					dmdoc440.revm = dmdoc120.revm
+| 					
+| 				endselect
+| 								|#Kuldeep.20140812.en
+| 				if   isspace(ftid) then
+| 					file.type = sel_file_type()
+| 					ftid = file.type
+| 				endif
+
+| 			|*
+| 				tt.align.according.domain("file_id", mask_code, "dmcom.dpcd")
+| 				tt.align.according.domain("FILE", obj_type, "dmcom.shrtid")
+
+| 				dmdoc440.flid = dmcom.dll0020.get.next.number(obj_type, 
+| 							 "dmdoc430.flid", 
+| 							 mask_code, "", "", "", 0)
+| 				
+
+| 				if not isspace(dmdoc440.flid) then
+| 					fileid.generated = true
+| 				endif
+
+| 				dmdoc440.fver = 1
+| 				dmdoc430.flid = dmdoc440.flid
+| 				dmdoc430.fver = 1
+| 				dmdoc430.ftid = ftid
+| 				
+| 				dc_type = "{" & chr$(34) & dmdoc440.type & chr$(34) & "}"
+| 			|*
+| 					
+| 				dmdoc.dll0010.get.default.work.area(area)
+
+| 			|*
+| 			|*******************set file
+| 				choose.file()			|#Kuldeep.20140812.o
+| 				
+| 				if isspace(filename) then
+| 					desc = tt.field.desc("dmdoc420.flna")
+| 					set.input.error("dmdoc00059", strip$(desc))
+| 					|* You must specify a value for the %1$s field.
+| 				else
+| 					flna1 = filename
+| 					retval = dmdoc.dll0010.position.in.extn(filename, file.type)
+| 					if not retval then
+| 						set.input.error("dmdoc00062")
+| 						|* The file name does not match the file extensions for
+| 						|* the file type.
+| 					else
+| 						if not isspace(filename) then
+
+| 							check.revn(filename, retval)
+| 							if retval then
+| 								set.input.error("dmdoc00396")
+| 								|* A file with this name is already
+| 								|* attached to another document
+| 								|* revision.\nChoose another file or
+| 								|* work area.
+| 							endif
+| 						endif
+| 					endif
+| 					filename1 = dmdoc420.flna
+| 				endif
+| 				
+| 				
+| 			|	filename = "gps_test_mynew.txt"
+| 			|**************************************	
+| 				
+| 				select	dmdoc520.fpth
+| 				from	dmdoc520
+| 				where	dmdoc520._index1 = {:area}
+| 				as set with 1 rows
+| 				selectdo
+| 				endselect
+| 				
+| 				db.retry.point()
+| 				do.all.kind.of.checks()
+| 				
+| 				| dmdoc430.dcid = dmdoc440.dcid
+| 				| dmdoc430.type = dmdoc440.type
+| 				
+| 				| if flag_ret  then
+
+
+| 					| dal.new  ("dmdoc440", tdmdoc440, ret, false, db.retry, db.skip.dupl)
+| 					
+| 					| if flag_ret =  0 then
+| 						| commit.transaction()
+| 					| else
+| 						| abort.transaction()
+| 					| endif
+| 				| else
+| 					| abort.transaction()
+| 				| endif
+| 				
+| 			}
+
+
+
+
+
+
+
+
+
+
+| 			function insert.document()
+| 			{
+| 				
+| 				rt1=stpapi.synchronize.dialog("dmdoc1510m000", "ADD", error)
+| 				stpapi.put.field("dmdoc1510m000","dmdoc110.type",type)
+| 				stpapi.put.field("dmdoc1510m000","libr",libr)
+| 				stpapi.put.field("dmdoc1510m000","dcid",dcid)
+| 				stpapi.put.field("dmdoc1510m000","dmdoc110.dscr",dscr)
+| 				stpapi.put.field("dmdoc1510m000","dmdoc110.seak",seak)
+| 				stpapi.put.field("dmdoc1510m000","dmdoc110.seab",seab)
+| 				ret_val = stpapi.insert( "dmdoc1510m000", true, error )
+| 				if ret_val = 0 then
+| 					message("Error while creating document %s",error)
+| 				endif
+| 				stpapi.end.session("dmdoc1510m000", error)
+| 			}

@@ -1,0 +1,849 @@
+|******************************************************************************
+|* tdisgdll0003  0  VRC B61U a7 isg 
+|* General Function for Purchase to Sale Register
+|* baan
+|* 14-10-17 [14:01]
+|******************************************************************************
+|* Script Type: Library
+|******************************************************************************
+|* ISGEC001189, IT0205, Arjit Gupta, VRC B61U a7 isg, Dt. 20-12-2014
+|* Incase of FOC/FIV only print Code not enum
+|* Description as suggested by Mr. Nishant Verma.
+|******************************************************************************
+|*IDENT ISGEC001203,Sandhya Rani,06-01-2015
+|*Initialization
+|*
+|* ISGEC01072, IT0375, Sandhyarani, Dt. 03-03-2015, VRC B61U a7 live
+|* Modification on tdisg.dll0003.Get_gr_detail
+|****************************************************************************
+|* Mani sharma , IT0376	, Dt. 23-03-2015 , VRC 
+
+|* IDENT ISGEC015014, Shilpa Janardanan, Dt. 27/05/2015,, VRC B61U a7 isg
+|* Concatinate the GRN No.
+|*******************************************************                                                                                
+	|************ Table ************
+	table	ttdisg832 | Billing Advice Lines
+	table	ttdisg831
+	table	ttctax941
+	table	ttcmcs036
+	table	ttcmcs032
+	table	ttpisg039
+	table	ttppin020
+	table	tcisli235
+	table	tciisg000
+	table	ttfacr200
+	table	ttccom100
+	table	ttfisg001
+	table	ttfisg002
+	table	ttfisg003
+	table	ttfacp100
+	table   ttppdm600
+	|*********** External Function ************
+function extern tdisg.dll0003.Get_Billing_Advice_Detail
+				(
+				domain	whinh.shpm	i.rcno,		|Receipt Number
+				domain	tcpono		i.rcln,		|Receipt Line
+				domain	tcorno		i.orno,		|PO
+				domain	tcpono		i.pono,		|Pos
+				domain	tccprj		i.cprj,		|Project
+				domain	tccom.bpid	i.ofbp,		|Project BP
+				domain	tcccur		i.ccur,		|Project Cuurency
+				domain	tcrtyp		i.rtyp,		|Project Exchange Rate Type
+			ref	domain	tdisg.stat	o.tbl.stat,	|Billing Advice Status	
+			ref	domain	tdisg.type	o.tbl.type,	|Billing Advice Type	
+			ref	domain	tcorno		o.tbl.bold,	|Bill of Lading Internal	
+			ref	domain	tcorno		o.edrn,		|Billing Advice
+			ref	domain	tcdsca		o.stat,		|Billing Advice Status
+			ref	domain	tcmcs.str12	o.cinv,		|Commercial Invoice
+			ref	domain	tcmcs.str10	o.cidt,		|Commercial Invoice Date
+			ref	domain	tcmcs.str10	o.sidt, 	|Sale Invoice Date
+			ref	domain	tcmcs.str5	o.slfy,		|Sale Year
+			ref	domain	tcmcs.str2	o.slfp,		|Sale Period
+			ref	domain	tcmcs.str12	o.sinv,		|Sale Invoice / Accounting Voucher
+			ref	domain	tcdsca		o.blno,		|Bill of Lading
+			ref	domain	tcmcs.str10	o.bldt,		|B/L Date
+			ref	domain	tccom.bpid	o.cuno,		|Customer
+			ref	domain	tcnama		o.cnnm,		|Customer Name
+			ref	domain	tcdsca		o.loca,		|Location [State]
+			ref	domain	tcamnt		o.bval,		|Billing Value
+			ref	domain	tcamnt		o.ed.reim,	|ED Reimbursement
+			ref	domain	tcamnt		o.st.reim,	|ST Reimbursement
+			ref	domain	tcamnt		o.cst.reim,	|CST Reimbursement
+			ref	domain	tcamnt		o.vat.reim,	|VAT Reimbursement
+			ref	domain	tcamnt		o.fgt.reim, 	|Freight Reimbursement
+			ref	domain	tcamnt		o.exc.amnt,	|Excise
+			ref	domain	tcamnt		o.serv,		|Service
+			ref	domain	tcamnt		o.cstm,		|CST
+			ref	domain	tcamnt		o.vatm,		|VAT
+			ref	domain	tcamnt		o.misc.claim	|Misc. Claims
+				)
+{
+	domain	tfgld.date	tmp.bldt
+	domain	tcmcs.cste	tmp.loca
+	domain	tfgld.year	tmp.ptfy
+	domain	tfgld.prod	tmp.ptfp
+	
+	db.set.to.default(ttdisg831)
+	db.set.to.default(ttdisg832)
+	select	tdisg832.*, tdisg831.cinv, tdisg831.type, tdisg831.stat,
+		tdisg831.cind, tdisg831.bold, tdisg831.ofbp
+	from	tdisg832, tdisg831
+	where	tdisg832._index4 = {:i.rcno, :i.rcln}
+	and	tdisg832.oorg = whinh.oorg.purchase
+	and	tdisg832.orno = :i.orno
+	and	tdisg832.pono = :i.pono
+	and	tdisg832.edrn refers to tdisg831.edrn 
+	and	tdisg831._index4 = {:i.cprj}
+	order by tdisg832._index1
+	selectdo
+		o.edrn = tdisg832.edrn
+		o.stat = enum.descr$("tdisg.stat", tdisg831.stat)
+		o.cinv = tdisg831.cinv
+		o.cidt = sprintf$("%D(%02m/%02d/%04Y)", tdisg831.cind)
+		o.tbl.stat = tdisg831.stat
+		o.tbl.type = tdisg831.type
+		o.tbl.bold = tdisg831.bold
+		tmp.bldt = 0
+		select	tpisg039.ityp, tpisg039.idoc, tpisg039.sidt
+		from	tpisg039
+		where	tpisg039._index1 = {:i.cprj, :tdisg831.ofbp, :tdisg832.nins, :tdisg832.edrn, :tdisg832.rcno, :tdisg832.rcln}
+		selectdo
+		selectempty
+			tpisg039.ityp = ""
+			tpisg039.idoc = 0
+			tpisg039.sidt = 0
+		endselect
+		if	tpisg039.sidt <> 0	then
+			tdisg.dll0003.get.utc.to.date(tpisg039.sidt, tmp.bldt)
+			o.sidt = sprintf$("%D(%02m/%02d/%04Y)", tmp.bldt)
+		endif 
+		tmp.ptfy = 0
+		tmp.ptfp = 0
+		if	tmp.bldt <> 0	then
+			tdisg.dll0003.get.fiscal.year.period(tmp.bldt, tmp.ptfy, tmp.ptfp)
+		else	
+			tdisg.dll0003.get.fiscal.year.period(tdisg831.cind, tmp.ptfy, tmp.ptfp)
+		endif
+		if	tmp.ptfy <> 0	then
+			o.slfy = str$(tmp.ptfy)
+		endif
+		if	tmp.ptfp <> 0	then
+			o.slfp = str$(tmp.ptfp)
+		endif
+		tmp.bldt = 0
+		if	tdisg831.type = tdisg.type.domestic	then
+			if	tpisg039.idoc <> 0	then
+				o.sinv = tpisg039.ityp & " " & str$(tpisg039.idoc)
+			endif
+		else
+			if	isspace(tdisg831.bold)	and
+				(tdisg831.stat = tdisg.stat.process)then
+				if	tpisg039.idoc <> 0	then
+					o.sinv = tpisg039.ityp & " " & str$(tpisg039.idoc)
+				else
+| 					o.sinv = enum.descr$("whreas.type", tdisg.dll0003.get.reason.type(tdisg832.reas))	|#ISGEC001189.o
+					o.sinv = tdisg832.reas					|#ISGEC001189.n
+				endif
+			else	
+				if	tpisg039.idoc <> 0	then
+					o.sinv = tpisg039.ityp & " " & str$(tpisg039.idoc)
+				endif
+				select	bl_tdisg839.biln:o.blno,
+					bl_tdisg839.pddt:tmp.bldt
+				from	tdisg839 bl_tdisg839
+				where	bl_tdisg839._index1 = {:tdisg831.bold}
+				selectdo
+				endselect
+				if	tmp.bldt <> 0	then
+					o.bldt = sprintf$("%D(%02m/%02d/%04Y)", tmp.bldt)
+				endif
+			endif	
+		endif
+		
+| 		select	cu_cisli205.ofbp:o.cuno,
+| 			cu_tccom100.nama:o.cnnm,
+		tmp.loca = ""
+		select	cu_tctax940.stpv:tmp.loca
+		from	cisli205 cu_cisli205,
+			tccom100 cu_tccom100,	
+			tctax940 cu_tctax940
+		where	cu_cisli205.ityp = :tpisg039.ityp
+		and	cu_cisli205.idoc = :tpisg039.idoc
+		and	cu_cisli205.ofbp refers to cu_tccom100 Unref Clear	
+		and	cu_cisli205.rnso.l refers to cu_tctax940 Unref Clear
+		selectdo
+		endselect
+		o.cuno = i.ofbp
+		o.cnnm = tdisg.dll0003.get.bp.name(o.cuno)
+		
+		tdisg.dll0003.get.state.desc("IN ", tmp.loca, o.loca)	
+		o.bval = 0
+		o.ed.reim = 0
+		o.st.reim = 0
+		o.vat.reim = 0
+		o.fgt.reim = 0
+		o.exc.amnt = 0
+		o.serv = 0
+		o.cstm = 0
+		o.vatm = 0
+		tdisg.dll0003.Get_Sale_Data(tdisg832.edrn, i.rcno, i.rcln, i.cprj,
+				i.ofbp, i.ccur, i.rtyp, o.bval,
+				o.ed.reim, o.st.reim, o.cst.reim, o.vat.reim, o.fgt.reim,
+				o.exc.amnt, o.serv, o.cstm, o.vatm)
+		o.misc.claim = o.st.reim + o.vat.reim		
+| 			tdisg.dll0003.Get_Sale_Detail(tdpur401.cprj, tpisg039.ityp, tpisg039.idoc, 0, utc.num(),
+| 						tmp.indt, rep.cuno, rep.cnnm, tmp.bamt, tmp.samt, rep.ed.reim,
+| 						tmp.st.reim, rep.cst.reim, tmp.vat.reim, rep.fgt.reim, tmp.gr.val,
+| 						tmp.advn, tmp.retn, tmp.nt.val)	
+	endselect
+}
+
+function extern tdisg.dll0003.Get_PTR_Detail
+			(
+			domain	whinh.shpm	i.rcno,		|Receipt
+			domain	tcpono		i.rcln,		|Receipt Line
+			domain	tcibd.sern	i.psno,		|Packing Slip / IR No
+		ref	domain	tcmcs.str12	ot.ptrn,	|PTR Number
+		ref	domain	tcmcs.str10	ot.ptdt,	|PTR Date
+		ref	domain	tcmcs.str5	ot.ptfy,	|PTR Year
+		ref	domain	tcmcs.str2	ot.ptfp		|PTR Period
+			)
+{
+	domain	tfgld.year	tmp.ptfy
+	domain	tfgld.prod	tmp.ptfp
+	domain	tfgld.date	tmp.ptdt
+	domain	tfgld.ttyp	tmp.tptr
+	domain	tfgld.docn	tmp.dptr
+	
+	tmp.ptdt = 0
+	tmp.tptr = ""
+	tmp.dptr = 0
+	select	ptr_tfacp251.ityp:tmp.tptr,
+		ptr_tfacp251.idoc:tmp.dptr
+	from	tfacp251 ptr_tfacp251
+	where	ptr_tfacp251.rcno = :i.rcno
+	and	ptr_tfacp251.rseq = :i.rcln
+	as set with 1 rows
+	selectdo
+	endselect
+	tmp.ptfy = 0
+	tmp.ptfp = 0
+	tfisg001.ncmp = 0
+	select	tfisg001.ncmp
+	from	tfisg001
+	where	tfisg001._index1 = {:1}
+	wherebind(1, lval(trim$(i.psno)))
+	selectdo
+	endselect
+	if	tfisg001.ncmp <> 0	then
+		select	pt_tfacp200.docd:tmp.ptdt,
+			pt_tfacp200.year:tmp.ptfy,
+			pt_tfacp200.prod:tmp.ptfp
+		from	tfacp200 pt_tfacp200
+		where	pt_tfacp200._index1 = {:tmp.tptr, :tmp.dptr}
+		and	pt_tfacp200.docn = 0
+		and	pt_tfacp200._compnr = :tfisg001.ncmp
+		selectdo
+		endselect
+	endif	
+	if	tmp.dptr <> 0	then
+		ot.ptrn = tmp.tptr & " " & str$(tmp.dptr)
+	endif
+	if	tmp.ptdt <> 0	then
+		ot.ptdt = sprintf$("%D(%02m/%02d/%04Y)", tmp.ptdt)
+	endif
+	if	tmp.ptfy <> 0	then
+		ot.ptfy = str$(tmp.ptfy)
+	endif
+	if	tmp.ptfp <> 0	then
+		ot.ptfp = str$(tmp.ptfp)
+	endif
+}
+
+function extern tdisg.dll0003.Get_Supplier_Inv_Detail
+			(
+			domain	tcibd.sern	i.psno,
+		ref	domain	tfacp.isup	ot.isup,
+		ref	domain	tcmcs.str10	ot.isdt
+			)
+{
+	domain	tfgld.date	tmp.isdt
+
+	tmp.isdt = 0
+	select	sp_tfacp100.isup:ot.isup,
+		sp_tfacp100.invd:tmp.isdt
+	from	tfacp100 sp_tfacp100
+	where	sp_tfacp100._index1 = {:1}
+	wherebind(1, lval(trim$(i.psno)))
+	selectdo
+	endselect
+	if	tmp.isdt <> 0	then
+		ot.isdt = sprintf$("%D(%02m/%02d/%04Y)", tmp.isdt)
+	endif
+}
+
+function extern tdisg.dll0003.Get_gr_detail
+		(
+		domain	whinh.pksp	in.psno,
+	ref	domain	tcmcs.str100	ot.grno,		|#ISGEC015014.o
+| 	ref	domain	tfacp.isup	ot.grno,	|#ISGEC015014.n	
+	ref	domain	tcmcs.str10	ot.grdt,	
+	ref	domain	tcdsca		ot.fmst,	
+	ref	domain	tcdsca		ot.tost,
+	ref	domain	tccom.bpid	ot.tran,				|#ISGEC01072.n		
+	ref	domain	tcnama		ot.nama					|#ISGEC01072.n
+		)
+{
+	ot.grno = ""
+	ot.grdt = ""
+	ot.fmst = ""
+	ot.tost = ""
+	ot.tran = ""								|#ISGEC01072.n
+	ot.nama = ""								|#ISGEC01072.n
+	db.set.to.default(ttfisg001)
+	db.set.to.default(ttfacp100)
+	select	tfisg001.irno, tfacp100.invd
+	from	tfisg001, tfacp100
+	where	tfisg001._index1 = {:1}
+	and	tfisg001.irno refers to tfacp100 Unref Clear
+	as set with 1 rows
+	wherebind(1, lval(in.psno))
+	selectdo
+		db.set.to.default(ttfisg002)
+		select	tfisg002.grno, tfisg002.grdt, tfisg002.grbp
+		from	tfisg002
+		where	tfisg002._index1 = {:tfisg001.irno}
+		selectdo
+			db.set.to.default(ttfisg003)
+			select	tfisg003.plcf, tfisg003.plct,
+				tfisg003.cctf, tfisg003.cctt
+			from	tfisg003
+			where	tfisg003._index1 = {:tfisg002.grno, :tfisg002.grbp, :tfisg002.grdt}
+			selectdo
+				tdisg.dll0003.get.state.desc(tfisg003.cctf, tfisg003.plcf, ot.fmst)
+				tdisg.dll0003.get.state.desc(tfisg003.cctt, tfisg003.plct, ot.tost)
+			endselect
+| 			ot.grno = tfisg002.grno			|#ISGEC015014.o
+			if isspace(ot.grno) then
+				ot.grno = tfisg002.grno
+			else
+				ot.grno = strip$(ot.grno) & "\" & strip$(tfisg002.grno)	|#ISGEC015014.n
+			endif
+			ot.grdt = sprintf$("%D(%02m/%02d/%04Y)", tfisg002.grdt)
+			ot.tran = tfisg002.grbp
+			select	tccom100.nama					|#ISGEC01072.sn
+			from	tccom100
+			where	tccom100._index1 = {:ot.tran}
+			selectdo
+				ot.nama = tccom100.nama
+			endselect						|#ISGEC01072.sn	
+		endselect	
+	endselect
+}
+
+function extern domain tcnama tdisg.dll0003.get.bp.name
+			(
+			domain	tccom.bpid	i.otbp
+			)
+{
+	domain	tcnama	tmp.nama
+	
+	tmp.nama = ""
+	select	bp_tccom100.nama:tmp.nama
+	from	tccom100 bp_tccom100
+	where	bp_tccom100._index1 = {:i.otbp}
+	selectdo
+	endselect
+	
+	return(tmp.nama)
+}
+
+function extern domain tcdsca tdisg.dll0003.get.project.desc
+			(
+			domain	tccprj	i.cprj
+			)
+{
+	domain	tcdsca	tmp.dsca
+	
+	tmp.dsca = ""
+	select	pj_tcmcs052.dsca:tmp.dsca
+	from	tcmcs052 pj_tcmcs052
+	where	pj_tcmcs052._index1 = {:i.cprj}
+	selectdo
+	endselect
+	
+	return(tmp.dsca)
+}
+
+function domain whreas.type tdisg.dll0003.get.reason.type
+			(
+			domain	tcmcs.str6	i.reas
+			)
+{
+	domain	whreas.type	tmp.type
+	
+	tmp.type = empty
+	select	rt_whisg311.type:tmp.type
+	from	whisg311 rt_whisg311
+	where	rt_whisg311._index1 = {:i.reas}
+	selectdo
+	endselect
+	
+	return(tmp.type)
+}
+
+function tdisg.dll0003.get.state.desc(
+		domain	tcccty		in.ccty,
+		domain	tcmcs.cste	in.cste,
+	ref	domain	tcdsca		ot.dsca
+			)
+{
+	ot.dsca = ""
+	select	st_tcmcs143.dsca:ot.dsca
+	from	tcmcs143 st_tcmcs143
+	where	st_tcmcs143._index1 = {:in.ccty, :in.cste}
+	selectdo
+	endselect
+}
+
+function tdisg.dll0003.Get_Sale_Data
+		(
+		domain	tcorno		in.edrn,
+		domain	whinh.shpm	in.rcno,
+		domain	tcpono		in.rcln,
+		domain	tccprj		in.cprj,
+		domain	tccom.bpid	in.ofbp,
+		domain	tcccur		in.ccur,
+		domain	tcrtyp		in.rtyp,
+	ref	domain	tcamnt		ot.bval,	|Billing Value
+	ref	domain	tcamnt		ot.rem.edmt,	|ED Reimbursement
+	ref	domain	tcamnt		ot.rem.samt,	|Service Reimbursement
+	ref	domain	tcamnt		ot.rem.cstm,	|CST Reimbursement
+	ref	domain	tcamnt		ot.rem.vatm,	|VAT Reimbursement
+	ref	domain	tcamnt		ot.rem.fgmt,	|Freight Reimbursement
+	ref	domain	tcamnt		ot.exc.amnt,	|Excise Tax
+	ref	domain	tcamnt		ot.ser.amnt,	|Service Tax
+	ref	domain	tcamnt		ot.cst.amnt,	|CST
+	ref	domain	tcamnt		ot.vat.amnt	|VAT
+		)
+{
+	domain	tcamnt		asv.val
+	domain	tcamnt		ot.exmt, ot.srmt, ot.csmt, ot.vtmt
+	
+	db.set.to.default(tciisg000)
+	tcmcs.dll0095.read.parm("ciisg000")
+	
+	ot.exmt = 0
+	ot.srmt = 0
+	ot.csmt = 0
+	ot.vtmt = 0
+	
+	tdisg832.bivl = 0
+	tdisg832.remb = empty
+	tdisg832.sasa.l = 0
+	tdisg831.ccty = ""
+	tdisg831.cvat = ""
+	select	tdisg832.bivl, tdisg832.remb, tdisg832.sasa.l, tdisg831.ccty,
+		tdisg831.cvat
+	from	tdisg832, tdisg831
+	where	tdisg832._index1 = {:in.edrn, :in.rcno, :in.rcln}
+	and	tdisg832.edrn refers to tdisg831 
+	selectdo
+		tpisg039.nins = 0
+		tpisg039.rtyp = ""
+		tpisg039.remb = empty
+		tpisg039.rval = 0
+		tpisg039.sidt = 0
+		select	tpisg039.nins, tpisg039.rtyp, tpisg039.remb, tpisg039.rval,
+			tpisg039.sidt
+		from	tpisg039
+		where	tpisg039._index2 = {:in.edrn, :in.rcno, :in.rcln}
+		selectdo
+			asv.val = 0
+			on case tpisg039.remb
+				case tcyesno.no:
+					ot.bval = ot.bval + tpisg039.rval
+					if	tdisg832.sasa.l <> 0	then
+						asv.val = tdisg832.sasa.l
+					else
+						asv.val = tpisg039.rval
+					endif	
+					tdisg.dll0003.populate.tax.amounts(tdisg831.ccty, tdisg831.cvat, tpisg039.sidt, asv.val,
+							in.ccur, tpisg039.sidt, in.rtyp, asv.val, asv.val, asv.val,
+							ot.exmt, ot.srmt, ot.csmt, ot.vtmt)
+					|ot.exc.amnt = ot.exc.amnt + ot.exmt		
+					ot.ser.amnt = ot.ser.amnt + ot.srmt		
+					ot.cst.amnt = ot.cst.amnt + ot.csmt		
+					ot.vat.amnt = ot.vat.amnt + ot.vtmt		
+					break
+				case tcyesno.yes:
+					select	tppin020.ccty, tppin020.cvat, tppin020.ccur,
+						tppin020.easv.l, tppin020.vasv.l, tppin020.sasv.l,
+						tppin020.insa
+					from	tppin020
+					where	tppin020._index1 = {:in.cprj, :in.ofbp, :tpisg039.nins}
+					selectdo
+					endselect
+					tdisg.dll0003.populate.tax.amounts(tppin020.ccty, tppin020.cvat, tpisg039.sidt, tppin020.insa,
+							tppin020.ccur, tpisg039.sidt, in.rtyp, tppin020.easv.l, tppin020.vasv.l, tppin020.sasv.l,
+							ot.exmt, ot.srmt, ot.csmt, ot.vtmt)
+					|ot.exc.amnt = ot.exc.amnt + ot.exmt		
+					ot.ser.amnt = ot.ser.amnt + ot.srmt		
+					ot.cst.amnt = ot.cst.amnt + ot.csmt		
+					ot.vat.amnt = ot.vat.amnt + ot.vtmt	
+					if	trim$(tpisg039.rtyp) = trim$(ciisg000.exii)	or
+						trim$(tpisg039.rtyp) = trim$(ciisg000.hcex)	or
+						trim$(tpisg039.rtyp) = trim$(ciisg000.scex)	then
+						ot.rem.edmt = ot.rem.edmt + tpisg039.rval
+					else
+						if	trim$(tpisg039.rtyp) = trim$(ciisg000.csti)	then
+							ot.rem.cstm = ot.rem.cstm + tpisg039.rval
+						else
+							if	trim$(tpisg039.rtyp) = trim$(ciisg000.vati)	then
+								ot.rem.vatm = ot.rem.vatm + tpisg039.rval
+							else	
+								if	trim$(tpisg039.rtyp) = trim$(ciisg000.srvi)	or
+									trim$(tpisg039.rtyp) = trim$(ciisg000.hcsv)	or
+									trim$(tpisg039.rtyp) = trim$(ciisg000.scsv)	then
+									ot.rem.samt = ot.rem.samt + tpisg039.rval
+								else
+									if	trim$(tpisg039.rtyp) = trim$(ciisg000.frgt)	then
+										ot.rem.fgmt = ot.rem.fgmt + tpisg039.rval
+									endif
+								endif
+							endif	
+						endif	
+					endif
+					break
+			ENDCASE
+		endselect	
+	endselect		
+}
+
+function tdisg.dll0003.populate.tax.amounts(
+			domain	tcccty		in.ccty,
+			domain	tccvat		in.cvat,
+			domain	tcdate		in.odat,
+			domain	tcamnt		in.oamt,
+			domain	tcccur		in.ccur,
+			domain	tcdate		in.ratd,
+			domain	tcrtyp		in.rtyp,	
+			domain	tcamnt		in.tase.l,	
+			domain	tcamnt		in.tasv.l,	
+			domain	tcamnt		in.tass.l,	
+		ref	domain	tcamnt		ot.exc.amt,	
+		ref	domain	tcamnt		ot.ser.amt,	
+		ref	domain	tcamnt		ot.cst.amt,	
+		ref	domain	tcamnt		ot.vat.amt	
+				)
+{
+	domain	tcamnt		line.tax.amount.array(1, 1)	based
+	domain	tcamnt		line.base.amount.array(1, 1)	based
+	domain	tccvat		line.tax.code.array(1, 1)	based
+	domain	tctax.indt.l	o.line.indirect.tax.array(1, 1)	based
+	domain	tctax.indt.l	i.duty.type.array(1, 1)		based
+	domain	tcyesno		expensed.tax(1, 1)		based
+	domain	tcmcs.s250m	o.comb.output.set(1)		based
+	domain	tcpvat		o.tax.rates(1,1)		based
+	domain	tcamnt		i.duties.array(1,1)		based
+	domain tctax.seqn 	o.maximum.sequence.number
+	domain tcamnt 		o.claimable.tax.amount
+	domain tcamnt 		o.non.claimable.tax.amount
+	domain tcamnt 		o.total.tax.amount
+	domain tcamnt 		o.sales.tax
+	domain tcmcs.s250m 	o.error.msg mb
+						
+	ot.exc.amt = 0
+	ot.ser.amt = 0
+	ot.cst.amt = 0
+	ot.vat.amt = 0
+	
+	tctax.dll9141.determine.aggregate.tax.amounts.per.line( 
+						in.ccty,			|tdpur401.ccty	| domain tcccty i.tax.country, 
+						in.cvat,			|tdpur401.cvat	| domain tccvat i.aggregate.tax.code, 
+						in.odat,			|tdpur401.odat	| domain tcdate i.tax.date, 
+						in.oamt,			|tdpur401.oamt	| domain tcamnt i.order.line.price, 
+						in.oamt,			|tdpur401.cuva	| domain tcamnt i.customs.value, 
+						in.oamt,		|tdpur401.mrpi.l	| domain tcamnt i.market.retail.price, 
+						0.00,						| domain tcamnt i.retail.sales.price, 
+						0.00,						| domain tcamnt i.tariff.price, 
+						in.ccur,			|tdpur400.ccur	| domain tcccur i.price.currency, 
+						in.ratd,			|tdpur400.ratd	| domain tcdate i.currency.rate.date, 
+						in.rtyp,			|tdpur400.ratt	| domain tcrtyp i.currency.exchange.rate.type, 
+						in.tase.l,			|tdpur401.tase.l	| domain tcpric i.asv.excise, 
+						in.tasv.l,		|tdpur401.tasv.l	| domain tcpric i.asv.vat, 
+						in.tass.l,		|tdpur401.tass.l	| domain tcpric i.asv.service.tax, 
+						in.odat,			|tdpur401.ddta	| domain tcdate i.ship.or.receive.date, 
+						tcyesno.no,				| domain tcyesno i.as.is.sales, 
+						tcyesno.no,				| domain tcyesno i.yesno.flag, 
+						i.duty.type.array,			| ref domain tctax.indt.l i.duty.type.array(,), 
+						i.duties.array,				| ref domain tcamnt i.duties.array(,), 
+						o.tax.rates,				| ref domain tcpvat o.tax.rates(,), 
+						o.maximum.sequence.number,		| ref domain tctax.seqn o.maximum.sequence.number, 
+						line.base.amount.array,			| ref domain tcamnt o.line.base.amount.array(,), 
+						line.tax.amount.array,			| ref domain tcamnt o.line.tax.amount.array(,), 
+						line.tax.code.array,			| ref domain tccvat o.line.tax.code.array(,) fixed, 
+						o.line.indirect.tax.array,		| ref domain tctax.indt.l o.line.indirect.tax.array(,), 
+						expensed.tax,				| ref domain tcyesno o.expensed.tax(,), 
+						o.claimable.tax.amount,			| ref domain tcamnt o.claimable.tax.amount, 
+						o.non.claimable.tax.amount,		| ref domain tcamnt o.non.claimable.tax.amount, 
+						o.total.tax.amount,			| ref domain tcamnt o.total.tax.amount, 
+						o.sales.tax,				| ref domain tcamnt o.sales.tax, 
+						o.comb.output.set,			| ref domain tcmcs.s250m o.comb.output.set() fixed mb, 
+						o.error.msg)				| ref domain tcmcs.s250m o.error.msg mb )
+	
+	db.set.to.default(ttctax941)
+	db.set.to.default(ttcmcs036)
+	select	tctax941.*,tcmcs036.*
+	from	tctax941,tcmcs036
+	where	tctax941._index1 = {:in.ccty, :in.cvat}
+	and	tctax941.type = 20		|tctax.type.l.tax
+	and	tctax941.cmbb refers to tcmcs036
+	selectdo
+		on case tcmcs036.indt.l
+			case tctax.indt.l.bed:
+			case tctax.indt.l.e.cess.excise:	
+			case tctax.indt.l.hse.cess.excise:
+				ot.exc.amt = ot.exc.amt + line.tax.amount.array(tctax941.layr,tctax941.seqn)
+				break
+			case tctax.indt.l.service:
+			case tctax.indt.l.e.cess.service:	
+			case tctax.indt.l.hse.cess.servic:
+				ot.ser.amt = ot.ser.amt + line.tax.amount.array(tctax941.layr,tctax941.seqn)	
+				break	
+			case tctax.indt.l.cst:
+				ot.cst.amt = ot.cst.amt + line.tax.amount.array(tctax941.layr,tctax941.seqn)
+				break	
+			case tctax.indt.l.vat:	
+			case tctax.indt.l.lst:	
+			case tctax.indt.l.n.a:
+				ot.vat.amt = ot.vat.amt + line.tax.amount.array(tctax941.layr,tctax941.seqn)	
+				break
+		ENDCASE		
+	endselect
+}
+
+function extern tdisg.dll0003.Get_Sale_Detail
+		(
+		domain	tccprj		in.cprj,	|Project
+		domain	tfgld.ttyp	in.ttyp,	|Tran. Type
+		domain	tfgld.docn	in.docn,	|Document
+		domain	tcdate		date.f,		|From Date
+		domain	tcdate		date.t,		|To Date
+	ref	domain	tcdate		ot.date,	|Inv. Date
+	ref	domain	tccom.bpid	ot.cuno,	|Customer
+	ref	domain	tcnama		ot.cnnm,	|Customer Name
+	ref	domain	tcamnt		ot.bamt,	|Basic Amount
+	ref	domain	tcamnt		ot.samt,	|Sales Tax Amount
+	ref	domain	tcamnt		ot.rem.edmt,	|ED Reimbursement
+	ref	domain	tcamnt		ot.rem.samt,	|Service Reimbursement
+	ref	domain	tcamnt		ot.rem.cstm,	|CST Reimbursement
+	ref	domain	tcamnt		ot.rem.vatm,	|VAT Reimbursement
+	ref	domain	tcamnt		ot.rem.fgmt,	|Freight Reimbursement
+	ref	domain	tcamnt		ot.gross.val,	|Gross Value
+	ref	domain	tcamnt		ot.advn,	|Advance
+	ref	domain	tcamnt		ot.retn,	|Retention
+	ref	domain	tcamnt		ot.nt.inmt	|Net Value
+		)
+{
+	domain	tcyesno		tmp.remb
+	domain	tcccty		tmp.rtyp
+	domain	tcamnt		o.adv.amnt		
+	domain	tcamnt		o.rtn.amnt
+	domain	tcdate		v.indt.f	
+	domain	tcdate		v.indt.t	
+	
+	tcmcs.dll0095.read.parm("ciisg000")
+	
+	tdisg.dll0003.get.date.utc(date.f, 00, 00, 00, v.indt.f)
+	tdisg.dll0003.get.date.utc(date.t, 23, 59, 59, v.indt.t)
+	
+	ot.cuno = ""		|#ISGEC001203.sn
+	ot.cnnm = ""
+	ot.bamt = 0
+	ot.samt = 0
+	ot.rem.edmt = 0
+	ot.rem.fgmt = 0
+	ot.rem.samt = 0
+	ot.rem.cstm = 0
+	ot.rem.vatm = 0
+	ot.gross.val = 0
+	ot.advn = 0						
+	ot.retn = 0						
+	ot.nt.inmt = 0		|#ISGEC001203.en
+	
+	
+	select tppdm600.ncmp
+	from    tppdm600
+	where   tppdm600._index1 = {:in.cprj}
+	selectdo
+	endselect
+	
+	select	cisli235.cprj, cisli235.ityp, cisli235.idoc
+	from	cisli235
+	where	cisli235.cprj	= :in.cprj
+	and	cisli235.codt	inrange :v.indt.f	and	:v.indt.t
+	and	cisli235.ityp	= :in.ttyp
+	and	cisli235.idoc	= :in.docn
+	and	cisli235.stat	in	(cisli.stat.printed, cisli.stat.posted)
+	and     cisli235._compnr = {:tppdm600.ncmp}			|ISGEC01090.n
+	group by cisli235.cprj, cisli235.ityp, cisli235.idoc
+	order by cisli235.cprj, cisli235.ityp, cisli235.idoc
+	selectdo
+		ot.cuno = ""
+		ot.cnnm = ""
+		ot.bamt = 0
+		ot.samt = 0
+		ot.rem.edmt = 0
+		ot.rem.fgmt = 0
+		ot.rem.samt = 0
+		ot.rem.cstm = 0
+		ot.rem.vatm = 0
+		ot.gross.val = 0
+		ot.advn = 0						
+		ot.retn = 0						
+		ot.nt.inmt = 0	
+		select	cisli235.ofbp, cisli235.nins, cisli235.amth, cisli235.txah,
+			cisli235.slcp, cisli235.ityp, cisli235.idoc, cisli235.codt,
+			tccom100.nama			
+		from	cisli235, tccom100
+		where	cisli235.cprj = :cisli235.cprj
+		and	cisli235.ityp = :cisli235.ityp
+		and	cisli235.idoc = :cisli235.idoc
+		and	cisli235.codt inrange :v.indt.f	and	:v.indt.t
+		and	cisli235.stat	in	(cisli.stat.printed, cisli.stat.posted)
+		and	cisli235.ofbp refers to tccom100	Unref Clear
+		and     cisli235._compnr = {:tppdm600.ncmp}			|ISGEC01090.n
+		selectdo
+			tmp.remb = empty
+			tmp.rtyp = ""
+			ot.cuno = cisli235.ofbp	
+			ot.cnnm = tccom100.nama	
+			ot.date = cisli235.codt
+			select	tppin020.cdf_remb:tmp.remb,
+				tppin020.cdf_rtyp:tmp.rtyp
+			from	tppin020
+			where	tppin020._index1 = {:cisli235.cprj, :cisli235.ofbp, :cisli235.nins}
+			and	tppin020._compnr = :cisli235.slcp
+			selectdo
+			endselect
+			if	tmp.remb = tcyesno.no	then
+				ot.bamt = ot.bamt + cisli235.amth(1)
+			else
+				if	not isspace(tmp.rtyp)	then
+					if	trim$(tmp.rtyp) = trim$(ciisg000.exii)	or
+						trim$(tmp.rtyp) = trim$(ciisg000.hcex)	or
+						trim$(tmp.rtyp) = trim$(ciisg000.scex)	then
+						ot.rem.edmt = ot.rem.edmt + cisli235.amth(1)
+					else
+						if	trim$(tmp.rtyp) = trim$(ciisg000.csti)	then
+							ot.rem.cstm = ot.rem.cstm + cisli235.amth(1)
+						else
+							if	trim$(tmp.rtyp) = trim$(ciisg000.vati)	then
+								ot.rem.vatm = ot.rem.vatm + cisli235.amth(1)
+							else	
+								if	trim$(tmp.rtyp) = trim$(ciisg000.srvi)	or
+									trim$(tmp.rtyp) = trim$(ciisg000.hcsv)	or
+									trim$(tmp.rtyp) = trim$(ciisg000.scsv)	then
+									ot.rem.samt = ot.rem.samt + cisli235.amth(1)
+								else
+									if	trim$(tmp.rtyp) = trim$(ciisg000.frgt)	then
+										ot.rem.fgmt = ot.rem.fgmt + cisli235.amth(1)
+									endif
+								endif
+							endif	
+						endif	
+					endif
+				endif
+			endif
+			ot.samt = ot.samt + cisli235.txah(1)
+		endselect
+		tdisg.dll0003.get.advance.retention(cisli235.ityp, cisli235.idoc, ot.advn, ot.retn)
+		ot.gross.val = ot.bamt + ot.samt + ot.rem.edmt + ot.rem.cstm + ot.rem.vatm + ot.rem.samt + ot.rem.fgmt
+		ot.nt.inmt = ot.gross.val - (ot.advn + ot.retn)		
+	endselect
+}
+
+function tdisg.dll0003.get.advance.retention(
+			domain	tfgld.ttyp	i.ttyp,
+			domain	tfgld.docn	i.docn,
+		ref	domain	tcamnt		o.advn,
+		ref	domain	tcamnt		o.retn
+				)
+{
+	o.advn = 0
+	o.retn = 0
+	select	tfacr200.amth, tfacr200.trec
+	from	tfacr200
+	where	tfacr200._index1 = {:i.ttyp, :i.docn}
+	and	tfacr200.docn <> 0
+	and	tfacr200.trec in (tfacr.trec.assignment, tfacr.trec.credit)
+	selectdo
+		on case tfacr200.trec
+			case tfacr.trec.assignment:
+				o.advn = o.advn + abs(tfacr200.amth(1))
+				break
+			case tfacr.trec.credit:
+				o.retn = o.retn + abs(tfacr200.amth(1))
+				break
+		EndCAsE
+	endselect	
+}	
+
+function tdisg.dll0003.get.fiscal.year.period
+			(
+			domain	tfgld.date	in.dte,
+		ref	domain	tfgld.year	ot.year,
+		ref	domain	tfgld.prod	ot.prod
+			)
+{
+	domain	tfgld.date	t.dte
+	
+	ot.year = 0
+	ot.prod = 0
+	select	fy_tfgld005.year:ot.year,
+		fy_tfgld005.prno:ot.prod,
+		fy_tfgld005.stdt:t.dte
+	from	tfgld005 fy_tfgld005
+	where	fy_tfgld005._index1 = {tfgld.ptyp.financial}
+	and	fy_tfgld005.stdt <= :in.dte
+	and	fy_tfgld005.corr = tcyesno.no
+	order by fy_tfgld005.stdt desc 
+	as set with 1 rows
+	selectdo
+	endselect
+}
+
+function tdisg.dll0003.get.utc.to.date
+			(
+		domain	tcdate		i.date,
+	ref	domain	tfgld.date	o.date
+			)
+{
+	long	dd, mm, yy, hh, mn, ss
+	
+	utc.to.date(i.date, yy , mm, dd, hh, mn, ss)
+	o.date = date.to.num(yy, mm, dd)
+	
+	if	o.date < 0	then
+		o.date = 0
+	endif
+}
+
+function tdisg.dll0003.get.date.utc
+		(
+		domain	tcdate	i.date,
+		long		i.hh,
+		long		i.mn,
+		long		i.ss,
+	ref	domain	tcdate	o.date
+			)
+{
+	long	dd, mm, yy, hh, mn, ss
+	
+	utc.to.date(i.date, yy , mm, dd, hh, mn, ss)
+	o.date = date.to.utc(yy, mm, dd, i.hh, i.mn, i.ss)
+	if	o.date < 0	then
+		o.date = 0
+	endif
+}

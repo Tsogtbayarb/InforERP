@@ -1,0 +1,1564 @@
+|******************************************************************************
+|* tiisg9417  0  VRC B61U a7 isg 
+|* Resource Planning Report
+|* Installation User             
+|* 2015-03-27
+|******************************************************************************
+|* Main table tiisg917 Employee Group Joining/leaving dates, Form Type 4
+|******************************************************************************
+|* ID ISGEC01128, IT0327, Ritu Shrivastava, 29-07-2015, VRC B61U a7 isg
+|* Modification to print proper values
+|****************************** declaration section ***************************
+declaration:
+
+  table   	ttiisg917 | Employee Group Joining/leaving dates
+  table		ttfgld005
+  table		ttiisg925
+  table		ttiisg906
+  table		ttiisg076
+  table		ttcccp020
+  table		ttiisg928
+  table		ttiisg929
+  table		ttiisg930   
+  table		ttiisg933
+  table		ttiisg911			
+  
+	extern	domain	tccprj		cprj.f, cprj.t
+	extern	domain	tccprj		dgid.f, dgid.t
+	extern	domain	tfgld.year	year.f
+	extern	domain	tfgld.prod	prod.f, prod.t, higher.period.f, higher.period.t,period
+	extern	domain	tcmcs.int	rlid.f, rlid.t
+	
+	string err.file(100), file.name(100), line1(5000),line2(5000), line.group(5000)
+	
+	domain	tcdate		date.array(2, 12)
+	domain	tfgld.prod	period.array(12)
+	domain	tcdsca		role.description(50)
+	domain	tcqiv1		role.value(12, 50), summary.project(12, 50)
+	domain	tcdate		first.date, last.date
+	domain	tcamnt		values(12),cal_array(12),cal_array2(12),cal_subs(12)
+	domain  tcpono 		t
+	
+	long 	stat.fp, ret2, line, no.of.records, value.array, role.line,prno.add,
+		flag							
+	
+	domain tcdesc   	desc.var
+	
+	extern domain tiisg.stat	stat.f, stat.t			
+	
+	domain 	tfgld.date	x.date.f,x.date.t
+	
+#include<bic_desktop>
+									
+#define THEORY		"Theoretical Available hours"				
+#define TRAINING_HOURS	"Training hours Planned"
+#define OVERTIME 	"Overtime Planned"
+#define LEAVE		"Leave Planned"
+#define OTHERS		"Others Planned"
+									
+|****************************** program section ********************************
+before.program:
+	delete.data.tiisg933()
+	
+	
+	
+	x.date.f = date.to.num  (2007, 1, 1)
+	x.date.t = date.to.num  (2007, 12, 31)
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+choice.cont.generate:
+on.choice:
+	tcmcs.dll0095.read.parm("tiisg930")
+	generate.file()
+
+
+|****************************** field section *********************************
+
+field.cprj.f:
+when.field.changes:
+   cprj.t = cprj.f
+
+field.dgid.f:
+when.field.changes:
+   dgid.t = dgid.f
+
+field.prod.f:
+when.field.changes:
+   prod.t = prod.f
+
+before.zoom:
+	tfgld005.ptyp = tfgld.ptyp.financial
+	tfgld005.year = year.f
+	
+field.prod.t:
+before.zoom:
+	tfgld005.ptyp = tfgld.ptyp.financial
+	tfgld005.year = year.f
+
+field.rlid.f:
+when.field.changes:
+   rlid.t = rlid.f
+   
+								|#ISGEC01128.sn
+field.stat.f:
+when.field.changes:
+	stat.t = stat.f
+								|#ISGEC01128.en
+
+|****************************** function section ******************************
+
+functions:
+
+function delete.data.tiisg933()
+{
+	select tiisg933.*
+	from    tiisg933 for update
+	selectdo
+		db.delete(ttiisg933,db.retry,e)
+	endselect
+	
+	if e then
+		abort.transaction()
+	else
+		commit.transaction()
+	endif	
+}
+function generate.file()
+{
+	long j, flag, i
+	
+	open.file()
+	line1 = ""
+	for i = 1 to 12
+		for j = 1 to 50
+			summary.project(i, j) = 0
+		endfor
+	endfor
+	
+
+	
+	select 	tiisg917.grcd										
+	from	tiisg917, tiisg911
+	where	tiisg917.grcd  inrange {:dgid.f} and {:dgid.t}
+	group by tiisg917.grcd
+	order by tiisg917.grcd
+	selectdo
+		if not isspace(tiisg917.grcd)	then							
+			select	tiisg911.desc, tiisg911.grcd
+			from	tiisg911
+			where	tiisg911._index1 = {:tiisg917.grcd}
+			selectdo
+			endselect
+			line.group = ""
+			line.group = "Group" & "	" & strip$(tiisg911.grcd) & "		" & strip$(tiisg911.desc)
+			flag = 0
+			if	flag = 0	then
+				seq.puts(line.group, stat.fp)
+				flag = 1
+			endif
+														
+			generate.header()
+			
+			initialize_data()		
+			
+			for j = 1 to 12
+				cal_array(j) = 0.0
+				values(j) = 0.0
+			endfor				
+			print.detail.avaliable()
+								
+			initialize_data()		
+			
+			
+			for j = 1 to 12
+				cal_array(j) = 0.0
+				values(j) = 0.0
+			endfor
+			print.detail.training()	
+																
+			initialize_data()		
+						
+			for j = 1 to 12
+				values(j) = 0.0
+				cal_array(j) = 0.0
+			endfor	
+			print.detail.overtime()									
+			
+			initialize_data()																	
+			
+			for j = 1 to 12
+				cal_array(j) = 0.0
+				values(j) = 0.0
+			endfor
+			print.detail.leave()
+									
+			initialize_data()								
+			
+			for j = 1 to 12
+				cal_array(j) = 0.0
+				values(j) = 0.0
+			endfor
+			print.detail.other()
+			
+			
+			for j = 1 to 12
+				values(j) = 0.0
+				cal_array(j) = 0.0
+			endfor
+			
+			initialize_data()		
+			
+			line1 = ""
+			line1 = "Plan" & " In House"
+			line1 = strip$(shiftl$(line1))		
+			seq.puts(line1, stat.fp)	
+			print.detail.inhouse()
+			
+			initialize_data()		
+			
+			line1 = ""
+			line1 = "Plan" & " Out Sourcing"
+			line1 = strip$(shiftl$(line1))		
+			seq.puts(line1, stat.fp)
+			print.detail.outsourcing()
+			
+			initialize_data()		
+			
+			summary.all.project1()				
+			
+			initialize_data()		
+			
+			print.detail.hours()
+		endif					
+		
+	endselect					
+	
+	close.file()
+	commit.transaction()
+}
+
+function open.file()
+{
+	err.file = bse.tmp.dir$() & str$(utc.num()) & ".xls"
+	
+	file.name = "c:\temp\" & str$(utc.num())  & ".xls"
+	
+	stat.fp = seq.open(err.file, "w+")
+	if stat.fp >0 then
+ 		seq.seek(0, 0, stat.fp)
+	endif
+}
+
+function generate.header()
+{
+	long i, j,yy,mm,dd			
+	long yy1,mm1,dd1			
+	i = 0
+	j = 0
+	line = 0
+	
+	for i = 1 to 2
+		for j = 1 to 12
+			date.array(i, j) = 0
+		endfor
+	endfor
+	
+	for i = 1 to 12
+		for j = 1 to 50
+			role.value(i, j) = 0
+		endfor
+	endfor
+
+	for j = 1 to 12
+		values(j) = 0.0
+		period.array(j) = 0
+	endfor
+
+	select 	tfgld005.stdt, tfgld005.prno, tfgld005.desc
+	from	tfgld005
+	where	tfgld005._index1 inrange {tfgld.ptyp.financial, :year.f, :prod.f}
+				and	{tfgld.ptyp.financial, :year.f, :prod.t}
+	selectdo
+		line = line + 1
+		date.array(1,line) = tfgld005.stdt
+		period.array(line) = tfgld005.prno
+		
+		num.to.date(tfgld005.stdt,yy,mm,dd)					
+		
+		line1 = strip$(line1) & "	" & tfgld005.desc & "-" & str$(yy)	
+	endselect
+	
+	higher.period.f = prod.f + 1
+	higher.period.t = prod.t + 1
+	line = 0
+	
+	select 	tfgld005.stdt, tfgld005.prno
+	from	tfgld005
+	where	tfgld005._index1 inrange {tfgld.ptyp.financial, :year.f, :higher.period.f}
+				and	{tfgld.ptyp.financial, :year.f, :prod.t}
+	selectdo
+		line = line + 1
+		date.array(2,line) = tfgld005.stdt - 1
+		
+		num.to.date(date.array(2,line),yy,mm,dd)
+	endselect
+	
+	select 	tfgld005.stdt, tfgld005.prno
+	from	tfgld005
+	where	tfgld005._index1 = {tfgld.ptyp.financial, :year.f+1, :higher.period.t}
+	selectdo
+		line = line + 1
+		date.array(2,line) = tfgld005.stdt - 1
+		
+		num.to.date(date.array(2,line),yy1,mm1,dd1)
+
+	selectempty
+		line = line + 1
+		date.array(2,line) = tfgld005.stdt + 30
+		
+		num.to.date(tfgld005.stdt,yy1,mm1,dd1)
+	endselect
+		
+	line1 = "	" & strip$(shiftl$(line1))		
+	seq.puts(line1, stat.fp)	
+}
+
+function print.detail.avaliable()
+{
+	long i, line.detail
+	domain	tcamnt	chk.hrs
+	
+	chk.hrs = 0	
+	role.line = 0
+	line1 = ""
+				
+	for i = 1 to 12
+		values(i) = 0.0
+	endfor
+				
+	select	tiisg925.*
+	from	tiisg925
+	where	tiisg925.roll inrange {:rlid.f} and {:rlid.t}
+	selectdo
+		role.line = role.line + 1
+		
+		line1 = THEORY & "	" & tiisg925.dsca			
+		
+		select	tiisg906.*
+		from	tiisg906
+		where	tiisg906.rlid = :tiisg925.roll
+		and	tiisg906.grcd = :tiisg917.grcd							
+		selectdo
+			select 	tiisg917.*
+			from	tiisg917
+			where	tiisg917._index1 = {:tiisg906.emno}
+			and	tiisg917.grcd = :tiisg906.grcd
+			selectdo
+				line.detail = 0
+				for i = 1 to line
+					no.of.records = 0
+					first.date = 0
+					last.date = 0
+					line.detail = i
+					if tiisg917.gndt < date.array(1, line.detail) and tiisg917.rldt > date.array(2, line.detail) then
+						first.date = date.array(1, line.detail)
+						last.date = date.array(2, line.detail)
+						
+						select count(tcccp020.date):no.of.records
+						from	tcccp020
+						where	tcccp020._index1 inrange {"STND     ", "STND  ", :first.date}
+									and {"STND     ", "STND  ", :last.date}
+						and	tcccp020.avlb = tcyesno.yes			
+						selectdo
+							values(line.detail) = values(line.detail) + no.of.records
+						endselect
+					endif
+					
+					if tiisg917.gndt < date.array(1, line.detail) and tiisg917.rldt > date.array(1, line.detail)
+						and tiisg917.rldt < date.array(2, line.detail)	then
+						first.date = date.array(1, line.detail)
+						last.date = tiisg917.rldt
+						select count(tcccp020.date):no.of.records
+						from	tcccp020
+						where	tcccp020._index1 inrange {"STND     ", "STND  ", :first.date}
+									and {"STND     ", "STND  ", :last.date}
+						and	tcccp020.avlb = tcyesno.yes			
+						selectdo
+							values(line.detail) = values(line.detail) + no.of.records
+						endselect
+					endif	
+					
+					if tiisg917.gndt > date.array(1, line.detail) and tiisg917.gndt < date.array(2, line.detail)
+						and tiisg917.rldt > date.array(2, line.detail) then
+						first.date = tiisg917.gndt
+						last.date = date.array(2, line.detail)
+						select count(tcccp020.date):no.of.records
+						from	tcccp020
+						where	tcccp020._index1 inrange {"STND     ", "STND  ", :first.date}
+									and {"STND     ", "STND  ", :last.date}
+						and	tcccp020.avlb = tcyesno.yes			
+						selectdo
+							values(line.detail) = values(line.detail) + no.of.records
+						endselect		
+					endif
+
+					if tiisg917.gndt > date.array(1, line.detail) and tiisg917.rldt < date.array(2, line.detail) then
+						first.date = tiisg917.gndt
+						last.date = tiisg917.rldt
+						select count(tcccp020.date):no.of.records
+						from	tcccp020
+						where	tcccp020._index1 inrange {"STND     ", "STND  ", :first.date}
+									and {"STND     ", "STND  ", :last.date}
+						and	tcccp020.avlb = tcyesno.yes			
+						selectdo
+							values(line.detail) = values(line.detail) + no.of.records
+						endselect
+					endif	
+				endfor
+				
+			endselect
+		endselect
+
+		line.detail = 0
+		prno.add = prod.f
+		
+		for i = 1 to line 
+			line.detail = line.detail + 1
+			if line.detail <> 1 then
+				prno.add = prno.add + 1
+			endif
+			
+			values(line.detail) = values(line.detail) * tiisg930.hrso
+			chk.hrs = chk.hrs + values(line.detail)					
+			cal_array(line.detail) = values(line.detail)
+			
+			tiisg933.des1 = THEORY
+			tiisg933.roll = tiisg906.rlid
+			if line.detail = 1 then
+				tiisg933.prno = prod.f
+			else 
+				tiisg933.prno = prno.add 
+			endif	
+			tiisg933.amnt = cal_array(line.detail)
+			db.insert(ttiisg933,db.skip.dupl)
+			
+			line1 = strip$(line1) & "	" & str$(values(line.detail))
+		endfor
+
+		line1 = strip$(shiftl$(line1))		
+		seq.puts(line1, stat.fp)
+
+		commit.transaction()
+		for i = 1 to 12
+			values(i) = 0.0
+			cal_array(i) = 0.00
+		endfor
+		
+		chk.hrs = 0									
+		no.of.records = 0										
+	endselect	
+}
+
+function print.detail.training()
+{
+	long i, line.detail
+	domain tfgld.prod	month
+	domain	tcamnt		chk.hrs
+	
+	chk.hrs = 0	
+	role.line = 0
+	line1 = ""
+	flag = 0
+	
+	for i = 1 to 12
+		values(i) = 0.0
+	endfor
+	
+	select	tiisg925.*
+	from	tiisg925
+	where	tiisg925.roll inrange {:rlid.f} and {:rlid.t}
+	selectdo
+		role.line = role.line + 1
+
+		line1 = TRAINING_HOURS & "	" & tiisg925.dsca			
+		
+		select	tiisg906.*
+		from	tiisg906
+		where	tiisg906.rlid = :tiisg925.roll
+		and	tiisg906.grcd = :tiisg917.grcd						
+		selectdo
+			select 	tiisg917.*
+			from	tiisg917
+			where	tiisg917._index1 = {:tiisg906.emno}
+			and	tiisg917.grcd = :tiisg906.grcd
+			selectdo
+				line.detail = 0
+				for i = 1 to line
+					no.of.records = 0
+					first.date = 0
+					last.date = 0
+					month = 0
+					line.detail = i
+					if tiisg917.gndt < date.array(1, line.detail) and tiisg917.rldt > date.array(2, line.detail) then
+						first.date = date.array(1, line.detail)
+						last.date = date.array(2, line.detail)
+						select count(tcccp020.date):no.of.records
+						from	tcccp020
+						where	tcccp020._index1 inrange {"STND     ", "STND  ", :first.date}
+									and {"STND     ", "STND  ", :last.date}
+						and	tcccp020.avlb = tcyesno.yes			
+						selectdo
+							values(line.detail) = values(line.detail) + no.of.records
+						endselect
+					endif
+					
+					if tiisg917.gndt < date.array(1, line.detail) and tiisg917.rldt > date.array(1, line.detail)
+						and tiisg917.rldt < date.array(2, line.detail)	then
+						first.date = date.array(1, line.detail)
+						last.date = tiisg917.rldt
+						select count(tcccp020.date):no.of.records
+						from	tcccp020
+						where	tcccp020._index1 inrange {"STND     ", "STND  ", :first.date}
+									and {"STND     ", "STND  ", :last.date}
+						and	tcccp020.avlb = tcyesno.yes			
+						selectdo
+							values(line.detail) = values(line.detail) + no.of.records
+						endselect
+					endif	
+					
+					if tiisg917.gndt > date.array(1, line.detail) and tiisg917.gndt < date.array(2, line.detail)
+						and tiisg917.rldt > date.array(2, line.detail) then
+						first.date = tiisg917.gndt
+						last.date = date.array(2, line.detail)
+						select count(tcccp020.date):no.of.records
+						from	tcccp020
+						where	tcccp020._index1 inrange {"STND     ", "STND  ", :first.date}
+									and {"STND     ", "STND  ", :last.date}
+						and	tcccp020.avlb = tcyesno.yes			
+						selectdo
+							values(line.detail) = values(line.detail) + no.of.records
+						endselect		
+					endif
+
+					if tiisg917.gndt > date.array(1, line.detail) and tiisg917.rldt < date.array(2, line.detail) then
+						first.date = tiisg917.gndt
+						last.date = tiisg917.rldt
+						select count(tcccp020.date):no.of.records
+						from	tcccp020
+						where	tcccp020._index1 inrange {"STND     ", "STND  ", :first.date}
+									and {"STND     ", "STND  ", :last.date}
+						and	tcccp020.avlb = tcyesno.yes			
+						selectdo
+							values(line.detail) = values(line.detail) + no.of.records
+						endselect
+					endif
+				endfor
+			endselect
+		endselect
+
+		line.detail = 0										
+		for i = 1 to line
+			line.detail = i
+			if values(line.detail) > 0 then
+				month = period.array(line.detail)
+				
+				select	tiisg076.trav
+				from	tiisg076
+				where	tiisg076._index1 = {:tiisg917.grcd, :year.f, :month, :tiisg906.rlid}
+				and	tiisg076.trav > 0
+				selectdo
+					values(line.detail) = (values(line.detail) * (tiisg076.trav/100))
+				selectempty
+					values(line.detail) = 0	
+				endselect
+			endif	
+		endfor		
+		
+		line.detail = 0
+		prno.add = prod.f
+		
+		for i = 1 to line 
+			line.detail = line.detail + 1
+			if line.detail <> 1 then
+				prno.add = prno.add + 1
+			endif
+			
+			values(line.detail) = values(line.detail) * tiisg930.hrso
+			chk.hrs = chk.hrs + values(line.detail)					
+			cal_array(line.detail) = values(line.detail)
+			
+			tiisg933.des1 = TRAINING_HOURS
+			tiisg933.roll = tiisg906.rlid
+			if line.detail = 1 then
+				tiisg933.prno = prod.f
+			else 
+				tiisg933.prno = prno.add 
+			endif	
+			tiisg933.amnt = cal_array(line.detail)
+			db.insert(ttiisg933,db.skip.dupl)
+			
+			line1 = strip$(line1) & "	" & str$(values(line.detail))
+		endfor
+		if	chk.hrs <> 0	then							
+			line1 = strip$(shiftl$(line1))		
+			seq.puts(line1, stat.fp)
+		else
+			if flag = 0 then
+				line1 = TRAINING_HOURS		
+				seq.puts(line1, stat.fp)
+				flag = 1
+			endif
+		endif										
+		for i = 1 to 12
+			values(i) = 0.0
+		endfor
+		
+		chk.hrs = 0									
+	endselect
+
+}
+
+
+function print.detail.overtime()
+{
+	long i, line.detail
+	domain tfgld.prod	month
+	domain	tcamnt		chk.hrs
+	
+	chk.hrs = 0
+	role.line = 0
+	line1 = ""
+	flag = 0
+	
+	for i = 1 to 12
+		values(i) = 0.0
+	endfor
+	
+	select	tiisg925.*
+	from	tiisg925
+	where	tiisg925.roll inrange {:rlid.f} and {:rlid.t}
+	selectdo
+		role.line = role.line + 1
+
+		line1 = OVERTIME & "	" & tiisg925.dsca
+		
+		select	tiisg906.*
+		from	tiisg906
+		where	tiisg906.rlid = :tiisg925.roll
+		and	tiisg906.grcd = :tiisg917.grcd						
+		selectdo
+			select 	tiisg917.*
+			from	tiisg917
+			where	tiisg917._index1 = {:tiisg906.emno}
+			and	tiisg917.grcd = :tiisg906.grcd
+			selectdo
+				line.detail = 0
+				for i = 1 to line
+					no.of.records = 0
+					first.date = 0
+					last.date = 0
+					month = 0
+					line.detail = i
+					if tiisg917.gndt < date.array(1, line.detail) and tiisg917.rldt > date.array(2, line.detail) then
+						first.date = date.array(1, line.detail)
+						last.date = date.array(2, line.detail)
+						select count(tcccp020.date):no.of.records
+						from	tcccp020
+						where	tcccp020._index1 inrange {"STND     ", "STND  ", :first.date}
+									and {"STND     ", "STND  ", :last.date}
+						and	tcccp020.avlb = tcyesno.yes			
+						selectdo
+							values(line.detail) = values(line.detail) + no.of.records
+						endselect
+					endif
+					
+					if tiisg917.gndt < date.array(1, line.detail) and tiisg917.rldt > date.array(1, line.detail)
+						and tiisg917.rldt < date.array(2, line.detail)	then
+						first.date = date.array(1, line.detail)
+						last.date = tiisg917.rldt
+						select count(tcccp020.date):no.of.records
+						from	tcccp020
+						where	tcccp020._index1 inrange {"STND     ", "STND  ", :first.date}
+									and {"STND     ", "STND  ", :last.date}
+						and	tcccp020.avlb = tcyesno.yes			
+						selectdo
+							values(line.detail) = values(line.detail) + no.of.records
+						endselect
+					endif	
+					
+					if tiisg917.gndt > date.array(1, line.detail) and tiisg917.gndt < date.array(2, line.detail)
+						and tiisg917.rldt > date.array(2, line.detail) then
+						first.date = tiisg917.gndt
+						last.date = date.array(2, line.detail)
+						select count(tcccp020.date):no.of.records
+						from	tcccp020
+						where	tcccp020._index1 inrange {"STND     ", "STND  ", :first.date}
+									and {"STND     ", "STND  ", :last.date}
+						and	tcccp020.avlb = tcyesno.yes			
+						selectdo
+							values(line.detail) = values(line.detail) + no.of.records
+						endselect		
+					endif
+
+					if tiisg917.gndt > date.array(1, line.detail) and tiisg917.rldt < date.array(2, line.detail) then
+						first.date = tiisg917.gndt
+						last.date = tiisg917.rldt
+						select count(tcccp020.date):no.of.records
+						from	tcccp020
+						where	tcccp020._index1 inrange {"STND     ", "STND  ", :first.date}
+									and {"STND     ", "STND  ", :last.date}
+						and	tcccp020.avlb = tcyesno.yes			
+						selectdo
+							values(line.detail) = values(line.detail) + no.of.records
+						endselect
+					endif	
+				endfor
+			endselect
+		endselect
+		
+		line.detail = 0
+		
+		for i = 1 to line											
+		line.detail = i
+			if values(line.detail) > 0 then
+				month = period.array(line.detail)
+				
+				select	tiisg076.ovtm
+				from	tiisg076
+				where	tiisg076._index1 = {:tiisg917.grcd, :year.f, :month, :tiisg906.rlid}
+				and	tiisg076.ovtm > 0
+				selectdo
+					values(line.detail) = (values(line.detail) * tiisg076.ovtm/100)	
+				selectempty							
+					values(line.detail) = 0
+				endselect
+			endif
+		endfor													
+		
+		line.detail = 0
+		prno.add = prod.f
+		
+		for i = 1 to line 
+			line.detail = line.detail + 1
+			if line.detail <> 1 then
+				prno.add = prno.add + 1
+			endif
+			
+			values(line.detail) = values(line.detail) * tiisg930.hrso
+			chk.hrs = chk.hrs + values(line.detail)					
+			cal_array(line.detail) = values(line.detail)
+			
+			tiisg933.des1 = OVERTIME
+			tiisg933.roll = tiisg906.rlid
+			if line.detail = 1 then
+				tiisg933.prno = prod.f
+			else 
+				tiisg933.prno = prno.add 
+			endif	
+			tiisg933.amnt = cal_array(line.detail)
+			db.insert(ttiisg933,db.skip.dupl)
+			
+			line1 = strip$(line1) & "	" & str$(values(line.detail))
+		endfor	
+		if	chk.hrs <> 0	then							
+			line1 = strip$(shiftl$(line1))		
+			seq.puts(line1, stat.fp)
+		else
+			if flag = 0 then
+				line1 = OVERTIME
+				seq.puts(line1, stat.fp)
+				flag = 1
+			endif
+		endif										
+		for i = 1 to 12
+			values(i) = 0.0
+		endfor
+		
+		chk.hrs = 0								
+	endselect
+
+}
+
+function print.detail.leave()
+{
+	long i, line.detail
+	domain tfgld.prod	month
+	domain	tcamnt		chk.hrs
+	
+	chk.hrs = 0
+	role.line = 0
+	line1 = ""
+	flag = 0
+	
+	for i = 1 to 12
+		values(i) = 0.0
+	endfor
+	
+	select	tiisg925.*
+	from	tiisg925
+	where	tiisg925.roll inrange {:rlid.f} and {:rlid.t}
+	selectdo
+		role.line = role.line + 1
+
+		line1 = LEAVE & "	" & tiisg925.dsca				
+		
+		select	tiisg906.*
+		from	tiisg906
+		where	tiisg906.rlid = :tiisg925.roll
+		and	tiisg906.grcd = :tiisg917.grcd						
+		selectdo
+			select 	tiisg917.*
+			from	tiisg917
+			where	tiisg917._index1 = {:tiisg906.emno}
+			and	tiisg917.grcd = :tiisg906.grcd
+			selectdo
+				line.detail = 0
+				for i = 1 to line
+					no.of.records = 0
+					first.date = 0
+					last.date = 0
+					month = 0
+					line.detail = i
+					if tiisg917.gndt < date.array(1, line.detail) and tiisg917.rldt > date.array(2, line.detail) then
+						first.date = date.array(1, line.detail)
+						last.date = date.array(2, line.detail)
+						select count(tcccp020.date):no.of.records
+						from	tcccp020
+						where	tcccp020._index1 inrange {"STND     ", "STND  ", :first.date}
+									and {"STND     ", "STND  ", :last.date}
+						and	tcccp020.avlb = tcyesno.yes			
+						selectdo
+							values(line.detail) = values(line.detail) + no.of.records
+						endselect
+					endif
+					
+					if tiisg917.gndt < date.array(1, line.detail) and tiisg917.rldt > date.array(1, line.detail)
+						and tiisg917.rldt < date.array(2, line.detail)	then
+						first.date = date.array(1, line.detail)
+						last.date = tiisg917.rldt
+						select count(tcccp020.date):no.of.records
+						from	tcccp020
+						where	tcccp020._index1 inrange {"STND     ", "STND  ", :first.date}
+									and {"STND     ", "STND  ", :last.date}
+						and	tcccp020.avlb = tcyesno.yes			
+						selectdo
+							values(line.detail) = values(line.detail) + no.of.records
+						endselect
+					endif	
+					
+					if tiisg917.gndt > date.array(1, line.detail) and tiisg917.gndt < date.array(2, line.detail)
+						and tiisg917.rldt > date.array(2, line.detail) then
+						first.date = tiisg917.gndt
+						last.date = date.array(2, line.detail)
+						select count(tcccp020.date):no.of.records
+						from	tcccp020
+						where	tcccp020._index1 inrange {"STND     ", "STND  ", :first.date}
+									and {"STND     ", "STND  ", :last.date}
+						and	tcccp020.avlb = tcyesno.yes			
+						selectdo
+							values(line.detail) = values(line.detail) + no.of.records
+						endselect		
+					endif
+
+					if tiisg917.gndt > date.array(1, line.detail) and tiisg917.rldt < date.array(2, line.detail) then
+						first.date = tiisg917.gndt
+						last.date = tiisg917.rldt
+						select count(tcccp020.date):no.of.records
+						from	tcccp020
+						where	tcccp020._index1 inrange {"STND     ", "STND  ", :first.date}
+									and {"STND     ", "STND  ", :last.date}
+						and	tcccp020.avlb = tcyesno.yes			
+						selectdo
+							values(line.detail) = values(line.detail) + no.of.records
+						endselect
+					endif	
+
+				endfor
+			endselect
+		endselect
+		
+		line.detail = 0
+		
+		for i = 1 to line
+			line.detail = i
+			if values(line.detail) > 0 then
+				month = period.array(line.detail)
+				
+				select	tiisg076.leav
+				from	tiisg076
+				where	tiisg076._index1 = {:tiisg917.grcd, :year.f, :month, :tiisg906.rlid}
+				and	tiisg076.leav > 0
+				selectdo
+					values(line.detail) = (values(line.detail) * (tiisg076.leav/100))
+				selectempty
+					values(line.detail) = 0	
+				endselect
+			endif	
+		endfor										
+		line.detail = 0
+		prno.add = prod.f
+		for i = 1 to line 
+			line.detail = line.detail + 1
+			if line.detail <> 1 then
+				prno.add = prno.add + 1
+			endif
+			
+			values(line.detail) = values(line.detail) * tiisg930.hrso
+			chk.hrs = chk.hrs + values(line.detail)					
+			cal_array(line.detail) = values(line.detail)
+			
+			tiisg933.des1 = LEAVE
+			tiisg933.roll = tiisg906.rlid
+			if line.detail = 1 then
+				tiisg933.prno = prod.f
+			else 
+				tiisg933.prno = prno.add 
+			endif	
+			
+			tiisg933.amnt = cal_array(line.detail)
+			db.insert(ttiisg933,db.skip.dupl)
+			
+			line1 = strip$(line1) & "	" & str$(values(line.detail))
+		endfor	
+		
+		if	chk.hrs <> 0	then							
+			line1 = strip$(shiftl$(line1))		
+			seq.puts(line1, stat.fp)
+		else
+			if flag = 0 then
+				line1 = LEAVE
+				seq.puts(line1, stat.fp)
+				flag = 1
+			endif
+		endif			
+		
+		for i = 1 to 12
+			values(i) = 0.0
+		endfor
+				
+		chk.hrs = 0									
+	endselect
+
+}
+
+
+function print.detail.other()
+{
+	long i, line.detail
+	domain tfgld.prod	month
+	domain	tcamnt		chk.hrs
+	
+	chk.hrs = 0
+	role.line = 0
+	line1 = ""
+	flag = 0 
+	
+	for i = 1 to 12
+		values(i) = 0.0
+	endfor
+	
+	select	tiisg925.*
+	from	tiisg925
+	where	tiisg925.roll inrange {:rlid.f} and {:rlid.t}
+	selectdo
+		role.line = role.line + 1
+		
+		line1 = OTHERS & "	" & tiisg925.dsca			
+		
+		select	tiisg906.*
+		from	tiisg906
+		where	tiisg906.rlid = :tiisg925.roll
+		and	tiisg906.grcd = :tiisg917.grcd					
+		selectdo
+			select 	tiisg917.*
+			from	tiisg917
+			where	tiisg917._index1 = {:tiisg906.emno}
+			and	tiisg917.grcd = :tiisg906.grcd
+			selectdo
+				line.detail = 0
+				for i = 1 to line
+					no.of.records = 0
+					first.date = 0
+					last.date = 0
+					month = 0
+					line.detail = i
+					if tiisg917.gndt < date.array(1, line.detail) and tiisg917.rldt > date.array(2, line.detail) then
+						first.date = date.array(1, line.detail)
+						last.date = date.array(2, line.detail)
+						select count(tcccp020.date):no.of.records
+						from	tcccp020
+						where	tcccp020._index1 inrange {"STND     ", "STND  ", :first.date}
+									and {"STND     ", "STND  ", :last.date}
+						and	tcccp020.avlb = tcyesno.yes			
+						selectdo
+							values(line.detail) = values(line.detail) + no.of.records
+						endselect
+					endif
+					
+					if tiisg917.gndt < date.array(1, line.detail) and tiisg917.rldt > date.array(1, line.detail)
+						and tiisg917.rldt < date.array(2, line.detail)	then
+						first.date = date.array(1, line.detail)
+						last.date = tiisg917.rldt
+						select count(tcccp020.date):no.of.records
+						from	tcccp020
+						where	tcccp020._index1 inrange {"STND     ", "STND  ", :first.date}
+									and {"STND     ", "STND  ", :last.date}
+						and	tcccp020.avlb = tcyesno.yes			
+						selectdo
+							values(line.detail) = values(line.detail) + no.of.records
+						endselect
+					endif	
+					
+					if tiisg917.gndt > date.array(1, line.detail) and tiisg917.gndt < date.array(2, line.detail)
+						and tiisg917.rldt > date.array(2, line.detail) then
+						first.date = tiisg917.gndt
+						last.date = date.array(2, line.detail)
+						select count(tcccp020.date):no.of.records
+						from	tcccp020
+						where	tcccp020._index1 inrange {"STND     ", "STND  ", :first.date}
+									and {"STND     ", "STND  ", :last.date}
+						and	tcccp020.avlb = tcyesno.yes			
+						selectdo
+							values(line.detail) = values(line.detail) + no.of.records
+						endselect		
+					endif
+
+					if tiisg917.gndt > date.array(1, line.detail) and tiisg917.rldt < date.array(2, line.detail) then
+						first.date = tiisg917.gndt
+						last.date = tiisg917.rldt
+						select count(tcccp020.date):no.of.records
+						from	tcccp020
+						where	tcccp020._index1 inrange {"STND     ", "STND  ", :first.date}
+									and {"STND     ", "STND  ", :last.date}
+						and	tcccp020.avlb = tcyesno.yes			
+						selectdo
+							values(line.detail) = values(line.detail) + no.of.records
+						endselect
+					endif	
+				endfor
+			endselect
+		endselect
+		
+		line.detail = 0	
+		
+		for i = 1 to line
+			line.detail = i
+			if values(line.detail) > 0 then
+				month = period.array(line.detail)
+				
+				select	tiisg076.othr
+				from	tiisg076
+				where	tiisg076._index1 = {:tiisg917.grcd, :year.f, :month, :tiisg906.rlid}
+				and	tiisg076.othr > 0
+				selectdo
+					values(line.detail) = (values(line.detail) * (tiisg076.othr/100))
+				selectempty
+					values(line.detail) = 0	
+				endselect
+			endif	
+		endfor										
+		
+		line.detail = 0
+		prno.add = prod.f
+		
+		for i = 1 to line 
+			line.detail = line.detail + 1
+			if line.detail <> 1 then
+				prno.add = prno.add + 1
+			endif
+			
+			values(line.detail) = values(line.detail) * tiisg930.hrso
+			chk.hrs = chk.hrs + values(line.detail)					
+			cal_array(line.detail) = values(line.detail)
+			
+			tiisg933.des1 = OTHERS
+			tiisg933.roll = tiisg906.rlid
+			if line.detail = 1 then
+				tiisg933.prno = prod.f
+			else 
+				tiisg933.prno = prno.add 
+			endif	
+			tiisg933.amnt = cal_array(line.detail)
+			db.insert(ttiisg933,db.skip.dupl)
+			
+			line1 = strip$(line1) & "	" & str$(values(line.detail))
+		endfor	
+		if	chk.hrs <> 0 	then							
+			line1 = strip$(shiftl$(line1))		
+			seq.puts(line1, stat.fp)
+		else
+			if flag = 0 then
+				line1 = OTHERS
+				seq.puts(line1, stat.fp)
+				flag = 1
+			endif
+		endif										
+		for i = 1 to 12
+			values(i) = 0.0
+		endfor
+		
+		chk.hrs = 0									
+	endselect
+
+}
+
+function print.detail.inhouse()
+{
+	long i, j, dd, mm,yy, a
+	domain tfgld.prod	month
+	domain	tcmcs.long	revision
+	domain	tccprj		project
+	domain	tcnych		chk.hrs			
+	domain	tcmcs.str3	mon_desc,mon_desc1	
+	
+	role.line = 0
+	line1 = ""
+	value.array = 0
+	chk.hrs = 0
+	mon_desc = ""
+	mon_desc1 = ""
+	dd = 0
+	mm = 0
+	yy = 0
+	
+	select	tiisg925.*
+	from	tiisg925
+	where	tiisg925.roll inrange {:rlid.f} and {:rlid.t}
+	order by tiisg925.seqn
+	selectdo
+		role.description(1, tiisg925.seqn) = tiisg925.dsca
+	selecteos
+		role.line = tiisg925.seqn	
+	endselect	
+			
+	select	tiisg926.cprj:project, max(tiisg926.revi):revision
+	from	tiisg926
+	where	tiisg926._index1 inrange {:cprj.f} and {:cprj.t}
+	and	tiisg926.stat inrange {:stat.f} and {:stat.t}
+	and	tiisg926.grup = :tiisg917.grcd
+	group by tiisg926.cprj
+	selectdo
+		for value.array = 1 to line
+			month = period.array(value.array)
+			
+			select	tfgld005.desc, tfgld005.stdt						
+			from	tfgld005
+			where	tfgld005._index1 = {tfgld.ptyp.financial, :year.f, :month}
+			selectdo
+				mon_desc = tfgld005.desc(1;3)
+				num.to.date(tfgld005.stdt,yy,mm,dd)
+			endselect									
+			
+			for a = 1 to 12 step 1		  
+				select	tiisg928.*
+				from	tiisg928
+				where	tiisg928._index1 = {:project,:tiisg917.grcd, :revision, :yy, :a}
+				selectdo
+					mon_desc1 = tiisg928.desc.p(1;3)
+					if strip$(toupper$(mon_desc1)) = strip$(toupper$(mon_desc))	then				|#ISGEC01130.n
+						insert.value.in.array.inhouse()
+						summary.all.project()					
+					endif
+				selectempty
+				endselect
+			endfor	
+		endfor
+		
+		for i = 1 to role.line
+			line1 = project & "	" & role.description(1, i)				
+			for j = 1 to line 
+				line1 = strip$(line1) & "	" & str$(role.value(j, i))
+				chk.hrs = chk.hrs + role.value(j,i)					
+			endfor										
+			if	chk.hrs <> 0	then							
+				line1 = strip$(shiftl$(line1))		
+				seq.puts(line1, stat.fp)
+				chk.hrs = 0
+			endif										
+		endfor
+		
+		for j = 1 to line step 1
+			for i = 1 to 12
+				role.value(j, i) = 0
+			endfor
+		endfor
+
+		line1 = ""
+	endselect
+}
+
+function print.detail.outsourcing()
+{
+	long i, j, dd, mm ,yy, a
+	domain tfgld.prod	month
+	domain	tcmcs.long	revision
+	domain	tccprj		project
+	domain	tcnych		chk.hrs			
+	domain	tcmcs.str3	mon_desc1, mon_desc
+	
+	mon_desc = ""
+	mon_desc1 = ""
+	chk.hrs = 0					
+	
+	line1 = ""
+	value.array = 0
+			
+	for i = 1 to 12
+		for j = 1 to 50
+			role.value(i, j) = 0
+		endfor
+	endfor
+	
+
+	select	tiisg926.cprj:project, max(tiisg926.revi):revision
+	from	tiisg926
+	where	tiisg926._index1 inrange {:cprj.f} and {:cprj.t}
+	and	tiisg926.stat inrange {:stat.f} and {:stat.t}
+	and	tiisg926.grup = :tiisg917.grcd
+	group by tiisg926.cprj
+	selectdo
+		for value.array = 1 to line
+			month = period.array(value.array)
+			
+			select	tfgld005.desc, tfgld005.stdt						
+			from	tfgld005
+			where	tfgld005._index1 = {tfgld.ptyp.financial, :year.f, :month}
+			selectdo
+				mon_desc = tfgld005.desc(1;3)
+				num.to.date(tfgld005.stdt,yy,mm,dd)
+			endselect									
+			for a = 1 to 12	 step 1								
+				select	tiisg929.*
+				from	tiisg929
+				where	tiisg929._index1 = {:project, :tiisg917.grcd,:revision, :yy, :a}	
+				selectdo
+					mon_desc1 = tiisg929.desc.p(1;3)
+					if	strip$(toupper$(mon_desc1)) = strip$(toupper$(mon_desc))	then				|#ISGEC01130.n
+						insert.value.in.array.outsourcing()
+						summary.all.project()										
+					endif
+				selectempty
+
+				endselect
+			endfor
+		endfor
+		
+		for i = 1 to role.line
+			line1 = project & "	" & role.description(1, i)
+			for j = 1 to line 
+				line1 = strip$(line1) & "	" & str$(role.value(j, i))
+				chk.hrs = chk.hrs + role.value(j,i)					
+			endfor
+													
+			if	chk.hrs <> 0	then							
+				line1 = strip$(shiftl$(line1))		
+				seq.puts(line1, stat.fp)
+				chk.hrs = 0
+			endif										
+		endfor
+		for j = 1 to line step 1
+			for i = 1 to 12
+				role.value(j, i) = 0
+			endfor
+		endfor
+		line1 = ""
+	endselect
+
+}
+
+function print.detail.hours()
+{	
+	domain tcmcs.str30m step1,step2,step3,step4,step5
+	long i, line.detail,line.var
+	domain tcamnt   a.hours,b.hours,c.hours,d.hours,e.hours
+	domain tfgld.prod	month
+	role.line = 0
+	line2 = ""
+	
+	step1 = THEORY
+	step2 = TRAINING_HOURS
+	step3 = OVERTIME
+	step4 = LEAVE
+	step5 = OTHERS
+| 	
+	select	tiisg925.*
+	from	tiisg925 
+	where	tiisg925.roll inrange {:rlid.f} and {:rlid.t}
+	selectdo
+		role.line = role.line + 1
+
+		line2 = "Actual Hour's Calculation" & "	" & tiisg925.dsca			
+		
+		line.var = 0
+		for period = prod.f to prod.t step 1
+			line.var = line.var + 1
+			select tiisg933.amnt,tiisg933.des1
+			from    tiisg933
+			where   tiisg933.prno = :period
+			and     tiisg933.roll = :tiisg925.roll
+			selectdo
+				
+				if shiftl$(strip$(tiisg933.des1)) = step1  then
+					a.hours = tiisg933.amnt	
+				endif	
+				if shiftl$(strip$(tiisg933.des1)) = step2  then
+					b.hours = tiisg933.amnt	
+				endif	
+				if shiftl$(strip$(tiisg933.des1)) = step3  then
+					c.hours = tiisg933.amnt	
+				endif
+				if shiftl$(strip$(tiisg933.des1)) = step4  then
+					d.hours = tiisg933.amnt	
+				endif
+				if shiftl$(strip$(tiisg933.des1)) = step5  then
+					e.hours = tiisg933.amnt	
+				endif	
+			endselect
+			cal_array2(line.var) = (a.hours+c.hours)-(b.hours+d.hours+e.hours)
+			line2 = strip$(line2) & "	" & str$(cal_array2(line.var))
+		endfor	
+			line2 = strip$(shiftl$(line2))
+			seq.puts(line2, stat.fp)
+		
+			
+			for i = 1 to 12
+				cal_array2(i) = 0.0
+			endfor
+			
+			a.hours = 0					
+			b.hours = 0
+			c.hours = 0
+			d.hours = 0
+			e.hours = 0
+			period = 0
+			line.var = 0					
+	endselect
+
+}
+function insert.value.in.array.inhouse()
+{
+	role.value(value.array,1) = tiisg928.role.1
+	role.value(value.array, 2) = tiisg928.role.2
+	role.value(value.array, 3) = tiisg928.role.3
+	role.value(value.array, 4) = tiisg928.role.4
+	role.value(value.array, 5) = tiisg928.role.5
+	role.value(value.array, 6) = tiisg928.role.6
+	role.value(value.array, 7) = tiisg928.role.7
+	role.value(value.array, 8) = tiisg928.role.8
+	role.value(value.array, 9) = tiisg928.role.9
+	role.value(value.array, 10) = tiisg928.role.10
+	role.value(value.array, 11) = tiisg928.role.11
+	role.value(value.array, 12) = tiisg928.role.12
+	role.value(value.array, 13) = tiisg928.role.13
+	role.value(value.array, 14) = tiisg928.role.14
+	role.value(value.array, 15) = tiisg928.role.15
+	role.value(value.array, 16) = tiisg928.role.16
+	role.value(value.array, 17) = tiisg928.role.17
+	role.value(value.array, 18) = tiisg928.role.18
+	role.value(value.array, 19) = tiisg928.role.19
+	role.value(value.array, 20) = tiisg928.role.20
+	role.value(value.array, 21) = tiisg928.role.21
+	role.value(value.array, 22) = tiisg928.role.22
+	role.value(value.array, 23) = tiisg928.role.23
+	role.value(value.array, 24) = tiisg928.role.24
+	role.value(value.array, 25) = tiisg928.role.25
+	role.value(value.array, 26) = tiisg928.role.26
+	role.value(value.array, 27) = tiisg928.role.27
+	role.value(value.array, 28) = tiisg928.role.28
+	role.value(value.array, 29) = tiisg928.role.29
+	role.value(value.array, 30) = tiisg928.role.30
+	role.value(value.array, 31) = tiisg928.role.31
+	role.value(value.array, 32) = tiisg928.role.32
+	role.value(value.array, 33) = tiisg928.role.33
+	role.value(value.array, 34) = tiisg928.role.34
+	role.value(value.array, 35) = tiisg928.role.35
+	role.value(value.array, 36) = tiisg928.role.36
+	role.value(value.array, 37) = tiisg928.role.37
+	role.value(value.array, 38) = tiisg928.role.38
+	role.value(value.array, 39) = tiisg928.role.39
+	role.value(value.array, 40) = tiisg928.role.40
+	role.value(value.array, 41) = tiisg928.role.41
+	role.value(value.array, 42) = tiisg928.role.42
+	role.value(value.array, 43) = tiisg928.role.43
+	role.value(value.array, 44) = tiisg928.role.44
+	role.value(value.array, 45) = tiisg928.role.45
+	role.value(value.array, 46) = tiisg928.role.46
+	role.value(value.array, 47) = tiisg928.role.47
+	role.value(value.array, 48) = tiisg928.role.48
+	role.value(value.array, 49) = tiisg928.role.49
+	role.value(value.array, 50) = tiisg928.role.50
+}
+
+function insert.value.in.array.outsourcing()
+{
+	role.value(value.array,1) = tiisg929.role.1
+	role.value(value.array, 2) = tiisg929.role.2
+	role.value(value.array, 3) = tiisg929.role.3
+	role.value(value.array, 4) = tiisg929.role.4
+	role.value(value.array, 5) = tiisg929.role.5
+	role.value(value.array, 6) = tiisg929.role.6
+	role.value(value.array, 7) = tiisg929.role.7
+	role.value(value.array, 8) = tiisg929.role.8
+	role.value(value.array, 9) = tiisg929.role.9
+	role.value(value.array, 10) = tiisg929.role.10
+	role.value(value.array, 11) = tiisg929.role.11
+	role.value(value.array, 12) = tiisg929.role.12
+	role.value(value.array, 13) = tiisg929.role.13
+	role.value(value.array, 14) = tiisg929.role.14
+	role.value(value.array, 15) = tiisg929.role.15
+	role.value(value.array, 16) = tiisg929.role.16
+	role.value(value.array, 17) = tiisg929.role.17
+	role.value(value.array, 18) = tiisg929.role.18
+	role.value(value.array, 19) = tiisg929.role.19
+	role.value(value.array, 20) = tiisg929.role.20
+	role.value(value.array, 21) = tiisg929.role.21
+	role.value(value.array, 22) = tiisg929.role.22
+	role.value(value.array, 23) = tiisg929.role.23
+	role.value(value.array, 24) = tiisg929.role.24
+	role.value(value.array, 25) = tiisg929.role.25
+	role.value(value.array, 26) = tiisg929.role.26
+	role.value(value.array, 27) = tiisg929.role.27
+	role.value(value.array, 28) = tiisg929.role.28
+	role.value(value.array, 29) = tiisg929.role.29
+	role.value(value.array, 30) = tiisg929.role.30
+	role.value(value.array, 31) = tiisg929.role.31
+	role.value(value.array, 32) = tiisg929.role.32
+	role.value(value.array, 33) = tiisg929.role.33
+	role.value(value.array, 34) = tiisg929.role.34
+	role.value(value.array, 35) = tiisg929.role.35
+	role.value(value.array, 36) = tiisg929.role.36
+	role.value(value.array, 37) = tiisg929.role.37
+	role.value(value.array, 38) = tiisg929.role.38
+	role.value(value.array, 39) = tiisg929.role.39
+	role.value(value.array, 40) = tiisg929.role.40
+	role.value(value.array, 41) = tiisg929.role.41
+	role.value(value.array, 42) = tiisg929.role.42
+	role.value(value.array, 43) = tiisg929.role.43
+	role.value(value.array, 44) = tiisg929.role.44
+	role.value(value.array, 45) = tiisg929.role.45
+	role.value(value.array, 46) = tiisg929.role.46
+	role.value(value.array, 47) = tiisg929.role.47
+	role.value(value.array, 48) = tiisg929.role.48
+	role.value(value.array, 49) = tiisg929.role.49
+	role.value(value.array, 50) = tiisg929.role.50
+}
+											
+function	summary.all.project()
+{
+	summary.project(value.array, 1) = summary.project(value.array, 1) + role.value(value.array, 1)
+	summary.project(value.array, 2) = summary.project(value.array, 2) + role.value(value.array, 2)
+	summary.project(value.array, 3) = summary.project(value.array, 3) + role.value(value.array, 3)
+	summary.project(value.array, 4) = summary.project(value.array, 4) + role.value(value.array, 4)
+	summary.project(value.array, 5) = summary.project(value.array, 5) + role.value(value.array, 5)
+	summary.project(value.array, 6) = summary.project(value.array, 6) + role.value(value.array, 6)
+	summary.project(value.array, 7) = summary.project(value.array, 7) + role.value(value.array, 7)
+	summary.project(value.array, 8) = summary.project(value.array, 8) + role.value(value.array, 8)
+	summary.project(value.array, 9) = summary.project(value.array, 9) + role.value(value.array, 9)
+	summary.project(value.array, 10) = summary.project(value.array, 10) + role.value(value.array, 10)
+	summary.project(value.array, 11) = summary.project(value.array, 11) + role.value(value.array, 11)
+	summary.project(value.array, 12) = summary.project(value.array, 12) + role.value(value.array, 12)
+	summary.project(value.array, 13) = summary.project(value.array, 13) + role.value(value.array, 13)
+	summary.project(value.array, 14) = summary.project(value.array, 14) + role.value(value.array, 14)
+	summary.project(value.array, 15) = summary.project(value.array, 15) + role.value(value.array, 15)
+	summary.project(value.array, 16) = summary.project(value.array, 16) + role.value(value.array, 16)
+	summary.project(value.array, 17) = summary.project(value.array, 17) + role.value(value.array, 17)
+	summary.project(value.array, 18) = summary.project(value.array, 18) + role.value(value.array, 18)
+	summary.project(value.array, 19) = summary.project(value.array, 19) + role.value(value.array, 19)
+	summary.project(value.array, 20) = summary.project(value.array, 20) + role.value(value.array, 20)
+	summary.project(value.array, 21) = summary.project(value.array, 21) + role.value(value.array, 21)
+	summary.project(value.array, 22) = summary.project(value.array, 22) + role.value(value.array, 22)
+	summary.project(value.array, 23) = summary.project(value.array, 23) + role.value(value.array, 23)
+	summary.project(value.array, 24) = summary.project(value.array, 24) + role.value(value.array, 24)
+	summary.project(value.array, 25) = summary.project(value.array, 25) + role.value(value.array, 25)
+	summary.project(value.array, 26) = summary.project(value.array, 26) + role.value(value.array, 26)
+	summary.project(value.array, 27) = summary.project(value.array, 27) + role.value(value.array, 27)
+	summary.project(value.array, 28) = summary.project(value.array, 28) + role.value(value.array, 28)
+	summary.project(value.array, 29) = summary.project(value.array, 29) + role.value(value.array, 29)
+	summary.project(value.array, 30) = summary.project(value.array, 30) + role.value(value.array, 30)
+	summary.project(value.array, 31) = summary.project(value.array, 31) + role.value(value.array, 31)
+	summary.project(value.array, 32) = summary.project(value.array, 32) + role.value(value.array, 32)
+	summary.project(value.array, 33) = summary.project(value.array, 33) + role.value(value.array, 33)
+	summary.project(value.array, 34) = summary.project(value.array, 34) + role.value(value.array, 34)
+	summary.project(value.array, 35) = summary.project(value.array, 35) + role.value(value.array, 35)
+	summary.project(value.array, 36) = summary.project(value.array, 36) + role.value(value.array, 36)
+	summary.project(value.array, 37) = summary.project(value.array, 37) + role.value(value.array, 37)
+	summary.project(value.array, 38) = summary.project(value.array, 38) + role.value(value.array, 38)
+	summary.project(value.array, 39) = summary.project(value.array, 39) + role.value(value.array, 39)
+	summary.project(value.array, 40) = summary.project(value.array, 40) + role.value(value.array, 40)
+	summary.project(value.array, 41) = summary.project(value.array, 41) + role.value(value.array, 41)
+	summary.project(value.array, 42) = summary.project(value.array, 42) + role.value(value.array, 42)
+	summary.project(value.array, 43) = summary.project(value.array, 43) + role.value(value.array, 43)
+	summary.project(value.array, 44) = summary.project(value.array, 44) + role.value(value.array, 44)
+	summary.project(value.array, 45) = summary.project(value.array, 45) + role.value(value.array, 45)
+	summary.project(value.array, 46) = summary.project(value.array, 46) + role.value(value.array, 46)
+	summary.project(value.array, 47) = summary.project(value.array, 47) + role.value(value.array, 47)
+	summary.project(value.array, 48) = summary.project(value.array, 48) + role.value(value.array, 48)
+	summary.project(value.array, 49) = summary.project(value.array, 49) + role.value(value.array, 49)
+	summary.project(value.array, 50) = summary.project(value.array, 50) + role.value(value.array, 50)
+}
+
+function summary.all.project1()
+{
+	
+	long 	i , j
+	domain	tcnych		chk.hrs
+	i = 0
+	j = 0
+	line1 = ""
+	role.line = 0
+	flag = 0
+	
+	seq.puts(line1, stat.fp)
+	
+	select	tiisg925.*
+	from	tiisg925
+	where	tiisg925.roll inrange {:rlid.f} and {:rlid.t}
+	order by tiisg925.seqn
+	selectdo
+		role.description(1, tiisg925.seqn) = tiisg925.dsca
+	selecteos
+		role.line = tiisg925.seqn	
+	endselect
+	
+	for i = 1 to role.line		
+		line1 = "Summary of all Project" & "	" & role.description(1, i)
+		for j = 1 to line 
+			line1 = strip$(line1) & "	" & str$(summary.project(j, i))
+			chk.hrs = chk.hrs + summary.project(j,i)					
+		endfor										
+		if	chk.hrs <> 0	then							
+			line1 = strip$(shiftl$(line1))		
+			seq.puts(line1, stat.fp)
+			chk.hrs = 0
+		else
+			if flag = 0 then
+				line1 = "Summary of all Project"
+				seq.puts(line1, stat.fp)
+				flag = 1
+			endif
+		endif										
+	endfor
+	
+}
+															
+function close.file()
+{
+	seq.close(stat.fp)
+	ret2 = server2client(err.file,file.name,1)
+	ret2 = app_start(file.name,"c:","","","")
+}
+
+					
+function initialize_data()
+{
+	line1 = "	"
+	line1 = strip$(shiftl$(line1))		
+	seq.puts(line1, stat.fp)
+}
+					

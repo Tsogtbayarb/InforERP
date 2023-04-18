@@ -1,0 +1,246 @@
+|******************************************************************************
+|* tfisgdll0006  0  VRC B61U a7 isg 
+|* DLL for imprest
+|* baan
+|* 14-12-05 [17:05]
+|******************************************************************************
+|* Script Type: Library
+|******************************************************************************
+#pragma used dll    ottdllbw
+
+table ttfgld005
+table ttfgld006
+table ttfgld204
+table ttfgld106
+table ttfgld010
+
+long	stat.fp,fp,ret,dd,mm,yy
+string vari1(4), c.file(100),line1(500),line2(500), err.file(100), v.date(10)
+
+domain tcmcs.int 	year.m
+domain tfgld.date	startdate.m,vdat
+domain tfgld.date	enddate.m
+domain tfgld.amnt	dbamt.m
+domain tfgld.amnt 	cramt.m
+domain tfgld.amnt 	totdbamt.m
+domain tfgld.amnt 	totcramt.m
+domain tfgld.amnt 	opbal.m
+domain tfgld.amnt 	tot.opbal.m
+domain tfgld.amnt 	clbal.m
+domain tcdsca		compname.m
+
+function extern tfisgdll0006.Getimprest(string var1(4))
+{
+
+	initialize.variables()
+
+	vari1 = var1
+	open.file()
+
+	enddate.m = date.num()
+	get.fiscal.year(enddate.m)
+	year.m = yy
+	year.m = year.m - 1
+
+	select tfgld006.fpdt 
+	from   tfgld006 
+	where  tfgld006.year = :year.m - 1 
+	selectdo 
+	endselect
+	
+	startdate.m = tfgld006.fpdt + 1
+
+	select tfgld010.desc 
+	from   tfgld010 
+	where  tfgld010.dtyp = 3 
+	and    tfgld010.dimx = :var1 
+	selectdo 
+	endselect
+
+	select sum(tfgld204.fobh(1)):opbal.m 
+	from  tfgld204 
+| 	where tfgld204._compnr in (100,660) 
+	where tfgld204._compnr = 100
+	and   tfgld204.year = :year.m 
+	and   tfgld204.dtyp = 3 
+	and   tfgld204.dimx = :var1 
+	and   tfgld204.leac = "1550263" 
+	and   tfgld204.ccur = "INR" 
+	selectdo 
+		tot.opbal.m = tot.opbal.m + opbal.m
+	endselect
+
+	generate.header()
+
+	select tfgld106._compnr,tfgld106.otyp, tfgld106.odoc, tfgld106.dcdt, tfgld106.amth, tfgld106.dbcr, tfgld106.refr 
+	from   tfgld106
+	where  tfgld106.typ3= 3 
+	and    tfgld106.dim3 = :var1 
+	and    tfgld106.fyer >= :year.m 
+	and    tfgld106.leac = "1550263" 
+	and    tfgld106.otyp <> "OPB" 
+| 	and    tfgld106._compnr in (200,300,400,660)
+	and    tfgld106._compnr = 200
+	order by tfgld106.dcdt
+	selectdo 
+		if tfgld106.dbcr = tfgld.dbcr.debit then
+			dbamt.m = tfgld106.amth(1)
+			totdbamt.m = totdbamt.m + dbamt.m
+		else
+			cramt.m = tfgld106.amth(1)
+			totcramt.m = totcramt.m + cramt.m
+		endif	
+		
+		
+		on case tfgld106._compnr 
+		case 200:
+			compname.m = "IJT"	
+			break
+		case 300:
+			compname.m = "XYD"	
+			break
+		case 400:
+			compname.m = "HO"
+			break
+		case 660:
+			compname.m = "SSM"		
+			break
+		endcase
+		
+		write.data()
+	endselect
+
+	clbal.m = opbal.m + totdbamt.m - totcramt.m
+	
+	write.total()
+	close.file()
+	
+| 	Send()
+| 	return(mDFile)
+}   
+
+function extern tfisgdll0006.generateallimprest()
+{
+	select	tfgld010.* 
+	from    tfgld010 
+	where   tfgld010._index1 inrange {3, "      "} and {3, "zzzzzz"} 
+	order by tfgld010._index1
+	selectdo
+		tfisgdll0006.Getimprest(tfgld010.dimx)
+	endselect	
+}
+
+function get.fiscal.year(domain tfgld.date	i.date)
+{
+	select	tfgld005.year:yy,
+		tfgld005.stdt
+	from	tfgld005 
+	where  tfgld005._index1 = {tfgld.ptyp.financial}
+	and	tfgld005.stdt <= :i.date
+	and	tfgld005.corr = tcyesno.no
+	order by tfgld005.stdt desc 
+	as set with 1 rows
+	selectdo
+	endselect
+}
+
+function open.file()
+{	
+	
+	err.file = bse.tmp.dir$() & "imprest"
+	
+	c.file = "C:\Inetpub\wwwroot\main\Imprest\" & strip$(vari1) &".csv"
+	
+	stat.fp = seq.open(err.file, "w+")
+	if fp > 0 then
+		seq.seek(0, 0, stat.fp)
+	endif
+}
+
+function generate.header()
+{
+	line1 = concat$("|",
+		sprintf$("%s",vari1))
+	line1 = strip$(shiftl$(line1))		
+	seq.puts(line1, stat.fp)
+	
+	line1 = concat$("|",
+		sprintf$("%s",tfgld010.desc))
+	line1 = strip$(shiftl$(line1))		
+	seq.puts(line1, stat.fp)
+	
+	line1 = concat$("|",
+		sprintf$("%2D(%2d-%2m-%4Y)",startdate.m))
+	line1 = strip$(shiftl$(line1))		
+	seq.puts(line1, stat.fp)
+	
+	line1 = concat$("|",
+		sprintf$("%2D(%2d-%2m-%4Y)",enddate.m))
+	line1 = strip$(shiftl$(line1))		
+	seq.puts(line1, stat.fp)
+	
+	line1 = concat$("|",
+		sprintf$("%f",tot.opbal.m))
+	line1 = strip$(shiftl$(line1))		
+	seq.puts(line1, stat.fp)
+	
+	
+}
+
+function write.data()
+{
+	line2 = concat$("|",
+		sprintf$("%s",compname.m),
+		sprintf$("%s",tfgld106.otyp),
+		sprintf$("%s",str$(tfgld106.odoc)),
+		sprintf$("%2D(%2d-%2m-%4Y)",tfgld106.dcdt),
+		sprintf$("%f",dbamt.m),
+		sprintf$("%f",cramt.m),
+		sprintf$("%s",tfgld106.refr))
+	line2 = strip$(shiftl$(line2))		
+	seq.puts(line2, stat.fp)
+}
+
+function write.total()
+{
+	if clbal.m < 0 then
+		clbal.m = abs(clbal.m)
+		line2 = concat$("|",
+			sprintf$("Credit"),
+			sprintf$("%f",clbal.m))
+		line2 = strip$(shiftl$(line2))
+		seq.puts(line2, stat.fp)
+	else
+		if clbal.m > 0 then
+			line2 = concat$("|",
+				sprintf$("Debit"),
+				sprintf$("%f",clbal.m))
+			line2 = strip$(shiftl$(line2))
+			seq.puts(line2, stat.fp)
+		else
+			line2 = concat$("|",
+				sprintf$(" "),
+				sprintf$("%f",clbal.m))
+			line2 = strip$(shiftl$(line2))
+			seq.puts(line2, stat.fp)		
+		endif
+	endif
+}
+
+function close.file()
+{	
+	seq.close(stat.fp)
+	ret = server2client(err.file, c.file, 1)	
+}
+
+function initialize.variables()
+{
+	totdbamt.m = 0
+	totcramt.m = 0
+	tot.opbal.m = 0
+	opbal.m = 0
+	compname.m = " "
+	tfgld006.fpdt = 0
+	startdate.m = 0
+	tfgld010.desc = ""
+}

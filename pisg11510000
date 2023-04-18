@@ -1,0 +1,113 @@
+|******************************************************************************
+|* tfisg1151000  0  VRC B61U a7 live
+|* Maintain Supplier Bank Guarantee
+|* Installation user             
+|* 2014-11-01
+|******************************************************************************
+|* Main table tfisg151 Supplier Bank Guarantees, Form Type 1
+|******************************************************************************
+|* ID ISGEC015039 ,Ankit Sharma,27-11-2015       VRC B61U a7 isg      
+|* Modification for BG Functionality
+|************************* declaration section ***************************
+declaration:
+
+	table	ttfisg151 | Supplier Bank Guarantees
+	table	ttfisg300					|#ISGEC015039.sn
+	table	ttcmcs050
+	table	ttdpur401
+	table	ttcmcs051					|#ISGEC015039.en	
+	
+|**************** Script Variables ***************************************
+	extern domain	tcseri	seri				|#ISGEC015039.sn
+	extern domain	tcdate	ddte
+	extern domain	tccwoc	cofc				|#ISGEC015039.en
+	long	leng
+|*************** Include *************************************************
+#include<bic_dam>
+|****************************** program section ********************************
+before.program:
+	
+	tcmcs.dll0095.read.parm("tfisg300")			|#ISGEC015039.sn
+	
+	select	tcmcs051.lngt
+	from	tcmcs051
+	where	tcmcs051._index1 = {:tfisg300.nrgr}
+	selectdo
+	endselect						|#ISGEC015039.en
+	
+before.display.object:
+	leng = len(shiftl$(strip$(tfisg151.bgno)))
+	if update.status = add.set then
+		enable.fields("tfisg151.bgno")
+	else
+		if leng = 9 then
+			disable.fields("tfisg151.bgno")
+		else
+			enable.fields("tfisg151.bgno")
+		endif
+	endif	
+|****************************** group section **********************************
+|****************************** field section **********************************
+
+field.tfisg151.bgno:
+before.zoom:
+	query.extend.where.in.zoom("tcmcs051.nrgr = " & quoted.string(tfisg300.nrgr))
+	
+
+field.tfisg151.orno:
+before.zoom:
+	query.extend.where.in.zoom("tdpur400.otbp = " & quoted.string(tfisg151.bpid))
+
+after.field:
+	select	tdpur400.cofc:cofc				|#ISGEC015039.sn
+	from	tdpur400
+	where	tdpur400._index1 = {:tfisg151.orno}
+	selectdo
+		tfisg151.cwoc = cofc
+	endselect						
+	
+		
+
+field.tfisg151.mdat:
+before.display:
+	select	tdpur401.ddta:ddte
+	from	tdpur401
+	where	tdpur401._index1  = {:tfisg151.orno}
+	order by tdpur401.ddta desc
+	as set with 1 rows
+	selectdo
+		tfisg151.mdat = ddte
+	endselect
+
+								|#ISGEC015039.en	
+
+|****************************** choice section **********************************
+choice.exec.cont.process:
+before.choice:
+	if	isspace(tfisg151.cref)	then
+		message("Please mention Cancellation Reference")
+		choice.again()
+	endif
+	
+on.choice:
+	cancel_bg()
+
+|****************************** Functions *****************
+Functions:
+
+function cancel_bg()
+{
+	long	ret
+	
+	select	tfisg151.*
+	from	tfisg151 for update
+	where	tfisg151._index1 = {:tfisg151.bpid, :tfisg151.cprj, :tfisg151.idte, :tfisg151.edte, :tfisg151.refr}
+	selectdo
+		dal.change.object("tfisg151")
+		dal.set.field("tfisg151.cndt", date.num())
+		ret = dal.save.object("tfisg151")
+		if	ret = 0	then
+			commit.transaction()
+		endif	
+	endselect	
+}

@@ -1,0 +1,374 @@
+|******************************************************************************
+|* tpisgdll0012.1  0  VRC B61U a7 live
+|* Testing
+|* tools1
+|* 14-07-03 [15:20]
+|******************************************************************************
+|* Script Type: Library
+|******************************************************************************
+        table	ttpest120
+	table	ttpisg013
+	table	ttpisg012
+	table	ttpptc101
+	table	ttpmsl000
+function extern Parent_Child_Relation_for_Sanction
+				(
+					domain	tccprj		i.cprj,		|Project
+					domain	tpest.vers	i.vers,		|Project Version
+					domain	tcorno		i.vers1		|Sanction Version
+				)
+{
+	domain	tppdm.cspa	old.sele
+	domain	tppdm.cspa	old.pele
+	domain	tppdm.sern	old.levl
+	
+| 	select 	tpisg013.cprj
+| 	from	tpisg013 for update
+| 	where	tpisg013._index1 = {:i.cprj}
+| 	selectdo
+| 		db.delete(ttpisg013,db.retry,e)
+| 	endselect
+| 	
+| 	commit.transaction()
+	
+	
+	select 	tpest120.sele:old.sele,
+		tpest120.levl:old.levl,
+		tpest120.pele:old.pele
+	from	tpest120
+	where	tpest120._index1 = {:i.cprj,:i.vers}
+	order by tpest120.levl desc
+| 	as set with 1 rows
+	selectdo
+		populate.same.parent.line(i.cprj,i.vers,i.vers1,old.sele,old.pele)
+| 		populate.upper.parent.element(i.cprj,i.vers,i.vers1,old.sele,old.pele)
+	endselect
+}
+
+function extern populate.same.parent.line
+				(
+					domain	tccprj		i.cprj,		|Project
+					domain	tpest.vers	i.vers,		|Version
+					domain	tcorno		i.vers1,	|Sanction Version
+					domain	tppdm.cspa	i.sele,		|Element
+					domain	tppdm.cspa	i.pele		|Parent Element
+				)
+{
+
+	domain	tppdm.cspa	old.sele,o.cspp
+	domain	tppdm.cspa	old.pele
+	domain	tppdm.sern	old.levl,o.levl
+	domain	tppdm.cspa	temp.cspa
+	
+	domain	tppdm.sern	param.levl
+	
+	tcmcs.dll0095.read.parm("tpmsl000")
+	param.levl = 0
+	param.levl = tpmsl000.levl + 1
+	temp.cspa = ""
+	temp.cspa = i.sele 
+	while not isspace(temp.cspa)
+		select	tpptc101.cspp:o.cspp
+		from	tpptc101
+		where	tpptc101._index2 = {:i.cprj,:temp.cspa}
+		selectdo
+			select 	tpest120.levl:o.levl
+			from	tpest120
+			where	tpest120._index1 = {:i.cprj,:i.vers}
+			and	tpest120.sele = :o.cspp
+| 			and	tpest120.levl = 0
+			as set with 1 rows
+			selectdo
+				if o.levl = 0 then
+					temp.cspa = ""
+				else
+					temp.cspa = o.cspp
+				endif
+			endselect
+			
+			insert.record(i.cprj,i.vers1,i.sele,o.cspp,o.levl)
+			if param.levl = o.levl then
+				populate.parent.child(i.cprj,i.vers,i.vers1,o.cspp,i.sele)
+			endif
+			
+		selectempty
+			temp.cspa = ""
+		endselect
+	endwhile
+| 	
+| 	select 	tpest120.sele:old.sele,
+| 		tpest120.levl:old.levl
+| 	from	tpest120
+| 	where	tpest120._index1 = {:i.cprj,:i.vers}
+| 	and	tpest120.pele = :i.pele
+| 	selectdo
+| 		if old.sele = i.sele then
+| 			continue
+| 		else
+| 			insert.record(i.cprj,i.vers1,i.sele,i.pele,old.levl)
+| 		endif
+| 	endselect
+}
+
+function populate.parent.child
+			(
+				domain 	tccprj		i.cprj,
+				domain	tpest.vers	i.vers,		|Version
+				domain	tcorno		i.vers1,	|Sanction Version
+				domain	tppdm.cspa	i.cspp,
+				domain	tppdm.cspa	i.sele
+			)
+{
+	domain	tppdm.cspa	o.cspc
+	domain	tppdm.sern	o.levl
+	
+	select	tpptc101.cspc:o.cspc
+	from	tpptc101
+	where	tpptc101._index1 = {:i.cprj,:i.cspp}
+	selectdo
+		select 	tpest120.levl:o.levl
+		from	tpest120
+		where	tpest120._index1 = {:i.cprj,:i.vers}
+		and	tpest120.sele = :o.cspc
+		as set with 1 rows
+		selectdo
+		endselect
+		
+		insert.record(i.cprj,i.vers1,i.sele,o.cspc,o.levl)
+	endselect
+	
+}
+function extern populate.upper.parent.element
+				(
+					domain	tccprj		i.cprj,		|Project
+					domain	tpest.vers	i.vers,		|Version
+					domain	tcorno		i.vers1,	|Sanction Version
+					domain	tppdm.cspa	i.sele,		|Element
+					domain	tppdm.cspa	i.pele		|Parent Element
+				)
+{
+	domain	tppdm.cspa	old.sele
+	domain	tppdm.cspa	old.pele
+	domain	tppdm.sern	old.levl,parent.levl
+	domain	tppdm.cspa	temp.cspa
+
+	temp.cspa = i.pele
+	
+	while not isspace(temp.cspa)
+		select 	tpest120.sele:old.sele,
+			tpest120.pele:old.pele,
+			tpest120.levl:old.levl
+		from	tpest120
+		where	tpest120._index1 = {:i.cprj,:i.vers}
+		and	tpest120.sele = :temp.cspa
+		as set with 1 rows
+		selectdo
+		endselect
+		
+		select 	tpest120.levl:parent.levl
+		from	tpest120
+		where	tpest120._index1= {:i.cprj,:i.vers}
+		and	tpest120.sele = :old.pele
+		as set with 1 rows
+		selectdo
+		endselect
+		
+		
+		if not isspace(old.pele) then
+			insert.record(i.cprj,i.vers1,i.sele,old.pele,parent.levl)
+		endif
+		
+		temp.cspa = old.pele
+	endwhile	
+}
+
+
+function insert.record
+			(
+				domain	tccprj		i.cprj,		|Project
+				domain	tcorno		i.vers,		|Version
+				domain	tppdm.cspa	i.elem,		|Element
+				domain	tppdm.cspa	i.cspa,		|L4 Element
+				domain	tcpono		i.levl		|L4 Level
+			)
+{
+	tpisg013.cprj = i.cprj
+	tpisg013.vers = i.vers
+	tpisg013.cspa = i.elem
+	tpisg013.cspp = i.cspa
+	tpisg013.levl = i.levl
+	db.insert(ttpisg013,db.skip.dupl,e)
+}
+
+
+
+|****************  EXHAUSTED & AVAILABLE AMOUNT MODIFICATION ***********************
+
+
+domain	tcpono		param.levl
+	domain	tppdm.cspa	old.elem
+	domain	tcamnt		o.totl
+	extern domain 	tcamnt	total.exha,total.smnt
+	domain	tcpono		old.levl, k
+	
+	domain	tccprj		main.proj
+	domain	tcorno		main.vers
+	domain	tppdm.cspa	main.elem,temp.elem
+	domain	tcamnt		total.amount
+	long l.count
+	long 		            ret.val, sql.by.level(99999),sql.x 	 
+	domain	tppdm.cspa	stack.elem(99999)
+
+	domain	tcpono		calculate.level
+	extern domain	tppdm.cspa		x.cspa
+
+
+function extern tpisgdll0012.isgec_dream_for_exhausted_amount
+				(
+					domain	tccprj		i.cprj,		|Project
+					domain	tcorno		i.vers		|Version
+				)
+{
+	
+
+	domain	tcamnt		x.totl
+	domain	tcamnt		x.smnt
+	
+	
+	
+	
+	
+	tcmcs.dll0095.read.parm("tpmsl000")
+	param.levl = tpmsl000.levl + 1
+	
+	
+	
+	select 	tpisg012.levl:old.levl,
+		tpisg012.elem:old.elem
+	from	tpisg012
+	where	tpisg012._index1 = {:i.cprj}
+	and	tpisg012.levl <= :param.levl
+	order by tpisg012.levl desc
+	selectdo
+		x.totl = 0
+		x.smnt = 0
+		
+		main.proj = i.cprj
+		main.vers = i.vers
+		l.count = 1
+		total.amount = 0
+		total.exha = 0
+		total.smnt = 0
+		
+		o.totl = 0
+		temp.elem = ""
+		stack.elem(1,1) = old.elem
+		
+		calculate.level = 0
+		if old.levl < param.levl then
+			calculate.level = old.levl + 1
+		else
+			select max(tpisg012.levl):calculate.level
+			from	tpisg012
+			where	tpisg012._index1 = {:i.cprj,:i.vers}
+			selectdo
+			endselect
+		endif
+		
+		if	child.exist(i.cprj, i.vers, old.elem)	then		
+			explore.child.element()
+		endif	
+		
+		
+	| 		select 	tpisg012.aamt,
+	| 			tpisg012.amnt,
+			select	tpisg012.exha,
+				tpisg012.totl:x.totl,
+				tpisg012.smnt:x.smnt
+| 				tpisg012.totl:o.totl
+			from	tpisg012 for update
+			where	tpisg012._index1 = {:i.cprj,:i.vers,:old.elem}
+			selectdo
+	| 			tpisg012.aamt = total.amount
+	| 			tpisg012.amnt = o.totl - tpisg012.aamt
+				tpisg012.smnt = total.smnt
+				tpisg012.exha = total.exha
+				tpisg012.avai = x.totl - (tpisg012.exha + tpisg012.smnt)
+				db.update(ttpisg012,db.retry,e)
+			endselect
+		
+		for k = 1 to 100 
+			stack.elem(1,k) = ""
+		endfor	
+		
+	endselect
+	
+}
+
+
+function  explore.child.element()
+{
+
+	main.elem =  stack.elem(1,l.count)
+	l.count = l.count + 1
+	
+	
+	sql.x = sql.parse("	select 	tpisg012.totl,
+^					tpisg012.elem,
+^					tpisg012.exha,
+^					tpisg012.smnt,
+^					tpisg012.cspa:5
+^				from	tpisg012
+^				where	tpisg012._index1 = {:1,:2}
+^				and	tpisg012.cspa =:3
+^				and	tpisg012.levl <=:4")
+		sql.where.bind(sql.x,1,main.proj)
+		sql.where.bind(sql.x,2,main.vers)
+		sql.where.bind(sql.x,3,main.elem)
+		sql.where.bind(sql.x,4,calculate.level)
+		sql.select.bind(sql.x,5,x.cspa)
+		sql.by.level(l.count) = sql.x
+		sql.exec(sql.x)
+		while true
+			ret.val = (sql.fetch(sql.x))
+		
+			if ret.val = eendfile then
+				break
+			endif
+			
+			if temp.elem = tpisg012.elem  then
+				break
+			endif
+			
+			total.amount = total.amount + tpisg012.totl
+			
+			total.exha = total.exha + tpisg012.exha
+			
+			total.smnt = total.smnt + tpisg012.smnt
+			
+			temp.elem = tpisg012.elem
+			stack.elem(1,l.count) = tpisg012.elem
+			explore.child.element()
+		endwhile
+		sql.close(sql.x)
+		l.count = l.count - 1
+		sql.x = sql.by.level(l.count)	
+}
+
+function boolean child.exist(domain tccprj		t.cprj,
+				domain	tcorno		t.vers,
+				domain	tppdm.cspa	t.elem)
+{
+	domain	tppdm.cspa	c.elem
+	
+	select	s_tpisg012.elem:c.elem
+	from	tpisg012 s_tpisg012
+	where	s_tpisg012._index1 = {:t.cprj, :t.vers}
+	and	s_tpisg012.cspa = :t.elem
+	as set with 1 rows
+	selectdo
+		return(true)
+	endselect
+	
+	return(false)
+}				

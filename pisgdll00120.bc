@@ -1,0 +1,1370 @@
+|******************************************************************************
+|* tpisgdll0012  0  VRC B61U a7 live
+|* Sanction Control
+|* tools1
+|* 14-05-14 [16:00]
+|******************************************************************************
+|* Script Type: Library
+|* ID ISGECDV001035	Sujeet Kumar	2014-09-11
+|* Exhausted Calculation Modification
+|* Functional : Mr. Vikas Yadav
+|*
+|* ID ISGECDV001053	Sujeet Kumar	2014-09-23
+|* Exhausted Calculation Modification for table tpppc270, tpppc271
+|* Functional : Mr. Vikay Yadav
+|*
+|* PATCH001043, Dharmendra, 23-03-2015
+|
+|* ISGEC015004, Shilpa Janardanan, 13/05/2015
+|* Calculation Of Exhausted amount not to be skipped in Hard Commitment when Order type is Purchase
+|*
+|* ID ISGEC01034, Ritu Shrivastava, 02-01-2016 
+|* Modification for initialization of amount variable.
+|*
+|* ID ISGEC002018, Manish Manchanda, 2016-03-18
+|* Error of short sanction - check for short sanction is fired before all the values 
+|* are put in standard.
+|*
+|* ID: ISGEC01152, Prasanna Bhuyan, 11/1/2019, VRC B61U a7 isg
+|* Added PO exhausted amount
+|*
+|* ID: ISGEC001231, Arun Chauhan, 07/02/2019
+|* Modification in exhausted value
+|*
+|* GH616CR000, RAvi Kumar, 26-07-2021
+|* Modification in Sanction Consumption Logic and cost commitment report
+|******************************************************************************
+
+	table	ttpisg011
+	table	ttpisg012
+	table	ttdpur201
+	table	ttdpur202
+	table	ttdpur402
+	table	ttpppc210
+	table	ttpppc211
+	table	ttpppc215
+	table	ttppdm649
+	table	ttpisg016
+	table	ttdpur400
+	table	ttpmsl000
+	table	ttpisg014			|# PATCH001043.n
+	table	ttpisg019			|ISGEC001231.n
+	table	ttdisg461			|# CR-485
+	table	ttcmcs008			|GH616CR000.a
+	table	ttpppc270			|GH616CR000.a
+	table	ttpppc271			|GH616CR000.a
+	table	ttpppc275			|GH616CR000.a
+	table	ttpppc251			|GH616CR000.a
+	
+#include <bic_dam>
+|**************
+|* Logic Removed, Now Only For the Project & Element, Sanction is being Updated
+|*
+| function extern tpisgdll0012.SanctionControlData()
+| {
+| 	select 	tpisg011.cprj
+| 	from	tpisg011
+| 	group by tpisg011.cprj
+| 	selectdo
+| 		|Get Latest Version
+| 		select 	tpisg011.vers
+| 		from	tpisg011
+| 		where	tpisg011._index1 = {:tpisg011.cprj}
+| 		and	tpisg011.act1 = tpisg.sanction.approved
+| 		order by tpisg011.vers desc
+| 		as set with 1 rows
+| 		selectdo
+| 			|*  Get Sanction Control Line Data
+| 			tpisgdll0012.SanctionControlLine(tpisg011.cprj,tpisg011.vers)
+| 		endselect
+| 	endselect
+| }
+
+|** For Update Or Job 
+function extern tpisgdll0012.Update.Sanction.Control
+			(
+				domain	tccprj		i.cprj.f, 	|From Project
+				domain	tccprj		i.cprj.t	|To Project
+			)
+{
+	domain	tccprj		o.cprj
+	domain	tcorno		o.vers
+	domain	tppdm.cspa	o.elem
+	domain	tcpono		o.levl
+	
+	select 	tpisg012.cprj:o.cprj,
+		tpisg012.vers:o.vers,
+		tpisg012.elem:o.elem,
+		tpisg012.levl:o.levl
+	from	tpisg012
+	where	tpisg012._index1 inrange {:i.cprj.f} and {:i.cprj.t}
+	order by tpisg012.levl desc
+	selectdo
+		tpisgdll0012.SanctionControlLine(o.cprj,o.vers,o.elem)
+		commit.transaction()
+	endselect
+	commit.transaction()
+}
+
+function extern tpisgdll0012.SanctionControlLine
+			(
+				domain	tccprj		i.cprj,		|Project Code
+				domain	tcorno		i.vers,		|Version
+				domain	tppdm.cspa	i.cspa		|Element
+			)
+{
+
+	domain	tfgld.amnt		soft.allocation.amnt,exhausted.amnt
+	domain	tcpono			param.levl 
+	domain	tcmcs.str13	sess.code			|#ISGEC002018.sn
+	domain	tcorno		v.rcno
+	domain	tcamnt		v.lcam				|#ISGEC002018.en
+	
+	tcmcs.dll0095.read.parm("tpmsl000")
+	param.levl = tpmsl000.levl + 1
+	
+	select	tpisg012.cprj,
+		tpisg012.vers,
+		tpisg012.elem
+	from	tpisg012
+	where	tpisg012._index1 = {:i.cprj,:i.vers,:i.cspa}
+	and	tpisg012.levl >:param.levl
+	selectdo
+		soft.allocation.amnt = 0
+		exhausted.amnt = 0	
+		|**** Update fields of tpisg012
+		soft.allocation.amnt = SoftAllocationAmount(tpisg012.cprj,tpisg012.elem)
+		exhausted.amnt = tpisgdll0012.ExhaustedAmount(tpisg012.cprj,tpisg012.elem)
+
+								|#ISGEC002018.sn
+		get.var(pid,"prog.name$",sess.code)						
+		on	case	sess.code
+			case	"tdpur4106m000":
+			case	"whinh3512m000":
+			case	"whinh3512m100":
+			case	"whinh3121s000":
+				if	sess.code	=	"tdpur4106m000"	then
+					get.var(pid,"tdpur406.rcno",v.rcno)
+					select	sum(tclct200.lcam):v.lcam
+					from	tclct200
+					where	tclct200._index3	=	{:v.rcno}
+					and	tclct200.boty		=	tclct.bo.type.tdpur406
+					selectdo
+					selectempty
+						v.lcam	=	0
+					endselect
+				endif
+				if	sess.code	=	"whinh3512m000"	or
+					sess.code	=	"whinh3512m100"	or
+					sess.code	=	"whinh3121s000"	then
+					get.var(pid,"whinh310.rcno",v.rcno)
+					select	sum(tclct200.lcam):v.lcam
+					from	tclct200
+					where	tclct200._index3	=	{:v.rcno}
+					and	tclct200.boty		=	tclct.bo.type.whinh312
+					selectdo
+					selectempty
+						v.lcam	=	0
+					endselect
+				endif
+				select 	tpisg012.smnt,
+					tpisg012.exha,
+					tpisg012.avai,
+					tpisg012.pamt			|#ISGEC01152.n
+				from	tpisg012	for update
+				where	tpisg012._index1 = {:tpisg012.cprj,:tpisg012.vers,:tpisg012.elem}
+				and	tpisg012.totl	>=	:exhausted.amnt				
+				selectdo
+					tpisg012.smnt = soft.allocation.amnt
+					tpisg012.exha = exhausted.amnt
+					tpisg012.avai = tpisg012.totl - (tpisg012.smnt + tpisg012.exha)
+					if	tpisg012.avai	>=	v.lcam	then
+						tpisg012.exha	=	tpisg012.exha	+	v.lcam
+						tpisg012.avai	=	tpisg012.avai	-	v.lcam
+						db.update(ttpisg012,db.retry,e)
+					else
+																|TEST.sn.Mudit
+						if v.lcam <> 0	then
+																|TEST.en.Mudit
+							dal.set.error.message("@ Insufficient Sanction Amount")
+							abort.transaction()
+						endif										|TEST.n.Mudit
+					endif
+				endselect
+				
+				break
+			default:
+								|#ISGEC002018.en
+				select 	tpisg012.smnt,
+					tpisg012.exha,
+					tpisg012.avai
+				from	tpisg012 for update
+				where	tpisg012._index1 = {:tpisg012.cprj,:tpisg012.vers,:tpisg012.elem}
+				selectdo
+			
+| 					if soft.allocation.amnt <> 0 then
+						tpisg012.smnt = soft.allocation.amnt
+| 					endif
+			
+| 					if exhausted.amnt <> 0 then
+| 						tpisg012.exha = exhausted.amnt + tpisg012.pamt		|ISGEC001231.o
+						tpisg012.exha = exhausted.amnt 				|ISGEC001231.n
+| 					endif
+			
+					tpisg012.avai = tpisg012.totl - (tpisg012.smnt + tpisg012.exha)
+					db.update(ttpisg012,db.retry,e)
+				endselect
+			break					|#ISGEC002018.sn
+		endcase					|#ISGEC002018.en			
+		|*********
+		|Below Function is in dll tpisgdll0011
+		|Parent Exhausted Amount Blocking Dated 29-08-2014
+| 		update.parent.total.budget.amount(tpisg012.cprj,tpisg012.vers,tpisg012.elem,
+| 				(soft.allocation.amnt + exhausted.amnt),exhausted.amnt,soft.allocation.amnt,3)
+
+		tpisgdll0012.isgec_dream_for_exhausted_amount(tpisg012.cprj,tpisg012.vers)
+		
+	endselect
+| 	commit.transaction()
+}
+
+function extern get.companies.data
+			(
+				domain	tcncmp		i.ncmp,	|Company
+			ref 	domain	tcemm.expu	o.expu,	|Exchange Rate Type
+			ref 	domain	tcccur		o.fcua	|Currency
+			)
+{
+	select 	tcemm170.expu:o.expu,
+		tcemm170.fcua:o.fcua
+	from	tcemm170
+	where	tcemm170._index1 = {:i.ncmp}
+	as set with 1 rows
+	selectdo
+	endselect
+	
+}
+
+function extern get.exchange.rate.type
+			(
+				domain	tccprj		i.cprj,		|Project
+			ref 	domain	tcrtyp		o.rtyp		|Exchange Rate Type
+			)
+{
+	select 	tppdm600.rtyp:o.rtyp
+	from	tppdm600
+	where	tppdm600._index1 = {:i.cprj}
+	as set with 1 rows
+	selectdo
+	endselect
+	
+}
+
+| function extern get.exchange.rate |commented whole function by Veena on 16th Aug 2021 for GH#626
+| 			(
+| 				domain	tcccur		i.bcur,		|Base Currency
+| 				domain	tcccur		i.ccur,		|Currency
+| 				domain	tcrtyp		i.rtyp,		|Exchange Rate Type
+| 				domain	tcdate		i.stdt,		|Effective Date
+| 			ref 	domain	tcratc		o.rate		|Rate
+| 			)
+| {
+| 	domain	tcdate		o.stdt
+| 	
+| 	select 	tcmcs008.rate:o.rate,
+| 		tcmcs008.stdt:o.stdt,
+| 		tcmcs008.excb					|GH616CR000.a
+| 	from	tcmcs008
+| 	where	tcmcs008._index1 = {:i.bcur,:i.ccur,:i.rtyp}
+| 	and	tcmcs008.stdt <= :i.stdt
+| 	and	tcmcs008.rapr = tcyesno.yes
+| 	order by tcmcs008.stdt desc
+| 	as set with 1 rows
+| 	selectdo
+| 		if tcmcs008.excb = tcyesno.yes then		|GH616CR000.a.s	
+| 			o.rate = 1/o.rate
+| 		endif						|GH616CR000.a.e
+| 	selectempty
+| 		o.rate = 1.0
+| 	endselect
+| 		
+| }
+
+function extern get.exchange.rate |Redefined function by Veena on 16th Aug 2021 for GH#626
+			(
+				domain	tcccur		i.bcur,		|Base Currency
+				domain	tcccur		i.ccur,		|Currency
+				domain	tcrtyp		i.rtyp,		|Exchange Rate Type
+				domain	tcdate		i.stdt,		|Effective Date
+			ref 	domain	tcratc		o.rate		|Rate
+			)
+{
+	domain	tcdate		o.stdt
+	
+	select 	tcmcs008.stdt:o.stdt,
+		tcmcs008.excb					|GH616CR000.a
+	from	tcmcs008
+	where	tcmcs008._index1 = {:i.bcur,:i.ccur,:i.rtyp}
+	and	tcmcs008.stdt <= :i.stdt
+	and	tcmcs008.rapr = tcyesno.yes
+	order by tcmcs008.stdt desc
+	as set with 1 rows
+	selectdo
+		if tcmcs008.excb = tcyesno.yes then		|GH616CR000.a.s	
+			o.rate = 1/o.rate
+		endif						|GH616CR000.a.e
+	selectempty
+		o.rate = 1.0
+	endselect
+		
+}
+
+function domain tfgld.amnt SoftAllocationAmount
+			(
+				domain	tccprj		i.cprj,	|Project
+				domain	tppdm.cspa	i.cspa	|Element	
+			)
+{
+	domain	tfgld.amnt	none.amnt,rfq.amnt,pur.amnt,total.amnt
+	domain	tdpur.hdst	o.hdst
+	domain	tccom.bpid	o.bpid
+	
+	domain	tcrqno		o.rqno
+	domain	tcpono		o.pono
+	domain	tdpur.cnty	o.cnty
+	domain	tcamnt		o.oamt
+	
+	
+	domain	tcccur		o.ccur
+	domain	tcdate		o.rdat
+	
+	domain	tcemm.expu	o.expu	|Exchange Rate Type
+ 	domain	tcccur		o.fcua	|Currency
+	domain	tcratc		o.rate
+	
+	
+	
+	none.amnt = 0
+	rfq.amnt = 0
+	pur.amnt = 0
+	total.amnt = 0
+	
+	select 	tdpur201.rqno:o.rqno,
+		tdpur201.pono:o.pono,
+		tdpur201.cnty:o.cnty,
+		tdpur201.oamt:o.oamt,
+		tdpur200.ccur:o.ccur,
+		tdpur200.rdat:o.rdat
+	from	tdpur201,tdpur200
+	where	tdpur201._index2 = {:i.cprj}
+	and	tdpur201.cspa = :i.cspa
+	and 	tdpur201.rejc = tcyesno.no
+	and	tdpur201.rqno refers to tdpur200			|#VY.n
+	and	tdpur200.rqst not in (tdpur.rqst.created,tdpur.rqst.canceled,tdpur.rqst.rejected,tdpur.rqst.modified)			|#VY.n
+	selectdo
+		get.companies.data (get.compnr(),o.expu,o.fcua)
+		get.exchange.rate.type(i.cprj,o.expu)
+		get.exchange.rate(o.fcua,o.ccur,o.expu,o.rdat,o.rate)
+		
+		if o.fcua = o.ccur then
+			o.rate = 1.0
+		endif
+		
+		on case o.cnty
+			case tdpur.cnty.none:
+| 				none.amnt = none.amnt + o.oamt/o.rate
+				none.amnt = none.amnt + o.oamt * o.rate
+				break
+			case tdpur.cnty.rfq:
+				select 	tdpur202.qono,
+					tdpur202.qpon,
+					tdpur202.qseq
+				from	tdpur202
+				where	tdpur202._index1 = {:o.rqno,:o.pono}
+				as set with 1 rows
+				selectdo
+					if isspace(tdpur202.qono) then
+| 						rfq.amnt = rfq.amnt + o.oamt/o.rate
+						rfq.amnt = rfq.amnt + o.oamt * o.rate
+					else
+						select 	tdpur402.orno
+						from	tdpur402
+						where	tdpur402._index6 = {:tdpur202.qono,:tdpur202.qpon,:tdpur202.qseq}
+						as set with 1 rows
+						selectdo
+							select 	tdpur400.otbp:o.bpid
+							from	tdpur400
+							where	tdpur400._index1 = {:tdpur402.orno}
+| 							and	(tdpur400.hdst = tdpur.hdst.created or tdpur400.hdst = tdpur.hdst.modified)  |02-08-2014 Nishant, sujeet
+							and	(tdpur400.hdst = tdpur.hdst.created)| or tdpur400.hdst = tdpur.hdst.modified)
+							as set with 1 rows
+							selectdo
+| 								pur.amnt = pur.amnt  + o.oamt/o.rate
+								pur.amnt = pur.amnt  + o.oamt * o.rate
+							endselect
+						selectempty
+| 							rfq.amnt = rfq.amnt + o.oamt/o.rate
+							rfq.amnt = rfq.amnt + o.oamt * o.rate
+						endselect
+					endif
+					
+				selectempty
+| 					rfq.amnt = rfq.amnt + o.oamt/o.rate
+					rfq.amnt = rfq.amnt + o.oamt * o.rate
+				endselect
+				
+				break
+			case tdpur.cnty.pur:
+				select 	tdpur202.prno
+				from	tdpur202
+				where	tdpur202._index1 = {:o.rqno,:o.pono}
+				as set with 1 rows
+				selectdo
+					
+					if isspace(tdpur202.prno) then
+						pur.amnt = pur.amnt  + o.oamt * o.rate
+					else
+						select 	tdpur400.otbp:o.bpid
+						from	tdpur400
+						where	tdpur400._index1 = {:tdpur202.prno}
+| 						and	(tdpur400.hdst = tdpur.hdst.created or tdpur400.hdst = tdpur.hdst.modified)
+						and	(tdpur400.hdst = tdpur.hdst.created )|or tdpur400.hdst = tdpur.hdst.modified)
+						as set with 1 rows
+						selectdo
+| 							pur.amnt = pur.amnt  + o.oamt/o.rate
+							pur.amnt = pur.amnt  + o.oamt * o.rate
+						endselect
+
+
+						
+					endif
+				selectempty
+| 					pur.amnt = pur.amnt  + o.oamt/o.rate
+					pur.amnt = pur.amnt  + o.oamt * o.rate
+				endselect
+				
+				break
+		endcase
+	endselect
+	
+	total.amnt = none.amnt + rfq.amnt + pur.amnt 
+	total.amnt = total.amnt + get_amnt(i.cprj,i.cspa)	|#by Sanjeev CR-485
+	return(total.amnt)
+}
+
+function extern domain tfgld.amnt	tpisgdll0012.ExhaustedAmount
+				(
+					domain	tccprj		i.cprj,	|Project
+					domain	tppdm.cspa	i.cspa	|Element	
+				)
+{
+	domain	tccprj		o.cprj,temp.cprj
+	domain	tppdm.cspa	o.cspa,temp.cspa
+	domain	tcorno		o.orno,temp.orno
+	domain	tcpono		o.pono,temp.pono
+	
+	domain	tcamnt		o.tpisg018.oamt
+
+	domain	tfgld.amnt	amnt_1,amnt_2,amnt_3,total.amnt
+	domain	tfgld.amnt	amnt_4,amnt_5,amnt_6,amnt_7,amnt_8
+	domain	tfgld.amnt	amnt_9,amnt_10,amnt_11,amnt_12,amnt_13,amnt_14
+	domain	tfgld.amnt	o.amoc
+	domain	tcratc 		o.rtcc
+	
+	domain	tpppc.teta	o.teta
+	domain	tpppc.tetd	o.tetd
+	domain	tpppc.tetb	o.tetb
+	domain	tpppc.tetf	o.tetf
+	domain	tcqiv1		o.amount
+	domain	tcqiv1		modi.exha			|ISGEC001231.n
+	domain	tcorno		p.vers				|ISGEC001231.n
+	domain	tcdate		o.rdat				|GH616CR000.a
+
+	amnt_1 = 0
+	amnt_2 = 0
+	amnt_3 = 0
+	amnt_4 = 0
+	amnt_5 = 0
+	amnt_6 = 0
+	amnt_7 = 0
+	amnt_8 = 0
+	amnt_9 = 0
+	amnt_10 = 0
+	amnt_11 = 0
+	amnt_12 = 0
+	amnt_13 = 0
+	amnt_14 = 0
+	
+	total.amnt = 0
+	
+	|** Material
+	
+	|** Material Logic Changed Due to Baan Migration
+| 	select 	tpppc210.amoc:o.amoc,
+| 		tpppc210.rtcc(1):o.rtcc
+| 	from	tpppc210
+| 	where	tpppc210._index6 = {:i.cprj,:i.cspa}
+| 	selectdo
+| 		if o.rtcc = 0 then
+| 			o.rtcc = 1
+| 		endif
+
+| 		amnt_1 = amnt_1 + (o.amoc*o.rtcc)
+| 	endselect
+| 	
+| 	o.amoc = 0
+| 	o.rtcc = 0
+| 	
+| 	select 	tpppc211.amoc:o.amoc,
+| 		tpppc211.rtcc(1):o.rtcc
+| 	from	tpppc211
+| 	where	tpppc211._index8 = {:i.cprj,:i.cspa}
+| 	selectdo
+| 		if o.rtcc = 0 then
+| 			o.rtcc = 1
+| 		endif
+| 		
+| 		amnt_2 = amnt_2 + (o.amoc*o.rtcc)
+| 	endselect
+| 	
+| 	o.amoc = 0
+| 	o.rtcc = 0
+| 	
+| 	select 	tpppc215.amoc:o.amoc,
+| 		tpppc215.rtcc(1):o.rtcc
+| 	from	tpppc215
+| 	where	tpppc215._index1 = {:i.cprj,:i.cspa}
+| 	selectdo
+| 		if o.rtcc = 0 then
+| 			o.rtcc = 1
+| 		endif
+
+| 		amnt_3 = amnt_3 + (o.amoc*o.rtcc)
+| 	endselect
+
+|** New Logic for Material 
+
+
+	select 	tpppc210.orno:o.orno,
+		tpppc210.pono:o.pono
+	from	tpppc210
+	where	tpppc210._index6 = {:i.cprj,:i.cspa}
+	group by tpppc210.orno,tpppc210.pono
+	selectdo
+		select 	tpppc210.amoc:o.amoc,
+ 			tpppc210.rtcc(1):o.rtcc,				|GH616CR000.com |uncommented by Veena on 16-08-2021 for GH#626
+			tpppc210.ltdt:o.rdat,
+			tpppc210.ccur, tpppc210.rtyp,				|GH616CR000.a
+			tpppc210.teta:o.teta,
+			tpppc210.koor ,tpppc210.ifbp,tpppc210.otbp		|#ISGEC015004.n
+		from	tpppc210
+		where	tpppc210._index6 = {:i.cprj,:i.cspa}
+		and	tpppc210.orno = :o.orno
+		and	tpppc210.pono = :o.pono
+		selectdo
+			get.exchange.rate("INR", tpppc210.ccur, tpppc210.rtyp, o.rdat, o.rtcc)		|GH616CR000.a
+			if o.teta = tpppc.teta.deliver.wh and o.amoc < 0 then
+				if tpppc210.koor = ltoe(2) and tpppc210.ifbp <> "" and tpppc210.otbp <> "" then		|#ISGEC015004.sn
+				else
+					
+					continue
+				endif												|#ISGEC015004.en
+			endif
+			
+			if o.teta = tpppc.teta.deliver.tp.rev then		|#ISGECDV001035.sn
+				continue
+			endif
+										|#ISGECDV001035.en
+			
+			if o.rtcc = 0 then
+				o.rtcc = 1
+			endif
+
+			amnt_1 = amnt_1 + (o.amoc*o.rtcc)
+		selecteos
+			o.tpisg018.oamt = get.baan.po.amnt(o.orno,o.pono,i.cprj,i.cspa)
+			amnt_1 = amnt_1 - o.tpisg018.oamt
+		endselect
+		
+		
+	endselect
+	
+	o.amoc = 0
+	o.rtcc = 0
+	
+	o.orno = ""
+	o.pono = 0
+	
+	select 	tpppc211.orno:o.orno,
+		tpppc211.pono:o.pono
+	from	tpppc211
+	where	tpppc211._index8 = {:i.cprj,:i.cspa}
+	group by tpppc211.orno,tpppc211.pono
+	selectdo
+		select 	tpppc211.amoc:o.amoc,
+ 			tpppc211.rtcc(1):o.rtcc,				|GH616CR000.com |uncommented by Veena on 16-08-2021 for GH#626
+			tpppc211.ltdt:o.rdat,
+			tpppc211.curc, tpppc211.rtyp,				|GH616CR000.a |updated by Veena on 16-08-2021 for GH#626
+			tpppc211.tetb:o.tetb
+		from	tpppc211
+		where	tpppc211._index8 = {:i.cprj,:i.cspa}
+		and	tpppc211.orno = :o.orno
+		and	tpppc211.pono = :o.pono
+		selectdo
+			get.exchange.rate("INR", tpppc211.curc, tpppc211.rtyp, o.rdat, o.rtcc)	|GH616CR000.a |updated by Veena on 16-08-2021 for GH#626
+			if o.tetb = tpppc.tetb.stock or o.tetb = tpppc.tetb.invoice or 
+				o.tetb = tpppc.tetb.order.invoice then		|#ISGECDV001035.n
+				continue
+			endif
+			
+			if o.rtcc = 0 then
+				o.rtcc = 1
+			endif
+			
+			amnt_2 = amnt_2 + (o.amoc*o.rtcc)
+		selecteos
+			o.tpisg018.oamt = get.baan.po.amnt(o.orno,o.pono,i.cprj,i.cspa)
+			amnt_2 = amnt_2 - o.tpisg018.oamt
+		endselect
+	endselect	
+	
+	o.amoc = 0
+	o.rtcc = 0
+	
+	o.orno = ""
+	o.pono = 0
+	
+	select 	tpppc215.orno:o.orno,
+		tpppc215.pono:o.pono
+	from	tpppc215
+	where	tpppc215._index1 = {:i.cprj,:i.cspa}
+	group by tpppc215.orno,tpppc215.pono
+	selectdo
+		select 	tpppc215.amoc:o.amoc,
+ 			tpppc215.rtcc(1):o.rtcc,				|GH616CR000.com |uncommented by Veena on 16-08-2021 for GH#626
+			tpppc215.ltdt:o.rdat,
+			tpppc215.curc, tpppc215.rtyp,				|GH616CR000.a |updated by Veena on 16-08-2021 for GH#626
+			tpppc215.tetd:o.tetd,
+			tpppc215.koor, tpppc215.ifbp, tpppc215.otbp			|#ISGEC015004.n
+		from	tpppc215
+		where	tpppc215._index1 = {:i.cprj,:i.cspa}
+		and	tpppc215.orno = :o.orno
+		and	tpppc215.pono = :o.pono
+		selectdo
+			get.exchange.rate("INR", tpppc215.curc, tpppc215.rtyp, o.rdat, o.rtcc)	|GH616CR000.a |updated by Veena on 16-08-2021 for GH#626
+			if o.tetd = tpppc.tetd.stock then
+				continue
+			endif
+			
+			if o.tetd = tpppc.tetd.expect.hard.wh and o.amoc < 0 then
+				if tpppc215.koor = ltoe(2) and tpppc215.ifbp <> "" and tpppc215.otbp <> "" then		|#ISGEC015004.sn
+				else
+					
+					continue
+				endif												|#ISGEC015004.en
+			endif
+			
+			if o.rtcc = 0 then
+				o.rtcc = 1
+			endif
+
+			amnt_3 = amnt_3 + (o.amoc*o.rtcc)
+		selecteos
+			o.tpisg018.oamt = get.baan.po.amnt(o.orno,o.pono,i.cprj,i.cspa)
+			amnt_3 = amnt_3 - o.tpisg018.oamt
+		endselect
+	endselect
+	
+	o.amoc = 0
+	o.rtcc = 0
+	
+	o.orno = ""
+	o.pono = 0
+	
+	|** Subcontracting
+	select	tpppc270.orno:o.orno,
+		tpppc270.pono:o.pono
+	from	tpppc270
+	where	tpppc270._index6 = {:i.cprj,:i.cspa}
+	group by tpppc270.orno,tpppc270.pono
+	selectdo
+		select 	tpppc270.amoc:o.amoc,
+ 			tpppc270.rtcc(1):o.rtcc,				|GH616CR000.com |uncommented by Veena on 16-08-2021 for GH#626
+			tpppc270.ltdt:o.rdat,
+			tpppc270.ccur, tpppc270.rtyp,				|GH616CR000.a
+			tpppc270.teta:o.teta
+		from	tpppc270
+		where	tpppc270._index6 = {:i.cprj,:i.cspa}
+		and	tpppc270.orno = :o.orno
+		and	tpppc270.pono = :o.pono
+		selectdo
+			get.exchange.rate("INR", tpppc270.ccur, tpppc270.rtyp, o.rdat, o.rtcc)	|GH616CR000.a
+| 			if o.teta =  tpppc.teta.deliver.tp.rev then	|#ISGECDV001053.o
+			if o.teta =  tpppc.teta.deliver.tp.rev and o.amoc < 0 then	|#ISGECDV001053.n
+				continue
+			endif
+			
+			if o.rtcc = 0 then
+				o.rtcc = 1
+			endif
+											|#ISGECDV001053.sn
+			if o.teta =  tpppc.teta.deliver.tp.rev and o.amoc > 0 then	
+				o.amoc = o.amoc * -1
+			endif
+											|#ISGECDV001053.en
+
+			amnt_4 = amnt_4 + (o.amoc*o.rtcc)
+		selecteos
+			o.tpisg018.oamt = get.baan.po.amnt(o.orno,o.pono,i.cprj,i.cspa)
+			amnt_4 = amnt_4 - o.tpisg018.oamt
+		endselect
+	endselect
+	
+	
+	o.amoc = 0
+	o.rtcc = 0
+	
+	o.orno = ""
+	o.pono = 0
+	
+	select	tpppc271.orno:o.orno,
+		tpppc271.pono:o.pono
+	from	tpppc271
+	where	tpppc271._index8 = {:i.cprj,:i.cspa}
+	group by tpppc271.orno,tpppc271.pono
+	selectdo
+		select 	tpppc271.amoc:o.amoc,
+ 			tpppc271.rtcc(1):o.rtcc,				|GH616CR000.com |uncommented by Veena on 16-08-2021 for GH#626
+			tpppc271.ltdt:o.rdat,
+			tpppc271.curc, tpppc271.rtyp,				|GH616CR000.a |updated by Veena on 16-08-2021 for GH#626
+			tpppc271.tetf:o.tetf
+		from	tpppc271
+		where	tpppc271._index8 = {:i.cprj,:i.cspa}
+		and	tpppc271.orno = :o.orno
+		and	tpppc271.pono = :o.pono
+		selectdo
+			get.exchange.rate("INR", tpppc271.curc, tpppc271.rtyp, o.rdat, o.rtcc)	|GH616CR000.a |updatedd by Veena on 16-08-2021 for GH#626
+| 			if o.tetf = tpppc.tetf.order.invoice or o.tetf = tpppc.tetf.invoice then	|#ISGECDV001035.o
+													|#ISGECDV001053.so
+| 			if o.tetf = tpppc.tetf.order.invoice then |	|#ISGECDV001035.n
+| 				continue
+| 			endif
+													|#ISGECDV001053.eo
+			
+			if o.rtcc = 0 then
+				o.rtcc = 1
+			endif
+
+			amnt_5 = amnt_5 + (o.amoc*o.rtcc)
+		selecteos
+			o.tpisg018.oamt = get.baan.po.amnt(o.orno,o.pono,i.cprj,i.cspa)
+			amnt_5 = amnt_5 - o.tpisg018.oamt
+		endselect
+	endselect
+	
+	
+	o.amoc = 0
+	o.rtcc = 0
+	
+	o.orno = ""
+	o.pono = 0
+	
+	select 	tpppc275.orno:o.orno,
+		tpppc275.pono:o.pono
+	from	tpppc275
+	where	tpppc275._index1 = {:i.cprj,:i.cspa}
+	group by tpppc275.orno,tpppc275.pono
+	selectdo
+		select 	tpppc275.amoc:o.amoc,
+ 			tpppc275.rtcc(1):o.rtcc	,				|GH616CR000.com |uncommented by Veena on 16th Aug 2021 for GH#626
+			tpppc275.ltdt:o.rdat,
+			tpppc275.curc, tpppc275.rtyp				|GH616CR000.a |updated by Veena on 16th Aug 2021 for GH#626
+		from	tpppc275
+		where	tpppc275._index1 = {:i.cprj,:i.cspa}
+		and	tpppc275.orno = :o.orno
+		and	tpppc275.pono = :o.pono
+		selectdo
+			get.exchange.rate("INR", tpppc275.curc, tpppc275.rtyp, o.rdat, o.rtcc)	|GH616CR000.a |updated by Veena on 16th Aug 2021 for GH#626
+			if o.rtcc = 0 then
+				o.rtcc = 1
+			endif
+
+			amnt_6 = amnt_6 + (o.amoc*o.rtcc)
+		selecteos
+			o.tpisg018.oamt = get.baan.po.amnt(o.orno,o.pono,i.cprj,i.cspa)
+			amnt_6= amnt_6 - o.tpisg018.oamt
+		endselect
+	endselect	
+	
+	o.amoc = 0
+	o.rtcc = 0
+	
+	|** Labor
+	
+	select 	tpppc231.amoc:o.amoc,
+		tpppc231.rtcc(1):o.rtcc
+	from	tpppc231
+	where	tpppc231._index7 = {:i.cprj,:i.cspa}
+	selectdo
+		if o.rtcc = 0 then
+			o.rtcc = 1
+		endif
+
+		amnt_7 = amnt_7 + (o.amoc*o.rtcc)
+	endselect
+	
+	o.amoc = 0
+	o.rtcc = 0
+	
+	select 	tpppc235.amoc:o.amoc,
+		tpppc235.rtcc(1):o.rtcc
+	from	tpppc235
+	where	tpppc235._index1 = {:i.cprj,:i.cspa}
+	selectdo
+		if o.rtcc = 0 then
+			o.rtcc = 1
+		endif
+
+		amnt_8 = amnt_8 + (o.amoc*o.rtcc)
+	endselect
+	
+	o.amoc = 0
+	o.rtcc = 0
+	
+	|** Equipment
+	
+	select 	tpppc250.amoc:o.amoc,
+		tpppc250.rtcc(1):o.rtcc
+	from	tpppc250
+	where	tpppc250._index6 = {:i.cprj,:i.cspa}
+	selectdo
+		if o.rtcc = 0 then
+			o.rtcc = 1
+		endif
+
+		amnt_9 = amnt_9 + (o.amoc*o.rtcc)
+	endselect
+	
+	o.amoc = 0
+	o.rtcc = 0
+	
+	select 	tpppc251.amoc:o.amoc,
+ 		tpppc251.rtcc(1):o.rtcc	,			|GH616CR000.com |uncommented by Veena on 16-08-2021 for GH#626
+		tpppc251.ltdt:o.rdat,
+		tpppc251.curc, tpppc251.rtyp				|GH616CR000.a |updated by Veena on 16-08-2021 for GH#626
+	from	tpppc251
+	where	tpppc251._index8 = {:i.cprj,:i.cspa}
+	selectdo
+		get.exchange.rate("INR", tpppc251.curc, tpppc251.rtyp, o.rdat, o.rtcc)	|GH616CR000.a |updated by Veena on 16-08-2021 for GH#626
+		if o.rtcc = 0 then
+			o.rtcc = 1
+		endif
+
+		amnt_10 = amnt_10 + (o.amoc*o.rtcc)
+	endselect
+	
+	o.amoc = 0
+	o.rtcc = 0
+
+	select 	tpppc255.amoc:o.amoc,
+		tpppc255.rtcc(1):o.rtcc
+	from	tpppc255
+	where	tpppc255._index1 = {:i.cprj,:i.cspa}
+	selectdo
+		if o.rtcc = 0 then
+			o.rtcc = 1
+		endif
+
+		amnt_11 = amnt_11 + (o.amoc*o.rtcc)
+	endselect
+	
+	o.amoc = 0
+	o.rtcc = 0
+	
+	|** Sundry Cost
+	
+	select 	tpppc290.amoc:o.amoc,
+		tpppc290.rtcc(1):o.rtcc
+	from	tpppc290
+	where	tpppc290._index5 = {:i.cprj,:i.cspa}
+	selectdo
+		if o.rtcc = 0 then
+			o.rtcc = 1
+		endif
+
+		amnt_12 = amnt_12 + (o.amoc*o.rtcc)
+	endselect
+	
+	o.amoc = 0
+	o.rtcc = 0
+
+	select 	tpppc291.amoc:o.amoc,
+		tpppc291.rtcc(1):o.rtcc
+	from	tpppc291
+	where	tpppc291._index8 = {:i.cprj,:i.cspa}
+	selectdo
+		if o.rtcc = 0 then
+			o.rtcc = 1
+		endif
+
+		amnt_13 = amnt_13 + (o.amoc*o.rtcc)
+	endselect
+
+	o.amoc = 0
+	o.rtcc = 0
+	
+	select 	tpppc295.amoc:o.amoc,
+		tpppc295.rtcc(1):o.rtcc
+	from	tpppc295
+	where	tpppc295._index1 = {:i.cprj,:i.cspa}
+	selectdo
+		if o.rtcc = 0 then
+			o.rtcc = 1
+		endif
+
+		amnt_14 = amnt_14 + (o.amoc*o.rtcc)
+	endselect
+								|# PATCH001043.sn
+	o.amount = 0				 		|#ISGEC01034.n
+	
+	select	sum(tpisg014.amnt):o.amount					
+	from	tpisg014
+	where	tpisg014._index1 = {:i.cprj,:i.cspa}
+	and	tpisg014.aprr = tcyesno.yes
+	selectdo
+	selectempty
+	endselect
+	
+	modi.exha = 0						|ISGEC001231.sn
+	
+	select	tpisg012.vers:p.vers
+	from	tpisg012
+	where	tpisg012._index1 = {:i.cprj}
+	and	tpisg012.elem =  :i.cspa
+	selectdo
+	selectempty
+		p.vers = ""
+	endselect	
+	
+	select	sum(tpisg019.pamt):modi.exha
+	from	tpisg019
+| 	where	tpisg019._index1 = {:i.cprj}			|ISGEC001231.o
+	where	tpisg019._index1 = {:i.cprj,:p.vers,:i.cspa}	|ISGEC001231.n
+| 	and 	tpisg019.elem = :i.cspa				|ISGEC001231.o
+	selectdo
+	selectempty
+		modi.exha = 0
+	endselect						|ISGEC001231.en
+	
+		
+								|# PATCH001043.en
+	
+	total.amnt = 	total.amnt + amnt_1 + amnt_2 + amnt_3 + 
+			amnt_4 + amnt_5 + amnt_6 + 
+			amnt_7 + amnt_8 + amnt_9 +
+			amnt_10 + amnt_11 + amnt_12 +
+| 			amnt_13 + amnt_14			|# PATCH001043.o
+| 			amnt_13 + amnt_14 + o.amount				|# PATCH001043.n		|ISGEC001231.o
+			amnt_13 + amnt_14 + o.amount + modi.exha						|ISGEC001231.n		
+	
+	return(total.amnt)
+}
+
+function domain tcamnt	get.baan.po.amnt
+			(
+				domain	tcorno		i.orno,	
+				domain	tcpono		i.pono,
+				domain	tccprj		i.cprj,
+				domain	tppdm.cspa	i.cspa
+			)
+{
+	domain	tcamnt		o.tpisg018.oamt
+	select 	tpisg018.oamt:o.tpisg018.oamt
+	from	tpisg018
+	where	tpisg018._index1 = {:i.orno,:i.pono}
+	and	tpisg018.cprj = :i.cprj
+	and	tpisg018.cspa = :i.cspa
+	as set with 1 rows
+	selectdo
+	selectempty
+		o.tpisg018.oamt = 0
+	endselect
+	
+	return(o.tpisg018.oamt)
+}|#3823.sn
+
+function extern boolean tpisgdll0012.Sanction_Approval_Matrix
+				(
+					domain	tpisg.sanction		i.acti,		|Activity
+				ref 	domain	tcccty			o.reas		|Reason Code
+				)
+{
+	select 	tpisg015.reas:o.reas
+	from	tpisg015
+	where	tpisg015._index1 = {:i.acti}
+	as set with 1 rows
+	selectdo
+	selectempty
+		return(false)
+	endselect
+	
+	return(true)
+}
+
+
+function extern boolean tpisgdll0012.Employee_Responsible_By_Project
+				(
+					domain	tccprj			i.cprj,		|Project Code
+					domain	tpisg.sanction		i.acti		|Activity
+				)
+{
+	domain	tfgld.user		curr_user
+	domain	tcemno			o.emno
+	
+	curr_user = logname$
+	
+	select 	tccom001.emno:o.emno
+	from	tccom001
+	where	tccom001._index4 = {:curr_user}
+	as set with 1 rows
+	selectdo
+	endselect
+	
+	
+	select 	tppdm649.cres,
+		tppdm649.emno
+	from	tppdm649
+	where	tppdm649._index1 = {:i.cprj}
+	and	:o.emno = tppdm649.emno
+	selectdo
+		select 	tpisg016.cres
+		from	tpisg016
+		where	tpisg016._index1 = {:i.acti,:tppdm649.cres}
+		as set with 1 rows
+		selectdo
+			return(true)
+		endselect
+	endselect
+
+	return(false)
+}
+
+
+function extern boolean tpisgdll0012.Employee_Approval_By_Project
+				(
+					domain	tccprj			i.cprj,		|Project Code
+					domain	tpisg.sanction		i.acti		|Activity
+				)
+{
+	domain	tfgld.user		curr_user
+	domain	tcemno			o.emno
+	
+	curr_user = logname$
+	
+	select 	tccom001.emno:o.emno
+	from	tccom001
+	where	tccom001._index4 = {:curr_user}
+	as set with 1 rows
+	selectdo
+	endselect
+	
+	
+	select 	tppdm649.cres,
+		tppdm649.emno
+	from	tppdm649
+	where	tppdm649._index1 = {:i.cprj}
+	and	:o.emno = tppdm649.emno
+	selectdo
+		select 	tpisg016.cres
+		from	tpisg016
+		where	tpisg016._index2 = {:i.acti,:tppdm649.cres}
+		as set with 1 rows
+		selectdo
+			return(true)
+		endselect
+	endselect
+
+	return(false)
+}
+
+
+function extern boolean tpisgdll0012.Total_Budget_Allowed
+				(
+					domain	tccprj		i.cprj,		|Project Code
+					domain	tcorno		i.vers		|Version
+				)
+{
+	domain	tcccty	temp.reas,o.reas
+	
+	select 	tpisg011.reas:temp.reas
+	from	tpisg011
+	where	tpisg011._index1 = {:i.cprj,:i.vers}
+| 	and	tpisg011.appr = tcyesno.no			|Need to check with functionality run
+	as set with 1 rows
+	selectdo
+		if tpisgdll0012.Sanction_Approval_Matrix(tpisg.sanction.launch,o.reas) then
+			o.reas = temp.reas
+			return(true)
+		endif
+	endselect
+	
+	return(false)
+		
+}
+
+
+function extern boolean tpisgdll0012.Modification_Allowed
+				(
+					domain	tccprj		i.cprj,		|Project
+					domain	tcorno		i.vers		|Version
+				)
+{
+	select 	tpisg011.acti
+	from	tpisg011
+	where	tpisg011._index1 = {:i.cprj,:i.vers}
+	as set with 1 rows
+	selectdo
+	endselect
+	
+	on case tpisg011.acti
+	case 	tpisg.sanction.launch:
+	case 	tpisg.sanction.free:
+		return(true)	
+		break
+	endcase
+	
+	return(false)
+}
+										|#3823.en
+										
+										
+|***************** Available Budget Check For Requisition *********************
+
+function extern long tpisgdll0012.Budget_check_For_Requisition
+				(
+					domain	tcrqno		i.rqno		|Requisition
+				)
+{
+	domain	tccprj		o.cprj
+	domain	tppdm.cspa	o.cspa
+	domain	tcamnt		o.tdpur201.oamt
+	domain	tcorno		o.vers
+	
+	
+	domain	tcccur		o.ccur
+	domain	tcdate		o.rdat
+	
+	domain	tcemm.expu	o.expu	|Exchange Rate Type
+ 	domain	tcccur		o.fcua	|Currency
+	domain	tcratc		o.rate
+	
+	domain	tcamnt		total.tdpur201.oamt
+	
+	select 	tdpur201.cprj:o.cprj,
+		tdpur201.cspa:o.cspa
+| 		sum(tdpur201.oamt):o.tdpur201.oamt
+	from	tdpur201
+	where	tdpur201._index1 = {:i.rqno}
+	group by tdpur201.cprj,tdpur201.cspa
+	selectdo
+		
+		total.tdpur201.oamt = 0
+		
+		
+		get.companies.data (get.compnr(),o.expu,o.fcua)
+		get.exchange.rate.type(o.cprj,o.expu)
+		get.exchange.rate(o.fcua,o.ccur,o.expu,o.rdat,o.rate)
+		
+		if o.fcua = o.ccur then
+			o.rate = 1.0
+		endif
+		
+		select 	tdpur201.oamt:o.tdpur201.oamt
+		from	tdpur201
+		where	tdpur201._index2 = {:o.cprj,:i.rqno}
+		and	tdpur201.cspa = :o.cspa
+		selectdo
+			total.tdpur201.oamt = total.tdpur201.oamt +  o.tdpur201.oamt * o.rate
+		endselect
+		
+		
+		|* Sanction Status Must be Approved
+		if tpisgdll0012.check_sanction_status(o.cprj,o.vers) then
+			return(DALHOOKERROR)
+		endif
+		
+		|* 
+| 		if tpisgdll0012.check_sanction_available_amount(o.cprj,o.vers,o.cspa,o.tdpur201.oamt) then
+		if tpisgdll0012.check_sanction_available_amount(o.cprj,o.vers,o.cspa,total.tdpur201.oamt) then
+			return(DALHOOKERROR)
+		endif
+	endselect
+
+	return(0)
+}
+
+function extern long tpisgdll0012.check_sanction_status
+				(
+					domain	tccprj		i.cprj,		|Project Code
+				ref	domain	tcorno		o.vers	
+				)
+{
+	domain	tccprj		o.cprj
+	
+	select 	tpisg011.cprj:o.cprj,
+		tpisg011.vers:o.vers
+	from	tpisg011
+	where	tpisg011._index1 = {:i.cprj}
+	and	tpisg011.act1 = tpisg.sanction.approved
+	as set with 1 rows
+	selectdo
+	selectempty
+		dal.set.error.message("@ Sanction is not Approved")
+		return(DALHOOKERROR)
+	endselect
+	
+	return(0)
+}
+
+function extern long tpisgdll0012.check_sanction_available_amount_for_po
+				(
+					domain	tccprj		i.cprj,		|Project Code
+					domain	tcorno		i.vers,		|Version
+					domain	tppdm.cspa	i.cspa,		|Element
+					domain	tcamnt		i.amnt		|Amount
+				)
+{
+							|#ISGEC002018.sn
+	domain	tcamnt		exhst.amnt.po		|#ISGEC01152.n
+	domain	tcmcs.str13	sess.code
+														|TEST.sn.Mudit
+| 	domain	tcamnt		v.lcam1
+| 	domain	tcorno		v.rcno1
+| 	
+| 	get.var(pid,"prog.name$",sess.code)
+| 	if	sess.code	=	"tdpur4106m000"	then
+| 		get.var(pid,"tdpur406.rcno",v.rcno1)
+| 		select	sum(tclct200.lcam):v.lcam1
+| 		from	tclct200
+| 		where	tclct200._index3	=	{:v.rcno1}
+| 		and	tclct200.boty		=	tclct.bo.type.tdpur406
+| 		selectdo
+| 		selectempty
+| 			v.lcam1	=	0
+| 		endselect
+| 	endif
+| 	if	sess.code	=	"whinh3512m000"	or
+| 		sess.code	=	"whinh3512m100"	or
+| 		sess.code	=	"whinh3121s000"	then
+| 		get.var(pid,"whinh310.rcno",v.rcno1)
+| 		select	sum(tclct200.lcam):v.lcam1
+| 		from	tclct200
+| 		where	tclct200._index3	=	{:v.rcno1}
+| 		and	tclct200.boty		=	tclct.bo.type.whinh312
+| 		selectdo
+| 		selectempty
+| 			v.lcam1	=	0
+| 		endselect
+| 	endif
+														|TEST.en.Mudit
+	get.var(pid,"prog.name$",sess.code)						
+	on	case	sess.code
+		case	"tdpur4106m000":
+		case	"whinh3512m000":
+		case	"whinh3121s000":
+			select 	tpisg012.totl,
+				tpisg012.smnt,
+				tpisg012.exha,
+				tpisg012.pamt			|#ISGEC01152.n
+			from	tpisg012
+			where	tpisg012._index1 = {:i.cprj,:i.vers,:i.cspa}
+			as set with 1 rows
+			selectdo
+| 				exhst.amnt.po = tpisg012.pamt + tpisg012.exha		|#ISGEC01152.o
+				exhst.amnt.po = tpisg012.exha				|#ISGEC01152.n
+| 				if v.lcam1 <> 0	then								|TEST.n.Mudit
+| 					if tpisg012.totl < (i.amnt ) and	i.amnt	<=	tpisg012.exha	then		|#ISGEC01152.o
+					if tpisg012.totl < (i.amnt ) and	i.amnt	<=	exhst.amnt.po	then		|#ISGEC01152.n
+						dal.set.error.message("@ Insufficient Sanction Amount")
+						return(DALHOOKERROR)
+					endif
+| 				endif										|TEST.n.Mudit
+			selectempty
+				dal.set.error.message("@ Sanction Not Available")
+				return(DALHOOKERROR)
+			endselect
+		break
+		default:			|#ISGEC002018.en		
+			select 	tpisg012.totl,
+				tpisg012.smnt
+			from	tpisg012
+			where	tpisg012._index1 = {:i.cprj,:i.vers,:i.cspa}
+			as set with 1 rows
+			selectdo
+|		 		if tpisg012.totl < (i.amnt + tpisg012.smnt) then			|#28.07.2014 Nishant, Sujeet
+| 				if v.lcam1 <> 0	then								|TEST.n.Mudit
+					if tpisg012.totl < (i.amnt ) then					
+						dal.set.error.message("@ Insufficient Sanction Amount")
+						return(DALHOOKERROR)
+					endif
+| 				endif										|TEST.n.Mudit
+			selectempty
+				dal.set.error.message("@ Sanction Not Available")
+				return(DALHOOKERROR)
+			endselect
+			break				|#ISGEC002018.n
+		endcase				|#ISGEC002018.n	
+	return(0)
+}
+
+function extern long tpisgdll0012.check_sanction_available_amount
+				(
+					domain	tccprj		i.cprj,		|Project Code
+					domain	tcorno		i.vers,		|Version
+					domain	tppdm.cspa	i.cspa,		|Element
+					domain	tcamnt		i.amnt		|Amount
+				)
+{
+	domain	tccprj		o.cprj
+	
+	select 	tpisg012.cprj:o.cprj, tpisg012.avai
+	from	tpisg012
+	where	tpisg012._index1 = {:i.cprj,:i.vers,:i.cspa}
+	and 	:i.amnt <= tpisg012.avai
+| 	and 	(tpisg012.avai > :i.amnt or tpisg012.avai = :i.amnt)
+	as set with 1 rows
+	selectdo
+	selectempty
+		dal.set.error.message("@ Amount is Greater Than Available Sanction Amount")
+		return(DALHOOKERROR)
+	endselect
+	
+	return(0)
+}
+|***********sanjeev** for update the extra approved amount to santion amount*****start******
+function domain tfgld.amnt get_amnt(domain tccprj i.cprj,domain	tppdm.cspa i.cspa)
+{
+	domain	tfgld.amnt	req.amnt
+	domain	tcorno		o.orno
+	domain	tcpono		o.pono
+	req.amnt = 0
+	select 	tdpur401.orno:o.orno,
+		tdpur401.pono:o.pono
+	from	tdpur401,tdpur400
+	where	tdpur401._index2 = {:i.cprj}
+	and	tdpur401.cspa = :i.cspa
+	and	tdpur401.orno refers to tdpur400
+	and	tdpur400.hdst in (tdpur.hdst.created)
+	selectdo
+		select	tdisg461.amti,tdisg461.reqn
+		from	tdisg461,tdisg460
+		where	tdisg461._index2 = {:o.orno,:o.pono}
+		and	tdisg460.stat = 2
+		and	tdisg461.reqn refers to tdisg460
+		selectdo
+			req.amnt = req.amnt + tdisg461.amti
+		endselect
+	endselect
+	return(req.amnt)
+}
+|***********sanjeev** for update the extra approved amount to santion amount*****end****** CR-485

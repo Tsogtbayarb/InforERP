@@ -1,0 +1,1518 @@
+|******************************************************************************
+|* tpisg2220m010  0  VRC B61U a7 isg 
+|* Update Planned Progress
+|* merino1                       
+|* 2018-09-28
+|******************************************************************************
+|* Main table tpisg220 Project Activity Master, Form Type 4
+|******************************************************************************
+|* ID: ISGEC01100, Sahil Sharma, VRC B61U a7 isg, 28-09-2018
+|* New Development for Updating Planned Progress
+|*
+|* ID: ISGEC016016, Sahil Sharma, VRC B61U a7 isg, 24-01-2019
+|* Added Function for insertion in tpisg251
+|****************************** declaration section ***************************
+| declaration:
+
+	table	ttpisg220 | Project Activity Master
+	table	ttcmcs052
+	table	ttpisg216
+	table	ttpisg214
+	table	ttpisg245
+	table	ttpisg248
+	table	ttpisg249
+	table	ttpisg252
+	table	ttpisg251
+|--------------------------- Form Variables -----------------------------------
+	extern	domain	tccprj		cprj
+	extern	domain	tcdsca		cprj.dsca
+	extern	domain	tcyesno		fivedays, sixdays, alldays
+	
+|-------------------------- Script Variables ---------------------------------	
+	extern	domain	tcsess		sess.code
+	extern	domain	tfgld.date	StartDate
+	extern	domain	tcmcs.long	FromOutline, ToOutline,i,NonWorkingDays, BalanceDays
+	domain	tcperc			Duration, ElapsedDays, ActualElapsedDays, OutlookElapsedDays
+	|extern	domain	tfgld.date	CurrentDate
+	domain	tcmcs.s200u		v.iref
+	domain	tcdate			finish.date, start.date
+
+
+|****************************** group section **********************************
+
+
+|***************************** Function section ********************************
+| functions:
+function extern UpdatePlannedProgressForChilds(domain tccprj	cprj,domain tfgld.date	input.date,domain tpcalender.typ type.of.calender)
+{
+	InitializeVariables()
+
+	|Initialise.ElapsedDays.PlannedPercentage()| removed to reinitialize Elapsed Days and Planned Progress within current loop to increase perfirmance
+	
+	select	tpisg220.cact, tpisg220.sdst, tpisg220.dura, tpisg220.pprc
+	from	tpisg220	for update
+	where	tpisg220._index1 = {:cprj}
+	and	tpisg220.cact <> "PARENT"
+	selectdo
+		if tpisg220.sdst <=input.date then
+			if tpisg220.dura = 0 then
+				if input.date => tpisg220.sdst then
+					tpisg220.elap = 0
+					tpisg220.pprc = 100
+				endif
+			else
+				NonWorkingDays = GetNonWorkingDays(tpisg220.sdst,input.date,type.of.calender)
+				ElapsedDays = (input.date - tpisg220.sdst + 1) - NonWorkingDays
+				
+				if ElapsedDays > tpisg220.dura then
+					ElapsedDays = tpisg220.dura
+				endif
+			
+				tpisg220.elap = ElapsedDays
+				tpisg220.pprc = (ElapsedDays/tpisg220.dura)*100
+			endif
+			db.update(ttpisg220, db.retry, e)			
+		else
+			tpisg220.elap = 0
+			tpisg220.pprc = 0
+			db.update(ttpisg220, db.retry, e)
+		endif
+		commit.transaction()
+	endselect
+}
+
+function extern UpdatePlannedProgressForParent(domain tccprj		Cprj,
+					domain	tcmcs.long	OutLine,
+					domain tfgld.date	input.date)
+{
+	domain tcamnt		SumElapsed
+	domain	tcorno		ActivityType
+	domain tcmcs.str30	atpisg220cact
+	
+	select	tpisg220.cact, tpisg220.sdst, tpisg220.ddur
+	from	tpisg220 for update
+	where	tpisg220._index1 = {:Cprj}
+	and	tpisg220.outl =:OutLine
+	and	tpisg220.acty = "PARENT"
+	|and	tpisg220.sub1 = :v.iref
+	and	tpisg220.sdst <=:input.date
+	selectdo
+		Duration = 0
+		ElapsedDays = 0
+		InitializeVariables()
+		
+		SumElapsed = 0
+		select	atpisg220.cact:atpisg220cact,atpisg220.elap:ElapsedDays
+		from	tpisg220 atpisg220
+		where	atpisg220._index1 = {:Cprj}
+		and	atpisg220.pact =:tpisg220.cact
+		and 	atpisg220.cact <>:tpisg220.cact
+		selectdo	
+			SumElapsed = SumElapsed + ElapsedDays		
+		endselect
+
+		
+		tpisg220.elap = SumElapsed
+		
+		if (tpisg220.ddur <> 0) and (SumElapsed <> 0) then
+			tpisg220.pprc = SumElapsed/tpisg220.ddur * 100
+		endif
+		db.update(ttpisg220, db.retry, e)
+		commit.transaction()
+	endselect
+}
+
+function extern Initialise.ElapsedDays.PlannedPercentage()
+{
+	select	tpisg220.pprc
+	from	tpisg220 for update
+	where	tpisg220._index1 = {:Cprj}
+	|and	tpisg220.sub1 = :v.iref
+	selectdo
+		|tpisg220.pprc = 0.00
+		|tpisg220.elap = 0|Added by veena on 22nd Oct
+		|db.update(ttpisg220, db.retry, e)
+	endselect
+	commit.transaction()
+}
+
+function extern UpdatePlannedElapsedDaysMSPForParent(domain tccprj		Cprj)
+{
+	domain tcamnt		SumElapsed
+	domain	tcorno		ActivityType
+	domain tcmcs.str30	atpisg220cact
+		
+	select	tpisg220.cact, tpisg220.sdst, tpisg220.ddur
+	from	tpisg220 for update
+	where	tpisg220._index1 = {:Cprj}
+	and	tpisg220.acty = "PARENT"
+	|and	tpisg220.sub1 = :v.iref
+	selectdo
+		tpisg220.pmsp = (tpisg220.pprc * tpisg220.dura)/100
+				
+		db.update(ttpisg220, db.retry, e)
+		commit.transaction()
+	endselect
+}
+
+function InitializeVariables()
+{
+	Duration = 0
+	ElapsedDays = 0
+	NonWorkingDays = 0
+	ActualElapsedDays = 0
+}
+
+
+|*************Planned Progress Logic finished here*********************************|
+
+|* select * from ProjectActivityMaster for update where ActivityType is not 'PARENT' 
+|* selectdo
+|* 	set ActualElapsedDays = PercProgress * duration 
+|* EndSelect
+
+|* select * from ProjectActivityMaster for update where ActivityType is Parent 
+|* selectdo
+|* 	set ActualElapsedDays = select sum of ActualElapsedDays of all child ) from ProjectActivityMaster a
+|* 				where a.Project = ProjectActivityMaster.project
+|* 				and a.Parent of corresponding activities where ActivityType is not 'Parent 
+|* 				(using same logic as written for planned percentage calculation in existing session)
+|* EndSelect
+
+
+function extern UpdateActualElapsedDaysForChild(domain tccprj		Cprj)
+{
+	select	tpisg220.elad, tpisg220.cpgv, tpisg220.dura
+	from	tpisg220 for update
+	where	tpisg220._index1 = {:cprj}
+	and	tpisg220.acty <> "PARENT"
+	|and	tpisg220.sub1 = :v.iref
+	selectdo
+		|tpisg220.elad = (tpisg220.cpgv * tpisg220.dura)/100
+		tpisg220.elad = (round(tpisg220.cpgv,0,1) * tpisg220.dura)/100
+		db.update(ttpisg220, db.retry, e)
+		commit.transaction()
+	endselect
+}
+
+
+function extern UpdateActualProgressAndElapsedDaysForParent(
+					domain tccprj		Cprj,
+					domain	tcmcs.long	OutLine)
+{
+	domain tcamnt		SumElapsed
+	domain	tcorno		ActivityType
+	domain tcmcs.str30	atpisg220cact
+		
+	select	tpisg220.cact, tpisg220.sdst, tpisg220.ddur
+	from	tpisg220 for update
+	where	tpisg220._index1 = {:Cprj}
+	and	tpisg220.outl =:OutLine
+	and	tpisg220.acty = "PARENT"
+	|and	tpisg220.sub1 = :v.iref
+	|and	tpisg220.sdst <=:input.date
+	|and	tpisg220.cact = "50990100M1"
+	selectdo
+		Duration = 0
+		ElapsedDays = 0
+
+		InitializeVariables()
+		
+		SumElapsed = 0
+		select	atpisg220.cact:atpisg220cact,atpisg220.elad:ElapsedDays
+		from	tpisg220 atpisg220
+		where	atpisg220._index1 = {:Cprj}
+		and	atpisg220.pact =:tpisg220.cact
+		and 	atpisg220.cact <>:tpisg220.cact
+		selectdo	
+			SumElapsed = SumElapsed + ElapsedDays		
+		endselect
+		
+		tpisg220.elad = SumElapsed
+		
+		if (tpisg220.ddur <> 0) and (SumElapsed <> 0) then
+				tpisg220.cpgv = SumElapsed/tpisg220.ddur * 100
+				if tpisg220.cpgv >100 then 	|added by Veena on 09-Mar-2019
+					tpisg220.cpgv = 100
+				endif
+		endif
+				
+		db.update(ttpisg220, db.retry, e)
+		commit.transaction()
+	endselect
+}
+
+
+
+function extern InitialiseActualElapsedDays()
+{
+	select	tpisg220.ddur
+	from	tpisg220 for update
+	where	tpisg220._index1 = {:Cprj}
+	|and	tpisg220.sub1 = :v.iref
+	selectdo
+		tpisg220.elad = 0 |New field elad to be added in tpisg220 Desc ActualElapsedDays
+		db.update(ttpisg220, db.retry, e)
+	endselect
+	commit.transaction()
+}
+
+function extern UpdateActualElapsedDaysMSPForParent(domain tccprj cprj)
+{
+	domain tcamnt		SumElapsed
+	domain	tcorno		ActivityType
+	domain tcmcs.str30	atpisg220cact
+		
+	select	tpisg220.cact, tpisg220.sdst, tpisg220.ddur
+	from	tpisg220 for update
+	where	tpisg220._index1 = {:cprj}
+	and	tpisg220.acty = "PARENT"
+	|and	tpisg220.sub1 = :v.iref
+	selectdo
+		tpisg220.emsp = (tpisg220.cpgv * tpisg220.dura)/100
+				
+		db.update(ttpisg220, db.retry, e)
+		commit.transaction()
+	endselect
+}
+
+|*Project level Planned Percentage 
+|*sum(Planned Elapsed days on all Outline level 1 Activities)/
+|*sum(Derived Duration on all Outline level1 Activities where activity type is Parent) + 
+|*sum(Duration on all Outline level1 Activities where activity type is not Parent))
+|**************
+|*Project level Actual Percentage 
+|*sum(Actual Elapsed days on all Outline level 1 Activities)/
+|*sum(Derived Duration on all Outline level1 Activities where activity type is Parent) + 
+|*sum(Duration on all Outline level1 Activities where activity type is not Parent))
+
+Function extern UpdateProjectLevelPlannedPercentage(domain tccprj Cprj, domain tfgld.date CurrentDate)
+{
+	domain tcamnt PlannedElapsedDays,ParentDuration,ChildDuration,ProjectPlannedPerc
+	
+	PlannedElapsedDays = 0
+	ParentDuration = 0
+	ChildDuration = 0
+	ProjectPlannedPerc = 0
+	
+	select	sum(tpisg220.elap):PlannedElapsedDays
+	from	tpisg220
+	where	tpisg220._index1 = {:Cprj}
+	and	tpisg220.outl =1
+	|and	tpisg220.sub1 = :v.iref
+	selectdo endselect
+	
+	select	sum(tpisg220.ddur):ParentDuration
+	from	tpisg220
+	where	tpisg220._index1 = {:Cprj}
+	and	tpisg220.outl =1
+	and	tpisg220.acty = "PARENT"
+	|and	tpisg220.sub1 = :v.iref
+	selectdo endselect
+	
+	select	sum(tpisg220.dura):ChildDuration
+	from	tpisg220
+	where	tpisg220._index1 = {:Cprj}
+	and	tpisg220.outl =1
+	and	tpisg220.acty <> "PARENT"
+	|and	tpisg220.sub1 = :v.iref
+	selectdo endselect
+		
+	if PlannedElapsedDays <> 0 and (ParentDuration + ChildDuration) <> 0 then 
+		ProjectPlannedPerc = (PlannedElapsedDays/(ParentDuration + ChildDuration)) * 100
+	endif
+	
+	select	tpisg216.*
+	from	tpisg216	for update
+	where	tpisg216._index1 = {:Cprj,:CurrentDate}
+	selectdo
+		tpisg216.prop = ProjectPlannedPerc
+		tpisg216.plap = PlannedElapsedDays
+		tpisg216.pdfp = ParentDuration
+		tpisg216.cdfp = ChildDuration
+		tpisg216.gdat = utc.num() |Plan Generation Date
+		db.update(ttpisg216, db.retry, e)
+	selectempty
+		tpisg216.cprj = Cprj
+		tpisg216.curr = CurrentDate
+		tpisg216.prop = ProjectPlannedPerc
+		tpisg216.proa = 0	
+		tpisg216.plap = PlannedElapsedDays
+		tpisg216.pdfp = ParentDuration
+		tpisg216.cdfp = ChildDuration
+		tpisg216.gdat = utc.num() |Plan Generation Date
+		db.insert(ttpisg216, db.skip.dupl, e)
+	endselect
+	commit.transaction()
+}
+
+
+Function extern UpdateProjectLevelActualPercentage(domain tccprj Cprj)
+{
+	domain tcamnt ParentDuration,ChildDuration,ActualElapsedDays,ProjectActualPerc
+	domain	tfgld.date CurrentDate
+
+	ActualElapsedDays = 0
+	ParentDuration = 0
+	ChildDuration = 0
+	ProjectActualPerc = 0
+	CurrentDate = date.num()
+	
+	select	sum(tpisg220.ddur):ParentDuration
+	from	tpisg220
+	where	tpisg220._index1 = {:Cprj}
+	and	tpisg220.outl =1
+	and	tpisg220.acty = "PARENT"
+	|and	tpisg220.sub1 = :v.iref
+	selectdo endselect
+	
+	select	sum(tpisg220.dura):ChildDuration
+	from	tpisg220
+	where	tpisg220._index1 = {:Cprj}
+	and	tpisg220.outl =1
+	and	tpisg220.acty <> "PARENT"
+	|and	tpisg220.sub1 = :v.iref
+	selectdo endselect
+		
+	select	sum(tpisg220.elad):ActualElapsedDays
+	from	tpisg220
+	where	tpisg220._index1 = {:Cprj}
+	and	tpisg220.outl =1	
+	|and	tpisg220.sub1 = :v.iref
+	selectdo endselect
+	
+	if ActualElapsedDays <> 0 and (ParentDuration + ChildDuration) <> 0 then 
+		ProjectActualPerc = (ActualElapsedDays/(ParentDuration + ChildDuration)) * 100
+	endif
+	
+	select	tpisg216.*
+	from	tpisg216	for update
+	where	tpisg216._index1 = {:Cprj,:CurrentDate}
+	selectdo
+		tpisg216.proa = ProjectActualPerc
+		tpisg216.aced = ActualElapsedDays
+		tpisg216.pdfa = ParentDuration
+		tpisg216.cdfa = ChildDuration
+		tpisg216.adat = utc.num() |Actual Generation Date		
+		db.update(ttpisg216, db.retry, e)
+	selectempty
+		tpisg216.cprj = Cprj
+		tpisg216.curr = CurrentDate
+		tpisg216.prop = 0
+		tpisg216.proa = ProjectActualPerc	
+		tpisg216.aced = ActualElapsedDays
+		tpisg216.pdfa = ParentDuration
+		tpisg216.cdfa = ChildDuration
+		tpisg216.adat = utc.num() |Actual Generation Date
+		db.insert(ttpisg216, db.skip.dupl, e)
+	endselect
+	commit.transaction()
+}
+
+
+|Activity Typewise Planned Percentage-
+|sum(Planned Elapsed days on all child Activities of selected Activity Type)/
+|sum(Duration on all child  Activities of selected Activity Type)
+
+|Activity Typewise Actual Percentage-
+|sum(Actual Elapsed days of all Activities except parent in selected Activity Type)/
+|sum(Duration of all Activities except parent in selected Activity Type)
+
+Function extern UpdateActivityTypeLevelPlannedPercentage(domain tccprj Cprj, domain	tfgld.date CurrentDate)
+{
+	domain tcamnt PlannedElapsedDays,ChildDuration,ActivityPlannedPerc	|,ParentDuration
+	domain tcorno	ActivityType
+
+	|PlannedElapsedDays = 0
+	|ParentDuration = 0
+	|ChildDuration = 0
+	|ActivityPlannedPerc = 0
+	ActivityType=""
+	
+	select distinct acty:ActivityType from tpisg220 
+	where tpisg220._index1 = {:Cprj}
+	selectdo
+		PlannedElapsedDays = 0
+		ChildDuration = 0
+		ActualElapsedDays = 0
+		ActivityPlannedPerc = 0
+		
+		select	sum(tpisg220.elap):PlannedElapsedDays, sum(tpisg220.dura):ChildDuration, sum(tpisg220.elad):ActualElapsedDays
+		from	tpisg220
+		where	tpisg220._index1 = {:Cprj}
+		and	tpisg220.acty <> "PARENT"
+		and	tpisg220.acty = :ActivityType
+		selectdo endselect
+			
+		if PlannedElapsedDays <> 0 and ChildDuration <> 0 then 
+			ActivityPlannedPerc = (PlannedElapsedDays/ChildDuration) * 100
+		endif		
+	
+		select	tpisg214.*
+		from	tpisg214 for update
+		where	tpisg214._index1 = {:Cprj,:ActivityType,:Currentdate}
+		selectdo
+			
+			tpisg214.pprc = ActivityPlannedPerc
+			tpisg214.plap = PlannedElapsedDays
+			tpisg214.pdfp = 0
+			tpisg214.cdfp = ChildDuration
+			tpisg214.gdat = utc.num() |Plan Generation Date
+			db.update(ttpisg214, db.retry, e)
+		selectempty
+			tpisg214.cprj = Cprj
+			tpisg214.acty = ActivityType
+			tpisg214.date = Currentdate
+			tpisg214.pprc = ActivityPlannedPerc
+			tpisg214.acpr = 0
+			tpisg214.plap = PlannedElapsedDays
+			tpisg214.pdfp = 0
+			tpisg214.cdfp = ChildDuration
+			tpisg214.gdat = utc.num() |Plan Generation Date
+			db.insert(ttpisg214, db.skip.dupl, e)
+		endselect
+	endselect
+	commit.transaction()
+}
+
+Function extern UpdateActivityTypeLevelActualPercentage(domain tccprj Cprj)
+{
+	domain tcamnt ParentDuration,ChildDuration,ActualElapsedDays,ActivityActualPerc
+	domain	tfgld.date CurrentDate
+	domain tcorno	ActivityType
+
+	ActualElapsedDays = 0
+	ParentDuration = 0
+	ChildDuration = 0
+	ActivityActualPerc = 0
+	ActivityType=""
+	CurrentDate = date.num()
+	
+	select distinct acty:ActivityType from tpisg220 
+	where tpisg220._index1 = {:Cprj}
+	selectdo
+		ActualElapsedDays = 0
+		ParentDuration = 0
+		ChildDuration = 0
+		ActivityActualPerc = 0
+	
+		select	sum(tpisg220.dura):ChildDuration, sum(tpisg220.elad):ActualElapsedDays
+		from	tpisg220
+		where	tpisg220._index1 = {:Cprj}
+		and	tpisg220.acty <> "PARENT"
+		and	tpisg220.acty = :ActivityType
+		selectdo endselect
+						
+		if ActualElapsedDays <> 0 and ChildDuration <> 0 then 
+			ActivityActualPerc = (ActualElapsedDays/ChildDuration) * 100
+		endif
+	
+		select	tpisg214.*
+		from	tpisg214 for update
+		where	tpisg214._index1 = {:Cprj,:ActivityType,:Currentdate}
+		selectdo
+			tpisg214.acpr = ActivityActualPerc
+			tpisg214.aced = ActualElapsedDays
+			tpisg214.pdfa = 0
+			tpisg214.cdfa = ChildDuration
+			tpisg214.adat = utc.num() |Actual Generation Date
+			db.update(ttpisg214, db.retry, e)
+		selectempty
+			tpisg214.cprj = Cprj
+			tpisg214.acty = ActivityType
+			tpisg214.date = Currentdate
+			tpisg214.pprc = 0
+			tpisg214.acpr = ActivityActualPerc
+			tpisg214.aced = ActualElapsedDays
+			tpisg214.pdfa = 0
+			tpisg214.cdfa = ChildDuration
+			tpisg214.adat = utc.num() |Actual Generation Date
+			db.insert(ttpisg214, db.skip.dupl, e)
+		endselect
+	endselect
+	commit.transaction()
+}
+
+Function extern long UpdatePlannedCurveData(domain	tccprj		i.cprj)		|#Sahil.Sharma.20.02.2019.n
+{
+	domain tpcalender.typ CalenderType
+	domain	tccprj	CTProject
+	domain tfgld.date MinStartDate, MaxEndDate,d
+	|CalanderType = "fivedays"
+	CTProject = ""
+	
+	select distinct cprj:CTProject from tpisg220 where cprj = :i.cprj order by cprj|** project hardcoded
+	selectdo
+		MinStartDate=0
+		MaxEndDate=0
+		
+		CalenderType = ltoe(0)		
+		select tpisg245.ctyp:CalenderType from tpisg245 where cprj = :CTProject selectdo endselect
+		
+		select min(sdst):MinStartDate, max(sdfn):MaxEndDate from tpisg220 where cprj = :CTProject
+		selectdo endselect
+		
+		ParentDurationCalculation(CTProject)
+			
+		FromOutline = 9
+		ToOutline = 1
+		
+		for d= MinStartDate to MaxEndDate STEP 1
+			|*Update Planned Progress	
+			
+			UpdatePlannedProgressForChilds(CTProject, d, CalenderType)
+			
+			for i = FromOutline to ToOutline STEP -1
+				UpdatePlannedProgressForParent(CTProject,i,d)
+			endfor
+			
+			|*Update Planned Elapsed days to match with MSP
+			
+			|UpdatePlannedElapsedDaysMSPForParent(CTProject)|removed from here to improve performance	
+					
+			|*Store Project level Planned/Actual Percentages 	
+			
+			UpdateProjectLevelPlannedPercentage(CTProject,d)|commented temporarily
+			
+			|*Store Projectwise ActivityType wise Planned/Actual Percentages 	
+			
+			UpdateActivityTypeLevelPlannedPercentage(CTProject,d)
+		endfor
+		
+		|*Update Planned Elapsed days to match with MSP
+			
+		UpdatePlannedElapsedDaysMSPForParent(CTProject)	
+			
+		return(2)
+	endselect
+	
+	return(1)
+	
+}
+
+
+Function extern long UpdateActualCurveData()
+{
+	domain	tccprj	CTProject
+	|domain tcmcs.str8 CalanderType
+	|CalanderType = "fivedays"
+	CTProject = ""
+	
+	select cprj:CTProject from tpisg220
+	where frez = tcyesno.yes
+	group by cprj
+	order by cprj
+	selectdo
+		
+		start.date = utc.num()					|#ISGEC016016.n
+		
+		ParentDurationCalculation(CTProject)
+			
+		FromOutline = 9
+		ToOutline = 1
+		
+		|*Update Actual Elapsed Days
+		
+		UpdateActualElapsedDaysForChild(CTProject)
+		for i = FromOutline to ToOutline STEP -1
+			UpdateActualProgressAndElapsedDaysForParent(CTProject,i)
+		endfor
+		
+		|Update Actual Elapsed days to match with MSP
+		
+		UpdateActualElapsedDaysMSPForParent(CTProject)
+		
+		|*Store Project level Planned/Actual Percentages 	
+		
+		UpdateProjectLevelActualPercentage(CTProject)
+		
+		|*Store Projectwise ActivityType wise Planned/Actual Percentages 	
+		
+		UpdateActivityTypeLevelActualPercentage(CTProject)|** commented temporarily for testing projetwise data generation
+		
+		UpdateActualStartFinishDateInParentActivities(CTProject)				|Added by Veena on 07-03-2019
+		
+		finish.date = utc.num()								|#ISGEC016016.sn
+		
+		import("prog.name$", sess.code)
+		
+		insert_start_date_in_history(sess.code, tpisg220.cprj, start.date, finish.date)
+													|#ISGEC016016.en
+		
+
+	endselect
+	
+	return(1)
+	
+}
+
+Function extern long UpdatePlannedProgressDaily()
+{
+	domain tpcalender.typ CalenderType
+	domain	tccprj	CTProject
+	domain tfgld.date CurrentDate
+	CalenderType = ltoe(0)
+	CTProject = ""
+	CurrentDate = date.num()
+	
+	select distinct cprj:CTProject from tpisg220 
+	where frez = tcyesno.yes
+	|where cprj = "JB1124" order by cprj|** project hardcoded
+	selectdo	
+		
+		ParentDurationCalculation(CTProject)
+			
+		FromOutline = 9
+		ToOutline = 1
+		
+		|*Update Planned Progress		
+		UpdatePlannedProgressForChilds(CTProject, CurrentDate, CalenderType)
+		
+		for i = FromOutline to ToOutline STEP -1
+			UpdatePlannedProgressForParent(CTProject,i,CurrentDate)
+		endfor		
+				
+		|*Store Project level Planned/Actual Percentages 		
+		UpdateProjectLevelPlannedPercentage(CTProject,CurrentDate)
+		
+		|*Store Projectwise ActivityType wise Planned/Actual Percentages 		
+		UpdateActivityTypeLevelPlannedPercentage(CTProject,CurrentDate)		
+		
+		|*Update Planned Elapsed days to match with MSP			
+		UpdatePlannedElapsedDaysMSPForParent(CTProject)	
+			
+		return(2)
+	endselect
+	
+	return(1)
+	
+}
+
+Function extern UpdateCurveData()
+{
+| 	UpdatePlannedCurveData()		|#Sahil.Sharma.20.02.2019.o
+	UpdateActualCurveData()	|Commented temporarily
+	UpdateDelayDays()		|Commented temporarily
+	UpdatePlannedProgressDaily()
+}
+
+Function extern UpdateDelayDays()
+{
+	domain tfgld.date TodayDate,ValidDate
+	domain	tccprj	CTProject
+	|domain	tcmcs.str8 CalenderType
+	domain	tpcalender.typ CalenderType
+	domain	tcmcs.int NonWorkingDays
+	|CalenderType = "fivedays"
+	CTProject = ""
+	ValidDate=date.to.num(2000,01,01)
+	
+	select distinct cprj:CTProject from tpisg220
+	where frez = tcyesno.yes
+	|where cprj = "JB1124" |** project hardcoded
+	order by cprj
+	selectdo
+		start.date = utc.num()	
+		
+		CalenderType = ltoe(0)		
+		select tpisg245.ctyp:CalenderType from tpisg245 where cprj = :CTProject selectdo endselect
+		
+		FromOutline = 9
+		ToOutline = 1	
+		TodayDate = date.num()	
+		
+		|*Update Planned Progress	
+		UpdatePlannedProgressForChilds(CTProject, TodayDate,CalenderType)
+				
+		for i = FromOutline to ToOutline STEP -1
+			UpdatePlannedProgressForParent(CTProject,i,TodayDate)
+		endfor
+				
+		|*Update Planned Elapsed days to match with MSP
+		UpdatePlannedElapsedDaysMSPForParent(CTProject)	
+			
+		select	tpisg220.cprj,tpisg220.cact,tpisg220.sdst,tpisg220.sdfn,tpisg220.acsd,tpisg220.acfn,tpisg220.dura,tpisg220.pprc,tpisg220.cpgv
+		from	tpisg220	for update
+		where	tpisg220.acty <> "PARENT"
+		and cprj = :CTProject
+		|and cact = "50990000M1C1"
+		order by tpisg220.cprj,tpisg220.cact
+		selectdo
+			tpisg220.dela = 0
+			tpisg220.delf = 0
+			tpisg220.drem = ""
+			
+			|*Case1.1 BaselineStartDate > CurrentDate and ActualProgress=0 and OutlookStartDate<=BaseLineStartDate
+			|StartDelay = 0, FinishDelay = 0, Not Due
+			if tpisg220.sdst > TodayDate and tpisg220.cpgv = 0 and tpisg220.otsd<=tpisg220.sdst then
+				tpisg220.dela = 0
+				tpisg220.delf = 0
+				tpisg220.drem = "1.1 Not Due"
+			endif
+			
+			|*Case1.2 BaselineStartDate > CurrentDate and ActualProgress=0 and OutlookStartDate>BaseLineStartDate
+			|StartDelay = if CurrentDate>OutlookStartDate then CurrentDate-BaselineStartDate 
+			|Else OutlookStartDate-BaselineStartDate
+			|FinishDelay = if CurrentDate>OutlookFinishDate then CurrentDate-BaselineFinishDate
+			|Else OutlookFinishDate-BaselineFinishDate
+			|Remarks - 1.2 Not due but Delay Expected
+			
+			if tpisg220.sdst > TodayDate and tpisg220.cpgv = 0  and tpisg220.otsd > tpisg220.sdst then				
+				if TodayDate > tpisg220.otsd then 
+					|tpisg220.dela = GetDelayDays(TodayDate,tpisg220.sdst,CalenderType)
+					tpisg220.dela = GetDelayDays(tpisg220.sdst,tpisg220.otsd,CalenderType)
+				else
+					tpisg220.dela = GetDelayDays(tpisg220.sdst,tpisg220.otsd,CalenderType)
+				endif
+				
+				if TodayDate > tpisg220.oted then 
+					|tpisg220.delf = GetDelayDays(TodayDate,tpisg220.sdfn,CalenderType)
+					tpisg220.delf = GetDelayDays(tpisg220.sdfn,tpisg220.oted,CalenderType)
+				else
+					tpisg220.delf = GetDelayDays(tpisg220.sdfn,tpisg220.oted,CalenderType)
+				endif
+					
+				tpisg220.drem = "1.2 Not Due but Delay Expected"
+			endif
+			
+
+			
+			|*Case2.1 BaselineStartDate > CurrentDate and ActualProgressPerc >0 and <100 and OutlookFinish<=BaseLineFinish
+			|*StartDelay=BaselineStartDate-ActualStartDate, FinishDelay=BaselineFInishDate-OutlookFinishDate
+			|Remarks = "2.1 Early Start"
+			if tpisg220.sdst>TodayDate and tpisg220.cpgv>0 and tpisg220.cpgv<100 and tpisg220.oted<=tpisg220.sdfn and tpisg220.acsd > ValidDate then
+				tpisg220.dela = GetDelayDays(tpisg220.sdst,tpisg220.acsd,CalenderType)
+				tpisg220.delf = GetDelayDays(tpisg220.sdfn,tpisg220.oted,CalenderType)
+				tpisg220.drem = "2.1 Early Start"
+			endif
+			
+			|*Case2.2 BaselineStartDate > CurrentDate and ActualProgressPerc >0 and <100 and OutlookFinish>BaseLineFinish
+			|*StartDelay=BaselineStartDate-ActualStartDate, FinishDelay=BaselineFinishDate-OutlookFinishDate
+			|Remarks = "2.2 Early Start but Delay Expected"
+			if tpisg220.sdst>TodayDate and tpisg220.cpgv>0 and tpisg220.cpgv<100 and tpisg220.oted>tpisg220.sdfn and tpisg220.acsd > ValidDate then
+				tpisg220.dela = GetDelayDays(tpisg220.sdst,tpisg220.acsd,CalenderType)
+				tpisg220.delf = GetDelayDays(tpisg220.sdfn,tpisg220.oted,CalenderType)
+				tpisg220.drem = "2.2 Early Start but Delay Expected"
+			endif
+			
+			|*Case3.0 BaselineStartDate <= CurrentDate and ActualProgressPerc=0
+			|*StartDelay=if CurrentDate>OutlookStartDate then CurrentDate-BaselineStartDate Else OutlookStartDate-BaselineStartDate
+			|*FinishDelay=if CurrentDate>OutlookFinishDate then CurrentDate-BaselineFinishDate Else OutlookFinishDate-BaselineFinishDate
+			|* Remarks = "3.0 Due Not Started"
+			if tpisg220.sdst<=TodayDate and tpisg220.cpgv=0 then
+				if TodayDate > tpisg220.otsd then 
+					|tpisg220.dela = GetDelayDays(tpisg220.sdst,TodayDate,CalenderType)
+					tpisg220.dela = GetDelayDays(tpisg220.sdst,tpisg220.otsd,CalenderType)
+				else
+					tpisg220.dela = GetDelayDays(tpisg220.sdst,tpisg220.otsd,CalenderType)
+				endif
+				
+				if TodayDate > tpisg220.oted then 
+					|tpisg220.delf = GetDelayDays(tpisg220.sdfn,TodayDate,CalenderType)
+					tpisg220.delf = GetDelayDays(tpisg220.sdfn,tpisg220.oted,CalenderType)
+				else
+					tpisg220.delf = GetDelayDays(tpisg220.sdfn,tpisg220.oted,CalenderType)
+				endif
+				tpisg220.drem = "3.0 Due Not Started"
+			endif
+					
+			|*Case4.0 BaselineStartDate<=CurrentDate and PlannedProgressPerc<100 and ActualProgressPerc>0 and <100 and <PlannedProgressPerc
+			|*StartDelay=ActualStartDate-BaselineStartDate
+			|*FinishDelay=OutlookFinishDate - BaselineFInishDate
+			|*Remarks = "4.0 Early/Delayed/OnTIme Start, Progress Slow ,Early/Delayed/OnTIme Finish expected"
+
+			if tpisg220.sdst<=TodayDate and tpisg220.pprc<100 and tpisg220.cpgv>0 and tpisg220.cpgv<100 and tpisg220.cpgv<tpisg220.pprc and tpisg220.acsd > ValidDate then
+				tpisg220.dela = GetDelayDays(tpisg220.sdst,tpisg220.acsd,CalenderType)
+				tpisg220.delf = GetDelayDays(tpisg220.sdfn,tpisg220.oted,CalenderType)								
+				tpisg220.drem = "4.0 "&ReturnDelayRemarks(tpisg220.dela, ", Progress Slow,", tpisg220.delf)&" Expected"
+			endif
+			
+			
+			|*Case5.0 BaselineStartDate<=CurrentDate and PlannedProgressPerc<100 and ActualProgressPerc>0 and <100 and >=PlannedProgressPerc
+			|*StartDelay=ActualStartDate-BaselineStartDate
+			|*FinishDelay=OutlookFinishDate - BaselineFinishDate
+			|*Remarks = "5.0 Early/Delayed/OnTIme Start, Progress Fast, Early/Delayed/OnTIme Finish expected"
+
+			if tpisg220.sdst<=TodayDate and tpisg220.pprc<100 and tpisg220.cpgv>0 and tpisg220.cpgv<100 and tpisg220.cpgv>=tpisg220.pprc and tpisg220.acsd > ValidDate then
+				tpisg220.dela = GetDelayDays(tpisg220.sdst,tpisg220.acsd,CalenderType)
+				tpisg220.delf = GetDelayDays(tpisg220.sdfn,tpisg220.oted,CalenderType)
+				tpisg220.drem = "5.0 "&ReturnDelayRemarks(tpisg220.dela, ", Progress Fast, ", tpisg220.delf)&" Expected"
+			endif
+			
+			|*Case6.0 BaselineStartDate<=CurrentDate and PlannedProgressPerc=100 and ActualProgressPerc>0 and <100 and <PlannedProgressPerc
+			|*StartDelay=ActualStartDate-BaselineStartDate
+			|*FinishDelay=OutlookFinishDate - BaselineFinishDate
+			|*Remarks = '6.0 Early/Delayed/OnTime Start, Progress SLow, Delayed Finish expected"
+
+			if tpisg220.sdst<=TodayDate and tpisg220.pprc=100 and tpisg220.cpgv>0 and tpisg220.cpgv<100 and tpisg220.cpgv<tpisg220.pprc and tpisg220.acsd > ValidDate then
+				tpisg220.dela = GetDelayDays(tpisg220.sdst,tpisg220.acsd,CalenderType)
+				tpisg220.delf = GetDelayDays(tpisg220.sdfn,tpisg220.oted,CalenderType)				
+				tpisg220.drem = "6.0 "&ReturnDelayRemarks(tpisg220.dela, ", Progress Slow", 999999.00)&", Delayed Finish Expected"
+			endif
+			
+			|*Case7.0 ActualProgressPerc=100%
+			|*StartDelay=ActualStartDate-BaselineStartDate
+			|*FinishDelay=ActualFinishDate-BaselineFinishDate
+			|*Remarks = "7.0 Early/Ontime/Delay Finished"
+			if tpisg220.cpgv=100 and tpisg220.acsd > ValidDate then
+				tpisg220.dela = GetDelayDays(tpisg220.sdst,tpisg220.acsd,CalenderType)
+				tpisg220.delf = GetDelayDays(tpisg220.sdfn,tpisg220.acfn,CalenderType)
+				tpisg220.drem = "7.0 "&ReturnDelayRemarks(tpisg220.dela, "",tpisg220.delf)
+			endif
+			
+			db.update(ttpisg220, db.retry, e)			
+		endselect
+		commit.transaction()
+		
+		finish.date = utc.num()								|#ISGEC016016.sn
+		
+		import("prog.name$", sess.code)
+		
+		insert_start_date_in_history(sess.code, tpisg220.cprj, start.date, finish.date)
+													|#ISGEC016016.en
+		
+	endselect
+}
+
+Function extern string ReturnDelayRemarks(domain tcqiv1 StartDelay, domain tcmcs.str50 rem2, domain tcqiv1 EndDelay)
+{
+domain tcmcs.str100 Remarks
+domain tcmcs.str50 rem1, rem3
+if StartDelay <0 then 
+		rem1 = "Early Start, "
+else
+	if tpisg220.dela>0 then
+		rem1 = "Delayed Start"
+	else
+		rem1 = "Ontime Start, "
+	endif
+endif	
+
+if EndDelay = 999999.00 then|Blank rem3 required
+	rem3 = ""
+else
+	if EndDelay<0 then 
+			rem3 = "Early End"
+	else
+		if tpisg220.delf>0 then
+			rem3 = "Delayed End"
+		else
+			rem3 = "Ontime End"
+		endif
+	endif	
+endif
+
+Remarks  = shiftl$(strip$(rem1))&" "&shiftl$(strip$(rem2)) &" "& shiftl$(strip$(rem3))
+Return(Remarks)
+}
+
+|*******************Outlook curve data generation Logis Starts here********************
+
+|Logic1 - For Activities where Actual Progress is Zero
+|Logic2 - For Activities where Actual Progress is 100%
+|Logic3 - For Actities where progress is >0 and <100
+
+| function extern UpdateOutlookProgressForChildsActualProgressZero(domain tccprj cprj,domain tfgld.date input.date,domain tpcalender.typ type.of.calender)
+| {
+| 	InitializeOutlookVariables()
+
+| 	select	tpisg220.cact, tpisg220.otsd, tpisg220.dura, tpisg220.oprc, tpisg220.olap
+| 	from	tpisg220	for update
+| 	where	tpisg220._index1 = {:cprj}
+| 	and	tpisg220.cact <> "PARENT"
+| 	and 	tpisg220.cpgv = 0
+| 	|and tpisg220.pact = '50500300M1'
+| 	selectdo
+| 		if tpisg220.otsd <=input.date then
+| 			if tpisg220.dura = 0 then
+| 				if input.date => tpisg220.otsd then
+| 					tpisg220.olap = 0
+| 					tpisg220.oprc = 100
+| 				endif
+| 			else
+| 				NonWorkingDays = GetNonWorkingDays(tpisg220.otsd,input.date,type.of.calender)
+| 				ElapsedDays = (input.date - tpisg220.otsd + 1) - NonWorkingDays
+| 				
+| 				if ElapsedDays > tpisg220.dura then
+| 					ElapsedDays = tpisg220.dura
+| 				endif
+| 			
+| 				tpisg220.olap = ElapsedDays
+| 				tpisg220.oprc = (ElapsedDays/tpisg220.dura)*100
+| 				tpisg220.odur = tpisg220.dura
+| 			endif
+| 			db.update(ttpisg220, db.retry, e)			
+| 		else
+| 			tpisg220.olap = 0
+| 			tpisg220.oprc = 0
+| 			tpisg220.odur = 0
+| 			db.update(ttpisg220, db.retry, e)
+| 		endif
+| 		commit.transaction()
+| 	endselect
+| }
+
+| function extern UpdateOutlookProgressForChildsActualProgress100(domain tccprj cprj,domain tfgld.date input.date,domain tpcalender.typ type.of.calender)
+| {
+| 	InitializeOutlookVariables()
+
+| 	select	tpisg220.cact, tpisg220.otsd, tpisg220.dura, tpisg220.oprc, tpisg220.olap
+| 	from	tpisg220	for update
+| 	where	tpisg220._index1 = {:cprj}
+| 	and	tpisg220.cact <> "PARENT"
+| 	and 	tpisg220.cpgv  >=99.99
+| 	|and tpisg220.pact = '50500300M1'
+| 	selectdo
+| 		tpisg220.olap = 0
+| 		tpisg220.oprc = 0
+| 		tpisg220.odur = 0
+| 		db.update(ttpisg220, db.retry, e)
+| 		commit.transaction()
+| 	endselect
+| }
+
+| function extern UpdateOutlookProgressForChildsActualProgressPartial(domain tccprj cprj,domain tfgld.date input.date,domain tpcalender.typ type.of.calender)
+| {
+| 	InitializeOutlookVariables()
+| 	
+| 	select	tpisg220.cact, tpisg220.oted, tpisg220.dura, tpisg220.oprc, tpisg220.olap
+| 	from	tpisg220	for update
+| 	where	tpisg220._index1 = {:cprj}
+| 	and	tpisg220.cact <> "PARENT"
+| 	and 	tpisg220.cpgv > 0 and tpisg220.cpgv <99.99
+| 	|and tpisg220.pact = '50500300M1'
+| 	selectdo
+| 		BalanceDays = 0
+| 		if tpisg220.otsd <=input.date and tpisg220.otsd <> 0 then			
+| 			ActualElapsedDays = 0
+| 			ActualElapsedDays = (round(tpisg220.cpgv,0,1) * tpisg220.dura)/100
+| 			BalanceDays = tpisg220.dura - ActualElapsedDays
+| 			StartDate = 0
+| 			StartDate = GetStartDate(BalanceDays, tpisg220.oted,type.of.calender)
+| 			NonWorkingDays = GetNonWorkingDays(StartDate,input.date,type.of.calender)
+| 			OutlookElapsedDays = (input.date - StartDate + 1) - NonWorkingDays
+| 				
+| 			if OutlookElapsedDays > BalanceDays then
+| 				OutlookElapsedDays = BalanceDays
+| 			endif
+| 			
+| 			tpisg220.olap = OutlookElapsedDays
+| 			tpisg220.oprc = (OutlookElapsedDays/BalanceDays)*100
+| 			tpisg220.odur = BalanceDays
+| 			
+| 			db.update(ttpisg220, db.retry, e)			
+| 		else
+| 			tpisg220.olap = 0
+| 			tpisg220.oprc = 0
+| 			tpisg220.odur = 0
+| 			db.update(ttpisg220, db.retry, e)
+| 		endif
+| 		commit.transaction()
+| 	endselect
+| }
+
+
+| function extern UpdateOutlookProgressForParent(domain tccprj		Cprj,
+| 					domain	tcmcs.long	OutLine,
+| 					domain tfgld.date	input.date)
+| {
+| 	domain tcamnt		SumElapsed
+| 	domain	tcorno		ActivityType
+| 	domain tcmcs.str30	atpisg220cact
+| 	
+| 	select	tpisg220.cact, tpisg220.otsd, tpisg220.ddur
+| 	from	tpisg220 for update
+| 	where	tpisg220._index1 = {:Cprj}
+| 	and	tpisg220.outl =:OutLine
+| 	and	tpisg220.acty = "PARENT"
+| 	|and	tpisg220.sub1 = :v.iref
+| 	and	tpisg220.otsd <=:input.date
+| 	|and tpisg220.pact = '50500300M1'
+| 	selectdo
+| 		Duration = 0
+| 		ElapsedDays = 0
+| 		InitializeOutlookVariables()
+| 		
+| 		SumElapsed = 0
+| 		select	atpisg220.cact:atpisg220cact,atpisg220.olap:ElapsedDays
+| 		from	tpisg220 atpisg220
+| 		where	atpisg220._index1 = {:Cprj}
+| 		and	atpisg220.pact =:tpisg220.cact
+| 		and 	atpisg220.cact <>:tpisg220.cact
+| 		selectdo	
+| 			SumElapsed = SumElapsed + ElapsedDays		
+| 		endselect
+| 		
+| 		tpisg220.olap = SumElapsed
+| 		
+| 		if (tpisg220.ddur <> 0) and (SumElapsed <> 0) then
+| 			tpisg220.oprc = SumElapsed/tpisg220.ddur * 100
+| 		endif
+| 		db.update(ttpisg220, db.retry, e)
+| 		commit.transaction()
+| 	endselect
+| }
+
+| function InitializeOutlookVariables()
+| {
+| 	Duration = 0
+| 	ElapsedDays = 0
+| 	NonWorkingDays = 0
+| 	ActualElapsedDays = 0
+| 	StartDate = 0
+| 	OutlookElapsedDays = 0
+| }
+
+
+| Function extern UpdateProjectLevelOutlookPercentage(domain tccprj Cprj, domain tfgld.date CurrentDate)
+| {
+| 	domain tcamnt PlannedElapsedDays,ParentDuration,ChildDuration,ProjectPlannedPerc
+| 	
+| 	PlannedElapsedDays = 0
+| 	ParentDuration = 0
+| 	ChildDuration = 0
+| 	ProjectPlannedPerc = 0
+| 	
+| 	select	sum(tpisg220.olap):PlannedElapsedDays
+| 	from	tpisg220
+| 	where	tpisg220._index1 = {:Cprj}
+| 	and	tpisg220.outl =1
+| 	|and	tpisg220.sub1 = :v.iref
+| 	selectdo endselect
+| 	
+| 	select	sum(tpisg220.odur):ParentDuration
+| 	from	tpisg220
+| 	where	tpisg220._index1 = {:Cprj}
+| 	and	tpisg220.outl =1
+| 	and	tpisg220.acty = "PARENT"
+| 	|and	tpisg220.sub1 = :v.iref
+| 	selectdo endselect
+| 	
+| 	select	sum(tpisg220.odur):ChildDuration
+| 	from	tpisg220
+| 	where	tpisg220._index1 = {:Cprj}
+| 	and	tpisg220.outl =1
+| 	and	tpisg220.acty <> "PARENT"
+| 	|and	tpisg220.sub1 = :v.iref
+| 	selectdo endselect
+| 		
+| 	if PlannedElapsedDays <> 0 and (ParentDuration + ChildDuration) <> 0 then 
+| 		ProjectPlannedPerc = (PlannedElapsedDays/(ParentDuration + ChildDuration)) * 100
+| 	endif
+| 	
+| 	select	tpisg249.*
+| 	from	tpisg249	for update
+| 	where	tpisg249._index1 = {:Cprj,:CurrentDate}
+| 	selectdo
+| 		tpisg249.prop = ProjectPlannedPerc
+| 		tpisg249.plap = PlannedElapsedDays
+| 		tpisg249.pdfp = ParentDuration
+| 		tpisg249.cdfp = ChildDuration
+| 		tpisg249.gdat = utc.num() |Plan Generation Date
+| 		db.update(ttpisg249, db.retry, e)
+| 	selectempty
+| 		tpisg249.cprj = Cprj
+| 		tpisg249.curr = CurrentDate
+| 		tpisg249.prop = ProjectPlannedPerc
+| 		tpisg249.proa = 0	
+| 		tpisg249.plap = PlannedElapsedDays
+| 		tpisg249.pdfp = ParentDuration
+| 		tpisg249.cdfp = ChildDuration
+| 		tpisg249.gdat = utc.num() |Plan Generation Date
+| 		db.insert(ttpisg249, db.skip.dupl, e)
+| 	endselect
+| 	commit.transaction()
+| }
+
+| Function extern UpdateActivityTypeLevelOutlookPercentage(domain tccprj Cprj, domain	tfgld.date CurrentDate)
+| {
+| 	domain tcamnt PlannedElapsedDays,ChildDuration,ActivityPlannedPerc	|,ParentDuration
+| 	domain tcorno	ActivityType
+
+| 	ActivityType=""
+| 	
+| 	select distinct acty:ActivityType from tpisg220 
+| 	where tpisg220._index1 = {:Cprj}
+| 	selectdo
+| 		PlannedElapsedDays = 0
+| 		ChildDuration = 0
+| 		ActualElapsedDays = 0
+| 		ActivityPlannedPerc = 0
+| 		
+| 		select	sum(tpisg220.olap):PlannedElapsedDays, sum(tpisg220.odur):ChildDuration
+| 		from	tpisg220
+| 		where	tpisg220._index1 = {:Cprj}
+| 		and	tpisg220.acty <> "PARENT"
+| 		and	tpisg220.acty = :ActivityType
+| 		selectdo endselect
+| 			
+| 		if PlannedElapsedDays <> 0 and ChildDuration <> 0 then 
+| 			ActivityPlannedPerc = (PlannedElapsedDays/ChildDuration) * 100
+| 		endif		
+| 	
+| 		select	tpisg248.*
+| 		from	tpisg248 for update
+| 		where	tpisg248._index1 = {:Cprj,:ActivityType,:Currentdate}
+| 		selectdo
+| 			
+| 			tpisg248.pprc = ActivityPlannedPerc
+| 			tpisg248.plap = PlannedElapsedDays
+| 			tpisg248.pdfp = 0
+| 			tpisg248.cdfp = ChildDuration
+| 			tpisg248.gdat = utc.num() |Plan Generation Date
+| 			db.update(ttpisg248, db.retry, e)
+| 		selectempty
+| 			tpisg248.cprj = Cprj
+| 			tpisg248.acty = ActivityType
+| 			tpisg248.date = Currentdate
+| 			tpisg248.pprc = ActivityPlannedPerc
+| 			tpisg248.acpr = 0
+| 			tpisg248.plap = PlannedElapsedDays
+| 			tpisg248.pdfp = 0
+| 			tpisg248.cdfp = ChildDuration
+| 			tpisg248.gdat = utc.num() |Plan Generation Date
+| 			db.insert(ttpisg248, db.skip.dupl, e)
+| 		endselect
+| 	endselect
+| 	commit.transaction()
+| }
+
+
+| Function extern long UpdateOutlookCurveData()
+| {
+| 	domain tpcalender.typ CalenderType
+| 	domain	tccprj	CTProject
+| 	domain tfgld.date MinStartDate, MaxEndDate,d, ValidDate
+| 		
+| 	CTProject = ""
+| 	ValidDate=date.to.num(2000,01,01)
+| 	
+| 	select distinct cprj:CTProject from tpisg220 where cprj = "JB1124" order by cprj|** project hardcoded
+| 	selectdo
+| 		MinStartDate=0
+| 		MaxEndDate=0
+| 		ParentOutlookDurationCalculation(CTProject)
+| 				
+| 		CalenderType = ltoe(0)		
+| 		select tpisg245.ctyp:CalenderType from tpisg245 where cprj = :CTProject selectdo endselect
+| 		
+| 		select min(otsd):MinStartDate, max(oted):MaxEndDate from tpisg220 where cprj = :CTProject
+| 		and otsd > :ValidDate
+| 		selectdo endselect
+| 		
+| 		FromOutline = 9
+| 		ToOutline = 1
+| 		
+| 		for d= MinStartDate to MaxEndDate STEP 1
+| 			UpdateOutlookProgressForChildsActualProgressZero(CTProject, d, CalenderType)
+| 			UpdateOutlookProgressForChildsActualProgress100(CTProject, d, CalenderType)
+| 			UpdateOutlookProgressForChildsActualProgressPartial(CTProject, d, CalenderType)
+| 						
+| 			for i = FromOutline to ToOutline STEP -1
+| 				UpdateOutlookProgressForParent(CTProject, i, d)
+| 			endfor			
+| 			
+| 			UpdateProjectLevelOutlookPercentage(CTProject,d)			
+| 			UpdateActivityTypeLevelOutlookPercentage(CTProject,d)
+| 		endfor
+| 			
+| 		return(2)
+| 	endselect
+| 	
+| 	return(1)
+| 	
+| }
+
+
+|*****************New Logic for outlook dated 2nd Jan 2019 ****************************
+
+|Delete all records for project in table tpisg252
+|Insert record for all Activities(Project, Activity Code,ActualPerc, OutlookStartDate, OutlookFinishDate,Outline, Duration
+|Calcualte BalancePerc, No. of Back Days,|Derive Start 
+|Update tpisg252 with BalancePerc,DerivedOutlookDuration,DerivedOutlookStartDate, DerivedOutlookElapsedDays
+|Update all records for child activities with same logic as planned perc
+|Update all records for parent activities  with same logic as planned perc
+|calculate and Update Project level curve data
+|calculate and update Activity Typewise curve data
+
+
+
+function extern UpdateOutlookProgressForChildsActualProgress_New(domain tccprj cprj,domain tfgld.date input.date,domain tpcalender.typ type.of.calender)
+{
+	domain tpcalender.typ CalenderType
+	domain tfgld.date ValidDate, OutlookFinishDate
+	domain	tcperc BalancePerc, CumulativePerc, PerDayPerc
+	domain	tcmcs.int NoofBackDays, OutlookDuration
+	domain tcyesno		WorkingDayFlag
+	
+	ValidDate=date.to.num(2000,01,01)
+	
+	|Delete all records for project in table tpisg252
+	select * from tpisg252 for update
+	where cprj = :cprj 
+	selectdo
+		db.delete(ttpisg252, e)
+	endselect
+	commit.transaction()
+	
+	|Insert record for all Activities in table tpisg252 
+
+	select	* from	tpisg220
+	where	tpisg220._index1 = {:cprj}
+	selectdo
+		select cprj,pcod,cact,actp,pact,odur,bohd,tpisg252.desc,acty,outl,cpgv,otsd,oted,otsd1,odur1
+		from tpisg252 for update
+		where cprj = :tpisg220.cprj and cact = :tpisg220.cact
+		selectdo
+		selectempty
+			
+			tpisg252.cprj = tpisg220.cprj	|Project
+			tpisg252.pcod = tpisg220.pcod	|Product
+			tpisg252.cact = tpisg220.cact	|Activity Code
+			tpisg252.actp = tpisg220.actp	|Activity Position
+			tpisg252.pact = tpisg220.pact	|Parent Activity
+			tpisg252.odur = tpisg220.odur	|Outlook Duration
+			tpisg252.bohd = tpisg220.bohd	|Business Handle
+			tpisg252.desc = tpisg220.desc	|Activity Description
+			tpisg252.acty = tpisg220.acty	|Activity Type
+			tpisg252.outl = tpisg220.outl	|Outline
+			tpisg252.cpgv = tpisg220.cpgv	|Actual Progress
+			tpisg252.otsd = tpisg220.otsd	|Outlook Start Date
+			tpisg252.oted = tpisg220.oted	|Outlook Finish Date
+			if tpisg220.acty <> "PARENT" then
+				BalancePerc = 100 - tpisg220.cpgv
+				NoofBackDays = BalancePerc * OutlookDuration/100
+				tpisg252.otsd1 = GetStartDate(BalanceDays, OutlookFinishDate,type.of.calender)
+				tpisg252.odur1 = NoofBackDays	
+			else
+				tpisg252.otsd1 = 0
+				tpisg252.odur1 = 0
+			endif
+			
+			db.insert(ttpisg252, db.skip.dupl, e)
+		endselect			
+	endselect
+	commit.transaction()		
+	
+}
+
+function extern UpdateOutlookProgressForChild(domain tccprj	cprj,domain tfgld.date	input.date,domain tpcalender.typ type.of.calender)
+{
+	InitializeVariables()
+
+	|Initialise.ElapsedDays.PlannedPercentage()| removed to reinitialize Elapsed Days and Planned Progress within current loop to increase perfirmance
+	
+	select	tpisg252.cact, tpisg252.otsd1, tpisg252.odur1, tpisg252.oprc, tpisg252.olap
+	from	tpisg252	for update
+	where	tpisg252._index1 = {:cprj}
+	and	tpisg252.acty <> "PARENT"
+	selectdo
+		if tpisg252.otsd1 <=input.date then
+			if tpisg252.odur = 0 then
+				if input.date => tpisg252.otsd1 then
+					tpisg252.olap = 0
+					tpisg252.oprc = 100
+				endif
+			else
+				NonWorkingDays = GetNonWorkingDays(tpisg252.otsd1,input.date,type.of.calender)
+				ElapsedDays = (input.date - tpisg252.otsd1 + 1) - NonWorkingDays
+				
+				if ElapsedDays > tpisg252.odur1 then
+					ElapsedDays = tpisg252.odur1
+				endif
+			
+				tpisg252.olap = ElapsedDays
+				tpisg252.oprc = (ElapsedDays/tpisg252.odur1)*100
+			endif
+			db.update(ttpisg252, db.retry, e)			
+		else
+			tpisg252.olap = 0
+			tpisg252.oprc = 0
+			db.update(ttpisg252, db.retry, e)
+		endif
+		commit.transaction()
+	endselect
+}
+
+function extern UpdateOutlookProgressForParent1(domain tccprj		Cprj,
+					domain	tcmcs.long	OutLine,
+					domain tfgld.date	input.date)
+{
+	domain tcamnt		SumElapsed
+	domain	tcorno		ActivityType
+	domain tcmcs.str30	atpisg252cact
+	
+	select	tpisg252.cact, tpisg252.otsd1, tpisg252.odur1
+	from	tpisg252 for update
+	where	tpisg252._index1 = {:Cprj}
+	and	tpisg252.outl =:OutLine
+	and	tpisg252.acty = "PARENT"
+	|and	tpisg252.sub1 = :v.iref
+	and	tpisg252.otsd1 <=:input.date
+	selectdo
+		Duration = 0
+		ElapsedDays = 0
+		InitializeVariables()
+		
+		SumElapsed = 0
+		select	atpisg252.cact:atpisg252cact,atpisg252.olap:ElapsedDays
+		from	tpisg252 atpisg252
+		where	atpisg252._index1 = {:Cprj}
+		and	atpisg252.pact =:tpisg252.cact
+		and 	atpisg252.cact <>:tpisg252.cact
+		selectdo	
+			SumElapsed = SumElapsed + ElapsedDays		
+		endselect
+
+		
+		tpisg252.olap = SumElapsed
+		
+		if (tpisg252.odur1 <> 0) and (SumElapsed <> 0) then
+			tpisg252.oprc = SumElapsed/tpisg252.odur1 * 100
+		endif
+		db.update(ttpisg252, db.retry, e)
+		commit.transaction()
+	endselect
+}
+
+Function extern UpdateProjectLevelOutlookPercentage(domain tccprj Cprj, domain tfgld.date CurrentDate)
+{
+	domain tcamnt PlannedElapsedDays,ParentDuration,ChildDuration,ProjectPlannedPerc
+	
+	PlannedElapsedDays = 0
+	ParentDuration = 0
+	ChildDuration = 0
+	ProjectPlannedPerc = 0
+	
+	select	sum(tpisg252.olap):PlannedElapsedDays
+	from	tpisg252
+	where	tpisg252._index1 = {:Cprj}
+	and	tpisg252.outl =1
+	selectdo endselect
+	
+	select	sum(tpisg252.odur1):ParentDuration
+	from	tpisg252
+	where	tpisg252._index1 = {:Cprj}
+	and	tpisg252.outl =1
+	and	tpisg252.acty = "PARENT"
+	selectdo endselect
+	
+	select	sum(tpisg252.odur1):ChildDuration
+	from	tpisg252
+	where	tpisg252._index1 = {:Cprj}
+	and	tpisg252.outl =1
+	and	tpisg252.acty <> "PARENT"
+	selectdo endselect
+		
+	if PlannedElapsedDays <> 0 and (ParentDuration + ChildDuration) <> 0 then 
+		ProjectPlannedPerc = (PlannedElapsedDays/(ParentDuration + ChildDuration)) * 100
+	endif
+	
+	select	tpisg249.*
+	from	tpisg249 for update
+	where	tpisg249._index1 = {:Cprj,:CurrentDate}
+	selectdo
+		tpisg249.prop = ProjectPlannedPerc
+		tpisg249.plap = PlannedElapsedDays
+		tpisg249.pdfp = ParentDuration
+		tpisg249.cdfp = ChildDuration
+		tpisg249.gdat = utc.num() |Plan Generation Date
+		db.update(ttpisg249, db.retry, e)
+	selectempty
+		tpisg249.cprj = Cprj
+		tpisg249.curr = CurrentDate
+		tpisg249.prop = ProjectPlannedPerc
+		tpisg249.proa = 0	
+		tpisg249.plap = PlannedElapsedDays
+		tpisg249.pdfp = ParentDuration
+		tpisg249.cdfp = ChildDuration
+		tpisg249.gdat = utc.num() |Plan Generation Date
+		db.insert(ttpisg249, db.skip.dupl, e)
+	endselect
+	commit.transaction()
+}
+
+Function extern UpdateActivityTypeLevelOutlookPercentage(domain tccprj Cprj, domain	tfgld.date CurrentDate)
+{
+	domain tcamnt PlannedElapsedDays,ChildDuration,ActivityPlannedPerc	|,ParentDuration
+	domain tcorno	ActivityType
+
+	|PlannedElapsedDays = 0
+	|ParentDuration = 0
+	|ChildDuration = 0
+	|ActivityPlannedPerc = 0
+	ActivityType=""
+	
+	select distinct acty:ActivityType from tpisg252 
+	where tpisg252._index1 = {:Cprj}
+	selectdo
+		PlannedElapsedDays = 0
+		ChildDuration = 0
+		ActualElapsedDays = 0
+		ActivityPlannedPerc = 0
+		
+		select	sum(tpisg252.olap):PlannedElapsedDays, sum(tpisg252.odur1):ChildDuration
+		from	tpisg252
+		where	tpisg252._index1 = {:Cprj}
+		and	tpisg252.acty <> "PARENT"
+		and	tpisg252.acty = :ActivityType
+		selectdo endselect
+			
+		if PlannedElapsedDays <> 0 and ChildDuration <> 0 then 
+			ActivityPlannedPerc = (PlannedElapsedDays/ChildDuration) * 100
+		endif		
+	
+		select	tpisg248.*
+		from	tpisg248 for update
+		where	tpisg248._index1 = {:Cprj,:ActivityType,:Currentdate}
+		selectdo
+			
+			tpisg248.pprc = ActivityPlannedPerc
+			tpisg248.plap = PlannedElapsedDays
+			tpisg248.pdfp = 0
+			tpisg248.cdfp = ChildDuration
+			tpisg248.gdat = utc.num() |Plan Generation Date
+			db.update(ttpisg248, db.retry, e)
+		selectempty
+			tpisg248.cprj = Cprj
+			tpisg248.acty = ActivityType
+			tpisg248.date = Currentdate
+			tpisg248.pprc = ActivityPlannedPerc
+			tpisg248.acpr = 0
+			tpisg248.plap = PlannedElapsedDays
+			tpisg248.pdfp = 0
+			tpisg248.cdfp = ChildDuration
+			tpisg248.gdat = utc.num() |Plan Generation Date
+			db.insert(ttpisg248, db.skip.dupl, e)
+		endselect
+	endselect
+	commit.transaction()
+}
+
+function extern insert_start_date_in_history(							|#ISGEC016016.sn
+						domain	tcsess	i.sess,
+						domain	tccprj	i.cprj,			
+						domain	tcdate	i.sdat,
+						domain	tcdate	i.fdat
+									)
+{
+	domain	tcsern		i.sern
+	
+	i.sern = 0
+	
+	select	tpisg251.*
+	from	tpisg251
+	where	tpisg251._index1 = {:i.sess,:i.cprj,:i.sdat}
+	selectdo
+	selectempty
+		tpisg251.sess = i.sess
+		tpisg251.proj = i.cprj				
+		tpisg251.sern = i.sern + 1
+		tpisg251.stdt = i.sdat
+		tpisg251.fsdt = i.fdat
+		tpisg251.user = logname$
+		db.insert(ttpisg251,db.skip.dupl,e)
+		commit.transaction()
+	endselect
+}
+	

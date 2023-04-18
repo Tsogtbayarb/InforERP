@@ -1,0 +1,1139 @@
+|******************************************************************************
+|* tpisgdll0011  0  VRC B61U a7 live
+|* Sanction Control Header
+|* tools1
+|* 14-06-06 [10:35]
+|******************************************************************************
+|* Script Type: Library
+
+|* ISEC015001, Shilpa Janardanan, 15/05/2015
+|* Updating amount in Sanction Control lines(tpisg017) only in approved status(PO)
+|******************************************************************************
+	table	ttpisg011
+	table	ttpisg012
+	table	ttpisg013
+	table	ttpptc101
+	table	ttpisg007
+	table	ttpisg008
+	table	ttpmsl000
+	table	ttpisg017
+	table	ttdpur400
+#include <bic_dam>
+|********** FORM COMMAND VALUE
+|	10	-  	Send For Approval
+|	20	- 	Approved
+|	30	-	Partial Revise
+|	40	-	Complete Revise
+|	50	-	L4 Revise
+|	60	- 	Cancel	
+function extern boolean tpisgdll0011.sanction_form_command_allowed
+		(
+			long 				FORM_COMMAND,
+			domain	tpisg.sanction		i.acti,		|Activity
+			domain	tpisg.sanction		i.act1		|Approval Activity	
+		)
+{
+	on case i.acti
+	case 	tpisg.sanction.launch:
+		
+		if not approval_type(FORM_COMMAND,i.act1) then
+			return(false)
+		endif
+		break
+	case 	tpisg.sanction.partial:
+		if not approval_type(FORM_COMMAND,i.act1) then
+			return(false)
+		endif
+		break
+	case	tpisg.sanction.complete:
+		if not approval_type(FORM_COMMAND,i.act1) then
+			return(false)
+		endif
+		break
+	case 	tpisg.sanction.l4revise:
+		if not approval_type(FORM_COMMAND,i.act1) then
+			return(false)
+		endif
+		break
+	endcase
+	return(true)
+}
+
+
+function boolean approval_type
+		(
+			long 				FORM_COMMAND,	|Form Command
+			domain	tpisg.sanction		i.act1		|Approval Activity	
+		)
+{		
+	on case i.act1
+		case tpisg.sanction.free:
+			on case FORM_COMMAND
+				case 10:
+					break
+				case 20:
+				case 30:
+				case 40:
+				case 50:
+				case 60:
+					return(false)
+					break
+			endcase
+			break	
+		case tpisg.sanction.approval:
+			on case FORM_COMMAND
+				case 10:
+				case 30:
+				case 40:
+				case 50:
+					return(false)
+					break
+				case 20:
+				case 60:
+					break
+			endcase
+			break
+			
+		case tpisg.sanction.approved:
+			on case FORM_COMMAND
+				case 10:
+				case 20:
+				case 60:
+					return(false)
+					break
+				case 30:
+				case 40:
+				case 50:
+					
+					break
+			endcase
+			break
+	endcase
+	return(true)		
+}
+
+
+function extern domain tpisg.sanction tpisgdll0011.Determine_Next_Approval_Activity
+			(
+				domain	tpisg.sanction 		i.acti,		|Activity
+				domain	tpisg.sanction		i.new.acti,	|New Activity	
+				domain	tpisg.sanction		i.act1		|Approval Activity	
+			)
+{
+	if 	i.acti <> i.new.acti then
+		return(tpisg.sanction.free)
+	else
+		on case i.act1
+		case 	tpisg.sanction.free:
+			return(tpisg.sanction.approval)
+			break
+		case	tpisg.sanction.approval:
+			return(tpisg.sanction.approved)
+			break
+		endcase
+	endif
+	
+	return(empty)
+}
+
+function extern long tpisgdll0011.Update_Sanction_Submit_Status
+				(
+					domain	tccprj		i.cprj,		|Project Code
+					domain	tcorno		i.vers,		|Version
+					domain	tpisg.sanction	i.acti,		|Existing Activity
+					domain	tpisg.sanction	i.new.acti,	|New Activity
+					domain	tpisg.sanction	i.act1,		|Existing Approval Activity
+					domain	tpisg.sanction	i.new.act1	|New Approval Activity
+				)
+{
+	long ret_val
+	
+	select 	tpisg011.acti
+	from	tpisg011 for update
+	where	tpisg011._index1 = {:i.cprj,:i.vers}
+	and	tpisg011.acti = :i.acti
+	and	tpisg011.act1 = :i.act1
+	selectdo
+		dal.change.object("tpisg011")
+		dal.set.field("tpisg011.acti",i.new.acti)
+		dal.set.field("tpisg011.act1",i.new.act1)
+		dal.set.field("tpisg011.user",logname$)
+		dal.set.field("tpisg011.date",utc.num())
+		dal.set.field("tpisg011.apby","")
+		dal.set.field("tpisg011.apdt",0)
+		ret_val = dal.save.object("tpisg011")
+		if ret_val <> 0 then
+			return(DALHOOKERROR)
+		endif
+	endselect
+	
+	return(0)
+}
+
+
+
+function extern long tpisgdll0011.Update_Sanction_Status
+				(
+					domain	tccprj		i.cprj,		|Project Code
+					domain	tcorno		i.vers,		|Version
+					domain	tpisg.sanction	i.acti,		|Existing Activity
+					domain	tpisg.sanction	i.new.acti,	|New Activity
+					domain	tpisg.sanction	i.act1,		|Existing Approval Activity
+					domain	tpisg.sanction	i.new.act1	|New Approval Activity
+				)
+{
+	long ret_val
+	
+	select 	tpisg011.acti
+	from	tpisg011 for update
+	where	tpisg011._index1 = {:i.cprj,:i.vers}
+	and	tpisg011.acti = :i.acti
+	and	tpisg011.act1 = :i.act1
+	selectdo
+		dal.change.object("tpisg011")
+		dal.set.field("tpisg011.acti",i.new.acti)
+		dal.set.field("tpisg011.act1",i.new.act1)
+		dal.set.field("tpisg011.apby",logname$)
+		dal.set.field("tpisg011.apdt",utc.num())
+		ret_val = dal.save.object("tpisg011")
+		if ret_val <> 0 then
+			return(DALHOOKERROR)
+		endif
+	endselect
+	
+	return(0)
+}
+
+
+function extern domain tpisg.sanction tpisgdll0011.Sanction_Header_Approval_Status
+				(
+					domain	tccprj		i.cprj,		|Project Code
+					domain	tcorno		i.vers		|Version
+				)
+{
+	domain 	tpisg.sanction		o.act1
+	select 	tpisg011.act1:o.act1
+	from	tpisg011
+	where	tpisg011._index1 = {:i.cprj,:i.vers}
+	as set with 1 rows
+	selectdo
+	selectempty
+		o.act1 = empty
+	endselect
+	
+	return(o.act1)
+}
+
+function extern domain tpisg.sanction tpisgdll0011.Sanction_Header_Revision_Type
+				(
+					domain	tccprj		i.cprj,		|Project Code
+					domain	tcorno		i.vers		|Version
+				)
+{
+	domain 	tpisg.sanction		o.acti
+	select 	tpisg011.acti:o.acti
+	from	tpisg011
+	where	tpisg011._index1 = {:i.cprj,:i.vers}
+	as set with 1 rows
+	selectdo
+	selectempty
+		o.acti = empty
+	endselect
+	
+	return(o.acti)
+}
+
+function extern boolean tpisgdll0011.get_description
+			(
+				domain	tpisg.sanction	i.acti,
+				domain	tcccty		i.reas,
+				ref 	domain	tcdsca		o.dsca
+			)	
+{
+	select	tpisg003.dsca:o.dsca
+	from	tpisg003
+	where	tpisg003._index1 = {:i.acti,:i.reas}
+	selectdo
+	selectempty
+		o.dsca = ""
+		return(false)
+	endselect
+	
+	return(true)
+}
+
+|************** Approve Button *********************************
+
+function extern tpisgdll0011.update_transfer_amount
+				(
+					domain	tccprj		i.cprj,		|Project Code
+					domain	tcorno		i.vers		|Version
+				)
+{	
+	select 	tpisg012.elem,
+		tpisg012.diff,
+		tpisg012.levl
+	from	tpisg012
+	where	tpisg012._index1 = {:i.cprj,:i.vers}
+	and	tpisg012.diff <> 0
+	and	tpisg012.tfrd = tcyesno.no
+	order by tpisg012.levl desc
+	selectdo
+		select tpisg012.tfrd,
+			tpisg012.totl,
+			tpisg012.avai
+		from	tpisg012 for update
+		where	tpisg012._index1 = {:i.cprj,:i.vers,:tpisg012.elem}
+		and	tpisg012.tfrd <> tcyesno.yes
+		selectdo
+			tpisg012.tfrd = tcyesno.yes
+			tpisg012.totl = tpisg012.totl + tpisg012.diff
+			tpisg012.avai = tpisg012.totl - (tpisg012.smnt + tpisg012.exha)
+			db.update(ttpisg012,db.retry,e)
+		endselect
+		
+		update.parent.total.budget.amount(i.cprj,i.vers,tpisg012.elem,tpisg012.diff,0.0,0.0,1)
+
+	endselect
+}
+function extern update.parent.total.budget.amount
+			(
+				domain	tccprj		i.cprj,		|Project
+				domain	tcorno		i.vers,		|Version
+				domain	tppdm.cspa	i.cspa,		|Element
+				domain	tcamnt		i.diff,		|Difference Amount
+				domain	tcamnt		i.exha,		|Exhausted Amount
+				domain	tcamnt		i.smnt,		|Soft Allocation
+				long			process
+			)
+{
+	domain	tppdm.cspa		o.element
+	o.element = i.cspa
+	while not isspace(o.element)
+		select	tpptc101.cspp
+		from	tpptc101
+		where	tpptc101._index2 = {:i.cprj,:o.element}
+		selectdo
+		selectempty
+			tpptc101.cspp = ""
+			o.element = ""
+		endselect
+		o.element = tpptc101.cspp
+		on case process
+		case 1:
+			update_budget_parent_element_parent(i.cprj,i.vers,o.element,i.diff)
+			break
+		case 2:
+			deduct_parent_element_parent(i.cprj,i.vers,o.element,i.diff)
+			break
+		case 3:
+			update_available_budget_parent_element_parent(i.cprj,i.vers,o.element,i.diff,i.exha,i.smnt)
+			break
+		endcase
+		
+	
+	endwhile
+}
+
+
+function extern update_available_budget_parent_element_parent
+				(
+					domain	tccprj		i.cprj,		|Project Code
+					domain	tcorno		i.vers,		|Version
+					domain	tppdm.cspa	i.cspa,		|Parent Element
+					domain	tcamnt		i.diff,		|Diference Amount
+					domain	tcamnt		i.exha,		|Exhausted Amount
+					domain	tcamnt		i.smnt		|Soft Allocation 
+				)
+{
+	domain	tcamnt		o.exha		|Exhausted Amount
+	domain	tcamnt		o.smnt	
+	
+	o.exha = 0
+	o.smnt = 0
+	
+	select 	tpisg012.avai,
+		tpisg012.exha,
+		tpisg012.smnt,
+		tpisg012.totl
+	from	tpisg012 for update
+	where	tpisg012._index1 = {:i.cprj,:i.vers,:i.cspa}
+	selectdo
+		calculate.child.exhausted.amount(i.cprj,i.vers,i.cspa,o.exha,o.smnt)
+| 		tpisg012.exha =  i.exha
+		tpisg012.exha = o.exha
+| 		tpisg012.smnt =  i.smnt
+		tpisg012.smnt =  o.smnt
+		tpisg012.avai =  tpisg012.totl - (tpisg012.smnt + tpisg012.exha)
+		db.update(ttpisg012,db.retry,e)
+	endselect	
+}
+
+function calculate.child.exhausted.amount
+			(
+				domain	tccprj		i.cprj,		|Project
+				domain	tcorno		i.vers,		|Version
+				domain	tppdm.cspa	i.cspa,		|Parent Element
+			ref 	domain	tcamnt		o.exha,		|Exhausted Amount
+			ref	domain	tcamnt		o.smnt		|Soft Amount
+			)
+{
+	o.exha = 0
+	o.smnt = 0
+	select sum(tpisg012.exha):o.exha,
+		sum(tpisg012.smnt):o.smnt
+	from	tpisg012
+	where	tpisg012._index1 = {:i.cprj,:i.vers}
+	and	tpisg012.cspa = :i.cspa
+	selectdo
+	endselect
+}
+function update_budget_parent_element_parent
+				(
+					domain	tccprj		i.cprj,		|Project Code
+					domain	tcorno		i.vers,		|Version
+					domain	tppdm.cspa	i.cspa,		|Parent Element
+					domain	tcamnt		i.diff		|Diference Amount
+				)
+{
+	select	tpisg012.totl,
+		tpisg012.avai,
+		tpisg012.smnt,			|01072014
+		tpisg012.exha			|01072014
+	from	tpisg012 for update
+	where	tpisg012._index1 = {:i.cprj,:i.vers,:i.cspa}
+	selectdo
+		tpisg012.totl = tpisg012.totl + i.diff
+		tpisg012.avai = tpisg012.totl - (tpisg012.smnt + tpisg012.exha)
+		db.update(ttpisg012,db.retry,e)
+	endselect
+}
+
+
+|********* Complete Revise ******************************
+
+function extern tpisgdll0011.Revise_Sanction_Control
+			(
+				domain	tccprj		i.cprj,		|Project
+				domain	tcorno		i.vers,		|Version
+				domain	tpisg.sanction	i.acti,		|Activity
+				domain	tpisg.sanction	i.act1,		|Approval Activity
+				domain	tcccty		i.reas,		|Reason Code
+				domain	tcpric		i.increment	|Incremnt By
+			)
+{
+	domain	tcorno	new.version	
+	new.version =  str$(val(i.vers) + i.increment)
+	
+	select	tpisg011.vers
+	from	tpisg011 for update
+	where	tpisg011._index1 = {:i.cprj,:i.vers}
+	selectdo
+		if i.increment = 1 then
+			tpisg011.vers = str$(round(val(new.version),0,0))
+		else
+			
+			tpisg011.vers = new.version
+		endif
+		
+		tpisg011.reas = i.reas
+		tpisg011.acti = i.acti
+		tpisg011.act1 = i.act1
+		tpisg011.apby = ""
+		tpisg011.apdt = 0
+		tpisg011.user = logname$
+		tpisg011.date = utc.num()
+		tpisg011.cdis = ""
+		
+		db.update(ttpisg011,db.retry,e)
+	endselect
+	select	tpisg012.vers,
+		tpisg012.tfrd,
+		tpisg012.head,
+		tpisg012.trfm,
+		tpisg012.reas,
+		tpisg012.tran
+	from	tpisg012 for update
+	where	tpisg012._index1 = {:i.cprj,:i.vers}
+	selectdo
+		if i.increment = 1 then
+			tpisg012.vers = str$(round(val(new.version),0,0))
+		else
+			tpisg012.vers = new.version
+		endif
+		
+		tpisg012.tfrd = tcyesno.no
+		tpisg012.diff = 0
+		tpisg012.head = ""
+		tpisg012.reas = ""
+		tpisg012.trfm = 0
+		tpisg012.tran = ""
+		db.update(ttpisg012,db.retry,e)
+	endselect
+}
+
+function extern tpisgdll0011.Sanction_History
+					(
+						domain	tccprj		i.cprj,		|Project Code
+						domain	tcorno		i.vers		|Version	
+					)
+{
+	select	tpisg011.*
+	from	tpisg011
+	where	tpisg011._index1 = {:i.cprj,:i.vers}
+	selectdo
+		select	tpisg007.*
+		from	tpisg007
+		where	tpisg007._index1 = {:tpisg011.cprj,:tpisg011.vers}
+		selectdo
+		selectempty
+			tpisg007.cprj = tpisg011.cprj
+			tpisg007.vers = tpisg011.vers
+			tpisg007.apby = tpisg011.apby
+			tpisg007.apdt = tpisg011.apdt
+			tpisg007.reas = tpisg011.reas
+			tpisg007.acti = tpisg011.acti
+			tpisg007.user = tpisg011.user			
+			tpisg007.date = tpisg011.date
+			tpisg007.cdis = tpisg011.cdis
+			tpisg007.act1 = tpisg011.act1
+			tpisg007.copr = tpisg011.copr			|#ISGEC001131.n
+			db.insert(ttpisg007,db.skip.dupl,e)
+		endselect
+	endselect
+		
+	select	tpisg012.*
+	from	tpisg012
+	where	tpisg012._index1 = {:tpisg011.cprj,:i.vers}
+	selectdo
+		select	tpisg008.*
+		from	tpisg008
+		where	tpisg008._index1 = {:tpisg012.cprj,:tpisg012.vers,:tpisg012.elem}
+		selectdo
+		selectempty
+			tpisg008.cprj = tpisg012.cprj
+			tpisg008.vers = tpisg012.vers
+			tpisg008.elem = tpisg012.elem
+			tpisg008.levl= 	tpisg012.levl
+			tpisg008.totl = tpisg012.totl
+			tpisg008.avai = tpisg012.avai
+			tpisg008.exha = tpisg012.exha
+			tpisg008.smnt = tpisg012.smnt
+			tpisg008.tran = tpisg012.tran
+			tpisg008.reas = tpisg012.reas
+			tpisg008.trfm = tpisg012.trfm
+			tpisg008.head = tpisg012.head
+			tpisg008.diff = tpisg012.diff
+			tpisg008.cspa = tpisg012.cspa
+			tpisg008.aamt = tpisg012.aamt
+			tpisg008.amnt = tpisg012.amnt
+			db.insert(ttpisg008,db.skip.dupl,e)
+		endselect
+	endselect
+| 	commit.transaction()
+
+}
+
+
+|********************** Partial Revise Approve Button ****************************
+
+function extern tpisgdll0011.Transfer_Credit
+				(
+					domain	tccprj		i.cprj,		|Project Code
+					domain	tcorno		i.vers		|Version
+				)
+{
+	domain	tcamnt		o.tpisg012.trfm
+	domain	tppdm.cspa	o.tpisg012.tran
+	domain	tppdm.cspa	o.tpisg012.elem
+	
+	
+	select	tpisg012.trfm:o.tpisg012.trfm, 
+		tpisg012.tran:o.tpisg012.tran, 
+		tpisg012.elem:o.tpisg012.elem 
+	from	tpisg012
+	where	tpisg012._index1 = {:i.cprj, :i.vers}
+	and	tpisg012.trfm <> 0
+	and	tpisg012.tfrd = tcyesno.no
+	selectdo
+		deduct_transfer_amount(i.cprj,i.vers,o.tpisg012.tran,o.tpisg012.trfm)
+		update.parent.total.budget.amount(i.cprj,i.vers,o.tpisg012.tran,o.tpisg012.trfm,0.0,0.0,2)
+		credit_transfer_amount_element(i.cprj,i.vers,o.tpisg012.elem,o.tpisg012.trfm)
+		update.parent.total.budget.amount(i.cprj,i.vers,o.tpisg012.elem,o.tpisg012.trfm,0.0,0.0,1)
+	endselect
+}
+
+
+
+function deduct_transfer_amount
+			(
+				domain	tccprj		i.cprj,		|Project
+				domain	tcorno		i.vers,		|Version
+				domain	tppdm.cspa	i.tran,		|Transfered Element
+				domain	tcamnt		i.trfm		|Transferred Amount
+			)
+{
+	select	tpisg012.totl,tpisg012.avai
+	from	tpisg012 for update
+	where	tpisg012._index1 = {:i.cprj,:i.vers,:i.tran}
+	as set with 1 rows
+	selectdo
+		tpisg012.totl = tpisg012.totl - i.trfm
+		tpisg012.avai = tpisg012.avai - i.trfm
+		db.update(ttpisg012,db.retry,e)
+	endselect
+}
+
+
+
+function deduct_parent_element_parent
+				(
+					domain	tccprj		i.cprj,		|Project Code
+					domain	tcorno		i.vers,		|Version
+					domain	tppdm.cspa	i.elem,		|Element
+					domain	tcamnt		i.trfm		|Transferred Amount
+					
+				)
+{
+	select	tpisg012.totl|, tpisg012.dist
+	from	tpisg012 for update
+	where	tpisg012._index1 = {:i.cprj, :i.vers, :i.elem}
+	selectdo
+		tpisg012.totl = tpisg012.totl - i.trfm
+		db.update(ttpisg012,db.retry,e)
+	endselect
+}
+
+
+function credit_transfer_amount_element
+				(
+					domain	tccprj		i.cprj,		|Project Code
+					domain	tcorno		i.vers,		|Version
+					domain	tppdm.cspa	i.elem,		|Element
+					domain	tcamnt 		i.trfm		|Transferred Amount
+				)
+{
+	select	tpisg012.totl,tpisg012.avai
+	from	tpisg012 for update
+	where	tpisg012._index1 = {:i.cprj,:i.vers,:i.elem}
+	as set with 1 rows
+	selectdo
+		tpisg012.totl = tpisg012.totl + i.trfm
+		tpisg012.avai = tpisg012.avai + i.trfm
+		tpisg012.tfrd = tcyesno.yes			|#29032014.Arjit.n
+		db.update(ttpisg012,db.retry,e)
+	endselect
+}
+
+
+|****** Distribution of Amount **************
+
+function extern  tpisgdll0011.sanction_control_lines_for_distribution
+			(
+				domain	tccprj		i.cprj,		|Project
+				domain	tcorno		i.vers		|Version
+			)
+{
+	domain	tcamnt		distributed.amnt
+	domain	tppdm.cspa	old.elem
+	domain	tcpono		old.levl
+	domain	tcamnt		old.totl
+	
+	select 	tpisg012.elem:old.elem,
+		tpisg012.levl:old.levl,
+		tpisg012.totl:old.totl
+	from	tpisg012
+	where	tpisg012._index1 = {:i.cprj,:i.vers}
+	order by tpisg012.levl desc
+	selectdo
+		
+		if not element.parent.child.relation(i.cprj,old.elem) then
+			update.distributed.amount(i.cprj,i.vers,old.elem,0.0)
+		else
+			distributed.amnt = 0
+			distributed.amnt = commulate.distributed.amount(i.cprj,old.elem,i.vers)
+			update.distributed.amount(i.cprj,i.vers,old.elem,distributed.amnt)
+		endif
+		
+	endselect
+	
+}
+
+
+function boolean element.parent.child.relation
+				(
+					domain	tccprj		i.cprj,		|Project
+					domain	tppdm.cspa	i.cspp		|Parent Element
+				)
+{
+	domain	tppdm.cspa		o.cspp
+	
+	select 	tpptc101.cspp:o.cspp
+	from	tpptc101
+	where	tpptc101._index1 = {:i.cprj,:i.cspp}
+	as set with 1 rows
+	selectdo
+	selectempty
+		return(false)
+	endselect
+	
+	return(true)
+}
+
+function domain tcamnt commulate.distributed.amount
+				(
+					domain	tccprj		i.cprj,		|Project
+					domain	tppdm.cspa	i.cspa,		|Element
+					domain	tcorno		i.vers		|Version
+				)
+{
+	domain	tcamnt		distributed.amnt
+	
+	distributed.amnt = 0 
+	select 	tpptc101.cspp,
+		tpptc101.cspc
+	from	tpptc101
+	where	tpptc101._index1 = {:i.cprj,:i.cspa}
+	selectdo
+		select 	tpisg012.totl
+| 			tpisg012.amnt
+		from	tpisg012
+		where	tpisg012._index1 = {:i.cprj,:i.vers,:tpptc101.cspc}
+		as set with 1 rows
+		selectdo
+			distributed.amnt = distributed.amnt + tpisg012.totl
+		endselect
+	endselect
+	
+	return(distributed.amnt)
+}
+
+
+function update.distributed.amount
+				(
+					domain	tccprj		i.cprj,		|Project
+					domain	tcorno		i.vers,		|Version
+					domain	tppdm.cspa	i.cspa,		|Element
+					domain	tcamnt		i.aamt		|Amount
+				)
+{
+	select tpisg012.aamt,
+		tpisg012.totl
+	from	tpisg012 for update
+	where	tpisg012._index1 = {:i.cprj,:i.vers,:i.cspa}
+	selectdo
+		tpisg012.aamt = i.aamt
+		tpisg012.amnt = tpisg012.totl - tpisg012.aamt
+		db.update(ttpisg012,db.retry,e)
+		commit.transaction()
+	endselect
+	
+}
+
+
+|*** ISGEC DREAM ***
+
+function extern tpisgdll0011.isgec_dream_for_sanction_control
+				(
+					domain	tccprj		i.cprj,		|Project Code
+					domain	tcorno		i.vers		|Version
+				)
+{
+	tcmcs.dll0095.read.parm("tpmsl000")
+	
+	select 	tpisg012.aamt,
+		tpisg012.amnt
+	from	tpisg012 for update
+	where	tpisg012._index1 = {:i.cprj,:i.vers}
+	and	tpisg012.levl > :tpmsl000.levl
+	selectdo
+		tpisg012.aamt = 0
+		tpisg012.amnt = 0
+		db.update(ttpisg012,db.retry,e)
+	endselect
+	commit.transaction()
+}
+
+
+|**** L4 Revise Data Population 
+
+function extern tpisgdll0011.delete.l4.revise.relations
+			(
+				domain	tccprj		i.cprj,		|Project
+				domain	tcorno		i.vers		|Version
+			)
+{
+	select 	tpisg013.cprj
+	from	tpisg013 for update
+	where	tpisg013._index1 = {:i.cprj,:i.vers}
+	selectdo
+		db.delete(ttpisg013,db.retry,e)
+	endselect
+	
+}
+
+function extern tpisgdll0011.populate.L4Revise.Elements
+			(
+				domain	tccprj		i.cprj,		|Project
+				domain	tcorno		i.vers		|Version
+			)
+{
+	domain	tppdm.cspa	old.elem
+	domain	tcpono		old.levl,paretn.levl
+	domain	tppdm.cspa	old.cspa
+	
+	tcmcs.dll0095.read.parm("tpmsl000")
+	
+	select 	tpisg012.elem:old.elem,
+		tpisg012.levl:old.levl,
+		tpisg012.cspa:old.cspa
+	from	tpisg012
+	where	tpisg012._index1 = {:i.cprj,:i.vers}
+	order by tpisg012.levl desc
+	selectdo
+		|Populate All Those Records
+		|Whose Parent is Same
+		populate.same.parent.line(i.cprj,i.vers,old.elem,old.cspa)
+		|** Populate Upper Parent Lines
+		
+		select tpisg012.levl:paretn.levl
+		from	tpisg012
+		where	tpisg012._index1 = {:i.cprj,:i.vers,:old.cspa}
+		as set with 1 rows
+		selectdo
+		endselect
+		insert.record(i.cprj,i.vers,old.elem,old.cspa,paretn.levl)
+		populate.upper.parents.lines(i.cprj,i.vers,old.elem,old.cspa)
+		
+	endselect
+}
+
+function populate.same.parent.line
+			(
+				domain	tccprj		i.cprj,		|Project
+				domain	tcorno		i.vers,		|Version
+				domain	tppdm.cspa	i.elem,		|Element
+				domain	tppdm.cspa	i.cspa		|Parent Element
+			)
+{
+	domain	tppdm.cspa		l4.elem
+	domain	tcpono			l4.levl
+	
+	select 	tpisg012.elem:l4.elem,
+		tpisg012.levl:l4.levl
+	from	tpisg012
+	where	tpisg012._index1 = {:i.cprj,:i.vers}
+	and	tpisg012.cspa = :i.cspa
+	selectdo
+		if l4.elem = i.elem then
+			continue
+		else
+			insert.record(i.cprj,i.vers,i.elem,l4.elem,l4.levl)
+		endif
+	endselect
+}
+
+function insert.record
+			(
+				domain	tccprj		i.cprj,		|Project
+				domain	tcorno		i.vers,		|Version
+				domain	tppdm.cspa	i.elem,		|Element
+				domain	tppdm.cspa	i.cspa,		|L4 Element
+				domain	tcpono		i.levl		|L4 Level
+			)
+{
+	tpisg013.cprj = i.cprj
+	tpisg013.vers = i.vers
+	tpisg013.cspa = i.elem
+	tpisg013.cspp = i.cspa
+	tpisg013.levl = i.levl
+	db.insert(ttpisg013,db.skip.dupl,e)
+}
+
+function populate.upper.parents.lines
+		(
+			domain	tccprj		i.cprj,		|Project
+			domain	tcorno		i.vers,		|Version
+			domain	tppdm.cspa	i.elem,		|Element
+			domain	tppdm.cspa	i.cspa		|L4 Element
+		)
+{
+	domain	tppdm.cspa		temp.elem
+	domain	tppdm.cspa		old.elem
+	domain	tppdm.cspa		old.cspa
+	domain	tcpono			old.levl,paretn.levl
+	
+	temp.elem = i.cspa
+	tcmcs.dll0095.read.parm("tpmsl000")
+	
+	
+	while not isspace(temp.elem)
+		
+		
+		select tpisg012.elem:old.elem,
+			tpisg012.cspa:old.cspa,
+			tpisg012.levl:old.levl
+		from	tpisg012
+		where	tpisg012._index1 = {:i.cprj,:i.vers,:temp.elem}
+		as set with 1 rows
+		selectdo
+		endselect
+		
+		select tpisg012.levl:paretn.levl
+		from	tpisg012
+		where	tpisg012._index1 = {:i.cprj,:i.vers,:old.cspa}
+		as set with 1 rows
+		selectdo
+		endselect
+		
+		if not isspace(old.cspa) then
+			insert.record(i.cprj,i.vers,i.elem,old.cspa,paretn.levl)
+			
+		endif
+		
+		temp.elem = old.cspa
+		
+	endwhile
+	
+}
+
+
+|***************  L4 Revise Approval 
+
+function extern tpisgdll0011.L4Revise
+				(
+					domain	tccprj		i.cprj,		|Project
+					domain	tcorno		i.vers		|Version
+				)
+{
+	domain	tcamnt		o.tpisg012.trfm
+	domain	tppdm.cspa	o.tpisg012.tran
+	domain	tppdm.cspa	o.tpisg012.elem
+	domain	tcpono		o.tpisg012.levl,transfer.from.levl,param.levl
+	
+	tcmcs.dll0095.read.parm("tpmsl000")
+	param.levl = tpmsl000.levl + 1
+	select	tpisg012.trfm:o.tpisg012.trfm, 
+		tpisg012.tran:o.tpisg012.tran, 
+		tpisg012.elem:o.tpisg012.elem,
+		tpisg012.levl:o.tpisg012.levl
+	from	tpisg012
+	where	tpisg012._index1 = {:i.cprj, :i.vers}
+	and	tpisg012.trfm <> 0
+	and	tpisg012.tfrd = tcyesno.no
+	selectdo
+		transfer.from.levl = 0
+		
+		transfer.from.levl = tpisgdll0011.get.transfer.from.element.levl(i.cprj,i.vers,o.tpisg012.tran)
+		if o.tpisg012.levl = transfer.from.levl then
+			update_budget_parent_element_parent(i.cprj,i.vers,o.tpisg012.elem,o.tpisg012.trfm)
+			update_budget_parent_element_parent(i.cprj,i.vers,o.tpisg012.tran,(o.tpisg012.trfm * -1))
+		else if transfer.from.levl > (param.levl) then
+			update_budget_parent_element_parent(i.cprj,i.vers,o.tpisg012.elem,o.tpisg012.trfm)
+			update_budget_parent_element_parent(i.cprj,i.vers,o.tpisg012.tran,(o.tpisg012.trfm * -1))
+		else if transfer.from.levl = (param.levl) then
+			update_budget_parent_element_parent(i.cprj,i.vers,o.tpisg012.elem,o.tpisg012.trfm)
+		endif
+		endif
+		endif
+		
+	endselect
+	
+}
+
+function domain tcpono tpisgdll0011.get.transfer.from.element.levl
+				(
+					domain	tccprj		i.cprj,		|Project
+					domain	tcorno		i.vers,		|Version
+					domain	tppdm.cspa	i.cspa		|Transfer From Element
+				)
+{
+	domain	tcpono		o.levl
+	
+	select 	tpisg012.levl:o.levl
+	from	tpisg012
+	where	tpisg012._index1 = {:i.cprj,:i.vers,:i.cspa}
+	as set with 1 rows
+	selectdo
+	endselect
+	
+	return(o.levl)
+}
+
+
+|***************  ISGEC DREAM FOR DISTRIBUTED/UNDISTRIBUTED Amount *************************
+domain	tccprj		main.proj
+domain	tcorno		main.vers
+domain	tppdm.cspa	main.elem,temp.elem
+domain	tcamnt		total.amount
+long l.count
+long 		            ret.val, sql.by.level(99999),sql.x 	 
+domain	tppdm.cspa	stack.elem(99999)
+
+domain	tcpono		calculate.level
+extern domain	tppdm.cspa		x.cspa
+
+function extern tpisgdll0011.isgec_dream_for_distribution_amount
+				(
+					domain	tccprj		i.cprj,		|Project
+					domain	tcorno		i.vers		|Version
+				)
+{
+	domain	tcpono		param.levl
+	domain	tppdm.cspa	old.elem
+	domain	tcamnt		o.totl
+	
+	domain	tcpono		old.levl, k
+	
+	tcmcs.dll0095.read.parm("tpmsl000")
+	param.levl = tpmsl000.levl + 1
+	
+	select 	tpisg012.levl:old.levl,
+		tpisg012.elem:old.elem
+	from	tpisg012
+	where	tpisg012._index1 = {:i.cprj,:i.vers}
+	and	tpisg012.levl <= :param.levl
+	order by tpisg012.levl desc
+	selectdo
+		main.proj = i.cprj
+		main.vers = i.vers
+		l.count = 1
+		total.amount = 0
+		o.totl = 0
+		temp.elem = ""
+		stack.elem(1,1) = old.elem
+		
+		calculate.level = 0
+		if old.levl < param.levl then
+			calculate.level = old.levl + 1
+		else
+			select max(tpisg012.levl):calculate.level
+			from	tpisg012
+			where	tpisg012._index1 = {:i.cprj,:i.vers}
+			selectdo
+			endselect
+		endif
+		
+		if	child.exist(i.cprj, i.vers, old.elem)	then		
+			explore.child.element()
+		endif	
+		
+		select 	tpisg012.aamt,
+			tpisg012.amnt,
+			tpisg012.totl:o.totl
+		from	tpisg012 for update
+		where	tpisg012._index1 = {:i.cprj,:i.vers,:old.elem}
+		selectdo
+			tpisg012.aamt = total.amount
+			tpisg012.amnt = o.totl - tpisg012.aamt
+			db.update(ttpisg012,db.retry,e)
+		endselect
+		
+		for k = 1 to 100 
+			stack.elem(1,k) = ""
+		endfor	
+		
+	endselect
+	
+}
+
+
+function extern explore.child.element()
+{
+
+	main.elem =  stack.elem(1,l.count)
+	l.count = l.count + 1
+	
+	
+	sql.x = sql.parse("	select 	tpisg012.totl,
+^					tpisg012.elem,
+^					tpisg012.cspa:5
+^				from	tpisg012
+^				where	tpisg012._index1 = {:1,:2}
+^				and	tpisg012.cspa =:3
+^				and	tpisg012.levl <=:4")
+		sql.where.bind(sql.x,1,main.proj)
+		sql.where.bind(sql.x,2,main.vers)
+		sql.where.bind(sql.x,3,main.elem)
+		sql.where.bind(sql.x,4,calculate.level)
+		sql.select.bind(sql.x,5,x.cspa)
+		sql.by.level(l.count) = sql.x
+		sql.exec(sql.x)
+		while true
+			ret.val = (sql.fetch(sql.x))
+		
+			if ret.val = eendfile then
+				break
+			endif
+			
+			if temp.elem = tpisg012.elem  then
+				break
+			endif
+			
+			total.amount = total.amount + tpisg012.totl
+			
+			temp.elem = tpisg012.elem
+			stack.elem(1,l.count) = tpisg012.elem
+			explore.child.element()
+		endwhile
+		sql.close(sql.x)
+		l.count = l.count - 1
+		sql.x = sql.by.level(l.count)	
+}
+
+function boolean child.exist(domain tccprj		t.cprj,
+				domain	tcorno		t.vers,
+				domain	tppdm.cspa	t.elem)
+{
+	domain	tppdm.cspa	c.elem
+	
+	select	s_tpisg012.elem:c.elem
+	from	tpisg012 s_tpisg012
+	where	s_tpisg012._index1 = {:t.cprj, :t.vers}
+	and	s_tpisg012.cspa = :t.elem
+	as set with 1 rows
+	selectdo
+		return(true)
+	endselect
+	
+	return(false)
+}				
+
+
+function extern tpisgdll0011.insert.sanction.order.relation
+				(
+					domain	tccprj		i.cprj,		|Project
+					domain	tcorno		i.vers,		|Version
+					domain	tppdm.cspa	i.cspa,		|Element
+					domain	tdisg.item	i.type,		|Order Type
+					domain	tcorno		i.orno,		|Order Number
+					domain	tcpono		i.pono,		|Position
+					domain	tcamnt		i.amnt		|Amount
+				)
+{
+	select tpisg017.amnt
+	from	tpisg017 for update
+	where	tpisg017._index1 = {:i.cprj,:i.vers,:i.cspa,:i.type,:i.orno,:i.pono}
+	as set with 1 rows
+	selectdo
+		tpisg017.amnt = i.amnt
+		db.update(ttpisg017,db.retry,e)
+	selectempty
+		tpisg017.cprj = i.cprj
+		tpisg017.vers = i.vers
+		tpisg017.cspa = i.cspa
+		tpisg017.type = i.type
+		tpisg017.orno = i.orno
+		
+		select	tdpur400.hdst			|#ISEC015001.sn
+		from	tdpur400
+		where	tdpur400._index1 = {:i.orno}
+		selectdo
+		endselect				|#ISEC015001.en
+		if tdpur400.hdst = ltoe(10) then
+			tpisg017.amnt = i.amnt
+		endif	
+		tpisg017.pono = i.pono
+		db.insert(ttpisg017,db.skip.dupl,e)
+	endselect
+}

@@ -1,0 +1,132 @@
+|******************************************************************************
+|* tdisg8150m000  0  VRC B61U a7 live
+|* Maintain BRC Application
+|* Tools                         
+|* 2014-06-12
+|******************************************************************************
+|* Main table tdisg850 BRC Application, Form Type 1
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttdisg850 | BRC Application
+  table	   ttdisg831
+  table	   ttdisg842
+  table	   ttdisg845
+  table	   ttdisg800
+  
+	domain	tcorno	v.brcn
+	extern	domain	tcmcs.str20	ex.bidn
+	string	str(300)
+|****************************** program section ********************************
+before.program:
+	tcmcs.dll0095.read.parm("tdisg800")
+	
+before.display.object:
+	if tdisg850.slct = tcyesno.yes then
+		disable.commands(modify.set)
+	else
+		enable.commands(modify.set)
+	endif
+
+|****************************** group section **********************************
+|****************************** choice section **********************************
+choice.apply:
+on.choice:
+	generate_first_free_no()
+|****************************** field section **********************************
+field.tdisg850.cprj:
+after.input:
+	populate_data()
+field.tdisg850.ityp:
+before.zoom:
+	str = "cisli205.ityp in ("
+	str = str & "select cisli235.ityp from cisli235 where cisli235.cprj = {'"&tdisg850.cprj&"'})"
+	query.extend.where.in.zoom(str)
+
+field.tdisg850.idoc:
+before.zoom:
+	query.extend.where.in.zoom("cisli205.ityp = " & quoted.string(tdisg850.ityp))
+|****************************** function section *******************************
+functions:
+
+function	populate_data()
+{
+	select	tdisg831.cprj,tdisg831.invn,tdisg831.ptld
+		,tdisg845.erdn
+	from	tdisg831,tdisg845
+	where	tdisg831._index4 = {:tdisg850.cprj}
+	and	tdisg845.cinv = tdisg831.invn
+	selectdo
+		select	tdisg842.shno,tdisg842.invd,tdisg842.sdat
+		from	tdisg842
+		where	tdisg842._index1 = {:tdisg845.erdn}
+		selectdo
+			select	tdisg850.*
+			from	tdisg850
+			where	tdisg850._index1 = {:tdisg831.cprj,:tdisg842.shno}
+			selectdo
+			selectempty
+				db.set.to.default(ttdisg850)
+				tdisg850.cprj = tdisg831.cprj
+				tdisg850.shno = tdisg842.shno
+				tdisg850.sdat = tdisg842.sdat
+				tdisg850.shbp = tdisg831.ptld
+				tdisg850.inva = tdisg842.invd
+				db.insert(ttdisg850,db.skip.dupl,e)
+			endselect
+		endselect
+	endselect
+	
+	commit.transaction()
+}
+
+function	generate_first_free_no()
+{
+	v.brcn = ""
+	v.brcn = tdisg800.bser
+	
+	tcmcs.dll0050.check.and.generate.order.number(
+							3,
+							v.brcn,
+							tdisg800.brgr,
+							9,
+							""
+							)
+	zoom.to$("tdisg8250m000", Z.SESSION, "bill_id", "",0)
+	update.BRCno()
+| 	do.selection(false,update.BRCno)
+}
+
+| function update.BRCno()
+| {
+	| 	db.retry.point()
+| 	select	tdisg850.brcn,tdisg850.bidn
+| 	from	tdisg850 for update
+| 	where	tdisg850._index1 = {:tdisg850.cprj,:tdisg850.shno}
+| 	selectdo
+| 		tdisg850.bidn = ex.bidn
+| 		tdisg850.brcn = v.brcn
+| 		db.update(ttdisg850,db.retry,e)
+| 	endselect
+| 	commit.transaction()
+| }
+
+
+function update.BRCno()
+{
+
+	select	tdisg850.brcn,tdisg850.bidn
+	from	tdisg850 for update
+	where	tdisg850._index1 = {:tdisg850.cprj}
+	and	tdisg850.sele = tcyesno.yes
+	and	tdisg850.slct = tcyesno.no
+	selectdo
+		tdisg850.bidn = ex.bidn
+		tdisg850.brcn = v.brcn
+		tdisg850.slct = tcyesno.yes
+		db.update(ttdisg850,db.retry,e)
+	endselect
+	commit.transaction()
+}

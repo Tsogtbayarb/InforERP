@@ -1,0 +1,206 @@
+|******************************************************************************
+|* tdisg8139  0  VRC B61U a7 live
+|* Lading Master
+|* Tools                         
+|* 2014-05-28
+|******************************************************************************
+|* Main table tdisg839 Lading Master, Form Type 1
+|******************************************************************************
+|* IDENT ISG001016, Yoshita Kundwani, IT0177, 31-05-2014 , VRC B61U a7 live
+|******************************************************************************
+|* IDENT ISG001064, Manish Kumar, IT0303, 16-06-2014 , VRC B61U a7 live
+|* Attached a report for Bill of Ladding Wise Invoice List
+|*
+|* ISGEC001081, IT0205, Arjit Gupta, VRC B61U a7 isg, Dt. 08-10-2014
+|* When find then change zoom to display Bill of Ladding and when New Generation
+|* zoom to First Free Number.
+|****************************** declaration section ***************************
+declaration:
+#ident "@(#)ISG001016, Yoshita Kundwani, IT0177, 31-05-2014 , VRC B61U "
+#ident "@(#)ISG001064	Manish Kumar, IT0303, 16/06/2014 VRC B61U a7 live"
+
+	table	ttdisg839 | Lading Master
+					|#ISG001064.sn
+	table	ttdisg842
+	table	ttdisg843
+	table	ttdisg845
+	table	ttdisg831
+	table	ttdisg824
+	table	ttdisg865
+	table	ttdisg800			|#ISGEC001081.n
+	table	ttcmcs050			|#ISGEC001081.n
+
+
+	|* Report Handling Variables
+	extern	domain	tcmcs.long	detail,i
+	extern	domain	tcpono		srno,counter
+	extern	domain	tcamnt		deduction1,deduction2,deduction3,deduction4
+	
+					|#ISG001064.en
+|****************************** program section ********************************
+					|#ISGEC001081.sn
+before.program:
+	tcmcs.dll0095.read.parm("tdisg800")
+					|#ISGEC001081.en
+|****************************** field section **********************************
+field.tdisg839.blno:
+before.zoom:
+| 	tdisg
+					|#ISGEC001081.sn
+	if	update.status = add.set	then
+		tcmcs050.nrgr = tdisg800.blgr
+		attr.zoomcode = Z.SESSION
+		attr.zoomsession$ = "tcmcs0150m000"
+		attr.zoomreturn$ = "tcmcs050.seri"
+	else
+		attr.zoomcode = Z.SESSION
+		attr.zoomsession$ = "tdisg8539m000"
+		attr.zoomreturn$ = "tdisg839.blno"
+	endif	
+					|#ISGEC001081.en
+|******************************choice section **********************************
+choice.container:
+on.choice:
+	start.synchronized.child("tdisg8130m000","tdisg839.blno","tdisg830.rqno")
+				|#ISG001064.sn
+choice.print.data:
+on.choice:
+	if rprt_open() then
+		fetch.record.and.print.summary()
+		fetch.record.and.print.detail()
+		rprt_close()
+	else
+		choice.again()
+	endif
+				|#ISG001064.en
+|*********************** Function section **************************************
+functions:
+				|#ISG001064.sn
+function fetch.record.and.print.summary()
+{
+	detail = 0
+	srno = 0
+	deduction1 =0.00
+	deduction2 = 0.00
+	deduction3 = 0.00
+	deduction4 = 0.00
+	
+	select	tdisg843.shno,tdisg843.blno
+	from	tdisg843
+	where	tdisg843._index1 = {:tdisg839.blno}
+	selectdo
+		select	tdisg845.erdn,tdisg845.cinv,tdisg845.cadt
+		from	tdisg845
+		where	tdisg845._index1 = {:tdisg843.shno}
+		selectdo
+			select	tdisg831.cinv,tdisg831.invn,tdisg831.amti,
+				tdisg831.cprj,tdisg831.lcno
+			from	tdisg831
+			where	tdisg831._index2 = {:tdisg845.cinv}
+			selectdo
+				counter = 0
+				
+				retention()
+				
+| 				select	tdisg824.pval
+| 				from	tdisg824
+| 				where	tdisg824._index1 = {:tdisg831.cprj}
+| 				and	tdisg824.ptyp = tdisg.ptyp.advance
+| 				selectdo
+| 					if counter = 0 then
+| 						deduction1 = tdisg831.amti*tdisg824.pval/100
+| 						counter = counter + 1
+| 					endif
+| 					
+| 					if counter = 1 then
+| 						deduction2 = tdisg831.amti*tdisg824.pval/100
+| 						counter = counter + 1
+| 					endif
+| 					
+| 					if counter = 2 then
+| 						deduction3 = tdisg831.amti*tdisg824.pval/100
+| 						counter = counter + 1
+| 					endif
+| 				selectempty
+| 					deduction1 = 0.00
+| 					deduction2 = 0.00
+| 					deduction3 = 0.00
+| 				endselect
+				
+| 				select	tdisg824.pval
+| 				from	tdisg824
+| 				where	tdisg824._index1 = {:tdisg831.cprj}
+| 				and	tdisg824.ptyp = tdisg.ptyp.retention
+| 				as set with 1 rows
+| 				selectdo					
+| 					deduction4 = tdisg831.amti*tdisg824.pval/100
+| 				selectempty
+| 					deduction4 = 0.00
+| 				endselect
+				
+				srno = srno + 1
+				rprt_send()
+				
+			endselect
+		endselect
+	endselect
+}
+
+function	retention()
+{
+	i = 0
+	select	tdisg865.*
+	from	tdisg865
+	where	tdisg865._index1 = {:tdisg831.cinv,:tdisg831.lcno}
+	selectdo
+		i = i + 1
+		if i = 1 then
+			deduction1 = tdisg865.amnt
+		else if i = 2 then	
+			deduction2 = tdisg865.amnt
+		else if i = 3 then	
+			deduction3 = tdisg865.amnt
+		else if i = 4 then	
+			deduction4 = tdisg865.amnt
+		endif
+		endif	
+		endif
+		endif
+	selectempty
+		deduction1 = 0
+		deduction2 = 0
+		deduction3 = 0
+		deduction4 = 0
+	endselect	
+}
+
+function fetch.record.and.print.detail()
+{
+	detail = 1
+	srno = 0
+	select	tdisg843.shno,tdisg843.blno
+	from	tdisg843
+	where	tdisg843._index1 = {:tdisg839.blno}
+	selectdo
+		select	tdisg842.invd
+		from	tdisg842
+		where	tdisg842._index1 = {:tdisg843.shno}
+		selectdo
+		selectempty
+			tdisg842.invd = 0.00
+		endselect		
+		select	tdisg845.erdn,tdisg845.cinv,tdisg845.cadt
+		from	tdisg845
+		where	tdisg845._index1 = {:tdisg843.shno}
+		selectdo
+			select	tdisg831.cinv,tdisg831.invn,tdisg831.amti,tdisg831.shmt
+			from	tdisg831
+			where	tdisg831._index2 = {:tdisg845.cinv}
+			selectdo
+				srno = srno + 1
+				rprt_send()
+			endselect
+		endselect
+	endselect
+}
+				|#ISG001064.en
