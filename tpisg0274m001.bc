@@ -1,0 +1,155 @@
+|******************************************************************************
+|* tpisg0274m001  0  VRC B61U a7 isg 
+|* Update Approver for SAR
+|* Merino1                       
+|* 2016-02-27
+|******************************************************************************
+|* Main table tpisg074 SAR Information, Form Type 4
+|******************************************************************************
+|* GH242CR505, Adarsh Pal, 17-01-2020, VRC B61U a7 isg
+|* Modifications in New Approver zoom only from SAR Approval Team
+|*
+|* ID: GH353CR658, RAvi Kumar, 29-06-2020
+|* SAR Improvement points
+|****************************** declaration section ***************************
+declaration:
+
+	table   ttpisg074 | SAR Information
+	table   ttppdm600					|#GH242CR505.sn
+	table   ttcemm030					|#GH242CR505.en
+
+	extern  domain  tccprj         cprj
+	extern  domain  tcmcs.long	sarn
+	extern  domain  tpisg.stat	stat
+	extern	domain	tcemno		rper,rper.new
+	extern	domain	tcnama		rper.nama, rper.new.nama
+	string	query.string(200)
+	
+
+|****************************** program section ********************************
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+|****************************** choice section **********************************
+choice.update:
+before.choice:
+	if isspace(cprj) then
+		message("Input Project")
+		choice.again()
+	endif
+
+	if sarn = 0 then
+		message("Input SAR")
+		choice.again()
+	endif
+
+	if isspace(rper.new) then
+		message("Input New Approver")
+		choice.again()
+	endif
+	
+	select	tpisg074.stat					|RAvi.a.s.06082020
+	from	tpisg074
+	where	tpisg074._index1 = {:cprj, :sarn}
+	selectdo
+| 		if tpisg074.stat = tpisg.stat.created or tpisg074.stat = tpisg.stat.review or tpisg074.stat = tpisg.stat.approval then
+		if tpisg074.stat = tpisg.stat.review or tpisg074.stat = tpisg.stat.approval then
+		else
+			message("Status not Under Approval")
+			choice.again()
+		endif
+	endselect						|RAvi.a.e.06082020
+	
+on.choice:
+	select tpisg074.apby
+	from	tpisg074 for update
+	where	tpisg074._index1 = {:cprj,:sarn}
+	selectdo
+		tpisg074.apby = rper.new
+		db.update(ttpisg074,db.retry)
+		if not e then
+			message("Approver Updated Successfully")
+			commit.transaction()
+		else
+			abort.transaction()	
+		endif	
+	endselect	
+
+|****************************** field section **********************************
+field.cprj:
+before.zoom:
+	query.string ="tpisg074.stat = tpisg.stat.approval"
+	query.extend.where.in.zoom(query.string) 
+
+field.sarn:
+before.zoom:
+	query.extend.where.in.zoom("tpisg074.cprj = " & quoted.string(cprj) & " and tpisg074.stat = tpisg.stat.approval")
+	
+	
+field.stat:
+before.display:
+| 	stat = tpisg.stat.approval					|RAvi.a.s.06082020
+	stat = empty
+	select	tpisg074.stat:stat
+	from	tpisg074
+	where	tpisg074._index1 = {:cprj, :sarn}
+	as set with 1 rows
+	selectdo
+	selectempty
+		stat = empty
+	endselect							|RAvi.a.e.06082020
+	
+field.rper:
+before.display:
+	select	tpisg074.apby
+	from	tpisg074
+	where	tpisg074._index1 = {:cprj,:sarn}
+	selectdo
+		rper = tpisg074.apby
+	selectempty
+		rper = ""
+	endselect	
+												|#GH242CR505.sn
+field.rper.new:
+selection.filter:
+	select	tppdm600.ncmp
+	from	tppdm600
+	where	tppdm600._index1 = {:cprj}
+	as set with 1 rows
+	selectdo
+		select	tcemm030.eunt
+		from	tcemm030
+		where	tcemm030.fcmp = :tppdm600.ncmp
+		as set with 1 rows
+		selectdo
+		selectempty
+		endselect
+	selectempty
+	endselect
+| 	
+	query.extend.where.in.zoom("tccom001.emno in(select tpisg073.emno from tpisg073 where tpisg073.eunt = " & quoted.string(tcemm030.eunt) & ")")
+| 												|#GH242CR505.en
+
+field.rper.nama:
+before.display:
+	select	tccom001.nama:rper.nama
+	from	tccom001
+	where	tccom001._index1 = {:rper}
+	as set with 1 rows
+	selectdo
+	selectempty
+		rper.nama = ""
+	endselect
+	
+field.rper.new.nama:
+before.display:
+	select	tccom001.nama:rper.new.nama
+	from	tccom001
+	where	tccom001._index1 = {:rper.new}
+	as set with 1 rows
+	selectdo
+	selectempty
+		rper.new.nama = ""
+	endselect

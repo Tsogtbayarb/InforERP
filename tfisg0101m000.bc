@@ -1,0 +1,198 @@
+|******************************************************************************
+|* tfisg0101m000  0  VRC B61U a7 live
+|* Maintain GR Details
+|* Installation user             
+|* 2014-02-20
+|******************************************************************************
+|* Main table tfisg001 GR Details, Form Type 1
+|******************************************************************************
+|* IDENT ISG001012 , Manish Kumar , IT0303 , 20-02-2014, VRC B61U a7 live
+|******************************************************************************
+|* ESSP Incident : 3797, Ritu Shrivastava, 03-06-2014,	B61U a7 live
+|* 
+|* GH499CR834, RAvi Kumar, 19-02-2021
+|* FOC and FIM Transaction type of Billing assignments to reflect in two reports
+|****************************** declaration section ***************************
+declaration:
+#include <bic_dam>
+
+	table	ttfisg001	| GR Details
+	table	ttcmcs143 	| State/Province
+	table	ttccom948	| Form Code Master
+	table	twhinh312	| Receipt Line
+	table  ttfacp100				|#3797.sn
+	table  ttfacp200
+	table  ttfcmg100				
+
+	extern	long flag,ret_val
+	
+	extern domain tcmcs.str20	i.docn,i.pdoc,i.pinv
+
+	extern	domain	tcmcs.str16	progname
+	extern	domain	tcorno		p.orno
+	extern	domain	tccom.bpid	p.bpid
+	extern	domain	whinh.pksp	import.dino
+	extern	domain	tfgld.docn	ir.number
+	extern	domain	tcmcs.str6	foc.fim
+|****************************** program section ********************************
+before.program:
+| 	flag = 1
+	import("prog.name$", progname)
+	on case progname
+		case "tdpur4106m000":
+			import("tdpur406.orno", p.orno)
+			get.purchase.bpid(p.orno, p.bpid)
+			query.extend.where("tfisg001.bpid = " & quoted.string(p.bpid))
+		break
+		case "whinh3512m000":
+			import("whinh310.dino",import.dino)
+			ir.number = lval(import.dino)
+			query.extend.where("tfisg001._index1 = {:ir.number}")
+		break
+	endcase		
+	set.synchronized.dialog("tfisg0101m000")
+
+before.display.object:
+	disable.commands(modify.set)
+|****************************** choice section **********************************
+choice.sent.to.fin:
+on.choice:
+	dal.start.business.method("tfisg001","sent.to.fin",ret_val)
+	if ret_val <> 0 then
+		show.dal.messages(MSG.ALL)
+	endif
+	
+choice.reject.from.finance:
+on.choice:
+	dal.start.business.method("tfisg001","reject.from.finance",ret_val)
+	if ret_val <> 0 then
+		show.dal.messages(MSG.ALL)
+	endif
+	
+choice.sent.for.payment:
+on.choice:
+	dal.start.business.method("tfisg001","sent.for.payment",ret_val)
+	if ret_val <> 0 then
+		show.dal.messages(MSG.ALL)
+	else
+		UpdateIRNumberForSentToFinance()
+	endif									|#3797.en
+	
+choice.ir.invoice:
+on.choice:
+	start.synchronized.child("tfisg0505m000","tfisg001.irno", "tfisg005.irno")
+|****************************** field section **********************************
+| field.tfisg001.cctf:								|#3797.so
+| when.field.changes:
+| 	tfisg001.plcf = ""
+| 	
+| field.tfisg001.cctt:
+| when.field.changes:
+| 	tfisg001.plct = ""
+| 	
+| field.tfisg001.plcf:
+| before.zoom:
+| 	clear.query.extend.in.zoom()
+| 	query.extend.where.in.zoom("tcmcs143.ccty = "&quoted.string(tfisg001.cctf))
+
+| field.tfisg001.plct:
+| before.zoom:
+| 	clear.query.extend.in.zoom()
+| 	query.extend.where.in.zoom("tcmcs143.ccty = "&quoted.string(tfisg001.cctt))
+
+| field.tfisg001.fpon:
+| before.zoom:
+| 	clear.query.extend.in.zoom()
+| 	query.extend.where.in.zoom("tccom948.fcod = "&quoted.string(tfisg001.codf))	|#3797.eo
+
+field.i.docn:										|#3797.sn
+before.display:
+	i.docn = tfisg001.ityp & "/" & str$(tfisg001.idoc) 
+	
+field.i.pdoc:
+before.display:
+	i.pdoc = tfisg001.ptyp & "/" & str$(tfisg001.pdoc)
+	
+field.i.pinv:
+before.display:
+	i.pinv = tfisg001.invt & "/" & str$(tfisg001.pinv)
+	
+field.foc.fim:										|GH499CR834.a.s
+before.display:
+	select	tdisg832.reas:foc.fim
+	from	tdisg832
+	where	tdisg832._index4 = {:tfisg001.rcno, :tfisg001.rcln}
+	as set with 1 rows
+	selectdo
+	selectempty
+		foc.fim = ""
+	endselect									|GH499CR834.a.e
+|****************************** function ******************************************
+functions:
+
+function UpdateIRNumberForSentToFinance()
+{
+	select	tfisg001.stat,tfisg001.irno
+	from	tfisg001 for update
+	where	tfisg001.stat = tfisg.status.sent.for.pay
+	selectdo
+		select	tfacp100.ninv,tfacp100.ctyp,tfacp100.cinv
+		from	tfacp100 for update
+		where	tfacp100._index1 = {:tfisg001.irno}
+		selectdo
+			select	tfacp200.ttyp,tfacp200.ninv,tfacp200.tdoc,
+				tfacp200.docn
+			from	tfacp200
+			where	tfacp200._index1 = {:tfacp100.ctyp,:tfacp100.cinv}
+			and	tfacp200.tpay in (tfacp.tpay.normal,tfacp.tpay.anticipated)
+			selectdo
+				if isspace(tfisg001.ptyp) then
+					dal.change.object("tfisg001")
+					dal.set.field("tfisg001.ptyp",tfacp200.tdoc)
+					dal.set.field("tfisg001.pdoc",tfacp200.docn)
+					dal.set.field("tfisg001.stat", tfisg.status.payment.proc)
+					ret_val = dal.save.object("tfisg001")
+				else
+					if tfisg001.stat = tfisg.status.payment.proc then
+						select tfcmg100.ttyp, tfcmg100.docn
+						from   tfcmg100
+						where  tfcmg100.typo = {:tfacp200.tdoc}
+						and    tfcmg100.doco = {:tfacp200.docn}
+						selectdo
+							dal.change.object("tfisg001")
+							
+							dal.set.field("tfisg001.ptyp",tfcmg100.ttyp)
+							dal.set.field("tfisg001.pdoc",tfcmg100.docn)
+							dal.set.field("tfisg001.stat", tfisg.status.payment.proc)
+							
+							ret_val = dal.save.object("tfisg001")
+						selectempty
+						endselect
+					endif
+				endif
+
+				if ret_val <> 0 then
+					show.dal.messages(MSG.ALL)
+					abort.transaction()
+				else
+					commit.transaction()
+				endif
+				
+				
+			endselect
+		endselect
+	endselect
+}
+												|#3797.en
+
+function get.purchase.bpid(domain tcorno	r.orno,
+		ref	domain	tccom.bpid	r.bpid)
+{
+	select	a_tdpur400.otbp:r.bpid
+	from	tdpur400 a_tdpur400
+	where	a_tdpur400._index1 = {:r.orno}
+	selectdo
+	selectempty
+		r.bpid = ""
+	endselect
+}		

@@ -1,0 +1,531 @@
+|******************************************************************************
+|* tfisg003  0  VRC B61U a7 live
+|* DAL for tfisg003
+|* tools
+|* 14-08-23 [16:19]
+|******************************************************************************
+|* Script Type: DAL
+|******************************************************************************
+|* ISGECDV001059, IT0205, Arjit Gupta, Dt. 25-09-2014, B61U a7 live
+|* Modify disable when call from tdisg4152m000 
+|*
+|* ISGECDV001126, IT0205, Arjit Gupta, VRC B61U a7 live, Dt. 29-10-2014
+|* Remove check of disable modifying when linked IR Status is Process Invoice
+|* or Pur Invoice exist.
+|*****************************************************************************
+|*ID:PATCH002035 , IT0376 , Mani sharma , VRC B61U a7 isg Dt. 26-04-2015
+|* Functioning of Waybill Form No
+|*
+|* ID:ISGEC018001,Manwendra singh,22-03-2018 ,VRC B61U a7 live
+|* Modification
+|*****************************************************************************
+
+	|******************** Includes
+	#include <bic_dal2>
+	#include "itcmcs2000"	|* DAL(-GUI) Support Defines
+
+	|*************** Table declaration ******************
+		table	ttfisg003
+		table	ttfisg002
+		table	ttfisg001
+		table	ttfisg000
+		table   ttdisg016				|PATCH002035.n
+		table   ttfacp100
+	|************** Script Variables **************	
+	extern	domain	tfgld.docn	old.irno
+
+	|************* Global Variables ****************
+	extern	domain	tcmcs.str16	prog.name		|#ISGECDV001059.n
+	extern	domain	tfgld.docn	import.irno		|#ISGECDV001126.n
+	extern	domain	tcsess		i.session		|#ISGECDV001126.n
+
+|****************************** object hooks **********************************
+
+function extern boolean method.is.allowed(
+			long		i.method)
+{
+	on case i.method
+		case DAL_NEW:
+		if not new.method.is.allowed() then
+			dal.set.error.message("@Cannot insert a record.")	
+			return(false)
+		endif
+		break
+	case DAL_UPDATE:
+		if not update.method.is.allowed() then
+			dal.set.error.message("@Cannot modify this record.")
+			return(false)
+		endif
+		break
+	case DAL_DESTROY:
+		if not destroy.method.is.allowed() then
+			dal.set.error.message("@Cannot delete this record.")
+			return(false)
+		endif
+		break
+	endcase
+
+	return(true)
+}
+
+function extern long before.open.object.set()
+{
+	read.parameters()
+	define.field.dependencies()
+	return(0)
+}
+
+function extern long before.save.object(long type)
+{
+	on case type
+		case DAL_NEW:
+			tfisg003.link = tcyesno.yes
+			Insert_tfisg002()
+			Link_IR(tfisg003.irno)
+			break
+		case DAL_UPDATE:
+			with.old.object.values.do(get.old.value)
+			if	old.irno <> tfisg003.irno	then
+				Delete_tfisg002(old.irno)
+				Unlink_IR(old.irno)
+				Insert_tfisg002()
+				Link_IR(tfisg003.irno)
+			endif	
+			break
+	ENDCASE
+	return(0)
+}
+
+function extern long set.object.defaults()
+{
+	tfisg003.tmod.set.field.default()
+	tfisg003.cctf.set.field.default()
+	tfisg003.cctt.set.field.default()
+	return(0)
+}
+
+function extern long before.new.object()
+{	
+	return(0)
+}
+
+function extern long before.get.object()
+{
+	return(0)
+}
+
+function extern long after.get.object()
+{
+	return(0)
+}
+
+function extern long after.save.object()
+{								|PATCH002035.sn
+	if strip$(tfisg003.fpon) <> "" then
+		if update.waybill.book() then
+			show.dal.messages(MSG.ALL)
+			return(DALHOOKERROR)
+		endif
+	else if revert.waybill.book() then
+			show.dal.messages(MSG.ALL)
+			return (DALHOOKERROR)
+		endif
+	endif	
+return(0)							|PATCH002035.en
+}
+function long read.parameters()
+{
+	RETIFNOK(tcmcs.dll0095.read.parm("tfisg000"))
+	return(0)
+}
+
+
+|* [tfisg003.irno]						|#ISGEC018001.sn
+function extern boolean tfisg003.irno.is.mandatory()
+{
+	if  isspace(tfisg003.biad) then
+		return(true)
+	else
+		dal.set.error.message("@Please Enter IR NUMBER")
+		return(false)
+	endif
+	
+}								|#ISGEC018001.en
+
+
+|**** Dependencies Section ****************************************************
+
+function void define.field.dependencies()
+{
+	|* Initialize field relations.
+	dal.init.field.dependencies()
+	
+	dal.field.depends.on("tfisg003.irno", HOOK_IS_VALID,
+						"tfisg003.grno", "tfisg003.bpid", "tfisg003.grno")
+						
+	dal.field.depends.on("tfisg003.bpnm", HOOK_IS_APPLICABLE,
+						"tfisg003.otbp")
+	
+	dal.field.depends.on("tfisg003.bpid", HOOK_IS_DERIVED,
+						"tfisg003.otbp")
+
+									|#ISGECDV001126.sn
+	dal.field.depends.on("tfisg003.tirn", HOOK_UPDATE + 
+						HOOK_IS_APPLICABLE,
+						"tfisg003.sele")
+									|#ISGECDV001126.en
+	dal.field.depends.on("tfisg003.irno", HOOK_IS_MANDATORY,			|#ISGEC018001.n
+						"tfisg003.biad")								
+	|* Add direct dependent fields.
+	|* Please keep the fields in alphabetical order.
+
+	dal.finalize.field.dependencies()
+}
+
+function boolean new.method.is.allowed()
+{
+	return(true)
+}
+
+function boolean update.method.is.allowed()
+{
+						|#ISGECDV001126.so
+| 	if	(IR_Status() = tfisg.status.invoice.process)	or
+| 		(GET_IR_PUR_INV() <> 0)	then
+| 		return(false)
+| 	endif
+						|#ISGECDV001126.eo
+					|#ISGECDV001059.sn
+	import("prog.name$", prog.name)
+	if	trim$(prog.name) = "tdisg4152m000"	then
+		return(false)
+	endif
+					|#ISGECDV001059.en
+	return(true)
+}
+
+function boolean destroy.method.is.allowed()
+{
+			long		delete.allowed
+
+	with.old.object.values.do(	deleting_allowed,
+					delete.allowed)	|* ref
+	if not delete.allowed then
+		return(false)
+	endif
+
+	return(true)
+}
+
+function void deleting_allowed(
+	ref		long		o.delete.allowed)
+{
+	o.delete.allowed = true
+}
+
+|***************** BP Name **********************
+function extern boolean tfisg003.bpnm.is.applicable()
+{
+	if	tfisg003.otbp = tcyesno.no	then
+		return(false)
+	endif
+	
+	return(true)
+}
+
+|************** BP Code ***********************
+function extern boolean tfisg003.bpid.is.derived()
+{
+	if	tfisg003.otbp = tcyesno.yes	then
+		read.parameters()
+		tfisg003.bpid = tfisg000.bpid
+		return(true)
+	endif
+	return(false)
+}
+
+|******************** IR No. ********************
+function extern boolean tfisg003.irno.is.valid(long	type)
+{
+	domain	tfgld.docn	t.irno
+	
+	select	a_tfisg001.irno:t.irno
+	from	tfisg001 a_tfisg001
+	where	a_tfisg001._index1 = {:tfisg003.irno}
+	selectdo
+	selectempty
+		dal.set.error.message("@IR No. not valid")
+		return(false)
+	endselect	
+	return(true)
+}
+|******************* Waybill Form No *********************			|PATCH002035.sn
+
+function extern boolean tfisg003.fpon.is.valid(long type)
+{
+	domain tcorno i.order
+	
+	select tdisg016.cprj,tdisg016.orno
+	from    tdisg016
+	where   tdisg016._index1 = {:tfisg003.fpon}
+	selectdo
+		select tfacp100.cdf_pono,tfacp100.ninv
+		from   tfacp100
+		where  tfacp100._index1 = {:tfisg003.irno}
+		selectdo
+			get.var(pid,"tfacp100.cdf_pono",i.order)
+			if tdisg016.orno <> i.order then
+				dal.set.error.message("Waybill is not valid")
+				return(false)
+			endif
+		endselect	
+	endselect
+return(true)
+}										|PATCH002035.en
+|******************** Transport Mode **********************
+function tfisg003.tmod.set.field.default()
+{
+	tfisg003.tmod = tfisg.tmod.road
+}
+
+|******************* Country From *************************
+function tfisg003.cctf.set.field.default()
+{
+	tfisg003.cctf = get.curr.comp.country()
+}
+
+|******************* Country To *************************
+function tfisg003.cctt.set.field.default()
+{
+	tfisg003.cctt = get.curr.comp.country()
+}
+
+							|#ISGECDV001126.sn
+|****************** Transporter IR No. ********************
+function extern long tfisg003.tirn.update()
+{
+	if	tfisg003.sele = tcyesno.yes	then
+		if	trim$(i.session) = "tfisg0501m200"	then
+			tfisg003.tirn = import.irno
+		else
+			tfisg003.tirn = 0
+		endif
+	else
+		tfisg003.tirn = 0
+	endif
+		
+	return(0)
+}
+
+function extern boolean tfisg003.tirn.is.applicable()
+{
+	if	tfisg003.sele = tcyesno.no	then
+		return(false)
+	else
+		if	trim$(i.session) <> "tfisg0501m200"	then
+			return(false)
+		endif
+	endif
+	
+	return(true)
+}
+							|#ISGECDV001126.en	
+|************************ Internal Function ***************
+function domain tcncmp	Get_IR_Company(
+			domain	tfgld.docn	i.irno
+					)
+{
+	domain	tcncmp	t.ncmp
+	
+	select	a_tfisg001.ncmp:t.ncmp
+	from	tfisg001 a_tfisg001
+	where	a_tfisg001._index1 = {:tfisg003.irno}
+	as set with 1 rows
+	selectdo
+	selectempty
+		t.ncmp = 0
+	endselect
+	
+	return(t.ncmp)
+}
+
+function long	Insert_tfisg002()
+{
+	long	ret
+	
+	dal.new.object("tfisg002")
+	dal.set.field("tfisg002.irno", tfisg003.irno)
+	dal.set.field("tfisg002.gcmp", tfisg003.ncmp)
+	dal.set.field("tfisg002.grno", tfisg003.grno)
+	dal.set.field("tfisg002.grbp", tfisg003.bpid)
+	dal.set.field("tfisg002.grdt", tfisg003.grdt)
+	ret = dal.save.object("tfisg002")
+	if	ret <> 0	then
+		return(DALHOOKERROR)
+	endif
+	
+	return(0)
+}
+
+function long Link_IR(domain	tfgld.docn	i.irno)
+{
+	long	ret 
+	
+	select 	tfisg001.link
+	from	tfisg001 for update
+	where 	tfisg001._index1 = {:i.irno}
+	as set with 1 rows
+	selectdo
+		dal.change.object("tfisg001")
+		dal.set.field("tfisg001.link", tcyesno.yes)
+		ret = dal.save.object("tfisg001")
+		if	ret <> 0	then
+			return(DALHOOKERROR)
+		endif
+	endselect
+	
+	return(0)
+}
+
+function long Unlink_IR(domain	tfgld.docn	i.irno)
+{
+	long	ret 
+	
+	select 	tfisg001.link
+	from	tfisg001 for update
+	where 	tfisg001._index1 = {:i.irno}
+	as set with 1 rows
+	selectdo
+		dal.change.object("tfisg001")
+		dal.set.field("tfisg001.link", tcyesno.no)
+		ret = dal.save.object("tfisg001")
+		if	ret <> 0	then
+			return(DALHOOKERROR)
+		endif
+	endselect
+	
+	return(0)
+}
+
+function long	Delete_tfisg002(
+			domain	tfgld.docn	i.irno
+				)
+{
+	long	ret 
+	
+	select	tfisg002.*
+	from	tfisg002 for update
+	where	tfisg002._index1 = {:i.irno, :tfisg003.ncmp, :tfisg003.grno, :tfisg003.bpid, :tfisg003.grdt}
+	selectdo
+		ret = dal.destroy.object("tfisg002")
+		if	ret <> 0	then
+			return(DALHOOKERROR)
+		endif
+	endselect
+	
+	return(0)
+}				
+
+function get.old.value()
+{
+	old.irno = tfisg003.irno
+}
+
+
+function domain tfisg.status IR_Status()
+{
+	domain	tfisg.status	t.stat
+	
+	select	a_tfisg001.stat:t.stat
+	from	tfisg001 a_tfisg001
+	where	a_tfisg001._index1 = {:tfisg003.irno}
+	selectdo
+	selectempty
+		t.stat = empty
+	endselect
+
+	return(t.stat)
+}
+
+function domain tfgld.docn GET_IR_PUR_INV()
+{
+	domain	tfgld.docn	t.pinv
+	
+	select	a_tfisg001.pinv:t.pinv
+	from	tfisg001 a_tfisg001
+	where	a_tfisg001._index1 = {:tfisg003.irno}
+	selectdo
+	selectempty
+		t.pinv = 0
+	endselect
+	
+	return(t.pinv)
+}
+
+function domain tcccty get.curr.comp.country()
+{
+	domain	tcccty	tmp.ccty
+	
+	select	c_tccom000.ccty:tmp.ccty
+	from	tccom000 c_tccom000
+	where	c_tccom000._index1 = {0, :1}
+	wherebind(1, get.compnr())
+	selectdo
+	selectempty
+		tmp.ccty = ""
+	endselect
+	
+	return(tmp.ccty)
+}
+
+
+function extern long update.waybill.book()				|PATCH002035.sn
+{
+	long ret_val
+	
+	select tdisg016.*
+	from    tdisg016 for update
+	where   tdisg016._index1 = {:tfisg003.fpon}
+	selectdo
+		dal.change.object("tdisg016")
+		dal.set.field("tdisg016.stat",tdwaybill.closed)
+		dal.set.field("tdisg016.irno",tfisg003.irno)
+		dal.set.field("tdisg016.grno",tfisg003.grno)
+		dal.set.field("tdisg016.stsf",tfisg003.plcf)
+		dal.set.field("tdisg016.stst",tfisg003.plct)
+		ret_val = dal.save.object("tdisg016")
+		if ret_val <> 0 then 
+			return(DALHOOKERROR)
+		else
+			commit.transaction()
+		endif	
+	endselect
+return(0)	
+}
+
+function extern long revert.waybill.book()
+{
+
+	long ret_val
+	
+	select tdisg016.*
+	from   tdisg016 for update
+	where  tdisg016.irno = {:tfisg003.irno}
+	and     tdisg016.grno = {:tfisg003.grno}
+	selectdo
+		dal.change.object("tdisg016")
+		dal.set.field("tdisg016.irno","")
+		dal.set.field("tdisg016.grno","")
+		dal.set.field("tdisg016.stat",tdwaybill.issued)
+		dal.set.field("tdisg016.stsf","")
+		dal.set.field("tdisg016.stst","")
+		ret_val = dal.save.object("tdisg016")
+		if ret_val <> 0 then 
+			return(DALHOOKERROR)
+		else
+			commit.transaction()
+		endif	
+	endselect	
+return(0)
+}
+									|PATCH002035.en

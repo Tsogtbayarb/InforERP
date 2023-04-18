@@ -1,0 +1,218 @@
+|******************************************************************************
+| * tfmsl0520m000  0  VRC B61U a  live
+| * Advance Request Overview
+| * MCS user (Merino)             
+| * 2010-07-25
+| ******************************************************************************
+| * Main table tfmsl020 Advance Request, Form Type 1
+| ******************************************************************************
+| * IDENT ISG001014 , Manish Kumar , IT0303 , 05-03-2014 ,VRC B61U a  live
+| * Modifications as per the case Id:- 3105
+| *
+| * ID ISGECFIN013 , Kuldeep Sharma, 18/06/2016, VRC B61u a7 isg
+| * Filter and Process only recod which are selected on Payment Process
+| *
+| * ID ISGEC016005, Shilpa Janardanan, 14/07/2016, VRC B61u a7 isg
+| * Additional field for quick pay sequence no added
+| *
+| * ID ISGEC01050, Priya Jindal, 23/2/2018, VRC B61u a7 isg
+| * Changes in updation of quick payment 
+| *
+| * ID ISGEC0190, Priya Jindal, 28/7/2018
+| * Changes in code for Processor Name
+|* 
+| * ID GH272CR564_000, Paras Kukreti, 20/2/2020
+| * Display Send to Finance date in session
+|* 
+|* ID: GH291CR590, RAvi Kumar, 24-03-2020
+|* Additional Field require in Payment Request
+|*
+|* ID GH374CR685, RAvi Kumar, 21-07-2020
+|* Open entries should open automatically from Payment request
+| ****************************** declaration section ***************************
+declaration:
+#include <bic_dam>		|#ISGECFIN013.n
+	table   	ttfmsl020 | Advance Request
+	table		ttfisg185
+	table		ttfcmg109  
+	table		ttccom001  
+	table		ttfisg035	|ISGEC01090.n
+	table		ttfmsl072						|#GH272CR564_000.n
+	table	ttdpur400		|GH291CR590.a
+
+	string calling.prog(14),qury.strg(500)			|#ISGECFIN013.sn
+	long ret
+	extern domain tcmcs.str10m	hold.iprq			|#ISGECFIN013.en
+	domain	tfgld.btno		i.btno
+	extern	domain	tcnama		proc.name		|ISGEC01050.n	
+	extern	domain	tcdate		hdat					|#GH272CR564_000.n
+	extern	domain	tcemno	buyer				|GH291CR590.a
+	extern	domain	tcnama	buyer.name			|GH291CR590.a
+	
+| ****************************** program section ********************************
+							|#ISGECFIN013.sn
+before.program:
+		import("prog.name$",calling.prog)
+		if calling.prog = "tfisg1185m000" then
+			import("tfisg185.iprq",hold.iprq)
+			select tfisg185.type from tfisg185
+			where tfisg185._index1 = {:hold.iprq}
+			and tfisg185.type <>5
+			as set with 1 rows
+			selectdo
+				query.extend.from("tfisg185")
+| 				query.extend.where("tfmsl020.stat = tfmsl.lc.stat.sfin and tfisg185._index1 = {'"&hold.iprq&"'} and tfmsl020._index2 = {tfisg185.orno} and tfisg185.sele = tcyesno.yes")
+														|ISGEC01050.o
+				query.extend.where("tfmsl020.stat = tfmsl.lc.stat.veri and tfisg185._index1 = {'"&hold.iprq&"'} and tfmsl020._index2 = {tfisg185.orno} and tfisg185.sele = tcyesno.yes")
+														|ISGEC01050.n
+				dal.start.business.method("tfmsl020","set.purchase.order",ret,hold.iprq)
+			endselect
+		endif
+		
+		
+choice.mark.occur:
+after.choice:
+	if	tfmsl020.stat = tfmsl.lc.stat.sfin or tfmsl020.stat = tfmsl.lc.stat.proc or tfmsl020.stat = tfmsl.lc.stat.canl  then
+		disable.commands(mark.delete)
+	else
+		enable.commands(mark.delete)
+	endif
+
+before.display.object:								|#GH272CR564_000.sn
+	select	tfmsl072.hdat
+	from	tfmsl072
+	where	tfmsl072._index1 = {:tfmsl020.adrq}
+	and	tfmsl072.stat = 20
+	order by tfmsl072.hdat desc
+	as set with 1 rows
+	selectdo
+		hdat = tfmsl072.hdat
+	selectempty
+		hdat = 0
+	endselect
+	display("hdat")								|#GH272CR564_000.eo
+	
+
+| ****************************** choice section **********************************
+choice.update.db:							|#ISG001014.sn
+after.choice:
+	refresh.parent(-1)						|#ISG001014.en
+
+choice.link_assign:
+on.choice:
+	start.synchronized.child("tfmsl0522m000","tfmsl020.adrq","tfmsl022.adrq")
+| *************************Field Sections **********************************************
+
+field.proc.name:						|ISGEC01090.sn
+before.display:
+	select	tccom001.nama:proc.name
+	from	tccom001
+	where	tccom001._index1 = {:tfmsl020.eusr}
+	selectdo
+	selectempty
+		proc.name = ""
+	endselect						|ISGEC01090.en
+
+field.tccom001.nama:
+before.display:
+	select tccom001.nama from tccom001
+	where tccom001._index1 = {:tfmsl020.rqpr}
+	selectdo
+	endselect
+	
+field.tfisg185.iprq:		|#ISGEC016005.sn
+before.display:
+	select	tfisg185.iprq, tfcmg109.stpp,tfisg185.pyad
+	from	tfisg185, tfcmg109
+	where	tfisg185.adrq.d = {:tfmsl020.adrq}
+	order by tfisg185.iprq desc
+	as set with 1 rows
+	selectdo
+		i.btno =val(strip$(tfisg185.pyad))
+		select	tfcmg109.stpp
+		from	tfcmg109
+		where	tfcmg109._index1 = :i.btno
+		and	tfcmg109.stpp = tfcmg.stpp.posted
+		selectdo
+		selectempty
+			tfisg185.iprq = ""
+		endselect		
+	selectempty
+		tfisg185.iprq = ""
+	endselect
+				|#ISGEC016005.en
+field.tfmsl020.eusr:						|ISGEC01050.sn
+before.field:
+	select	tccom001.emno,
+| 		tccom001.nama:proc.name,
+		tfisg207.proc
+	from	tfisg207,tccom001
+	where	tfisg207._index1 = {:tfmsl020.cprj}
+	and	tfisg207.proc refers to tccom001  unref clear
+	selectdo
+		tfmsl020.eusr = tccom001.emno
+	selectempty
+		tfmsl020.eusr = ""
+		proc.name = ""
+	endselect	
+	
+field.tfmsl020.veri:
+before.field:
+	select	tccom001.emno,tfisg207.veri
+	from	tfisg207,tccom001
+	where	tfisg207._index1 = {:tfmsl020.cprj}
+	and	tfisg207.veri refers to tccom001  unref clear
+	selectdo
+		tfmsl020.veri = tccom001.emno
+	selectempty
+		tfmsl020.veri = ""
+	endselect	
+| 						|ISGEC01050.en	
+
+field.buyer:							|GH291CR590.a.s
+before.display:
+	select	tdpur400.ccon:buyer
+	from	tdpur400
+	where	tdpur400._index1 = {:tfmsl020.orno}
+	as set with 1 rows
+	selectdo
+	selectempty
+		buyer = ""
+	endselect
+	
+field.buyer.name:
+before.display:
+	select	tdpur400.ccon
+	from	tdpur400
+	where	tdpur400._index1 = {:tfmsl020.orno}
+	as set with 1 rows
+	selectdo
+		select	tccom001.nama:buyer.name
+		from	tccom001
+		where	tccom001._index1 = {:tdpur400.ccon}
+		as set with 1 rows
+		selectdo
+		selectempty
+			buyer.name = ""
+		endselect
+	selectempty
+		buyer.name = ""
+	endselect
+									|GH291CR590.a.e
+
+
+functions:									|GH374CR685.a.s
+function extern open.entry()
+{
+	domain	tcncmp	curr_comp
+	
+	curr_comp = get.compnr()
+	switch.to.company(tfmsl020.fcom)
+	session.zoomindex = 2	
+	start.synchronized.child.with(FIND.DATA)			
+	start.synchronized.child ("tfacp2520m000",
+		"tfmsl020.bpid", "tfacp200.ifbp")
+	switch.to.company(curr_comp)
+}
+										|GH374CR685.a.e
+

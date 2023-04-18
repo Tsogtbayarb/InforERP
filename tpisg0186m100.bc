@@ -1,0 +1,93 @@
+|******************************************************************************
+|* tpisg0186m100  0  VRC B61U a7 isg 
+|* Billing Budget Lines
+|* Ravi Kumar                    
+|* 2019-12-24
+|******************************************************************************
+|* Main table tpisg086 Contractwise Billing Lines, Form Type 1
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttpisg086 | Billing Budget Lines
+  table	ttpisg088
+  table	ttfisg015
+	
+	extern	domain	tcamnt tot.budg, tot.actu, tot.outl
+
+|****************************** program section ********************************
+before.program:
+	fattr.total.line = true
+	
+before.display.object:
+	select	tpisg186.cprj
+	from	tpisg186
+	where	tpisg186._index1 = {:tpisg086.cprj, :tpisg086.rvsn}
+	and	(tpisg186.stat = tpisg.rvsnstat.approved or tpisg186.stat = tpisg.rvsnstat.sendforapp)
+	as set with 1 rows
+	selectdo
+		disable.commands(ADD.SET, MARK.DELETE, dupl.occur)
+	selectempty
+		enable.commands(ADD.SET, MARK.DELETE, dupl.occur)
+	endselect
+
+on.display.total.line:
+	total.cal()
+	total.cal.outlook()
+    display.total.fields( "tpisg086.budg", tot.budg, 
+                          "tpisg086.actu", tot.actu,
+                          "tpisg086.outl", tot.outl)
+
+
+|****************************** group section **********************************
+
+functions:
+function total.cal()
+{
+	select	sum(tpisg086.budg):tot.budg,
+		sum(tpisg086.actu):tot.actu
+	from	tpisg086
+	where	tpisg086._index1 = {:tpisg086.cprj, :tpisg086.rvsn}
+	selectdo
+	selectempty
+		tot.budg = 0
+		tot.actu = 0
+	endselect
+}
+
+function total.cal.outlook()
+{
+|	In Out Net Outlook Totals : Total of Actual till previous month + Outlook value of current and future months
+	string		date.result(80)
+	long		mnth.num
+	domain	tfgld.year	year
+	domain	tpisg.month	month
+	domain	tcamnt		out.act, out.curr
+	
+	date.result = sprintf$("%D(%02d/%02m/%04Y)", date.num())
+	year = lval(trim$(date.result(7;4)))
+	mnth.num = lval(trim$(date.result(4;2)))
+	month = ltoe(mnth.num)
+	
+	select	sum(tpisg086.actu):out.act
+	from	tpisg086
+	where	tpisg086._index1 = {:tpisg086.cprj, :tpisg086.rvsn}
+	and	((tpisg086.year < :year) or (tpisg086.year = :year and tpisg086.mnth < :month))
+	selectdo
+	selectempty
+		out.act = 0
+	endselect
+	
+	select	sum(tpisg086.outl):out.curr
+	from	tpisg086
+	where	tpisg086._index1 = {:tpisg086.cprj, :tpisg086.rvsn}
+	and	((tpisg086.year > :year) or (tpisg086.year = :year and tpisg086.mnth >= :month))
+	selectdo
+	selectempty
+		out.curr = 0
+	endselect
+	
+	tot.outl = out.act + out.curr
+}
+

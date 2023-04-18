@@ -1,0 +1,133 @@
+|******************************************************************************
+|* tfisg0112m000  0  VRC B61U a7 isg 
+|* Monthly Cashflow Summary
+|* Ravi Kumar                    
+|* 2019-11-26
+|******************************************************************************
+|* Main table tfisg012 Monthly Cashflow Summary, Form Type 1
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttfisg012 | Monthly Cashflow Summary
+  table	ttfisg011
+  table	ttcemm030
+  table	ttppdm600
+  table	ttfisg015
+
+	extern	domain	tcdsca	eunt.dsca
+	extern	domain	tcmcs.str100m	hcod.dsca
+	extern	domain	tfisg.htype	htyp
+	extern	domain	tcnama	udby.nama
+	extern	domain	tcamnt	iaps, monthly.inflow, opening.inflow, iaps.amnt
+	extern	domain	tccity	iaps.hcod
+	
+|****************************** program section ********************************
+
+|****************************** group section **********************************
+field.eunt.dsca:
+before.display:
+	select	tcemm030.dsca:eunt.dsca
+	from	tcemm030
+	where	tcemm030._index1 = {:tfisg012.eunt}
+	as set with 1 rows
+	selectdo
+	selectempty
+		eunt.dsca = ""
+	endselect
+	
+field.hcod.dsca:
+before.display:
+	select	tfisg011.dsca:hcod.dsca
+	from	tfisg011
+	where	tfisg011._index1 = {:tfisg012.hcod}
+	as set with 1 rows
+	selectdo
+	selectempty
+		hcod.dsca = ""
+	endselect
+	
+field.htyp:
+before.display:
+	select	tfisg011.htyp:htyp
+	from	tfisg011
+	where	tfisg011._index1 = {:tfisg012.hcod}
+	as set with 1 rows
+	selectdo
+	selectempty
+		htyp = empty
+	endselect
+	
+field.udby.nama:
+before.display:
+	select	tccom001.nama:udby.nama
+	from	tccom001
+	where	tccom001._index4 = {:tfisg012.udby}
+	as set with 1 rows
+	selectdo
+	selectempty
+		udby.nama = ""
+	endselect
+	
+| field.iaps:
+| before.display:
+| 	if tfisg012.hcod = "H0000001" then
+| 		monthly.inflow = 0
+| 		opening.inflow = 0
+| 		select	tfisg011.hcod:iaps.hcod
+| 		from	tfisg011
+| 		where	tfisg011.htyp = tfisg.htype.inflow
+| 		selectdo
+| 			select	isg012.amnt:iaps.amnt
+| 			from	tfisg012	isg012
+| 			where	isg012._index1 = {:tfisg012.year, :tfisg012.mnth, :tfisg012.eunt, :iaps.hcod}
+| 			as set with 1 rows
+| 			selectdo
+| 				monthly.inflow = monthly.inflow + iaps.amnt
+| 			endselect
+| 		endselect
+| 		
+| 		select	tcemm030.fcmp
+| 		from	tcemm030
+| 		where	tcemm030._index1 = {:tfisg012.eunt}
+| 		as set with 1 rows
+| 		selectdo
+| 			select	tfisg015.iamt,
+| 				tppdm600.cprj
+| 			from	tfisg015, tppdm600
+| 			where	tppdm600._index7 = {:tcemm030.fcmp}
+| 			and	tfisg015.cprj refers to tppdm600
+| 			selectdo
+| 				opening.inflow = opening.inflow + tfisg015.iamt
+| 			endselect
+| 		endselect
+| 		iaps = monthly.inflow + opening.inflow
+| 	else
+| 		iaps = 0
+| 	endif
+
+choice.refresh:
+on.choice:
+	tfisgdll0112.refresh.actual.inflow.outflow(tfisg012.year, tfisg012.mnth, tfisg012.eunt)
+	tfisgdll0112.refresh.budgeted.inflow.outflow(tfisg012.year, tfisg012.mnth, tfisg012.eunt)
+	
+functions:
+function extern freeze()
+{
+	select	tfisg012.frez
+	from	tfisg012 for update
+	where	tfisg012._index1 = {:tfisg012.year, :tfisg012.mnth, :tfisg012.eunt, tfisg012.hcod}
+	and	tfisg012.frez = tcyesno.no
+	selectdo
+		tfisg012.frez = tcyesno.yes
+		db.update(ttfisg012, db.retry)
+		commit.transaction()
+	selectempty
+		message("No Data to Freeze")
+		choice.again()
+	endselect
+	
+	message("Freezed")
+}
+

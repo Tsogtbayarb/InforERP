@@ -1,0 +1,621 @@
+|******************************************************************************
+|* tfacp100ue  0  VRC B61U a7 live
+|* Received Purchase Invoice User Exit
+|* baan
+|* 14-02-20 [07:49]
+|******************************************************************************
+|* Script Type: Library
+|******************************************************************************
+|* IDENT ISG001012 , Manish Kumar , IT0303 ,20-02-2014, VRC B61U a7 live
+|* IDENT 19052014 , Neerav Singh , IT0319 , 19-05-2014,  VRC B61U a7 live
+|******************************************************************************
+|* ESSP Incident: 3739, Ritu Shrivastava, 03-06-2014,	B61U a7 live
+|* Replaced index on table tfisg001
+|******************************************************************************
+|* INDENT ISGEC01024 ,Mani sharma, IT0376, 17-01-2015, VRC B61U a7 live
+|* Apply check with respect to bussiness partner on order
+|*****************************************************************************
+|* IDENT PATCH002033 , Mani sharma, IT0376 , 22-04-2015 VRC B61U a7 isg
+|* Apply Check For Form Applicable Type 
+|*****************************************************************************
+|* IDENT ISGEC015045 , Ankit sharma, 25-08-2015 VRC B61U a7 isg
+|* checks for preventing duplicate bill entry
+|******************************************************************************
+|* ID ISGEC01044, Ritu Shrivastava, 22-08-2016, VRC B61U a7 isg
+|* To add creation date/time and user while record is being received
+|*
+|* ISGEC016020, Manish Manchanda, 2016-09-09
+|* Modification - PTR Number updation 
+|*
+|* ISGECGST001, IT0386, Saurabh Dubey, VRC B61U a7 isg
+|* Project Purchase Field(CDF) Added.
+|
+|* ID: ISGEC01039, Sumit Bansal, 16/08/2107
+|* Added functionality for Reason Code cdf
+|*
+|* ID : GSTLIVE01014, IT0386, Saurabh Dubey, VRC B61U a7 isg
+|* IR Related Additional Checks
+|*
+|* ID: ISGEC017011, Mudit Sharma, VRC B61U a7 isg
+|* Modification
+|*
+|* ID: GH202CR000, RAvi Kumar, 05/11/2019
+|* Error in IR entry in 651 company
+|* 
+|* GH433CR797, RAvi Kumar, 27-11-2020
+|* Add Packing List No. in IRN Session
+|******************************************************************************
+#include <bic_dal>
+	
+	table	ttfacp100	| Received Purchase  Invoice
+	table	ttfisg001	| GR Details
+	table   ttccom947	|Form Master 				|PATCH002033.n
+	table	ttfisg182						|#ISGEC016020.n
+	table	ttfisg206	|Reason Master				|#ISGEC01039.n
+	
+	domain	tfgld.date	i.irdt
+	domain	tcorno		i.pono
+	domain  tccprj		i.cprj
+	domain	tcyesno		o.prpu	|#ISGECGST001.n
+	domain  tcncmp		i.ncmp					|#3739.n
+	long ret_val,i
+	extern domain tcmcs.str3 type
+	extern domain tfgld.docn	ninv,ninv1				|#ISGEC015045.sn
+	extern domain tfgld.date	invd
+	extern domain tccom.bpid	ifbp
+	extern domain tfacp.isup	isup				|#ISGEC015045.en	
+	extern domain tcyesno		o.gstr				|#ISGEC01039.sn
+	extern domain tcpono		o.rcod				|#ISGEC01039.en
+	 	domain	tcncmp		g.comp
+		domain	tcmcs.long	c.pkgn				|GH433CR797.a
+
+function extern long ue.before.before.save.object(long mode)
+{
+
+	domain	tccprj			o.cprj
+	
+	domain	tcsess	g.sess
+	
+	get.var(pid, "prog.name$", g.sess)
+	g.comp = get.compnr()
+
+	on case mode
+	case DAL_NEW:
+		
+		get.var(pid, "tfacp100.cdf_gstr", o.gstr)					|#ISGEC01039.sn
+		get.var(pid, "tfacp100.cdf_rcod", o.rcod)
+		if o.gstr = tcyesno.no then						
+			if o.rcod = 000 then
+				dal.set.error.message("@Please select the Reason")
+				return(DALHOOKERROR)
+			endif
+		
+			select	tfisg206.*
+			from	tfisg206
+			where	tfisg206._index1 = {:o.rcod}
+			selectdo
+				put.var(pid, "tfacp100.cdf_resn", tfisg206.resn)
+			selectempty
+				dal.set.error.message("@Please enter the valid Reason")
+				return(DALHOOKERROR)
+			endselect
+		else
+			put.var(pid,"tfacp100.cdf_rcod", 0)
+			put.var(pid,"tfacp100.cdf_resn", "")
+		endif										|#ISGEC01039.en
+		
+					|#ISGECGST001.so
+| 		if not Check.Order.Validity() then
+| 			dal.set.error.message("@ Please Enter Valid Order")
+| 			return(DALHOOKERROR)
+| 		endif
+					|#ISGECGST001.eo
+		if  check.wayform.code() then							|PATCH002033.sn
+			dal.set.error.message("@Please Enter Valid Applicable Form Type")
+			return(DALHOOKERROR)
+		endif										|PATCH002033.en
+		
+		i = 0										|#ISGEC015045.sn
+		select	tfacp100.ninv:ninv
+		from	tfacp100
+		where	tfacp100._index3 = {:tfacp100.ifbp,:tfacp100.isup}
+		and	tfacp100.invd = :tfacp100.invd
+		and 	tfacp100.ctyp <> ""
+		selectdo
+			i = i + 1
+		endselect
+		
+		if  not check_billentry() then	
+			if i > 0 then
+| 				dal.set.error.message("@Invoice %s is linked with document %d",strip$(tfacp100.isup),tfacp100.ninv)	
+				dal.set.error.message("@Invoice %s is linked with document %d",strip$(tfacp100.isup),ninv)	
+			endif	
+			dal.set.error.message("@Duplicate Bill entry not allowed")
+			return(DALHOOKERROR)
+		endif	
+
+			
+		if i = 1 then
+			dal.set.error.message("@Invoice %s is linked with document %d",strip$(tfacp100.isup),ninv)
+			show.dal.messages(MSG.ERROR)
+		else if i >1 then
+			dal.set.error.message("@Invoice %s is linked with Multiple documents",strip$(tfacp100.isup))
+			show.dal.messages(MSG.ERROR)
+		endif	
+		endif	
+											|#ISGEC015045.en
+		break	
+	case DAL_UPDATE:
+		
+		get.var(pid, "tfacp100.cdf_gstr", o.gstr)					|#ISGEC01039.sn
+		get.var(pid, "tfacp100.cdf_rcod", o.rcod)
+		if o.gstr = tcyesno.no then						
+			if o.rcod = 000 then
+				dal.set.error.message("@Please select the Reason")
+				return(DALHOOKERROR)
+			endif
+		
+			select	tfisg206.*
+			from	tfisg206
+			where	tfisg206._index1 = {:o.rcod}
+			selectdo
+				put.var(pid, "tfacp100.cdf_resn", tfisg206.resn)
+			selectempty
+				dal.set.error.message("@Please enter the valid Reason")
+				return(DALHOOKERROR)
+			endselect
+		else
+			put.var(pid,"tfacp100.cdf_rcod", 0)
+			put.var(pid,"tfacp100.cdf_resn", "")
+		endif										|#ISGEC01039.en
+
+
+				|#ISGECGST001.so
+| 		if not Check.Order.Validity()then
+| 			dal.set.error.message("@ Please Enter Valid Order")
+| 			return(DALHOOKERROR)
+| 		endif
+				|#ISGECGST001.eo
+		if  check.wayform.code() then
+			dal.set.error.message("@Please Enter Valid Applicable Form Type")	|PATCH002033.sn
+			return(DALHOOKERROR)
+		endif										|PATCH002033.en
+		
+		i = 0										|#ISGEC015045.sn
+		select	tfacp100.ninv:ninv
+		from	tfacp100
+		where	tfacp100._index3 = {:tfacp100.ifbp,:tfacp100.isup}
+		and	tfacp100.invd = :tfacp100.invd
+		and 	tfacp100.ctyp <> ""
+		selectdo
+			i = i + 1
+		endselect
+		
+		if  not check_billentry() then	
+			if i > 0 then
+| 				dal.set.error.message("@Invoice %s is linked with document %d",strip$(tfacp100.isup),tfacp100.ninv)	
+				dal.set.error.message("@Invoice %s is linked with document %d",strip$(tfacp100.isup),ninv)	
+			endif	
+			dal.set.error.message("@Duplicate Bill entry not allowed")
+			return(DALHOOKERROR)
+		endif	
+
+			
+		if i = 1 then
+			dal.set.error.message("@Invoice %s is linked with document %d",strip$(tfacp100.isup),ninv)
+			show.dal.messages(MSG.ERROR)
+		else if i >1 then
+			dal.set.error.message("@Invoice %s is linked with Multiple documents",strip$(tfacp100.isup))
+			show.dal.messages(MSG.ERROR)
+		endif	
+		endif	
+												|#ISGEC015045.en
+		break
+	endcase
+	
+						|#ISGECGST001.sn
+	get.var(pid,"tfacp100.cdf_prpu", o.prpu)
+						|#ISGECGST001.en
+	get.var(pid,"tfacp100.cdf_irdt",i.irdt)
+	get.var(pid,"tfacp100.cdf_pono",i.pono)
+	get.var(pid,"tfacp100.cdf_cprj",i.cprj)
+	
+				|#ISGECGST001.sn
+	if o.prpu = tcyesno.yes then
+		if not isspace(i.pono) then
+			if not Check.Order.Validity() then
+				dal.set.error.message("@ Please Enter Valid Order")
+				return(DALHOOKERROR)
+			endif
+		else
+			dal.set.error.message("@Purchase Order is Mandatory As IR is Project Purchase...")
+			return(DALHOOKERROR)
+		endif	
+		
+		get.financial.company(i.pono, i.ncmp)
+		if not check.company() then
+			dal.set.error.message("@ Please Enter Valid Company")
+			return(DALHOOKERROR)
+		endif
+		
+	endif	
+				|#ISGECGST001.en
+				
+	if not isspace(i.cprj) then
+		select 	tcmcs052.cprj:o.cprj
+		from	tcmcs052
+		where	tcmcs052._index1 = {:i.cprj}
+		as set with 1 rows
+		selectdo
+		selectempty
+			dal.set.error.message("@ Enter Valid Project Code")
+			return(DALHOOKERROR)
+		endselect
+	else				|#ISGECGST001.sn
+		if o.prpu = tcyesno.yes then
+			dal.set.error.message("@Project is Mandatory As IR is Project Purchase...")
+			return(DALHOOKERROR)
+		endif			|#ISGECGST001.en
+	endif
+
+	
+| 	insert_ir_details()
+				|#GSTLIVE01014.sn
+	if not perform.additional.checks() then
+		return(DALHOOKERROR)
+	endif
+				|#GSTLIVE01014.en
+	if g.sess = "tfacp1500m000" then
+		get.var(pid, "tfacp100.cdf_list", c.pkgn)
+		if c.pkgn <> 0 then
+			select	tdisg017.pkgn
+			from	tdisg017
+			where	tdisg017.pkgn = {:c.pkgn}
+			as set with 1 rows
+			selectdo
+			selectempty
+				dal.set.error.message("@ Invalid Packing List No.")
+				return(DALHOOKERROR)
+			endselect
+		endif
+	endif
+		
+	return(0)
+}
+
+function extern long ue.after.before.save.object(long mode)
+{
+	on case mode
+	case DAL_NEW:
+		break
+	case DAL_UPDATE:
+		break
+	endcase
+	if tfacp100.stin = tfacp.stin.open then			|#ISGEC01044.sn
+		put.var(pid, "tfacp100.cdf_crdt", utc.num())
+		put.var(pid, "tfacp100.cdf_user", logname$)
+	endif								|#ISGEC01044.en	
+	return(0)
+}
+
+function extern long ue.before.after.save.object(long mode)
+{
+	domain	tcyesno	o.gstr	|#ISGECGST001.sn
+	
+	domain	tcsess	g.sess
+	
+	get.var(pid, "prog.name$", g.sess)
+	
+	g.sess = trim$(g.sess)
+				|#ISGECGST001.en
+	on case mode
+	case DAL_NEW:			
+		break
+	case DAL_UPDATE:
+		break
+	endcase
+	
+			|#ISGECGST001.sn
+	if g.sess = "tfacp1500m000" then		
+		if GST.IMPLEMENTED() then
+			get.var(pid,"tfacp100.cdf_gstr", o.gstr)
+			if o.gstr = tcyesno.yes then
+				start.session(MODELESS, "tfisg4105m000", "", "")	
+			endif	
+		endif
+	endif	
+			|#ISGECGST001.en
+	return(0)
+}
+
+function extern long ue.after.after.save.object(long mode)
+{
+	on case mode
+	case DAL_NEW:
+		break
+	case DAL_UPDATE:
+		break
+	endcase
+	update.ptr.number()					|#ISGEC016020.n
+	insert_ir_details()
+	return(0)
+}
+
+function extern long ue.before.before.destroy.object()
+{
+	get.var(pid,"tfacp100.cdf_irdt",i.irdt)
+	get.var(pid,"tfacp100.cdf_pono",i.pono)
+	get.var(pid,"tfacp100.cdf_cprj",i.cprj)
+	
+	get.financial.company(i.pono, i.ncmp)
+	
+	select 	tfisg001.ncmp
+	from	tfisg001 for update
+	where	tfisg001._index1 = {:tfacp100.ninv}
+	selectdo
+		db.delete(ttfisg001,db.retry,e)
+	endselect
+	
+	return(0)
+}
+
+function extern long ue.after.before.destroy.object()
+{
+	return(0)
+}
+
+function extern long ue.before.after.destroy.object()
+{
+	return(0)
+}
+
+function extern long ue.after.after.destroy.object()
+{
+	return(0)
+}
+
+
+function boolean Check.Order.Validity()
+{
+	domain tcorno  i.pono				|#19052014.n
+	domain	tcncmp	logistic.company		|ISGEC017011.n
+	get.var(pid,"tfacp100.cdf_pono",i.pono)	|#19052014.n
+	
+	
+	
+	get.financial.company(i.pono, i.ncmp)
+							||ISGEC017011.sn
+		select	tfacp240.loco:logistic.company
+		from	tfacp240
+		where	tfacp240.orno = {:i.pono}
+		selectdo
+		endselect
+							|ISGEC017011.en
+			|#TEMP.sn, |To be resolved, Temporarily done
+	if g.comp = 700 then
+		logistic.company = 700
+	else
+		if g.comp = 651 then							|RAvi.a.651.logic.GH202CR000
+			logistic.company = 651
+		else
+			logistic.company = 200
+		endif
+	endif
+			|#TEMP.en
+			
+		select	tdpur400.orno
+		from	tdpur400
+		where	tdpur400._index1 = {:i.pono}
+		and	tdpur400.hdst not in (tdpur.hdst.created,tdpur.hdst.closed)
+		and     tdpur400.ifbp = :tfacp100.ifbp									|ISGEC01024.n
+| 		and 	tdpur400._compnr = :g.comp		|Manually Changed (for PTR).		|ISGEC017011.o
+		and 	tdpur400._compnr = :logistic.company	|Manually Changed (for PTR).		|ISGEC017011.n
+		selectdo
+		selectempty
+			return(false)
+		endselect
+	return(true)
+}
+
+
+function boolean insert_ir_details()
+{
+	select	tfisg001.*
+	from	tfisg001 for update
+	where	tfisg001._index1 = {:tfacp100.ninv}
+	as set with 1 rows
+	selectdo
+		dal.change.object("tfisg001")
+		insert_update_ir_details(i.ncmp,tfacp100.ninv,i.irdt,tfacp100.ifbp,i.pono,i.cprj,tfacp100.amth(1))
+		ret_val = dal.save.object("tfisg001")
+
+		if ret_val <> 0 then
+			return(false)
+		endif
+	selectempty
+		dal.new.object("tfisg001")
+		
+		insert_update_ir_details(i.ncmp,tfacp100.ninv,i.irdt,tfacp100.ifbp,i.pono,i.cprj,tfacp100.amth(1))
+		dal.set.field("tfisg001.rcno","")
+		
+		dal.set.field("tfisg001.rcln",0)
+		dal.set.field("tfisg001.stat",tfisg.status.ir.receipt)
+	
+	
+		ret_val = dal.save.object("tfisg001")
+
+		if ret_val <> 0 then
+			show.dal.messages(MSG.ALL)
+			return(false)
+		endif
+
+	endselect
+	
+	return(true)
+}
+
+function insert_update_ir_details
+			(
+				domain	tcncmp		i.ncmp,		|Company
+				domain	tfgld.docn	i.ninv,		|Document Number
+				domain	tcdate		i.irdt,		|IRN Date
+				domain	tccom.bpid	i.bpid,		|Business Patner
+				domain	tcorno		i.pono,		|Purchase Order
+				domain	tccprj		i.cprj,		|Project Code
+				domain	tfgld.amnt	i.amnt	
+			)
+{			
+	dal.set.field("tfisg001.ncmp",i.ncmp)					
+	
+	dal.set.field("tfisg001.irno",i.ninv)
+	
+	dal.set.field("tfisg001.irdt",i.irdt)					
+	
+	dal.set.field("tfisg001.bpid",i.bpid)				
+	
+	dal.set.field("tfisg001.orno",i.pono)				
+	
+	dal.set.field("tfisg001.cprj",i.cprj)				
+	
+	dal.set.field("tfisg001.amnt",i.amnt)
+	
+}
+
+function boolean check.company()
+{
+	select tfgld001.ncmp
+	from   tfgld001
+	where  tfgld001._index1 = {:i.ncmp}
+	selectdo
+	selectempty
+		return(false)
+	endselect
+	
+	return(true)
+}
+
+function get.financial.company(domain tcorno	r.orno,
+			ref	domain	tcncmp	r.ncmp)
+{
+	domain	tccwoc	tmp.cofc
+	domain	tcncmp	logistic.company		|ISGEC017011.n
+	
+						||ISGEC017011.sn
+	select	tfacp240.loco:logistic.company
+	from	tfacp240
+	where	tfacp240.orno = {:i.pono}
+	selectdo
+	endselect
+						|ISGEC017011.en
+			|#TEMP.sn |To be resolved, Temporarily done
+	if g.comp = 700 then
+		logistic.company = 700
+	else
+		if g.comp = 651 then							|RAvi.a.651.logic.GH202CR000
+			logistic.company = 651
+		else
+			logistic.company = 200
+		endif
+	endif
+			|#TEMP.en
+	select	a_tcmcs065.comp:r.ncmp
+	from	tdpur400 a_tdpur400, tcmcs065 a_tcmcs065
+	where	a_tdpur400._index1 = {:r.orno}
+	and	a_tdpur400.cofc refers to a_tcmcs065
+	
+| 	and	a_tdpur400._compnr = :g.comp	|Manually Changed(For PTR)		|ISGEC017011.o	
+	and	a_tdpur400._compnr = :logistic.company					|ISGEC017011.n	
+| 	and	a_tcmcs065._compnr  = :g.comp	|Manually Changed(For PTR)		|ISGEC017011.o
+	and	a_tcmcs065._compnr  = :logistic.company					|ISGEC017011.n
+	selectdo
+	selectempty
+		r.ncmp = 0
+	endselect
+}
+
+function long  check.wayform.code()				|PATCH002033.sn
+{
+	get.var(pid,"tfacp100.cdf_code",type)
+		
+	select tccom947.fcod
+	from    tccom947
+	where   tccom947._index1 = {:type}
+	and	tccom947._compnr = 200	|Manually Changed(For PTR)
+	selectdo
+	selectempty
+		show.dal.messages(MSG.ALL)
+		return(DALHOOKERROR)
+	endselect
+return(0)
+								|PATCH002033.en
+}
+
+
+function boolean check_billentry() 							|#ISGEC015045.sn
+{
+	select	tfacp100.ifbp:ifbp,tfacp100.isup:isup,tfacp100.invd:invd,tfacp100.ninv:ninv1
+	from	tfacp100
+	where	tfacp100._index3 = {:tfacp100.ifbp,:tfacp100.isup}
+	and	tfacp100.invd = :tfacp100.invd
+	selectdo
+		if ninv1 = tfacp100.ninv then
+			return(true)
+		else
+			return(false)
+		endif
+	endselect	
+	
+	return(true)
+}											|#ISGEC015045.en	
+											|#ISGEC016020.sn
+function	update.ptr.number()
+{
+	domain	tcibd.sern	v.irno
+	
+	v.irno	=	str$(tfacp100.ninv)
+	
+	select	tfisg182.ptrn
+	from	tfisg182	for	update
+	where	tfisg182._index1	=	{:v.irno}
+	selectdo
+		tfisg182.ptrn	=	tfacp100.ctyp&"/"&str$(tfacp100.cinv)
+		db.update(ttfisg182,db.retry,e)
+	endselect
+}
+											|#ISGEC016020.en
+				|#GSTLIVE01014.sn
+function boolean perform.additional.checks()
+{
+	domain	tfacp.isup	g.isup	
+	domain	tcmcs.str1	g.char	
+		long		len.isup, p, break.flag
+		
+		
+	g.isup = tfacp100.isup
+	g.isup = trim$(g.isup)
+	
+	len.isup = len(g.isup)
+	
+	if len.isup GT 16 then
+		dal.set.error.message("@Invoice Number Cannot be Greater than 16 Characters...")
+		return(false)
+	endif
+	
+	break.flag = 0
+	
+	for p = 1 to len.isup step 1 
+		g.char = g.isup(p)
+		if g.char = " " or g.char = "." then
+			break.flag = 1
+			break
+		endif
+	endfor
+	
+	if break.flag then
+		dal.set.error.message("@Dots and Spaces are Not Allowed in Invoice Number....")
+		return(false)
+	endif
+	
+	return(true)
+}
+				|#GSTLIVE01014.en

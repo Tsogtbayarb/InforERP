@@ -1,0 +1,281 @@
+|******************************************************************************
+|* tpisg0101  0  VRC B61U a7 dev 
+|* Sanction Control
+|* sujeet                        
+|* 2014-02-17
+|******************************************************************************
+|* Main table tpisg001 Sanction Control, Form Type 1
+|******************************************************************************
+|* ESSP Incident - 3823		Sujeet Kumar,		2014-06-07
+|* Existing Script is Removed,
+|* DLL's are created. 'tpisgdll0011 & tpisgdll0012'
+|*
+|* ID ISGECDV001125		Sujeet Kumar,		2014-10-29
+|* Always Total Budget of 1.0 Version should be Shown on Sanction Control
+|* Functional: Mr. Viaks Yadav
+|*
+|* ID: ISGEC01183, Prasanna Bhuyan, 2/4/2019, VRC B61U a7 isg
+|* Added Reason for Partial Revise and logics for it
+|*
+|* ID: ISGEC002025, Arun Chauhan , Date- 25-04-2019,
+|* Modification In Reason Desctiption
+|*
+|* ID: ISGEC019008, Manish Manchanda, 2019-07-23
+|* Modification - zoom on tpisg012.rfpr
+|*
+|* GH603CR000, RAvi Kumar, 13-07-2021
+|* Parent element of L1 level not updating in sanction control
+|****************************** declaration section ***************************
+declaration:
+
+table   ttpisg001 | Sanction Control
+table   ttpisg012 | Sanction Control
+table	ttpisg011
+table	ttpest120
+table	ttpisg013
+table	ttpisg003
+table	ttpisg008		|#ISGECDV001125.n
+table	ttpisg002
+
+extern 	domain	tppdm.sern	o.levl
+domain	tpisg.sanction		o.act1,o.acti
+extern	domain	tcmcs.str3	levl.f
+extern	domain	tppdm.cspa	o.parent
+extern	domain	tcdsca		desc,
+				rpds				|#ISGEC01183.n
+extern	domain	tcamnt		avai.po
+								|#ISGECDV001125.sn
+extern	domain	tcamnt		f.tpisg012.totl	
+extern	domain	tcorno		old.version
+extern	domain	tcamnt		tot.ardi.tpisg008,tot.ardc.tpisg008,
+				tot.ardi,tot.ardc
+								|#ISGECDV001125.en
+#include<bic_dam>
+|****************************** program section ********************************
+after.form.read:
+	 enable.save.on.occ.change()
+								|#ISGECDV001125.sn
+before.display.object:
+	old.version = "1.0"
+	select 	tpisg008.totl
+	from	tpisg008
+	where	tpisg008._index1 = {:tpisg012.cprj,:old.version,:tpisg012.elem}
+	as set with 1 rows
+	selectdo
+	selectempty
+		tpisg008.totl = 0
+	endselect
+	f.tpisg012.totl = tpisg008.totl
+	avai.po = tpisg012.totl - tpisg012.exha
+								|#ISGECDV001125.en
+|****************************** group section **********************************
+
+|****************************** field section *********************************
+field.tpisg012.reas:
+before.zoom:
+	o.acti = tpisgdll0011.Sanction_Header_Revision_Type(tpisg012.cprj,tpisg012.vers)
+	tpisg003.acti = o.acti
+	
+field.tpisg012.rfpr:									|#ISGEC01183.sn
+before.zoom:
+	tpisg003.acti = tpisg.sanction.partial				
+											|#ISGEC019008.sn
+	select	tpisg011.acti
+	from	tpisg011
+	where	tpisg011._index1	=	{:tpisg012.cprj,:tpisg012.vers}
+	and	tpisg011.acti		=	tpisg.sanction.trans.to.supp
+	as	set with 1 rows
+	selectdo
+		tpisg003.acti	=	tpisg.sanction.trans.to.supp
+	endselect
+											|#ISGEC019008.en
+field.rpds:
+before.display:
+	tpisgdll0011.get_description(tpisg.sanction.partial,tpisg012.rfpr,rpds)		|#ISGEC01183.en
+											|#ISGEC019008.sn
+	if	isspace(rpds)	then
+		tpisgdll0011.get_description(tpisg.sanction.trans.to.supp,tpisg012.rfpr,rpds)
+	endif
+	if	isspace(rpds)	then
+		tpisgdll0011.get_description(tpisg.sanction.add.red.client,tpisg012.rfpr,rpds)
+	endif
+	if	isspace(rpds)	then
+		tpisgdll0011.get_description(tpisg.sanction.add.red.inter,tpisg012.rfpr,rpds)
+	endif
+											|#ISGEC019008.en
+											|#ISGEC019008.en	
+| 	on case o.acti
+| 		case 	tpisg.sanction.partial:		
+| 			attr.zoomcode = Z.SESSION
+| 	| 			attr.zoomsession$ = "tpisg0103m000"
+| 			attr.zoomsession$ = "tpisg0503m000"
+| 			attr.zoomreturn$ = "tpisg003.reas"
+| 			break
+| 			
+| 		default:
+| 			attr.zoomcode = Z.SESSION
+| 	| 			attr.zoomsession$ = "tpisg0104m000"	
+| 			attr.zoomsession$ = "tpisg0504m000"	
+| 			attr.zoomreturn$ = "tpisg004.reas"
+| 	endcase
+		
+field.desc:
+before.display:
+	o.acti = tpisgdll0011.Sanction_Header_Revision_Type(tpisg012.cprj,tpisg012.vers)
+	
+	on case o.acti
+	case 	tpisg.sanction.launch:
+		tpisgdll0011.get_description(o.acti,tpisg012.reas,desc)
+		break
+	case 	tpisg.sanction.partial:	
+| 	case	tpisg.sanction.add.conti.s:						|#Anadi.n
+		tpisgdll0011.get_description(o.acti,tpisg012.reas,desc)
+		break
+	case 	tpisg.sanction.complete:
+		tpisgdll0011.get_description(o.acti,tpisg012.reas,desc)
+		break
+	case 	tpisg.sanction.l4revise:
+		tpisgdll0011.get_description(o.acti,tpisg012.reas,desc)
+		break
+	case 	tpisg.sanction.csrevise:						|ISGEC002025.sn
+		tpisgdll0011.get_description(o.acti,tpisg012.reas,desc)
+		break									
+	case 	tpisg.sanction.trans.to.ctoh:						
+		tpisgdll0011.get_description(o.acti,tpisg012.reas,desc)
+		break									|ISGEC002025.en
+	endcase	
+	
+field.tpisg012.elem:
+after.zoom:
+	o.levl = tpest120.levl
+	o.parent = tpest120.pele
+	display("tpisg012.levl")
+| before.input:
+| 	attr.zoomcode = Z.SESSION
+| 	attr.zoomsession$ = "tpisg1520m000"
+| 	attr.zoomreturn$ = "tpest120.sele"	
+after.input:
+	
+	select 	tpisg011.aver
+	from	tpisg011
+	where	tpisg011._index1 = {:tpisg012.cprj,:tpisg012.vers}
+	as set with 1 rows
+	selectdo
+	endselect
+	
+	select tpest120.pele,
+		tpest120.levl
+	from	tpest120
+	where	tpest120._index1 = {:tpisg012.cprj,:tpisg011.aver}
+	and	tpest120.sele = :tpisg012.elem
+	and	tpest120.levl >=1			|GH603CR000.cng
+	as set with 1 rows
+	selectdo
+		tpisg012.levl = tpest120.levl		|GH603CR000.a
+		tpisg012.cspa = tpest120.pele		|GH603CR000.a
+	endselect
+	
+| 	tpisg012.levl = o.levl
+| 	tpisg012.cspa = o.parent
+	
+| 	tpisg012.levl = tpest120.levl			|GH603CR000.com
+| 	tpisg012.cspa = tpest120.pele			|GH603CR000.com
+
+| 	on.main.table(tpisgdll0011.populate.L4Revise.Elements,tpisg012.cprj,tpisg012.vers)
+field.levl.f:
+before.field:
+	levl.f = "L" & str$(tpisg012.levl + 1)
+
+field.tpisg012.tran:
+before.zoom:
+	o.acti = tpisgdll0011.Sanction_Header_Revision_Type(tpisg012.cprj,tpisg012.vers)
+	on case o.acti
+		case 	tpisg.sanction.l4revise:
+			tpisg013.cprj = tpisg012.cprj
+			tpisg013.vers = tpisg012.vers
+			tpisg013.cspa = tpisg012.elem
+			attr.zoomcode = Z.SESSION
+			attr.zoomsession$ = "tpisg0513m000"
+			attr.zoomreturn$ = "tpisg013.cspp"
+			break
+		case 	tpisg.sanction.partial:
+			attr.zoomcode = Z.SESSION
+			attr.zoomsession$ = "tpisg0502m000"
+			attr.zoomreturn$ = "tpisg002.elem"
+			break
+| 		case	tpisg.sanction.add.conti.s:
+| 			tpisg002.elem = "99180000"
+| 			attr.zoomcode = Z.SESSION
+| 			attr.zoomsession$ = "tpisg0502m000"
+| 			attr.zoomreturn$ = "tpisg002.elem"
+| 			break
+	endcase
+
+| field.tpisg012.totl:
+| after.field:
+| 	avai.po = tpisg012.totl - tpisg012.exha
+			
+							|ISGEC002025.sn
+field.tot.ardc:
+before.display:
+	select	tpisg011.act1
+	from	tpisg011
+	where	tpisg011._index1 = {:tpisg012.cprj,:tpisg012.vers}
+	selectdo
+	selectempty
+		tpisg011.act1 = empty
+	endselect
+	if tpisg011.act1 = tpisg.sanction.approved then
+		if tpisg012.levl = 0 then
+			select sum(zz_tpisg008.ardc):tot.ardc.tpisg008
+			from	tpisg008 zz_tpisg008
+			where	zz_tpisg008._index1 ={:tpisg012.cprj}
+			selectdo
+			endselect
+			tot.ardc = tot.ardc.tpisg008 + tpisg012.ardc
+		else
+			select sum(zz_tpisg008.ardc):tot.ardc.tpisg008
+			from	tpisg008 zz_tpisg008
+			where	zz_tpisg008._index1 ={:tpisg012.cprj}
+			and 	zz_tpisg008.elem = :tpisg012.elem
+			selectdo
+			endselect
+			tot.ardc = tot.ardc.tpisg008 + tpisg012.ardc	
+		endif
+	else
+		tot.ardc = 0
+	endif	
+	
+	
+field.tot.ardi:
+before.display:
+	select	tpisg011.act1
+	from	tpisg011
+	where	tpisg011._index1 = {:tpisg012.cprj,:tpisg012.vers}
+	selectdo
+	selectempty
+		tpisg011.act1 = empty
+	endselect
+	if tpisg011.act1 = tpisg.sanction.approved then
+		if tpisg012.levl = 0 then
+			select sum(zz_tpisg008.ardi):tot.ardi.tpisg008
+			from	tpisg008 zz_tpisg008
+			where	zz_tpisg008._index1 ={:tpisg012.cprj}
+			selectdo
+			endselect
+			tot.ardi = tot.ardi.tpisg008 +  tpisg012.ardi
+		else
+			select sum(zz_tpisg008.ardi):tot.ardi.tpisg008
+			from	tpisg008 zz_tpisg008
+			where	zz_tpisg008._index1 ={:tpisg012.cprj}
+			and	zz_tpisg008.elem = :tpisg012.elem
+			selectdo
+			endselect
+			tot.ardi = tot.ardi.tpisg008 +  tpisg012.ardi
+		endif
+	else
+		tot.ardi = 0
+	endif	
+							|ISGEC002025.en
+|************************ function section **********************************
+	

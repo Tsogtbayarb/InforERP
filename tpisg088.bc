@@ -1,0 +1,255 @@
+|******************************************************************************
+|* tpisg088  0  VRC B61U a7 isg 
+|* tpisg088 - DAL2
+|* merino1
+|* 19-03-22 [13:56]
+|******************************************************************************
+|* Script Type: DAL
+|******************************************************************************
+|* ISGEC01171, Prasanna Bhuyan, 22/3/2019, VRC B61U a7 isg
+|* New Development  
+|*
+|* Adarsh Pal, 22-05-19, VRC B61U a7 isg
+|* Revised Date Changes
+|* 
+|* ID GH228CR000, RAvi Kumar, 16-12-2019
+|* Contract Master Error message improvement
+
+|******************************************************************************
+#include <bic_dal2>
+
+	table	ttpisg087	|Contract Header
+	table	ttpisg088	|Contract Lines
+	table	ttcmcs052	|Projects
+	table	ttppdm740	|Project Business Partners
+	table	ttpisg220	|Project Activity Master
+	table	ttpisg245	|Control Tower Projects
+	
+		domain	tfgld.date	sdst
+	extern	domain	tccprj			ccod.valid		|GH228CR000.a
+	extern	domain	tccom.bpid		bpid.ofbp		|GH228CR000.a
+
+
+function extern long before.open.object.set()
+{
+	handle.field.dependencies()
+	return(0)
+}
+
+function extern long before.save.object(long type)
+{	
+	return(0)
+}
+
+function extern long after.save.object(long type)
+{
+	update_contract_header(tpisg088.ccod)	
+	return(0)
+}
+
+function extern long after.destroy.object()
+{
+	update_contract_header(tpisg088.ccod)
+	return(0)
+}
+
+function handle.field.dependencies()
+{
+	dal.field.depends.on("tpisg088.desc", HOOK_UPDATE, "tpisg088.cprj")
+	dal.field.depends.on("tpisg088.pval", HOOK_UPDATE, "tpisg088.cprj")
+	dal.field.depends.on("tpisg088.ccur", HOOK_UPDATE, "tpisg088.cprj")
+}
+
+function extern void tpisg088.desc.update()
+{
+	select	tcmcs052.dsca:tpisg088.desc
+	from	tcmcs052	
+	where	tcmcs052._index1 = {:tpisg088.cprj}
+	selectdo
+	selectempty
+		tpisg088.desc = ""
+	endselect
+}
+
+function extern void tpisg088.pval.update()
+{
+	select	tppdm740.copr:tpisg088.pval
+	from	tppdm740	
+	where	tppdm740._index1 = {:tpisg088.cprj}
+	selectdo
+	selectempty
+		tpisg088.pval = 0
+	endselect
+}
+
+function extern void tpisg088.ccur.update()
+{
+	select	tppdm740.ccur:tpisg088.ccur
+	from	tppdm740	
+	where	tppdm740._index1 = {:tpisg088.cprj}
+	selectdo
+	selectempty
+		tpisg088.ccur = ""
+	endselect
+}
+
+function extern boolean tpisg088.cprj.is.valid(long mode)
+{
+
+| 	select	atpisg088.cprj
+| 	from	tpisg088	atpisg088
+| 	where	atpisg088.cprj = :tpisg088.cprj
+| 	as set with 1 rows
+| 	selectdo
+| 		dal.set.error.message("@ Project already linked to Contract")
+| 		return(DALHOOKERROR)
+| 	endselect
+	
+	
+	select	atpisg088.cprj,								|GH228CR000.cng.new										
+		atpisg088.ccod:ccod.valid
+	from	tpisg088	atpisg088
+	where	atpisg088.cprj = :tpisg088.cprj
+	as set with 1 rows
+	selectdo
+		dal.set.error.message("@ Project already linked to Contract No. " & trim$(ccod.valid))
+		return(DALHOOKERROR)
+	endselect
+	
+	select	tppdm740.ofbp:bpid.ofbp
+	from	tppdm740
+	where	tppdm740._index1 = :tpisg088.cprj
+	as set with 1 rows
+	selectdo
+		select	atpisg087.ccod	
+		from	tpisg087	atpisg087
+		where	atpisg087._index1 = :tpisg088.ccod
+		and	atpisg087.cust = :bpid.ofbp
+		as set with 1 rows
+		selectdo
+		selectempty
+			dal.set.error.message("@Customer of all projects linked with contract should be same")
+			return(DALHOOKERROR)
+		endselect
+	endselect
+	
+	return(true)												|GH228CR000.e	
+}
+function extern boolean tpisg088.ccod.is.mandatory()
+{
+	return(true)
+}
+													|Adarsh.22.05.19.sn
+function extern boolean tpisg088.cprj.is.mandatory()
+{
+	return(true)
+}
+													|Adarsh.22.05.19.en
+function update_contract_header(
+					domain	tcorno	i.ccod
+								)
+{
+	domain	tccprj		o.cprj, i.cprj
+	domain	tcmcs.str100	cprj
+	domain	tppdm.aalc	pval, sum.pval
+	domain	tcorno		pcod
+	domain	tcccur		ccur
+	domain	tcratc		rate
+	domain	tfgld.date	hold.date,form.date							|Adarsh.22.05.19.n
+	
+	cprj = ""
+	sum.pval = 0
+	pval = 0
+	ccur = ""
+	rate = 0
+	o.cprj = ""
+													|Adarsh.22.05.19.sn
+	hold.date = 0
+	form.date = 0	
+													|Adarsh.22.05.19.en
+													
+	select	tpisg087.*
+	from	tpisg087 for update
+	where	tpisg087._index1 = {:i.ccod}
+	selectdo
+		select	atpisg088.pval:pval,
+			atpisg088.cprj:o.cprj
+		from	tpisg088	atpisg088	
+		where	atpisg088._index1 = {:tpisg087.ccod}
+		selectdo
+			sum.pval = sum.pval + pval
+			if not isspace(cprj)	then
+				cprj = trim$(cprj) & "," & trim$(o.cprj)
+			else
+				cprj = trim$(o.cprj)
+			endif	
+													|Adarsh.22.05.19.sn
+			select	tpisg245.rcdt
+			from	tpisg245
+			where	tpisg245._index1 = {:o.cprj}
+			selectdo
+				if tpisg245.rcdt ge hold.date then
+					form.date = tpisg245.rcdt
+				endif
+				hold.date = tpisg245.rcdt
+			endselect
+													|Adarsh.22.05.19.en
+		endselect
+		
+		select	ctpisg088.cprj:i.cprj
+		from	tpisg088	ctpisg088	
+		where	ctpisg088._index1 = {:tpisg087.ccod}
+		as set with 1 rows
+		selectdo
+			select	atpisg220.pcod:pcod
+			from	tpisg220	atpisg220
+			where	atpisg220._index1 = {:i.cprj}
+			as set with 1 rows
+			selectdo
+			endselect
+			
+			select	tpisg245.ccdt
+			from	tpisg245
+			where	tpisg245._index1 = {:i.cprj}
+			selectdo
+			endselect
+			
+			get_zero_date(i.cprj)
+			
+			select	atppdm740.rate(1):rate
+			from	tppdm740	atppdm740	
+			where	atppdm740._index1 = {:i.cprj}
+			selectdo
+			selectempty
+				rate = 0
+			endselect
+		endselect
+		
+		tpisg087.ccno = cprj
+		tpisg087.prod = pcod
+		tpisg087.ccdt = tpisg245.ccdt
+		tpisg087.zdat = sdst
+		tpisg087.orvl = sum.pval
+		tpisg087.exrt = rate
+		tpisg087.ordl = tpisg087.orvl * tpisg087.exrt
+										
+		tpisg087.rcdt = form.date								|Adarsh.22.05.19.sn
+		db.update(ttpisg087,DB.RETRY)						
+		hold.date = 0
+		form.date = 0
+													|Adarsh.22.05.19.en
+	endselect
+}
+
+function get_zero_date(
+			domain	tccprj	i.cprj
+						)
+{
+	select	btpisg220.sdst:sdst
+	from	tpisg220	btpisg220
+	where	btpisg220._index1 = {:i.cprj}
+	and	btpisg220.actp = 2
+	as set with 1 rows
+	selectdo
+	endselect
+}

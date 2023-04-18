@@ -1,0 +1,199 @@
+|******************************************************************************
+|* tpisg0463m0000  0  VRC B61U a7 isg 
+|* Print Engineering Element Status
+|* Installation user             
+|* 2015-01-13
+|******************************************************************************
+|* Main table tpisg063 Engineering Status of Project Elements, Form Type 4
+|******************************************************************************
+|* ID ISGEC01017, Manish Manchanda, 2014-01-13
+|* ID ISGEC01034, Manish Kumar, 29-01-2015
+|* 
+|* GH510CR819, RAvi Kumar, 16-03-2021
+|* Partial Element Status Tracker in Infor LN
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttpisg063 | Engineering Status of Project Elements
+	table	ttcmcs052 | Projects
+	table	ttpptc100 | Elements
+	table	tdmisg001 | Incoming Document Master 
+	table	tdmisg002 | Incoming Document Child
+	table	ttpest120 | Structural Elements
+	table	ttpisg114	|GH510CR819.a
+	table	ttccom001	|GH510CR819.a
+	
+|****************************** form variables ********************************	
+	extern	domain	tccprj		cprj.f    fixed
+	extern	domain	tccprj		cprj.t    fixed
+	extern	domain	tppdm.cspa	cspa.f    fixed
+	extern	domain	tppdm.cspa	cspa.t    fixed
+							|#ISGEC01034.sn
+	extern	domain	tpengs		stat.f
+	extern	domain	tpengs		stat.t
+							|#ISGEC01034.en
+
+|****************************** script variables ******************************	   
+	long 			file_ptr
+	string 			file_name(50),rec(1024), str(300)
+	string			err(100), error(100), c.file(70), s.file(70), line(1500), err.file(100), file.name(100),supplytimedays(100)
+	long			ret.insert, ret, ret2, cnt, count, line.no, stat.fp, fp, var.long
+
+	#pragma used dll ottdllbw 
+	#include<bic_desktop>
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** field section *********************************
+
+field.cprj.f:
+when.field.changes:
+	cprj.t	=	cprj.f
+
+field.cspa.f:
+when.field.changes:
+	cspa.t	=	cspa.f
+   
+selection.filter:
+	str	=	"tpest120.cprj in(select tppdm600.cprj from tppdm600 where tppdm600._index1 = '"&cprj.f&"')"
+before.zoom:
+	query.extend.where.in.zoom(str)
+
+field.cspa.t:
+selection.filter:
+	str	=	"tpest120.cprj in(select tppdm600.cprj from tppdm600 where tppdm600._index1 = '"&cprj.t&"')"
+before.zoom:
+	query.extend.where.in.zoom(str)
+				|#ISGEC01034.sn
+field.stat.f:
+when.field.changes:
+	stat.t  = stat.f
+				|#ISGEC01034.en
+|****************************** function section ******************************
+
+functions:
+
+function	extern	generate.file()
+{
+	err.file	=	bse.dir$() & str$(utc.num()) & ".xls"
+	
+	file.name	=	"c:\temp\" & str$(utc.num())  & ".xls"
+	
+	stat.fp 	=	seq.open(err.file, "w+")
+	
+	process.file()
+	
+	seq.close(stat.fp)
+	ret2	=	server2client(err.file,file.name,1)
+	ret2	=	app_start(file.name,"c:","","","")
+}
+
+
+function	process.file()
+{
+	generate.header()
+	read.main.table()
+}
+
+
+function	read.main.table()
+{
+	select	tpisg063.*, tcmcs052.dsca, tpptc100.desc
+	from	tpisg063, tcmcs052, tpptc100
+	where	tpisg063._index1	inrange		{:cprj.f, :cspa.f}	and	{:cprj.t, :cspa.t}
+	and	tpisg063.appl = tcyesno.yes			|#ISGEC01034.sn
+	and	tpisg063.engs inrange :stat.f and :stat.t	|#ISGEC01034.en
+	and	tpisg063.cprj		refers to	tcmcs052
+	and	tpptc100._index1	=	{tpisg063.cprj,tpisg063.cspa}
+	selectdo
+		select	dmisg001.docn, dmisg001.revn, dmisg001.stat
+		from	dmisg001, dmisg002
+		where	dmisg001._index3	=	{:tpisg063.cprj}
+		and	dmisg002._index1	=	{dmisg001.docn,dmisg001.revn}
+		and	dmisg002.elem		=	{:tpisg063.cspa}
+		selectdo
+		selectempty
+			dmisg001.stat	=	empty
+		endselect
+		
+		select	tpisg114.user,						|GH510CR819.a.s
+			tpisg114.date
+		from	tpisg114
+		where	tpisg114._index1 = {:tpisg063.cprj, :tpisg063.cspa}
+		order by tpisg114.date desc
+		as set with 1 rows
+		selectdo
+			select	tccom001.nama
+			from	tccom001
+			where	tccom001._index4 = {:tpisg114.user}
+			as set with 1 rows
+			selectdo
+			selectempty
+				tccom001.nama = ""
+			endselect
+		selectempty
+			tpisg114.user = ""
+			tpisg114.date = 0
+			tccom001.nama = ""
+		endselect							|GH510CR819.a.e
+		write.data()
+	endselect
+}
+
+
+function	generate.header()
+{
+	if stat.fp >0 then
+ 		seq.seek(0, 0, stat.fp)
+	
+		line	=	concat$("	", 
+				sprintf$("Project Code"),			 		|1
+				sprintf$("Project Name"),					|2
+				sprintf$("Element Code"),					|3
+				sprintf$("Element Name"),					|4
+| 				sprintf$("Element Status"),					|5	|#ISGEC01034.o
+				sprintf$("Applicable Status"),					|6
+				sprintf$("Engineering Status"),				|7
+				sprintf$("Reason for Partial Status"),				|8	|GH510CR819.a
+				sprintf$("Remarks"),						|9	|GH510CR819.a
+				sprintf$("Last Updated by"),					|10	|GH510CR819.a
+				sprintf$("Last Updated by Name"),				|11	|GH510CR819.a
+				sprintf$("Last Updated On"))					|12	|GH510CR819.a
+			
+		line	=	strip$(shiftl$(line))		
+		ret2	=	seq.write(line, len(line), stat.fp)
+		line	=	""
+		seq.puts(line, stat.fp)
+		ret2	=	seq.write(line, len(line), stat.fp)
+		line	=	""
+		seq.puts(line, stat.fp)
+	endif	
+}
+
+
+function	write.data()
+{
+	line	=	concat$("	",
+			sprintf$("%s",tpisg063.cprj),						|1
+			sprintf$("%s",tcmcs052.dsca),						|2
+			sprintf$("%s",tpisg063.cspa),						|3
+			sprintf$("%s",tpptc100.desc),						|4
+| 			sprintf$("%s",enum.descr$("dmstat",dmisg001.stat)),			|5	|#ISGEC01034.o
+			sprintf$("%s",enum.descr$("tcyesno",tpisg063.appl)),			|6
+			sprintf$("%s",enum.descr$("tpengs",tpisg063.engs)),			|7
+			sprintf$("%s", enum.descr$("tpisg.par.stat", tpisg063.rpst)),		|8	GH510CR819.a
+			sprintf$("%s", trim$(tpisg063.rmks)),					|9	GH510CR819.a
+			sprintf$("%s", trim$(tpisg114.user)),					|10	GH510CR819.a
+			sprintf$("%s", trim$(tccom001.nama)),					|11	GH510CR819.a
+			sprintf$("%s", sprintf$("%u(%02d/%02m/%04Y )", tpisg114.date)))		|12	GH510CR819.a
+							
+		line	=	strip$(shiftl$(line))
+		seq.puts(line, stat.fp)
+}
+|****************************** End of Code ******************************

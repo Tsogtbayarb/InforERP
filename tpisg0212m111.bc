@@ -1,0 +1,231 @@
+|******************************************************************************
+|* tpisg0212m111  0  VRC B61U a7 isg 
+|* Update
+|* merino1                       
+|* 2019-08-27
+|******************************************************************************
+|* Main table tpisg012 Sanction Control Lines., Form Type 4
+|******************************************************************************
+|* ID:	isgec01198,Aditi Aggarwal,27/08/2019,VRC B61U a7 isg
+|* New Development                                                                               
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttpisg012 | Sanction Control Lines.
+	table	ttcmcs052
+	table	ttppdm600
+	table	ttpisg011
+	table	ttpisg012
+	table	ttpmsl000
+	extern	domain	tccprj          proj    fixed
+	extern	domain	tcdsca		dsca	fixed
+	extern	domain	tpisg.sanction	acti,act1
+	extern	domain	tcorno          vers    fixed
+		domain tcmcs.long	ret
+		domain	tcamnt		tot,tot_cal
+  
+#include<bic_dam>  
+|*****************************field Section************************************	
+field.proj:
+check.input:
+	if not isspace(proj) then
+		select 	tppdm600.cprj
+		from	tppdm600
+		where	tppdm600._index1 = {:proj}
+		selectdo
+		selectempty
+			message("Invalid Project  !")
+			set.input.error("",e)
+		endselect
+		
+		select	tpisg011.cprj
+		from	tpisg011
+		where	tpisg011._index1 = {:proj}
+		selectdo
+		selectempty
+			message("Invalid Project  !")
+			set.input.error("",e)
+		endselect			
+	endif
+
+when.field.changes:
+	select 	tcmcs052.dsca:dsca
+	from	tcmcs052
+	where	tcmcs052._index1 = {:proj}
+	as set with 1 rows
+	selectdo
+	selectempty
+		dsca = ""
+	endselect
+
+	select 	tpisg011.vers:vers,
+		tpisg011.acti:acti,
+		tpisg011.act1:act1
+	from	tpisg011
+	where	tpisg011._index1 = {:proj}
+	selectdo
+	selectempty
+		vers=""
+		acti = empty
+		act1 = empty
+	endselect
+
+	
+|****************************** program section ********************************
+before.program:
+	tcmcs.dll0095.read.parm("tpmsl000")
+|****************************** choice section ********************************
+choice.update.field:
+before.choice:
+	select	tpisg011.acti,
+		tpisg011.act1
+	from	tpisg011
+	where	tpisg011._index1 ={:proj,:vers}
+	selectdo
+		if	tpisg011.acti <> tpisg.sanction.launch then
+			message("Sanction Revision Type Should Be Launched")
+			choice.again()
+			
+		endif
+	
+		if	tpisg011.act1 <> tpisg.sanction.approval then
+			message("Sanction Status Should Be Sent For Approval")
+			choice.again()
+			
+		endif
+	endselect	
+
+	select	tpptc100.cprj
+	from	tpptc100
+	where	tpptc100._index1	=	{:proj,"99210000"}
+	as	set with 1 rows
+	selectdo
+	selectempty
+		message("Please Maintain Contigency-V Element 99210000 in Project Element Structure.")
+		choice.again()
+	endselect
+
+on.choice:
+	if Update_Contingency() then
+		message("Contigency-V Element Has Been Inserted Successfully")
+	else
+		message("Insertion Failed !")
+		choice.again()
+	endif
+	
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+|***************************** function section *******************************
+functions:
+function   boolean Update_Contingency()
+{
+	
+	select	tpisg012.totl 
+	from	tpisg012
+	where	tpisg012._index1={:proj}
+	and	tpisg012.elem = "99100000"
+	and 	tpisg012.totl <> 0.00
+	selectdo
+		if tpmsl000.perc <> 0 then
+			tot = (tpmsl000.perc*tpisg012.totl)/100
+		else
+			tot = 0.00
+		endif
+	selectempty
+		tot = 0.00
+	endselect
+
+
+	select	tpisg011.cprj,tpisg011.vers
+	from	tpisg011
+	where	tpisg011._index1 ={:proj,:vers}
+	as set with 1 rows
+	selectdo
+		if not Check.Contingency.V.Element(tpisg011.cprj,tpisg011.vers) then
+			message("Please Maintain the Contigency Element for This Project")
+			choice.again()
+		endif
+		
+		select	tpisg012.cprj
+		from	tpisg012 
+		where	tpisg012._index1 ={:tpisg011.cprj,:tpisg011.vers,"99210000"}
+		selectdo
+			message("Contigency-V Element Already Present")
+			choice.again()
+		selectempty
+			tpisg012.cprj = proj
+			tpisg012.vers = vers
+			tpisg012.elem = "99210000"	
+			tpisg012.levl = 2
+			tpisg012.tfrd = tcyesno.no
+			tpisg012.cspa = "99000000"	
+			
+			if tot < tpmsl000.amnt	then
+				tpisg012.totl =  tot
+				tpisg012.avai =  tot
+				tot_cal = tot
+			else
+				tpisg012.totl = tpmsl000.amnt
+				tpisg012.avai = tpmsl000.amnt
+				tot_cal = tpmsl000.amnt
+				
+			endif
+			
+			db.insert(ttpisg012,db.skip.dupl,e)
+			if e = 0 then
+				commit.transaction()
+			else
+				return(false)
+			endif
+			if  tot_cal <> 0 then
+				if subtract_record(tot_cal) then
+					return(true)
+				endif
+			endif	
+		endselect
+	endselect
+	return(true)
+	
+}
+
+
+function boolean subtract_record(domain tcamnt tot1)
+{
+	db.retry.point()
+	select	tpisg012.totl,tpisg012.avai,tpisg012.amnt
+	from	tpisg012 for update
+	where	tpisg012._index1 = {:proj,:vers}
+	and	tpisg012.elem = "99100000"
+	selectdo
+		tpisg012.totl = tpisg012.totl - tot1
+		tpisg012.avai = tpisg012.avai - tot1
+		db.update(ttpisg012,db.retry,e)
+		if e = 0 then
+			commit.transaction()
+		else
+			return(false)
+		endif	
+	endselect
+	return(true)
+}
+
+
+function boolean Check.Contingency.V.Element(
+					domain	tccprj		i.cprj,	|Project
+					domain	tcorno		i.vers	|Version
+					)
+				
+{
+	select	tpisg012.cprj
+	from	tpisg012
+	where	tpisg012._index1 = {:i.cprj,:i.vers,"99100000"}
+	selectdo 
+	selectempty
+		return(false)
+	endselect
+	return(true)
+	
+}

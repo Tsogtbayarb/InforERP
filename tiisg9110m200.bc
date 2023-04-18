@@ -1,0 +1,228 @@
+|******************************************************************************
+|* tiisg9110m200  0  VRC B61U a7 live
+|* Maintain Hours Transactions(New)
+|* Tools                         
+|* 2014-05-14
+|******************************************************************************
+|* Main table tiisg910 , Form Type 1
+|******************************************************************************
+|* IDENT ISG001021, Yoshita Kundwani, IT0177, 14-05-2014 , VRC B61U a7 live
+|*
+|* ISGEC001006, Arjit Gupta, IT0205, 04/09/2014 , VRC B61U a7 isg
+|* 
+|* ISGECDV001014, Arjit Gupta, IT0205, 10/09/2014, VRC B61U a7 live
+|* Add total for calculating Hours
+|****************************** declaration section ***************************
+declaration:
+#ident "@(#)ISG001021, Yoshita Kundwani, IT0177, 14-05-2014 , VRC B61U a7 live"
+ 
+ 
+	table	ttiisg910	| Hours Transactions
+	table	ttccom001	| Employees
+	table	ttiisg906	| Employee Role Relationship
+	table	ttiisg905
+	table	ttpptc100
+	table	ttpmsl000
+	table	ttcmcs052
+	table	ttiisg909
+	table	ttdsmi110
+	
+	long 	lusr.m	
+	extern 	domain 	tfgld.user	curr.user
+	extern 	domain 	tcemno		curr.emno
+	extern	domain	tcmcs.long	level
+	extern string	query.str(500)
+	extern	domain	tcnych		tot.hhrs				|#ISGECDV001014.n
+	extern domain tccprj zoom.item
+
+|****************************** program section ********************************
+before.program:
+	lusr.m = lval(logname$)
+	curr.user = toupper$(logname$)
+	fattr.total.line = true					|#ISGECDV001014.n
+
+| 	if lusr.m <> 330 and lusr.m <> 340 and lusr.m <> 616 
+| 	and lusr.m <> 761 and lusr.m <> 335 and lusr.m <> 1149 
+| 	and lusr.m <> 1918 and lusr.m <> 2093 then
+	
+| 		if time.num() >= 37800 and time.num() <= 61200 then
+| 			message("Please Log manhours in morning or evening as per office order")
+			|exit()
+| 		endif
+| 	endif
+	get.employee.code(curr.user, curr.emno)	|#ISGEC001006
+	select	tiisg906.grcd, tiisg906.rlid 
+	from	tiisg906 
+| 	where	tiisg906.emno = :curr.user and tiisg906.stat = tcyesno.yes |#ISGEC001006.o
+	where	tiisg906.emno = :curr.emno and tiisg906.stat = tcyesno.yes |#ISGEC001006.n
+	selectdo 
+	endselect
+	
+	select	tiisg905.sess 
+	from	tiisg905
+	where	tiisg905.rlid = :tiisg906.rlid 
+	selectdo 
+	endselect
+| 	if lusr.m <> 330 and prog.name$ <> tiisg905.sess  and tiisg906.rlid <> 40 then
+		|exit()
+| 	endif
+after.form.read:
+	enable.save.on.occ.change()
+	
+					|#ISGECDV001014.sn
+on.display.total.line:
+	get.total()
+	display.total.fields("tiisg910.hhrs", tot.hhrs)
+	
+					|#ISGECDV001014.en
+|****************************** choice section ********************************
+
+|*******************************field Section *********************************
+field.tiisg910.acid:
+when.field.changes:
+	tiisg910.sact = 0
+	
+before.zoom:
+	tiisg909.rlid = tiisg910.rlid
+	
+	
+field.tiisg910.sact:
+before.zoom:
+	export("tiisg908.acmn",tiisg910.acid)
+
+field.tiisg910.dcat:
+before.zoom:
+	tiisg906.grcd = ""
+	select tiisg906.grcd
+	from	tiisg906 
+	where 	tiisg906.emno = :tiisg910.emno
+	and tiisg906.stat = tcyesno.yes
+	selectdo 
+	endselect 
+| 	if strip$(shiftl$(tiisg906.grcd)) = "ENGGI" 
+| 		or strip$(shiftl$(tiisg906.grcd)) = "PUNE001" then 
+		|attr.zoomsession$ = "tpptc9530m001"  |session not available
+		|attr.zoomreturn$ = "tpptc930.dcat"
+	
+| 	else	
+		|attr.zoomsession$ = "tpptc9528m001"
+		|attr.zoomreturn$ = "tpptc928.dcat"
+	
+| 	endif
+
+field.tiisg910.cspa:
+before.zoom:
+| 	select	tpptc100.cspa
+| 	from	tpptc100, tpisg012
+| 	where	tpptc100._index1 = {:tiisg910.cprj}
+| 	and	tpptc100.cprj = tpisg012.cprj
+| 	and	tpptc100.cspa = tpisg012.elem
+| 	and	tpisg012.levl > 2
+| 	selectdo
+| 	endselect
+	
+| 	tpptc100.wast = tppdm.wast.free
+| 	set.query()
+| 	query.extend.where.in.zoom("tpptc100.wast = tppdm.wast.free")
+| 	query.extend.select.in.zoom("tpptc100.cspa")
+| 	query.extend.from.in.zoom("tpptc100, tpisg012")
+| 	query.extend.where.in.zoom(query.str)
+	tpptc100.cprj = tiisg910.cprj
+field.tiisg910.emno:
+before.input:
+	get.employee.code(toupper$(logname$), curr.emno)	|ISGEC001006.n
+| 	tiisg910.emno = curr.user		|#ISGEC001006.o
+	tiisg910.emno = curr.emno		|#ISGEC001006.n
+	
+field.tiisg910.rlid:
+before.input:				
+	select	a_tiisg906.rlid:tiisg910.rlid
+	from	tiisg906 a_tiisg906
+	where	a_tiisg906._index1 = {:tiisg910.emno}
+	and	a_tiisg906.stat = tcyesno.yes
+	as set with 1 rows
+	selectdo
+	selectempty
+		tiisg910.rlid = 0
+	endselect
+	
+before.zoom:
+	tiisg906.emno = tiisg910.emno	
+	
+	
+	
+field.tiisg910.tdat:
+before.input:
+	tiisg910.tdat = date.num()	
+	
+| field.tiisg910.cprj:
+| after.zoom:
+| 	tiisg910.cprj = strip$(zoom.item)
+
+| zoomfield$()
+| zoomreturn$()
+	
+field.tcmcs052.dsca:
+before.display:
+	select	tcmcs052.dsca
+	from	tcmcs052
+	where	tcmcs052._index1 = {:tiisg910.cprj}
+	selectdo
+	selectempty
+| 		select	tdsmi110.dsca
+| 		from	tdsmi110
+| 		where	tdsmi110.opty = {:tiisg910.cprj}
+| 		selectdo
+| 			tcmcs052.dsca = tdsmi110.dsca 
+| 		selectempty
+ 			tcmcs052.dsca = ""
+| 		endselect
+	endselect
+	
+
+|****************************** group section **********************************
+|****************************** Function section **********************************
+Functions:
+
+function set.query()
+{
+	tcmcs.dll0095.read.parm("tpmsl000")
+	level = tpmsl000.levl + 1
+		
+	query.str = "tpptc100._index1 = {:tiisg910.cprj}"| & " and"
+| 	query.str = trim$(query.str) & " tpptc100.cspa in (select tpisg012.elem from	tpisg012		
+| ^					where	tpisg012._index1 = {:tiisg910.cprj})"	
+| ^					and	tpisg012.levl > 2)"
+| 	query.str = "tpptc100.cspa in (select tpisg012.elem from	tpisg012		
+| ^					where	tpisg012._index1 = {:tiisg910.cprj})"	
+| ^					and	tpisg012.levl > 2)"
+| 	query.str = trim$(query.str) & " tpptc100.cprj = tpisg012.cprj and tpptc100.cspa = tpisg012.elem"| and"
+| 	query.str = trim$(query.str) & " tpisg012.levl > :level"
+}
+
+|#ISGEC001006.sn
+function get.employee.code(domain	tfgld.user	in.user,
+			ref	domain	tcemno		ot.emno)
+{			
+	select	e_tccom001.emno:ot.emno
+	from	tccom001 e_tccom001
+	where	e_tccom001._index4 = {:in.user}
+	as set with 1 rows
+	selectdo
+	selectempty
+		ot.emno = ""
+	endselect
+}
+|#ISGEC001006.en
+
+|#ISGECDV001014.sn
+function get.total()
+{
+	tot.hhrs = 0
+	select	sum(h_tiisg910.hhrs):tot.hhrs
+	from	tiisg910 h_tiisg910
+	where	h_tiisg910._index1 = {:tiisg910.emno, :tiisg910.rlid, :tiisg910.tdat}
+	selectdo
+	endselect
+}
+|#ISGECDV001014.en

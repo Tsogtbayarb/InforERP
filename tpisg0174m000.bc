@@ -1,0 +1,281 @@
+|******************************************************************************
+|* tpisg0174m000  0  VRC B61U a7 isg 
+|* Maintain SAR Information
+|* Installation user             
+|* 2015-02-05
+|******************************************************************************
+|* Main table tpisg074 SAR Information, Form Type 1
+|******************************************************************************
+|* ID ISGEC004009, Dharmendra, 18-02-2015     
+|*
+|* ID: ISGEC004013, Ritu Shrivastava, 21-02-2015
+|* Changed zoom for approved by based on division.
+|* 
+|* PATCH001010, Dharmendra, 12-03-2015
+|
+|* ID ISGEC015088, Ankit Shrama	,26-02-2015,VRC B61U a7 isg 
+|* Modification  
+|*
+|* GH242CR505, Adarsh Pal, 15-01-2020, VRC B61u a7 isg1
+|* GH242CR505, RAvi Kumar, 27-06-2020, VRC B61u a7 isg
+|* Modifications in SAR Information
+|*
+|* ID: GH353CR658, RAvi Kumar, 29-06-2020
+|* SAR Improvement points
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttpisg074	| SAR Information
+	table	ttpptc100	| Element
+	table	ttccom001
+	table	ttpisg073		|#ISGEC004013.sn
+	table	tbpmdm001		|#ISGEC004013.en
+	table	tdmisg133		|#GH242CR505.n
+	table	tdmisg130		|#GH242CR505.n
+	
+		boolean 	ret_val
+		long 		ret
+	extern	domain	tfgld.user	i.user			|#ISGEC015088.n	
+								|#GH242CR505.sn
+	extern	domain	tcorno		pcod			|GH242CR505.a
+	extern	domain	tcccty		dept			|GH242CR505.a
+	extern	domain	tcdsca		dept.dsca			|GH242CR505.a
+	extern	domain	tcdsca		dsca			|GH242CR505.a
+	extern	domain	tppdm.dscl	cspa.dsca
+	extern	domain	tcnama		pcod.dsca
+								|#GH242CR505.en
+	extern	domain	tcnama		rper.nama, emno.nama, apby.nama
+	
+		
+#include <bic_dam>
+
+|****************************** program section ********************************
+before.display.object:
+	if tpisg074.stat = tpisg.stat.review then
+		dal.start.business.method("tpisg074","logname.matched",ret_val,tpisg074.rper)
+		if ret_val then
+			enable.fields("tpisg074.sarc",actual.occ)
+		else
+			disable.fields("tpisg074.sarc",actual.occ)
+		endif
+	else
+		disable.fields("tpisg074.sarc",actual.occ)
+	endif
+after.form.read:
+	enable.save.on.occ.change()
+|****************************** group section **********************************
+group.2:
+init.group:
+ret = create.extra.toolbar(
+		"tpisg0574m400",	"tcgen:activate")
+|****************************** Field section **********************************
+field.tpisg074.cspa:
+before.zoom:
+	tpptc100.cprj  = tpisg074.cprj
+											|#GH242CR505.sn
+field.pcod:
+before.display:
+	select	dmisg140.pcod:pcod
+	from	dmisg140
+	where	dmisg140._index2 = {:tpisg074.cprj}
+	selectdo
+	selectempty
+		pcod = ""
+	endselect
+	
+field.pcod.dsca:
+before.display:
+	select	dmisg145.name:pcod.dsca
+	from	dmisg145
+	where	dmisg145._index1 = {:pcod}
+	selectdo
+	selectempty
+		pcod.dsca = ""
+	endselect
+	
+field.dept:
+before.display:
+| 	if len(trim$(tpisg074.rper)) < 4 then
+| 		if len(trim$(tpisg074.rper)) < 3 then
+| 			if len(trim$(tpisg074.rper)) < 2 then
+| 				tpisg074.rper = "000" & tpisg074.rper
+| 			else
+| 				tpisg074.rper = "00" & tpisg074.rper
+| 			endif
+| 		else
+| 			tpisg074.rper = "0" & tpisg074.rper
+| 		endif
+| 	endif
+	
+	
+	select	dmisg130.dept:dept
+	from	dmisg130
+	where	dmisg130._index1 = {:tpisg074.rper}
+	selectdo
+	selectempty
+		dept = ""
+	endselect
+	
+
+	select	dmisg090.dsca:dept.dsca
+	from	dmisg090
+	where	dmisg090._index1 = {:dept}
+	selectdo
+	selectempty
+		dept.dsca = ""
+	endselect
+	
+field.dsca:
+before.display:
+	select	tcemm030.dsca:dsca
+	from	tcemm030
+	where	tcemm030._index1 = {:tpisg074.devi}
+	selectdo
+	selectempty
+		dsca = ""
+	endselect
+	
+field.cspa.dsca:
+before.display:
+	select	tpptc100.desc:cspa.dsca
+	from	tpptc100
+	where	tpptc100._index1 = {:tpisg074.cprj, :tpisg074.cspa}
+	selectdo
+	selectempty
+		cspa.dsca = ""
+	endselect
+
+field.tpisg074.rper:
+before.zoom:
+| 	query.extend.where.in.zoom("tccom001.loco in(select dmisg133.logn from dmisg133 where dmisg133.cprj = " & quoted.string(tpisg074.cprj) & ")")
+	query.extend.where.in.zoom("dmisg152.cprj = " & quoted.string(tpisg074.cprj))	|GH353CR658.cng
+	
+when.field.changes:
+| 	tpisg074.sars = tpsarc.workseverity					|GH353CR658.com
+	tpisg074.sars = empty							|GH353CR658.a
+										|#GH242CR505.en
+|****************************** choice section *********************************
+choice.submit:
+before.choice:
+	if tpisg074.stat = tpisg.stat.review then
+		if tpisg074.reas <> 0 then
+			message("Return Reason should be empty if you want to submit.")
+			choice.again()
+		endif
+		
+		if tpisg074.caus.r = 0 then
+			message("Root Cause Is Mandatory")
+			choice.again()
+		endif
+									|# PATCH001010.sn
+| 		if isspace(tpisg074.sarc) then
+| 			message("SAR Classification is Mandatory")
+| 			choice.again()
+| 		endif
+									|# PATCH001010.en
+		if tpisg074.corr = 0 then
+			message("Correction Field Value is Mandatory")
+			choice.again()
+		endif
+	
+		if isspace(tpisg074.cwoc) then
+			message("Responsible Department Is Mandatory")
+			choice.again()
+		endif
+	
+		if tpisg074.acti = 0 then
+			message("Corrective Action is Mandatory")
+			choice.again()
+		endif
+	
+		if isspace(tpisg074.apby) then
+			message("Approved By Field Value is Mandatory")
+			choice.again()
+		endif
+	endif
+	
+	if tpisg074.stat = tpisg.stat.approval then
+		if tpisg074.appr = 0 then
+			message("Approver Remarks Field Value is Mandatory")
+			choice.again()
+		endif
+	endif
+							|# ISGEC004009.sn
+	if tpisg074.stat = tpisg.stat.created then
+| 		if tpisg074.cost.q = 0 then		|# PATCH001010.sn
+| 			message("Cost of poor quality is Mandatory")
+| 			choice.again()
+| 		endif
+							|# PATCH001010.en
+		if tpisg074.psol = 0 then	
+			message("Proposed Solution Is Mandatory")
+			choice.again()
+		endif
+		
+		if tpisg074.pdes = 0 then
+			message("Problem Description Is Mandatory")
+			choice.again()
+		endif
+	endif
+
+							|# ISGEC004009.en
+on.choice:
+	dal.start.business.method("tpisg074","submit",ret)
+	if ret <> 0 then
+		show.dal.messages(MSG.ALL)
+	endif
+		
+choice.reject:
+before.choice:
+	if tpisg074.stat = tpisg.stat.review then
+		if tpisg074.reas = 0 then
+			message("Return Reason is Mandatory")
+			choice.again()
+		endif
+	endif
+on.choice:
+	dal.start.business.method("tpisg074","reject",ret)
+	if ret <> 0 then
+		show.dal.messages(MSG.ALL)
+	endif
+	
+
+|*******************************************Field section ************************************************
+field.tpisg074.apby:							|#ISGEC004013.sn
+before.zoom:
+	query.extend.where.in.zoom("tpisg073.eunt = " & quoted.string(tpisg074.devi))
+									|#ISGEC004013.en
+									
+field.rper.nama:
+before.display:
+	select	tccom001.nama:rper.nama
+	from	tccom001
+	where	tccom001._index1 = {:tpisg074.rper}
+	as set with 1 rows
+	selectdo
+	selectempty
+		rper.nama = ""
+	endselect
+	
+field.emno.nama:
+before.display:
+	select	tccom001.nama:emno.nama
+	from	tccom001
+	where	tccom001._index4 = {:tpisg074.emno}
+	as set with 1 rows
+	selectdo
+	selectempty
+		emno.nama = ""
+	endselect
+
+field.apby.nama:
+before.display:
+	select	tccom001.nama:apby.nama
+	from	tccom001
+	where	tccom001._index1 = {:tpisg074.apby}
+	as set with 1 rows
+	selectdo
+	selectempty
+		apby.nama = ""
+	endselect
+

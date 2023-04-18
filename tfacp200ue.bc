@@ -1,0 +1,376 @@
+|******************************************************************************
+|* tfacp200ue  0  VRC B61U a7 live
+|* 
+|* tools1
+|* 14-05-15 [12:03]
+|******************************************************************************
+|* Script Type: Library
+|******************************************************************************
+|* ESSP Incident: 3797, Sujeet Kumar, 03-06-2014, 	B61U a7 live
+|*****************************************************************************
+|* ISGEC01012, IT0289, Shilpa Janardanan, 23-12-2014, B61U a7 live
+|* Check PO in logistic company
+|****************************************************************************
+|*IDENT	ISGEC001144,Sandhyarani,19-01-2015
+|*Modification 
+|*
+|* IDENT ISGEC001177, Ritu Sharma, 2015-05-16
+|* Correction done to check the Invoice amount.
+|*
+|* ID:	ISGEC01168, Arun Chauhan, 25-02-2019
+|* Modification in logistic company 
+|
+||#8831.sn by sanjeev : - check for project for the company 651. on 06-12-2019.
+|*
+|* GH398CR000, RAvi Kumar, 19-09-2020
+|* PTR not cleared from IRN after deletion
+|*
+|* GH559CR000, RAvi Kumar, 20-05-2021
+|* 178402-Remove/Update or delete/new PTR no from Maintain GR with Transport Session in IR 
+|******************************************************************************
+                                                                                
+#include <bic_dal>
+
+	table		ttfacp200
+	table		ttfacp100
+	table		ttfisg001
+	table		ttfisg000
+	table		ttcemm030						|GH398CR000.a
+	table		ttdpur400						|GH398CR000.a
+	extern	domain	tcamnt	detn.amnt,total.new,v.amnt				|#ISGEC001144.n		
+	extern	domain	tcamnt	rate.amnt,amnt.new				|#ISGEC001144.n
+	extern	domain	tcncmp		logi.comp				|ISGEC01168.n
+
+function extern long ue.before.before.save.object(long mode)
+{
+
+	
+	
+	domain	tcorno		i.orno,o.orno
+	domain	tccprj		i.cprj,o.cprj
+	domain	tfgld.catg	o.catg
+	
+	on case mode
+	case DAL_NEW:
+		break
+	case DAL_UPDATE:
+		break
+	endcase
+	
+	Check.amount()							|#ISGEC001144.sn
+	
+| 	if 	tfacp200.amth(1) < 0 then
+| 		total.new = -1 * total.new
+| 	endif
+	
+| 	if	total.new > tfacp200.amth(1) then		|#ISGEC001177.o
+	if	tfacp200.tpay = tfacp.tpay.credit then
+		if	total.new > -(tfacp200.amth(1)) then		|#ISGEC001177.n
+			dal.set.error.message("@Amount cannot be greater than Invoice amount ")
+			return(DALHOOKERROR)
+		endif								|#ISGEC001144.en
+	else
+		if	total.new > (tfacp200.amth(1)) then		
+			dal.set.error.message("@Amount cannot be greater than Invoice amount ")
+			return(DALHOOKERROR)
+		endif
+	endif	
+	get.var(pid,"tfacp200.cdf_prno",i.orno)
+	get.var(pid,"tfacp200.cdf_cprj",i.cprj)
+	
+	read.parameter()
+	if	not isspace(i.orno) then
+		select	tfacp245.loco:logi.comp		|ISGEC01168.sn
+		from	tfacp245
+		where	tfacp245._index1 = {:i.orno}
+		as set with 1 rows
+		selectdo				|ISGEC01168.en
+			select 	tdpur400.orno:o.orno
+			from	tdpur400
+			where	tdpur400._index2 = {:tfacp200.ifbp,:i.orno}
+	| 		and	tdpur400._compnr = 200	|ISGEC01012.n	|#ISGEC01168.o
+			and	tdpur400._compnr = :logi.comp	|ISGEC01168.n
+			as set with 1 rows
+			selectdo
+			selectempty
+				dal.set.error.message("@ Select Valid Purchase Order")
+				return(DALHOOKERROR)
+			endselect
+		selectempty					|#ISGEC01168.sn
+			logi.comp = 0 
+		endselect					|#ISGEC01168.en
+	endif	
+	if	not isspace(i.cprj) then
+		select 	tppdm600.cprj:o.cprj
+		from	tppdm600
+		where	tppdm600._index1 = {:i.cprj}
+		and	tppdm600._compnr = 200	|ISGEC01012.n
+		as set with 1 rows
+		selectdo
+		selectempty
+| 			dal.set.error.message("@ Select Valid Project Code")		|#ISGEC01168.so
+| 			return(DALHOOKERROR)						|#ISGEC01168.eo
+			select 	tppdm600.cprj:o.cprj		|ISGEC01168.sn
+			from	tppdm600
+			where	tppdm600._index1 = {:i.cprj}
+			and	tppdm600._compnr = 700		
+			as set with 1 rows
+			selectdo
+			selectempty				
+| 				dal.set.error.message("@ Select Valid Project Code")	|#8831.sn by sanjeev
+| 				return(DALHOOKERROR)
+				select 	tppdm600.cprj:o.cprj		|ISGEC01168.sn
+				from	tppdm600
+				where	tppdm600._index1 = {:i.cprj}
+				and	tppdm600._compnr = 651
+				as set with 1 rows
+				selectdo
+				selectempty				
+					dal.set.error.message("@ Select Valid Project Code")	
+					return(DALHOOKERROR)
+				endselect						|#8831.en by sanjeev
+			endselect				|ISGEC01168.en
+		endselect
+	endif
+	select 	tfgld011.catg:o.catg
+	from	tfgld011
+	where	tfgld011._index1 = {:tfacp200.ttyp}
+	and	tfgld011.catg = tfgld.catg.purchase.cred
+	as set with 1 rows
+	selectdo
+		if tfacp200.tpay = tfacp.tpay.credit then
+			if	tfacp200.ttyp = tfisg000.ctyp	then
+				if	isspace(i.orno)	then
+					dal.set.error.message("@ Select Valid Purchase Order")
+					return(DALHOOKERROR)
+				endif
+				if	isspace(i.cprj)	then
+					dal.set.error.message("@ Select Valid Project Code")
+					return(DALHOOKERROR)
+				endif
+			endif	
+		endif
+	endselect
+	
+	
+	return(0)
+}
+
+function extern long ue.after.before.save.object(long mode)
+{
+	on case mode
+	case DAL_NEW:
+		break
+	case DAL_UPDATE:
+		break
+	endcase
+	
+	
+	return(0)
+}
+
+function extern long ue.before.after.save.object(long mode)
+{
+	on case mode
+	case DAL_NEW:
+		break
+	case DAL_UPDATE:
+		break
+	endcase
+	return(0)
+}
+
+function extern long ue.after.after.save.object(long mode)
+{
+	on case mode
+	case DAL_NEW:
+		break
+	case DAL_UPDATE:
+		break
+	endcase
+	
+	link_ir()
+	return(0)
+}
+
+function extern long ue.before.before.destroy.object()
+{
+	if tfacp200.ttyp = "PTR" or tfacp200.ttyp = "PTF" then			|GH398CR000.a.s
+		clear.IRN()
+	endif									|GH398CR000.a.e
+	return(0)
+}
+
+function extern long ue.after.before.destroy.object()
+{
+	return(0)
+}
+
+function extern long ue.before.after.destroy.object()
+{
+	return(0)
+}
+
+function extern long ue.after.after.destroy.object()
+{	
+	unlink_ir()
+	return(0)
+}
+
+
+function link_ir()
+{
+
+	domain	tcncmp		i.ncmp
+	domain	tccom.bpid	i.ifbp
+	domain	tfgld.docn	i.ninv
+	
+	
+| 	select 	tfacp100.cdf_comp:i.ncmp,
+	select	tfacp100.ifbp:i.ifbp,
+		tfacp100.ninv:i.ninv
+	from	tfacp100
+	where	tfacp100._index4 ={:tfacp200.ttyp,:tfacp200.ninv}
+	and	tfacp100.stin = tfacp.stin.copied
+	selectdo
+		select 	tfisg001.stat,
+			tfisg001.invt,
+			tfisg001.pinv
+		from	tfisg001 for update
+| 		where	tfisg001._index1 = {:i.ncmp,:i.ninv,:i.ifbp}
+		where	tfisg001._index1 = {:i.ninv}
+		and	tfisg001.stat in (tfisg.status.gr.receipt,tfisg.status.sent.to.fin)
+		selectdo
+			tfisg001.stat = tfisg.status.invoice.process
+			tfisg001.invt = tfacp200.ttyp
+			tfisg001.pinv = tfacp200.ninv
+			db.update(ttfisg001,db.retry,e)
+		endselect
+	endselect
+	
+}
+
+function unlink_ir()
+{
+	select 	tfisg001.irno
+	from   tfisg001		for update
+	where  tfisg001.invt = :tfacp200.ttyp
+	and    tfisg001.pinv = :tfacp200.ninv
+	and	tfisg001.stat in (tfisg.status.invoice.process)    
+	selectdo
+| 		select 	tfacp100.cdf_comp,
+		select	tfacp100.ifbp,
+			tfacp100.ninv
+		from	tfacp100
+		where	tfacp100._index1 ={:tfisg001.irno}
+| 		and	tfacp100.stin = tfacp.stin.open
+		and	tfacp100.stin = tfacp.stin.copied
+		selectdo
+			tfisg001.stat = tfisg.status.gr.receipt
+			tfisg001.invt = ""
+			tfisg001.pinv = 0
+			db.update(ttfisg001,db.retry,e)
+		selectempty
+		endselect
+	endselect
+	
+}
+
+function Check.amount()				|#ISGEC001144.sn
+{
+	
+	total.new = 0
+	detn.amnt = 0
+	v.amnt = 0
+	total.new = 0
+	rate.amnt = 0
+	amnt.new = 0
+	get.var(pid,"tfacp200.cdf_detn",detn.amnt)
+	get.var(pid,"tfacp200.cdf_amnt",v.amnt)
+	total.new = detn.amnt + v.amnt
+	
+}							|#ISGEC001144.en
+function read.parameter()
+{
+	tcmcs.dll0095.read.parm("tfisg000")
+}
+
+function clear.IRN()									|GH398CR000.a.s
+{
+	domain	tcncmp curr_comp, po.comp
+	domain	tcorno	po.orno
+	string	error.msg(500)
+	
+	po.orno = ""
+	curr_comp = get.compnr()
+	po.comp = 0
+	
+	select	tcemm030.lcmp
+	from	tcemm030
+	where	tcemm030.fcmp = :curr_comp
+	as set with 1 rows
+	selectdo
+	endselect
+	
+	select	tfacp100.ninv,
+		tfacp100.cdf_pono
+	from	tfacp100 for update
+	where	tfacp100._index4 = {:tfacp200.ttyp, :tfacp200.ninv}
+	and	tfacp100._compnr = :tcemm030.lcmp
+	selectdo
+		get.var(pid, "tfacp100.cdf_pono", po.orno)
+		select	tdpur400.cofc
+		from	tdpur400
+		where	tdpur400._index1 = {:po.orno}
+		and	tdpur400._compnr = :tcemm030.lcmp
+		as set with 1 rows
+		selectdo
+			select	tcmcs065.comp:po.comp
+			from	tcmcs065
+			where	tcmcs065._index1 = {:tdpur400.cofc}
+			and	tcmcs065._compnr = :tcemm030.lcmp
+			as set with 1 rows
+			selectdo
+			endselect
+		endselect
+		
+		if po.comp = curr_comp then
+			select	tfacp100.stin,
+				tfacp100.ctyp,
+				tfacp100.cinv
+			from	tfacp100 for update
+			where	tfacp100._index1 = {:tfacp100.ninv}
+			and	tfacp100.stin = tfacp.stin.copied
+			and	tfacp100._compnr = :tcemm030.lcmp
+			as set with 1 rows
+			selectdo
+				tfacp100.stin = tfacp.stin.open
+				tfacp100.ctyp = ""
+				tfacp100.cinv = 0
+				db.update(ttfacp100, db.retry, e)
+				unlink_ir.after.clear()							|GH559CR000.a
+			endselect
+		endif
+	endselect
+}
+												|GH398CR000.a.e
+function unlink_ir.after.clear()						|GH559CR000.a.s
+{
+	select	tfisg001.stat,
+		tfisg001.invt,
+		tfisg001.pinv
+	from	tfisg001 for update
+	where	tfisg001.invt = :tfacp200.ttyp
+	and	tfisg001.pinv = :tfacp200.ninv
+	and	tfisg001.stat in (tfisg.status.invoice.process)    
+	and	tfisg001._compnr = :tcemm030.lcmp
+	selectdo
+		tfisg001.stat = tfisg.status.gr.receipt
+		tfisg001.invt = ""
+		tfisg001.pinv = 0
+		db.update(ttfisg001,db.retry,e)
+	endselect
+}
+										|GH559CR000.a.e
+
+

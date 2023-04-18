@@ -1,0 +1,1320 @@
+|******************************************************************************
+|* tpisg074  0  VRC B61U a7 isg 
+|* DAL For SAR Infomation tpisg074
+|* baan
+|* 15-02-05 [13:26]
+|******************************************************************************
+|* Script Type: DAL
+|******************************************************************************
+|* ID ISGEC01047
+|* Manish Kumar
+|* 05-02-2015
+|* DAL For SAR Information.
+|*
+|* ID ISGEC004009, Dharmendra, 18-02-2015
+|*
+|* PATCH001010, Dharmendra, 12-03-2015
+|
+|* ID ISGEC015088, Ankit Shrama	,26-02-2015,VRC B61U a7 isg 
+|* Modification
+|
+|* ID ISGEC015088, Ankit Shrama	,29-02-2015,VRC B61U a7 isg 
+|* Modification in field checks for SAR Analysis
+|
+|* ID ISGEC016016, IT0386, Saurabh Dubey, 16 August 2016, B61U a7 isg
+|* Modifications for Correction Fiel
+|* 
+|* GH242CR505, Adarsh Pal, 16-01-2020, VRC B61U a7 isg
+|* Modifications in logic for adding Project Team in cc in mail alert for Reject
+|******************************************************************************
+
+	#include <bic_dal2>
+	#include "itcmcs2000"	|* DAL(-GUI) Support Defines
+	#include <bic_cmf>
+	#include<bic_text>
+
+	table	ttpisg074
+	table	ttccom001
+	table	ttcmcs052
+	table	tbpmdm001
+	table	ttppdm600
+	table	ttccom130
+	table	tdmisg133					|#GH242CR505.n
+	long ret_val
+	extern	domain	tcemno		o.emno			|# ISGEC004009.sn
+	extern	domain	tfgld.user	i.user	
+	extern	domain	tcemm.grid	division
+	
+								|# ISGEC004009.en
+	extern domain	tcmcs.str15	prog			|#ISGEC015088.sn
+	extern	domain	tcnama		nama
+	extern	domain	bpmdm.telp	telw
+	string 	tmp.file(200),line(500),string1(100),string2(100),
+		string3(100),string4(100),string5(100),string6(100),string7(100)
+	string bbuf(80,40),bbuf1(80,40),bbuf2(80,40)
+	string btext(500),btext1(500),btext2(500)
+	string text1(150),svrt(20)	
+	long 	fp
+	long   	message.ID
+        long   	to.ID
+        long   	attachment.ID
+        long   	ret,b1,b2,b3
+	long	stat,flg       					|#ISGEC015088.en	
+	
+	
+function extern long before.open.object.set()
+{
+	DAL.FIELD.DEPENDS.ON("tpisg074.sarn",HOOK_UPDATE,"tpisg074.cprj")
+	DAL.FIELD.DEPENDS.ON("tpisg074.ddat",HOOK_UPDATE,"tpisg074.idat","tpisg074.sars")
+	i.user = logname$
+	get.var(pid,"prog.name$",prog)				|#ISGEC015088.n
+	select 	tccom001.emno:o.emno
+	from	tccom001
+	where	tccom001._index4 = {:i.user}
+	as set with 1 rows
+	selectdo
+	selectempty
+		o.emno = ""
+	endselect	
+| 	dmisgdll0100.approval.rule.document.master(logname$,o.emno) |# ISGEC004009.n
+	return(0)
+}
+
+function extern boolean method.is.allowed(long type)
+{
+	on case type
+	case DAL_UPDATE :
+		if prog = "tpisg0174m001" then				|#ISGEC015088.sn
+			if tpisg074.flag = tcyesno.no then	
+				return(true)
+			else
+				return(false)	
+			endif
+		else							|#ISGEC015088.en
+			if tpisg074.stat = tpisg.stat.approved then
+				return(false)
+			endif	
+		endif							|#ISGEC015088.n
+		break
+	endcase	
+
+	return(true)
+}
+
+function extern long before.save.object(long mode)
+{
+	on case mode 
+		case DAL_NEW :
+			tpisg074.stat = tpisg.stat.created
+| 			tpisg074.sarc = empty				|# ISGEC004009.o
+			tpisg074.logn = logname$			|# ISGEC004009.sn
+			tpisg074.emno = o.emno
+			Get_division()
+			tpisg074.devi = division
+		break							|# ISGEC004009.en
+		case DAL_UPDATE:					|#ISGEC015088.sn
+			tpisg074.mddt = date.num()
+			tpisg074.mdby = o.emno			|#ISGEC015088.en	
+		break
+	endcase
+	return(0)
+}
+
+| function extern boolean after.save.object(long mode)
+| {
+| 	on case mode 
+| 		case DAL_NEW :			
+| 			if not check.field.value() then
+| 				return(DALHOOKERROR)
+| 			endif
+| 		break
+| 		case DAL_UPDATE :
+| 			if not check.field.value() then
+| 				return(DALHOOKERROR)
+| 			endif
+			
+| 			if tpisg074.stat = tpisg.stat.review then
+| 				if logname.matched(tpisg074.rper) then
+| 					
+| 					if tpisg074.caus.r = 0 then
+| 						dal.set.error.message("@Root Cause Is Mandatory")
+| 						return(DALHOOKERROR)
+| 					endif
+| 					
+| 					if tpisg074.sarc = "" then
+| 						dal.set.error.message("@SAR Classification is Mandatory")
+| 						return(DALHOOKERROR)
+| 					endif
+| 					
+| 					if tpisg074.corr = 0 then
+| 						dal.set.error.message("@Correction Field Value is Mandatory")
+| 						return(DALHOOKERROR)
+| 					endif
+| 					
+| 					if isspace(tpisg074.cwoc) then
+| 						dal.set.error.message("@Responsible Department Is Mandatory")
+| 						return(DALHOOKERROR)
+| 					endif
+| 					
+| 					if tpisg074.acti = 0 then
+| 						dal.set.error.message("@Corrective Action is Mandatory")
+| 						return(DALHOOKERROR)
+| 					endif
+| 					
+| 					if isspace(tpisg074.apby) then
+| 						dal.set.error.message("@Approved By Field Value is Mandatory")
+| 						return(DALHOOKERROR)
+| 					endif
+| 				endif
+| 			endif
+| 			
+| 			if tpisg074.stat = tpisg.stat.approval then
+| 				if tpisg074.appr = 0 then
+| 					dal.set.error.message("@Approver Ramarks Is Mandatory")
+| 					return(DALHOOKERROR)
+| 				endif
+| 			endif
+| 		break	
+| 	endcase
+| 	return(0)
+| }
+
+function extern long set.object.defaults()
+{
+| 	tpisg074.sars = tpsarc.workseverity
+	tpisg074.sars = empty
+	tpisg074.cdat = date.num()
+	return(0)
+}
+
+|***************** Business Method ******************************************
+function extern boolean submit.is.allowed()
+{
+	if tpisg074.stat = tpisg.stat.approved then
+		return(false)
+	endif
+	
+	if tpisg074.stat = tpisg.stat.review then
+		if tpisg074.rper <> o.emno then
+			return(false)
+		endif
+	endif	
+	
+	if tpisg074.stat = tpisg.stat.approval then
+		if tpisg074.apby <> o.emno then
+			return(false)
+		endif
+	endif	
+	return(true)
+}
+
+function extern boolean reject.is.allowed()
+{
+	if tpisg074.stat = tpisg.stat.approved or tpisg074.stat = tpisg.stat.created then
+		return(false)
+	endif
+	
+	if tpisg074.stat = tpisg.stat.review then
+		if tpisg074.rper <> o.emno then
+			return(false)
+		endif
+	endif
+	
+	if tpisg074.stat = tpisg.stat.approval then
+		if tpisg074.apby <> o.emno then
+			return(false)
+		endif
+	endif	
+	
+	return(true)
+}
+
+function extern boolean tpisg0180m000.is.allowed()					|#ISGEC015088.sn
+{
+	if tpisg074.stat = tpisg.stat.approved then
+		return(false)
+	endif
+	
+	if tpisg074.stat = tpisg.stat.review then
+		if tpisg074.rper <> o.emno then
+			return(false)
+		endif
+	endif	
+	
+	if tpisg074.stat = tpisg.stat.approval then
+		if tpisg074.apby <> o.emno then
+			return(false)
+		endif
+	endif	
+	return(true)
+}											|#ISGEC015088.en
+
+
+
+function extern long submit()
+{
+	update.tpisg074.status()						
+	return(0)
+}
+
+function extern long reject()
+{
+	flg = 0
+	select	tpisg074.stat
+	from	tpisg074 for update
+	where	tpisg074._index1 = {:tpisg074.cprj,:tpisg074.sarn}
+	selectdo
+| 		dal.change.object("tpisg074")
+		on case tpisg074.stat
+			case tpisg.stat.review :
+| 				dal.set.field("tpisg074.stat",tpisg.stat.created)
+				tpisg074.stat = tpisg.stat.created
+				flg = 2						|#ISGEC015088.sn
+				if send.email.alert(flg) <> 0 then									
+					show.dal.messages(MSG.ALL)
+				endif						|#ISGEC015088.en
+			break
+			case tpisg.stat.approval :
+| 				dal.set.field("tpisg074.stat",tpisg.stat.review)
+				tpisg074.stat = tpisg.stat.review
+				flg = 2						|#ISGEC015088.sn
+				if send.email.alert(flg) <> 0 then									
+					show.dal.messages(MSG.ALL)
+				endif						|#ISGEC015088.en
+			break
+		endcase
+		db.update(ttpisg074,db.retry,e)
+		if not e then
+			commit.transaction()
+		else
+			abort.transaction()
+			return(DALHOOKERROR)
+		endif
+	endselect
+	return(0)
+}
+|****************************** Field Hooks *******************************************
+
+function extern void tpisg074.sarn.update(long mode)
+{
+	long max.id
+	
+	select	max(tpisg074.sarn):max.id
+	from	tpisg074
+	where	tpisg074._index1 = {:tpisg074.cprj}
+	selectdo
+		tpisg074.sarn = max.id  + 1
+	selectempty
+		tpisg074.sarn = 1
+	endselect
+}
+
+function extern boolean tpisg074.rper.is.mandatory(long mode)
+{
+	on case mode 
+		case DAL_NEW :
+		case DAL_UPDATE :
+			if prog = "tpisg0174m001" then						|#ISGEC015088.sn
+				if isspace(tpisg074.rper) then
+					dal.set.error.message("@Representative Person Is Mandatory")
+					return(DALHOOKERROR)
+				endif								|#ISGEC015088.en
+			else	
+				if tpisg074.stat = tpisg.stat.created then 
+					if isspace(tpisg074.rper) then
+						dal.set.error.message("@Representative Person Is Mandatory")
+						return(DALHOOKERROR)
+					endif
+				endif
+			endif									|#ISGEC015088.n	
+		break
+	endcase
+	return(false)
+}
+
+function extern boolean tpisg074.rper.is.derived(long mode)
+{
+	on case mode 
+		case DAL_NEW :
+		case DAL_UPDATE :
+			if prog = "tpisg0174m001" then						|#ISGEC015088.sn
+				return(false)
+			else									|#ISGEC015088.en	
+				if tpisg074.stat = tpisg.stat.created then
+					return(false)
+				endif
+			endif									|#ISGEC015088.n
+		break
+	endcase
+	return(true)
+}
+
+function extern boolean tpisg074.rper.is.valid(long mode)					|RAvi.a.s.28012021
+{
+	select	dmisg152.*
+	from	dmisg152
+	where	dmisg152._index1 = {:tpisg074.cprj, :tpisg074.rper}
+	as set with 1 rows
+	selectdo
+	selectempty
+		return(false)
+	endselect
+	return(true)
+}
+
+function extern boolean tpisg074.natp.is.mandatory(long mode)
+{
+	on case mode 
+		case DAL_NEW :
+		case DAL_UPDATE :
+			if prog = "tpisg0174m001" then						|#ISGEC015088.sn
+				if isspace(tpisg074.natp) then
+					dal.set.error.message("@Nature Of Problem Is Mandatory")
+					return(DALHOOKERROR)
+				endif								
+			else									|#ISGEC015088.en
+				if tpisg074.stat = tpisg.stat.created then 
+					if isspace(tpisg074.natp) then
+						dal.set.error.message("@Nature Of Problem Is Mandatory")
+						return(DALHOOKERROR)
+					endif
+				endif
+			endif									|#ISGEC015088.n	
+		break
+	endcase
+	return(false)
+}
+
+function extern boolean tpisg074.natp.is.derived(long mode)
+{
+	on case mode 
+		case DAL_NEW :
+		case DAL_UPDATE :
+			if prog = "tpisg0174m001" then						|#ISGEC015088.sn
+				return(false)
+			else									|#ISGEC015088.en	
+				if tpisg074.stat = tpisg.stat.created then
+					return(false)
+				endif
+			endif									|#ISGEC015088.n	
+		break
+	endcase
+	return(true)
+}
+
+function extern boolean tpisg074.cost.is.mandatory(long mode)
+{
+	on case mode 
+		case DAL_NEW :
+		case DAL_UPDATE :
+			if prog = "tpisg0174m001" then						|#ISGEC015088.sn
+				if isspace(tpisg074.cost) then
+					dal.set.error.message("@Cost Attributed To Is Mandatory")
+					return(DALHOOKERROR)
+				endif								
+			else									|#ISGEC015088.en
+				if tpisg074.stat = tpisg.stat.created then 
+					if isspace(tpisg074.cost) then
+						dal.set.error.message("@Cost Attributed To Is Mandatory")
+						return(DALHOOKERROR)
+					endif
+				endif
+			endif									|#ISGEC015088.n	
+		break
+	endcase
+	return(false)
+}
+
+function extern boolean tpisg074.cost.is.derived(long mode)
+{
+	on case mode 
+		case DAL_NEW :
+		case DAL_UPDATE :
+			if prog = "tpisg0174m001" then						|#ISGEC015088.sn
+				return(false)
+			else									|#ISGEC015088.en
+				if tpisg074.stat = tpisg.stat.created then
+					return(false)
+				endif
+			endif									|#ISGEC015088.n	
+		break
+	endcase
+	return(true)
+}
+
+function extern boolean tpisg074.cspa.is.mandatory(long mode)
+{
+	on case mode 
+		case DAL_NEW :
+		case DAL_UPDATE :
+			if prog = "tpisg0174m001" then						|#ISGEC015088.sn
+				if isspace(tpisg074.cspa) then
+					dal.set.error.message("@Related Element Is Mandatory")
+					return(DALHOOKERROR)
+				endif							
+			else									|#ISGEC015088.en
+				if tpisg074.stat = tpisg.stat.created then 
+					if isspace(tpisg074.cspa) then
+						dal.set.error.message("@Related Element Is Mandatory")
+						return(DALHOOKERROR)
+					endif
+				endif
+			endif									|#ISGEC015088.n	
+		break
+	endcase
+	return(false)
+}
+
+function extern boolean tpisg074.cspa.is.derived(long mode)
+{
+	on case mode 
+		case DAL_NEW :
+		case DAL_UPDATE :
+			if prog = "tpisg0174m001" then						|#ISGEC015088.sn
+				return(false)
+			else									|#ISGEC015088.en
+				if tpisg074.stat = tpisg.stat.created then
+					return(false)
+				endif
+			endif									|#ISGEC015088.n		
+		break
+	endcase
+	return(true)
+}
+
+function extern boolean tpisg074.draw.is.mandatory(long mode)
+{
+	on case mode 
+		case DAL_NEW :
+		case DAL_UPDATE :
+			if prog = "tpisg0174m001" then						|#ISGEC015088.sn
+				if isspace(tpisg074.draw) then
+					dal.set.error.message("@Related Drawing No. Is Mandatory")
+					return(DALHOOKERROR)
+				endif						
+			else									|#ISGEC015088.en
+				if tpisg074.stat = tpisg.stat.created then 
+					if isspace(tpisg074.draw) then
+						dal.set.error.message("@Related Drawing No. Is Mandatory")
+						return(DALHOOKERROR)
+					endif
+				endif
+			endif									|#ISGEC015088.n			
+		break
+	endcase
+	return(false)
+}
+
+function extern boolean tpisg074.draw.is.derived(long mode)
+{
+	on case mode 
+		case DAL_NEW :
+		case DAL_UPDATE :
+			if prog = "tpisg0174m001" then						|#ISGEC015088.sn
+				return(false)
+			else									|#ISGEC015088.en
+				if tpisg074.stat = tpisg.stat.created then
+					return(false)
+				endif
+			endif									|#ISGEC015088.n			
+		break
+	endcase
+	return(true)
+}
+								|# ISGEC004009.so
+| function extern boolean tpisg074.cost.q.is.mandatory(long mode)
+| {							
+| 	on case mode 
+| 		case DAL_NEW :
+| 		case DAL_UPDATE :
+| 			if tpisg074.stat = tpisg.stat.created then 
+| 				if tpisg074.cost.q = 0 then
+| 					dal.set.error.message("@Cost Of Poor Quality Is Mandatory")
+| 					return(DALHOOKERROR)
+| 				endif
+| 			endif
+| 		break
+| 	endcase
+| 	return(false)
+| }
+								|# ISGEC004009.eo
+function extern boolean tpisg074.cost.q.is.derived(long mode)
+{
+	on case mode 
+		case DAL_NEW :
+		case DAL_UPDATE :
+			if prog = "tpisg0174m001" then						|#ISGEC015088.sn
+				return(false)
+			else									|#ISGEC015088.en
+				if tpisg074.stat = tpisg.stat.created then
+					return(false)
+				endif
+			endif									|#ISGEC015088.n				
+		break
+	endcase
+	return(true)
+}
+
+function extern boolean tpisg074.bpid.is.mandatory(long mode)
+{
+	on case mode 
+		case DAL_NEW :
+		case DAL_UPDATE :
+			if prog = "tpisg0174m001" then						|#ISGEC015088.sn
+				if isspace(tpisg074.bpid) then
+					dal.set.error.message("@Vendor Is Mandatory")
+					return(DALHOOKERROR)
+				endif						
+			else									|#ISGEC015088.en
+				if tpisg074.stat = tpisg.stat.created then 
+					if isspace(tpisg074.bpid) then
+						dal.set.error.message("@Vendor Is Mandatory")
+						return(DALHOOKERROR)
+					endif
+				endif
+			endif									|#ISGEC015088.n					
+		break
+	endcase
+	return(false)
+}
+
+function extern boolean tpisg074.bpid.is.derived(long mode)
+{
+	on case mode 
+		case DAL_NEW :
+		case DAL_UPDATE :
+			if prog = "tpisg0174m001" then						|#ISGEC015088.sn
+				return(false)
+			else									|#ISGEC015088.en
+				if tpisg074.stat = tpisg.stat.created then
+					return(false)
+				endif
+			endif									|#ISGEC015088.n					
+		break
+	endcase
+	return(true)
+}
+							
+function extern boolean tpisg074.revi.is.mandatory(long mode)
+{
+	on case mode 
+		case DAL_NEW :
+		case DAL_UPDATE :
+			if prog = "tpisg0174m001" then						|#ISGEC015088.sn
+				if isspace(tpisg074.revi) then
+					dal.set.error.message("@Revision No. Is Mandatory")
+					return(DALHOOKERROR)
+				endif						
+			else									|#ISGEC015088.en
+				if tpisg074.stat = tpisg.stat.created then 
+					if isspace(tpisg074.revi) then
+						dal.set.error.message("@Revision No. Is Mandatory")
+						return(DALHOOKERROR)
+					endif
+				endif
+			endif									|#ISGEC015088.n	
+		break
+	endcase
+	return(false)
+}
+
+
+function extern boolean tpisg074.revi.is.derived(long mode)
+{
+	on case mode 
+		case DAL_NEW :
+		case DAL_UPDATE :
+			if prog = "tpisg0174m001" then						|#ISGEC015088.sn
+				return(false)
+			else									|#ISGEC015088.en
+				if tpisg074.stat = tpisg.stat.created then
+					return(false)
+				endif
+			endif									|#ISGEC015088.n		
+		break
+	endcase
+	return(true)
+}
+
+function extern boolean tpisg074.telp.is.mandatory(long mode)
+{
+	on case mode 
+		case DAL_NEW :
+		case DAL_UPDATE :
+			if prog = "tpisg0174m001" then						|#ISGEC015088.sn
+				if isspace(tpisg074.telp) then
+					dal.set.error.message("@Contact No. Is Mandatory")
+					return(DALHOOKERROR)
+				endif						
+			else									|#ISGEC015088.en
+				if tpisg074.stat = tpisg.stat.created then 
+					if isspace(tpisg074.telp) then
+						dal.set.error.message("@Contact No. Is Mandatory")
+						return(DALHOOKERROR)
+					endif
+				endif
+			endif									|#ISGEC015088.n			
+		break
+	endcase
+	return(false)
+}
+
+function extern boolean tpisg074.telp.is.derived(long mode)
+{
+	on case mode 
+		case DAL_NEW :
+		case DAL_UPDATE :
+			if prog = "tpisg0174m001" then						|#ISGEC015088.sn
+				return(false)
+			else									|#ISGEC015088.en
+				if tpisg074.stat = tpisg.stat.created then
+					return(false)
+				endif
+			endif									|#ISGEC015088.n			
+		break
+	endcase
+	return(true)
+}
+
+function extern boolean tpisg074.pdes.is.derived(long mode)
+{
+	on case mode 
+		case DAL_NEW :
+		case DAL_UPDATE :
+			if tpisg074.stat = tpisg.stat.created then
+				return(false)
+			endif
+		break
+	endcase
+	return(true)
+}
+
+function extern boolean tpisg074.psol.is.derived(long mode)
+{
+	on case mode 
+		case DAL_NEW :
+		case DAL_UPDATE :
+			if prog = "tpisg0174m001" then						|#ISGEC015088.sn
+				return(false)
+			else									|#ISGEC015088.en
+				if tpisg074.stat = tpisg.stat.created then
+					return(false)
+				endif
+			endif									|#ISGEC015088.n	
+		break
+	endcase
+	return(true)
+}
+
+function extern boolean tpisg074.sars.is.derived(long mode)
+{
+	on case mode 
+		case DAL_NEW :
+		case DAL_UPDATE :
+			if prog = "tpisg0174m001" then						|#ISGEC015088.sn
+				return(false)
+			else									|#ISGEC015088.en
+				if tpisg074.stat = tpisg.stat.created then
+					return(false)
+				endif
+			endif									|#ISGEC015088.n	
+		break
+	endcase
+	return(true)
+}
+
+function extern boolean tpisg074.idat.is.mandatory(long mode)
+{
+	on case mode 
+	case DAL_NEW :
+	case DAL_UPDATE :
+		if prog = "tpisg0174m001" then						|#ISGEC015088.sn
+			if tpisg074.idat = 0 then
+				dal.set.error.message("@Issue date Is Mandatory")
+				return(DALHOOKERROR)
+			endif
+		else									|#ISGEC015088.en
+			if tpisg074.stat = tpisg.stat.created then 
+				if tpisg074.idat = 0 then
+					dal.set.error.message("@Issue date Is Mandatory")
+					return(DALHOOKERROR)
+				endif
+			endif
+		endif									|#ISGEC015088.n	
+	break
+	endcase
+	return(false)
+}
+
+function extern boolean tpisg074.idat.is.derived(long mode)
+{
+	on case mode 
+		case DAL_NEW :
+		case DAL_UPDATE :
+			if prog = "tpisg0174m001" then						|#ISGEC015088.sn
+				return(false)
+			else									|#ISGEC015088.en
+				if tpisg074.stat = tpisg.stat.created then
+					return(false)
+				endif
+			endif									|#ISGEC015088.n		
+		break
+	endcase
+	return(true)
+}
+
+function extern tpisg074.ddat.update(long mode)
+{
+	on case mode
+	case DAL_NEW :
+	case DAL_UPDATE :
+		if tpisg074.stat = tpisg.stat.created then
+			on case tpisg074.sars
+			case tpsarc.workstopped :
+				tpisg074.ddat = tpisg074.idat + 2
+			break
+			case tpsarc.workcanproce :
+				tpisg074.ddat = tpisg074.idat + 7
+			break
+			endcase
+		endif
+	endcase
+}
+
+|******* Resolution Details Fields **********************************
+function extern boolean tpisg074.caus.r.is.derived(long mode)
+{
+	if tpisg074.stat = tpisg.stat.review then
+		if logname.matched(tpisg074.rper) then
+			return(false)
+		endif
+	endif
+	if tpisg074.stat = tpisg.stat.approval then				|#ISGEC015088.sn
+		if logname.matched(tpisg074.apby) then
+			return(false)
+		endif
+	endif	
+	
+	if prog = "tpisg0174m001" then
+		return(false)
+	endif									|#ISGEC015088.en
+	return(true)
+}
+
+function extern boolean tpisg074.sarc.is.derived(long mode)
+{
+	if tpisg074.stat = tpisg.stat.review then
+		if logname.matched(tpisg074.rper) then
+			return(false)
+		endif
+	endif
+	if tpisg074.stat = tpisg.stat.approval then				|#ISGEC015088.sn
+		if logname.matched(tpisg074.apby) then
+			return(false)
+		endif
+	endif	
+	
+	if prog = "tpisg0174m001" then
+		return(false)
+	endif									|#ISGEC015088.en
+	return(true)
+}
+
+
+function extern boolean tpisg074.corr.is.derived(long mode)
+{
+	if tpisg074.stat = tpisg.stat.review then
+		if logname.matched(tpisg074.rper) then
+			return(false)
+		endif
+	endif
+	if tpisg074.stat = tpisg.stat.approval then				|#ISGEC015088.sn
+		if logname.matched(tpisg074.apby) then
+			return(false)
+		endif
+	endif									|#ISGEC015088.en
+	if prog = "tpisg0174m001" then	|#ISGEC016016.sn
+		return(false)
+	endif				|#ISGEC016016.en
+	return(true)
+}
+
+function extern boolean tpisg074.acti.is.derived(long mode)
+{
+	if tpisg074.stat = tpisg.stat.review then
+		if logname.matched(tpisg074.rper) then
+			return(false)
+		endif
+	endif
+	if tpisg074.stat = tpisg.stat.approval then				|#ISGEC015088.sn
+		if logname.matched(tpisg074.apby) then
+			return(false)
+		endif
+	endif
+	
+	if prog = "tpisg0174m001" then
+		return(false)
+	endif									|#ISGEC015088.en
+	return(true)
+}
+
+function extern boolean tpisg074.cwoc.is.derived(long mode)
+{
+	if tpisg074.stat = tpisg.stat.review then
+		if logname.matched(tpisg074.rper) then
+			return(false)
+		endif
+	endif
+	if tpisg074.stat = tpisg.stat.approval then				|#ISGEC015088.sn
+		if logname.matched(tpisg074.apby) then
+			return(false)
+		endif
+	endif
+	
+	if prog = "tpisg0174m001" then
+		return(false)
+	endif									|#ISGEC015088.en
+	return(true)
+}
+
+function extern boolean tpisg074.reas.is.derived(long mode)
+{
+	if tpisg074.stat = tpisg.stat.review then
+		if logname.matched(tpisg074.rper) then
+			return(false)
+		endif
+	endif
+	if tpisg074.stat = tpisg.stat.approval then				|#ISGEC015088.sn
+		if logname.matched(tpisg074.apby) then
+			return(false)
+		endif
+	endif
+	
+	if prog = "tpisg0174m001" then
+		return(false)
+	endif									|#ISGEC015088.en
+	return(true)
+}
+
+
+function extern boolean tpisg074.apby.is.derived(long mode)
+{
+	if tpisg074.stat = tpisg.stat.review then
+		if logname.matched(tpisg074.rper) then
+			return(false)
+		endif
+	endif
+	
+	if tpisg074.stat = tpisg.stat.approval then				|#ISGEC015088.sn
+		if logname.matched(tpisg074.apby) then
+			return(false)
+		endif
+	endif
+	
+	if prog = "tpisg0174m001" then
+		return(false)
+	endif									|#ISGEC015088.en
+	return(true)
+}
+
+function extern boolean tpisg074.appr.is.derived(long mode)
+{
+	if tpisg074.stat = tpisg.stat.approval then
+		if logname.matched(tpisg074.apby) then
+			return(false)
+		endif
+	endif
+	if prog = "tpisg0174m001" then						|#ISGEC015088.sn
+		return(false)
+	endif									|#ISGEC015088.en
+	return(true)
+}
+
+function extern boolean tpisg074.apby.is.valid(long mode)			|#ISGEC004013.sn
+{
+	select tpisg073.*
+	from    tpisg073
+	where  tpisg073.emno = {:tpisg074.apby}
+	selectdo
+	selectempty
+		dal.set.error.message("@Please enter valid approver")
+		return(DALHOOKERROR)
+	endselect
+	
+	return(true)
+}										|#ISGEC004013.en
+									|# PATCH001010.sn
+function extern boolean tpisg074.prep.is.derived(long mode)
+{
+	on case mode 
+		case DAL_NEW :
+		case DAL_UPDATE :
+			if prog = "tpisg0174m001" then					|#ISGEC015088.sn
+				return(false)
+			else								|#ISGEC015088.en
+				if tpisg074.stat = tpisg.stat.created then
+					return(false)
+				endif
+			endif								|#ISGEC015088.n	
+		break
+	endcase
+	return(true)
+}
+											|# PATCH001010.en
+function extern boolean tpisg074.mddt.is.derived(long mode)				|#ISGEC015088.sn
+{
+	return(true)
+}
+
+function extern boolean tpisg074.mdby.is.derived(long mode)				
+{
+	return(true)
+	
+}
+
+function extern boolean tpisg074.fzby.is.derived(long mode)				
+{
+	return(true)
+}
+
+function extern boolean tpisg074.fzdt.is.derived(long mode)				
+{
+	return(true)
+}
+
+|******************* Functions ********************************
+function extern boolean logname.matched
+	(
+		domain	tcemno	i.emno
+	)
+{
+	domain	tclogn	logname
+	
+	logname = logname$
+	
+	select	tccom001.loco
+	from	tccom001
+	where	tccom001._index1 = {:i.emno}
+	selectdo
+		if strip$(tccom001.loco) = strip$(logname) then
+			return(true)
+		endif
+	endselect
+	return(false)
+}
+
+								|# ISGEC004009.sn
+function Get_division()
+{
+	division = ""
+	
+	select	tppdm600.cdf_divs:division
+	from	tppdm600
+	where	tppdm600._index1 = {:tpisg074.cprj}
+	selectdo
+	endselect
+
+}
+
+function update.tpisg074.status()
+{
+	flg = 0
+	select	tpisg074.stat, tpisg074.modi
+	from	tpisg074 for update
+	where	tpisg074._index1 = {:tpisg074.cprj,:tpisg074.sarn}
+	selectdo
+		on case tpisg074.stat
+			case tpisg.stat.created :
+				tpisg074.stat = tpisg.stat.review
+				flg = 1						|#ISGEC015088.sn
+				if send.email.alert(flg) <> 0 then									
+					show.dal.messages(MSG.ALL)
+				endif						|#ISGEC015088.en
+				break
+			case tpisg.stat.review :
+				tpisg074.stat = tpisg.stat.approval
+				flg = 1						|#ISGEC015088.sn
+				if send.email.alert(flg) <> 0 then						
+					show.dal.messages(MSG.ALL)
+				endif						|#ISGEC015088.en
+				break
+			case tpisg.stat.approval :
+				tpisg074.stat  = tpisg.stat.approved
+				tpisg074.modi = date.num()			|# PATCH001010.n
+				flg = 1						|#ISGEC015088.sn
+				if send.email.alert(flg) <> 0 then						
+					show.dal.messages(MSG.ALL)
+				endif						|#ISGEC015088.en
+			break
+		endcase
+		db.update(ttpisg074,db.retry,e)
+		if not e then
+			commit.transaction()
+		else
+			abort.transaction()
+		endif
+	endselect
+
+}
+
+
+								|# ISGEC004009.en
+								
+function long send.email.alert(long	flag)						|#ISGEC015088.sn
+{
+	string1 = ""
+	string2 = ""
+	string3 = ""
+	string4 = ""
+	string5 = ""
+	string6 = ""
+	btext = ""
+	btext1 = ""
+	btext2 = ""
+	nama = ""
+	telw = ""
+	select	tcmcs052.dsca
+	from	tcmcs052
+	where	tcmcs052._index1 ={:tpisg074.cprj}
+	selectdo
+	endselect
+	
+	select 	bpmdm001.telw:telw,tccom001.nama:nama
+	from 	tccom001,bpmdm001
+	where 	tccom001._index1 = {:tpisg074.rper}
+	and	tccom001.emno refers to bpmdm001
+	as set with 1 rows
+	selectdo
+	selectempty
+		nama = ""
+		telw = ""
+	endselect
+	
+	tmp.file = creat.tmp.file$(bse.tmp.dir$())
+	fp = seq.open(tmp.file,"w+")
+	if fp <=0 then
+		dal.set.error.message("@ Temp file can not be created")
+		return(1)
+	endif
+	
+	for b1 = 1 to text.to.buf("tpisg074.corr", "2",10, bbuf)
+		btext = strip$(btext)&" "&strip$(bbuf(1,b1))
+	endfor
+	
+	for b2 = 1 to text.to.buf("tpisg074.pdes", "2",10, bbuf1)
+		btext1 = strip$(btext1)&" "&strip$(bbuf1(1,b2))
+	endfor
+	for b3 = 1 to text.to.buf("tpisg074.reas", "2",10, bbuf2)
+		btext2 = strip$(btext2)&" "&strip$(bbuf2(1,b3))
+	endfor
+	svrt = enum.descr$("tpsarc",tpisg074.sars)
+	
+	if flag = 1 then
+		on case tpisg074.stat
+		case tpisg.stat.review :
+				string1 = "You are requested to provide resolution to the following SAR :"
+				string2 = "Project :" & tpisg074.cprj& "" & tcmcs052.dsca 
+				string3 = "SAR No. :" & "" &str$(tpisg074.sarn)  
+				string4 = "Severity of problem :" &""& svrt
+				string5 = ""
+				string6 = ""
+				string7 = ""
+				tccom130.info = ""
+| 				if not get_receipent_id(tpisg074.rper,string1,string2,string3,string4,string5,string6,string7) then		|#GH242CR505.o
+				if not get_receipent_id(tpisg074.rper,string1,string2,string3,string4,string5,string6,string7,flag) then	|#GH242CR505.n
+					show.dal.messages(MSG.ALL)
+				endif	
+			break
+		case tpisg.stat.approval :
+				string1 = "You are requested to kindly approve the following SAR resolution :"
+				string2 = "Project:" & tpisg074.cprj& "" & tcmcs052.dsca 
+				string3 = "SAR No.:" &""& str$(tpisg074.sarn)  
+				string4 = "Severity of problem" &""& svrt
+				string5 = ""
+				string6 = ""
+				string7 = ""
+				tccom130.info = ""
+| 				if not get_receipent_id(tpisg074.apby,string1,string2,string3,string4,string5,string6,string7) then		|#GH242CR505.o
+				if not get_receipent_id(tpisg074.apby,string1,string2,string3,string4,string5,string6,string7,flag) then	|#GH242CR505.n
+					show.dal.messages(MSG.ALL)
+				endif
+			break
+		case tpisg.stat.approved :
+				string1 = "Pl refer following SAR resolution for your further action :"
+				string2 = "Project:" & tpisg074.cprj& "" & tcmcs052.dsca 
+				string3 = "SAR No.:" &""& str$(tpisg074.sarn)  
+				string4 = "Problem Description:" & ""&btext1
+				string5 = "Correction:" & ""&btext
+				string6 = "For further clarification pl contact " &""&nama&""&"Emp Code:"&tpisg074.rper
+				string7 = "Desk No.:" &"" & telw
+				select 	tppdm600.padr,tccom130.info,tccom130.nama
+				from	tppdm600,tccom130
+				where	tppdm600._index1 = {:tpisg074.cprj}
+				and	tppdm600.padr refers to tccom130 UNREF CLEAR
+				selectdo
+				selectempty	
+					tccom130.info = ""	
+				endselect
+| 				if not get_receipent_id(tpisg074.emno,string1,string2,string3,string4,string5,string6,string7) then		|#GH242CR505.o
+				if not get_receipent_id(tpisg074.emno,string1,string2,string3,string4,string5,string6,string7,flag) then	|#GH242CR505.n
+					show.dal.messages(MSG.ALL)
+				endif
+			break
+		endcase
+	else if flag = 2 then
+		on case tpisg074.stat
+			case tpisg.stat.created :
+				string1 = "Pl refer following remark for  needful action  :"
+				string2 = "Project:" & tpisg074.cprj& "" & tcmcs052.dsca 
+				string3 = "SAR No.:" &""& str$(tpisg074.sarn)  
+				string4 = ""
+				string5 = "Return Remarks :" &""& btext2
+				string6 = ""
+				string7 = ""
+				tccom130.info = ""
+| 				if not get_receipent_id(tpisg074.emno,string1,string2,string3,string4,string5,string6,string7) then		|#GH242CR505.o
+				if not get_receipent_id(tpisg074.emno,string1,string2,string3,string4,string5,string6,string7,flag) then	|#GH242CR505.n
+					show.dal.messages(MSG.ALL)
+				endif
+			break
+			case tpisg.stat.review :
+				string1 = "Pl refer following remark for  needful action  :"
+				string2 = "Project:" & tpisg074.cprj& "" & tcmcs052.dsca 
+				string3 = "SAR No.:" &""& str$(tpisg074.sarn)  
+				string4 = ""
+				string5 = "Return Remarks :" &""& btext2
+				string6 = ""
+				string7 = ""
+				tccom130.info = ""
+| 				if not get_receipent_id(tpisg074.rper,string1,string2,string3,string4,string5,string6,string7) then		|#GH242CR505.o
+				if not get_receipent_id(tpisg074.rper,string1,string2,string3,string4,string5,string6,string7,flag) then	|#GH242CR505.n
+					show.dal.messages(MSG.ALL)
+				endif
+			break
+		endcase
+	endif
+	endif	
+	return(0)
+}							
+
+								
+	
+function boolean get_receipent_id		(domain	tcemno	i.emno,
+					string		str1(100),		
+					string		str2(100),		
+					string		str3(100),		
+					string		str4(100),		
+					string		str5(100),		
+					string		str6(100),		
+| 					string		str7(100))				|#GH242CR505.o										
+					string		str7(100),				|#GH242CR505.sn
+					long		i.flag)					|#GH242CR505.en	
+{
+	select 	bpmdm001.mail,tccom001.nama
+	from 	tccom001,bpmdm001
+	where 	tccom001._index1 = {:i.emno}
+	and	tccom001.emno refers to bpmdm001
+	as set with 1 rows
+	selectdo
+	selectempty
+		dal.set.error.message("@ Email ID for user " & tccom001.nama & " Not maintained")
+		return(false)
+	endselect
+
+	
+	line = ""
+	line = " Dear,"&chr$(13)&chr$(10)
+	line = strip$(line) & "      " & strip$(str1)& chr$(13)&chr$(10)
+	line = strip$(line) & "      " & strip$(str2)& chr$(13)&chr$(10)
+	line = strip$(line) & "      " & strip$(str3)& chr$(13)&chr$(10)
+	line = strip$(line) & "      " & strip$(str4)& chr$(13)&chr$(10)
+	line = strip$(line) & "      " & strip$(str5)& chr$(13)&chr$(10)
+	line = strip$(line) & "      " & strip$(str6)& chr$(13)&chr$(10)
+	line = strip$(line) & "      " & strip$(str7)& chr$(13)&chr$(10)
+	line = strip$(line) & ""& chr$(13)&chr$(10)
+	line = strip$(line) & ""& chr$(13)&chr$(10)
+	line = strip$(line) & "Regards"& chr$(13)&chr$(10)
+	line = strip$(line) & "Baan Support"
+	seq.write(line,len(line),fp)
+	
+	ret = seq.close(fp)
+	
+	|******* Email Header
+        message.ID = cmf.create()
+	line = " Notification to SAR Number" & str$(tpisg074.sarn)
+        ret = cmf.setClass(message.ID, "CMF.NOTE.EMAIL")
+        ret = cmf.setSubject(message.ID,line)
+	
+	|******** from ID
+	to.ID = cmf.createRecipient(message.ID, ttcmf.role.from)  
+	ret = cmf.setRecipientName(to.ID,"Baan Support")
+        ret = cmf.setRecipientAddress(to.ID, "baansupport@isgec.co.in")	
+	ret = cmf.setRecipientType(to.ID, "SMTP")
+ 
+	|******** to ID
+	
+	to.ID = cmf.createRecipient(message.ID, ttcmf.role.to)  
+	ret = cmf.setRecipientName(to.ID,tccom001.nama)
+	ret = cmf.setRecipientAddress(to.ID, bpmdm001.mail)	
+	ret = cmf.setRecipientResponsibility(to.ID, "TRUE")		
+	ret = cmf.setRecipientType(to.ID, "SMTP")
+	
+	if not isspace(tccom130.info) then
+		to.ID = cmf.createRecipient(message.ID, ttcmf.role.to)  
+		ret = cmf.setRecipientName(to.ID,tccom130.nama)
+		ret = cmf.setRecipientAddress(to.ID, tccom130.info)
+		ret = cmf.setRecipientResponsibility(to.ID, "TRUE")		
+		ret = cmf.setRecipientType(to.ID, "SMTP")
+	endif	
+												|#GH242CR505.sn	
+	|******** cc ID for Reject
+	
+	if i.flag = 2 then
+		select	dmisg133.logn
+		from	dmisg133
+		where	dmisg133.cprj = :tpisg074.cprj
+		selectdo
+			select 	bpmdm001.mail,tccom001.nama
+			from 	tccom001,bpmdm001
+			where 	tccom001._index4 = {:dmisg133.logn}
+			and	tccom001.emno refers to bpmdm001
+			as set with 1 rows
+			selectdo
+				to.ID = cmf.createRecipient(message.ID, ttcmf.role.cc)  
+				ret = cmf.setRecipientName(to.ID,tccom001.nama)
+				ret = cmf.setRecipientAddress(to.ID, bpmdm001.mail)	
+				ret = cmf.setRecipientResponsibility(to.ID, "TRUE")		
+				ret = cmf.setRecipientType(to.ID, "SMTP")
+			selectempty
+			endselect
+		selectempty
+		endselect
+	endif
+												|#GH242CR505.en
+	|********* Mail Body
+	attachment.ID = cmf.createAttachment(message.ID)
+	ret = cmf.setAttachmentBody(attachment.ID,ttyeno.yes)
+	ret = cmf.setAttachmentMIME(attachment.ID,"text/plain")                       
+	ret = cmf.setAttachmentFileName(attachment.ID,tmp.file,"abc.txt")
+	
+	|*********  Send mail
+        if message.ID <>0 then
+                stat = cmf.startService("SMTP",2)
+                if stat<>0 then
+                        dal.set.error.message("@ Message could not be sent "&
+                                "(Infor ERP Enterprise eMessage Connector"&
+                                " service did not start)")
+                        return(false)
+                endif
+                stat = cmf.send(message.ID,"SMTP")
+                if stat<>0 then
+                        dal.set.error.message("@ Message could not be sent "& "(Infor ERP Enterprise eMessage Connector "&
+                                "service refused message)")
+                        cmf.stopService("SMTP",2)
+                        return(false)
+                endif
+                stat = cmf.stopService("SMTP",2)
+        endif
+	return(true)
+}
+												|#ISGEC015088.en

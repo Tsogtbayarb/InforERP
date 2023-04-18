@@ -1,0 +1,295 @@
+|******************************************************************************
+|* tpisg063  0  VRC B61U a7 isg 
+|* DAL for tpisg063
+|* baan
+|* 15-01-13 [14:07]
+|******************************************************************************
+|* Script Type: DAL
+|******************************************************************************
+|* ID ISGEC01017, Manish Manchanda, 2015-01-13
+| ***********************************************************************
+| IDENT ISGEC01090, GAURAV GUPTA, IT0304, 21-12-2015
+|*
+|* ID ISGEC001214, Priya Jindal, 1/2/2018
+|* Validation for element code
+|* 
+|* GH510CR819, RAvi Kumar, 16-03-2021
+|* Partial Element Status Tracker in Infor LN
+|******************************************************************************
+
+	table	ttpisg063	| Engineering Status of Project Master 
+	table	tdmisg001	| Incoming Document Master
+	table	tdmisg002	| Incoming Document Child
+	table	tdmisg140
+	table	ttpptc100	| Element
+	table	ttpest120	| Structural Elements
+	table	ttpisg114
+	domain	tpengs	o.stat
+	extern	domain	tcsess	sess.calling	|GH510CR819.a
+#include <bic_dal2>
+
+
+function extern long before.open.object.set()
+{
+	field.dependencies()
+	return(0)
+}
+
+function extern long before.save.object(long type)
+{
+	if type = DAL_UPDATE then
+		select	dmisg140.cprj
+		from	dmisg140
+		where	dmisg140.cprj = :tpisg063.cprj
+		as set with 1 rows
+		selectdo
+			if not status.valid() then
+				return(DALHOOKERROR)
+			endif
+		endselect		
+	endif	
+	
+| 	with.old.object.values.do(old.values)		|ISGEC01090.SN	|GH510CR819.com.s
+| 	if o.stat <> tpisg063.engs then
+| 		populate.history()
+| 	endif							|ISGEC01090.EN	|GH510CR819.a.e
+	
+	if tpisg063.engs = tpengs.free then
+		tpisg063.rpst = tpisg.par.stat.blank
+	endif
+	populate.history()					|GH510CR819.a
+	return(0)
+}
+
+function	field.dependencies()
+{
+	dal.field.depends.on("tpisg063.cspa",HOOK_UPDATE,"tpisg063.cprj")
+	dal.field.depends.on("tpisg063.engs",
+						HOOK_IS_READONLY +
+						HOOK_IS_APPLICABLE , "tpisg063.appl")
+	dal.field.depends.on("tpisg063.rpst", HOOK_IS_DERIVED + HOOK_IS_APPLICABLE, "tpisg063.appl", "tpisg063.engs")	|GH510CR819.a
+						
+}
+			|#SD06112017.sn
+function boolean status.valid()
+{
+	long count.rec.1, tot.records,
+		count.rec.2,tot.records.2		|#Atul.07/03/2018.n
+					|#GC.09.02.2018.sn
+	select	dmisg140.cprj
+	from	dmisg140
+	where	dmisg140.cprj = :tpisg063.cprj
+	as set with 1 rows
+	selectdo
+	selectempty
+		return(true)
+		|* For Old records, PMDL is not maintained
+		|* So if project is not found in PMDL
+		|* No Check is needed.
+	endselect
+					|#GC.09.02.2018.en
+	select	count(*):tot.records
+	from	dmisg140
+	where	dmisg140.cprj = :tpisg063.cprj
+	and	dmisg140.cspa = :tpisg063.cspa
+	selectdo
+	selectempty
+		tot.records = 0
+	endselect
+
+	select	count(*):count.rec.1
+	from	dmisg140
+	where	dmisg140.cprj = :tpisg063.cprj
+	and	dmisg140.cspa = :tpisg063.cspa
+	and	dmisg140.acdt = 0
+	selectdo
+	selectempty
+		count.rec.1 = 0
+	endselect
+	
+	if count.rec.1 = 0 then
+| 		if tpisg063.engs = tpengs.complete or tpisg063.engs = tpengs.partial then
+		if tpisg063.engs = tpengs.partial then
+			dal.set.error.message("@Engineering Status Can't be Complete or Partial as no documents pertaining to Element has been Released...")
+			return(false)
+		endif
+	endif
+									|#Atul.07/03/2018.sn
+	select	count(*):tot.records.2
+	from	dmisg140
+	where	dmisg140.cprj = :tpisg063.cprj
+	and	dmisg140.cspa = :tpisg063.cspa
+	and	dmisg140.orgn <> "VEN"
+	selectdo
+	selectempty
+		tot.records.2 = 0
+	endselect								
+	
+	select	count(*):count.rec.2
+	from	dmisg140
+	where	dmisg140.cprj = :tpisg063.cprj
+	and	dmisg140.cspa = :tpisg063.cspa
+	and	dmisg140.acdt <> 0
+	and	dmisg140.orgn <> "VEN"
+	selectdo
+	selectempty
+		count.rec.2 = 0
+	endselect
+										|#Atul.07/03/2018.en
+	
+| 	if tot.records <> count.rec.1 then					|#Atul.07/03/2018.o
+	if tot.records.2 <> count.rec.2 then					|#Atul.07/03/2018.n
+		if tpisg063.engs = tpengs.complete then
+			dal.set.error.message("@Engineering Status Can't be Complete as All documents pertaining to Element has not been Released...")
+			return(false)
+		endif
+	endif
+	
+	return(true)
+}
+			|#SD06112017.en
+
+function	extern	tpisg063.cspa.update(long	type)
+{
+	select	tpptc100.cprj,tpptc100.cspa
+	from	tpptc100
+	where	tpptc100._index1	=	{:tpisg063.cprj}
+	selectdo
+		update_engineering_status()
+	endselect
+}
+
+| function	extern	boolean	tpisg063.appl.is.readonly(long	type)
+| {
+| 	if	tpisg063.appl	=	tcyesno.yes	and	tpisg063.engs	>	tpengs.free	then
+| 		return(true)
+| 	endif
+| 	return(false)
+| }
+
+function extern boolean tpisg063.cspa.is.valid()				|MERINO001215.sn
+{	
+	select	tpptc100.*
+	from	tpptc100
+	where	tpptc100._index1 = {:tpisg063.cprj,:tpisg063.cspa}
+	selectdo
+		return(true)
+	selectempty
+		dal.set.error.message("@Element doesn’t present in the project, kindly contact to Project Manager")
+		return(false)
+	endselect
+	return(true)
+}										|MERINO001215.en
+
+function extern	boolean tpisg063.rpst.is.derived()						|GH510CR819.a.s
+{
+	get.var(pid, "prog.name$", sess.calling)
+	if sess.calling = "tpisg0163m100" then
+		if tpisg063.appl = tcyesno.no and tpisg063.engs = tpengs.free then
+			return(true)
+		else
+			if tpisg063.engs = tpengs.complete then
+				return(true)
+			endif
+		endif
+		return(false)
+	endif
+	return(true)
+}
+
+function extern boolean tpisg063.rpst.blank.is.applicable(long	type)
+{
+	get.var(pid, "prog.name$", sess.calling)
+	if sess.calling = "tpisg0163m100" then
+		if tpisg063.engs = tpengs.partial then
+			return(false)
+		endif
+	endif
+	return(true)
+
+}
+												|GH510CR819.a.e
+function	extern	boolean	tpisg063.engs.free.is.applicable(long	type)
+{
+	if	tpisg063.engs	>	tpengs.free	then	
+		return(false)
+	endif
+	return(true)
+}
+function	extern	boolean	tpisg063.engs.partial.is.applicable(long	type)
+{
+	if	tpisg063.appl	=	tcyesno.yes	then
+		if	tpisg063.engs	=	tpengs.complete	and	check_status()	then
+			return(false)
+		endif
+		return(true)
+	endif
+	return(false)
+}
+
+function	extern	boolean	tpisg063.engs.complete.is.applicable(long	type)
+{
+	if	tpisg063.appl	=	tcyesno.yes	then
+		return(true)
+	endif
+	return(false)
+}
+
+
+function	domain	tcbool	check_status()
+{
+	select	dmisg001.docn, dmisg001.revn, dmisg001.stat
+	from	dmisg001, dmisg002
+	where	dmisg001._index3	=	{:tpisg063.cprj}
+	and	dmisg002._index1	=	{dmisg001.docn,dmisg001.revn}	
+	and	dmisg002.elem		=	:tpisg063.cspa
+	and	dmisg001.stat	>	dmstat.submitted
+	selectdo
+		return(true)
+	endselect
+	return(false)
+}
+
+function	update_engineering_status()
+{
+	select	a_tpisg063.*
+	from	tpisg063	a_tpisg063
+	where	a_tpisg063._index1	=	{:tpptc100.cprj,:tpptc100.cspa}
+	selectdo
+	selectempty
+		select	b_tpest120.levl
+		from	tpest120	b_tpest120
+		where	b_tpest120._index1 = {:tpptc100.cprj}
+		and	b_tpest120.sele = :tpptc100.cspa
+		and	b_tpest120.levl <	4
+		selectdo
+			tpisg063.cprj	=	tpptc100.cprj
+			tpisg063.cspa	=	tpptc100.cspa
+			db.insert(ttpisg063,db.skip.dupl,e)
+			commit.transaction()
+		endselect
+	endselect
+}
+													|ISGEC01090.SN
+function old.values()
+{
+	o.stat = tpisg063.engs
+}
+
+function populate.history()
+{
+	db.set.to.default(ttpisg114)
+	tpisg114.cprj = tpisg063.cprj
+	tpisg114.cspa = tpisg063.cspa
+	tpisg114.user = logname$
+	tpisg114.date = utc.num()
+	tpisg114.stat = tpisg063.engs					|GH510CR819.a.s
+	tpisg114.appl = tpisg063.appl				
+	tpisg114.clos = tpisg063.clos					
+	tpisg114.rpst = tpisg063.rpst			
+	tpisg114.rmks = tpisg063.rmks					|GH510CR819.a.e				
+	db.insert(ttpisg114, db.skip.dupl, e)	
+| 	commit.transaction()
+}
+
+													|ISGEC01090.EN

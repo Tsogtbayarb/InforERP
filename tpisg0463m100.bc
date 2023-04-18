@@ -1,0 +1,120 @@
+|******************************************************************************
+|* tpisg0463m100  0  VRC B61U a7 isg 
+|* Print Reson for Elment Partial Status
+|* Ravi Kumar                    
+|* 2021-03-17
+|******************************************************************************
+|* Main table tpisg063 Engineering Status of Project Elements, Form Type 4
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+	table   ttpisg063 | Engineering Status of Project Elements
+	table	ttpptc100
+	table	ttpisg114
+	table	ttccom001
+
+   extern  domain  tccprj           cprj.f, i.cprj	fixed
+   extern  domain  tccprj           cprj.t    fixed
+   extern	domain	tcsess	i.session
+			long	brp.id
+
+|****************************** program section ********************************
+before.program:
+	import("prog.name$", i.session)
+	if i.session = "tpisg0163m000" then
+		import("tpisg063.cprj", i.cprj)
+		cprj.f = i.cprj
+		cprj.t = i.cprj
+		execute(cont.process)
+	endif
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.cont.process:
+on.choice:
+   execute(print.data)
+
+choice.print.data:
+on.choice:
+	if i.session = "tpisg0163m000" then
+		brp.id = brp.open("rtpisg046301000", "P", 1)
+		read.main.table()
+		brp.close(brp.id)
+		exit()
+	else
+		if rprt_open() then
+			read.main.table()
+			rprt_close()
+		else
+			choice.again()
+		endif
+	endif
+
+
+|****************************** field section *********************************
+
+field.cprj.f:
+when.field.changes:
+   cprj.t = cprj.f
+
+
+|****************************** function section ******************************
+
+functions:
+
+function read.main.table()
+{
+	
+	select	tpisg063.*,
+		tcmcs052.dsca,
+		tppdm090.sort
+	from	tpisg063, tcmcs052, tppdm090 
+	where	tpisg063._index1 inrange {:cprj.f} and {:cprj.t}
+	and	tpisg063.cprj refers to tcmcs052
+	and	tpisg063.cspa refers to tppdm090
+	order by tpisg063._index1
+	selectdo
+		select	tpisg114.*
+		from	tpisg114
+		where	tpisg114._index1 = {:tpisg063.cprj, :tpisg063.cspa}
+		order by tpisg114._index1
+		selectdo
+			select	tccom001.nama
+			from	tccom001
+			where	tccom001._index4 = {:tpisg114.user}
+			as set with 1 rows
+			selectdo
+			selectempty
+				tccom001.nama = ""
+			endselect
+			
+			select	tpptc100.desc,
+				tpptc100.stat
+			from	tpptc100
+			where	tpptc100._index1 = {:tpisg063.cprj, :tpisg063.cspa}
+			as set with 1 rows
+			selectdo
+			selectempty
+				tpptc100.desc = ""
+			endselect
+			
+			if tpisg114.stat = tpengs.complete then
+				tpisg063.rpst = empty
+			endif
+			if i.session = "tpisg0163m000" then
+				brp.ready(brp.id)
+			else
+				rprt_send()
+			endif
+		endselect
+	endselect
+}

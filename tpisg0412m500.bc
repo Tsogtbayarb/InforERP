@@ -1,0 +1,539 @@
+|******************************************************************************
+|* tpisg0412m400  0  VRC B61U a7 isg 
+|* Elementwise Sanction Utilisation vs PO Placed
+|* Ravi Kumar                    
+|* 2021-02-23
+|******************************************************************************
+|* Main table tpisg012 Sanction Control Lines, Form Type 4
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+	table   ttpisg012 | Sanction Control Lines
+	table	ttdpur401
+	table	twhinh312
+	table	ttdpur406
+	table	ttpppc215
+	table	ttpppc211
+	table	ttpppc271
+	table	ttpppc275
+	table	ttpptc100
+	table	ttppdm740
+	table	ttpisg082
+	table	ttpisg011
+	table	ttpisg007
+	table	ttdpur400
+	table	ttpptc101
+
+	extern  domain  tccprj           cprj.f, cprj.t
+	extern  domain  tppdm.cspa       cspa.f, cspa.t
+	extern	domain	tcamnt	exhausted.amnt, poplaced.amnt, directsanc.amnt, podelivered.amnt, balance, rep.oqnt,
+				cont.amnt.hc, contribution.amnt, exhausted.amnt.imp, exhausted.amnt.imp.yes, exhausted.amnt.ye
+	extern	domain	tcpric	rep.oprc
+	extern	domain	tcyesno	imp.po
+	extern	domain	tcpono	only.sanction
+
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.cont.process:
+on.choice:
+   execute(print.data)
+
+choice.print.data:
+on.choice:
+   if rprt_open() then
+       read.main.table.po()
+       rprt_close()
+   else
+       choice.again()
+   endif
+
+
+|****************************** field section *********************************
+
+field.cprj.f:
+when.field.changes:
+   cprj.t = cprj.f
+
+field.cspa.f:
+when.field.changes:
+   cspa.t = cspa.f
+
+
+|****************************** function section ******************************
+
+functions:
+
+function read.main.table()
+{
+	initialization()
+	
+	select	tpisg012.cprj,
+		tpisg012.elem,
+		tpisg012.exha,
+		tcmcs052.dsca
+	from	tpisg012, tcmcs052
+	where	tpisg012._index1 inrange {:cprj.f} and {:cprj.t}
+	and	tpisg012.elem inrange {:cspa.f} and {:cspa.t}
+	and	tpisg012.cprj refers to tcmcs052
+	selectdo
+		initialization()
+		select	tpisg011.copr
+		from	tpisg011
+		where	tpisg011._index1 = {:tpisg012.cprj}
+		as set with 1 rows
+		selectdo
+		selectempty
+			tpisg011.copr = 0 
+		endselect
+		
+		select	tpisg007.rate,
+			tpisg007.apdt
+		from	tpisg007
+		where	tpisg007._index1 = {:tpisg012.cprj}
+		order by tpisg007.apdt asc
+		as set with 1 rows
+		selectdo
+			if tpisg007.rate > 0 then
+				cont.amnt.hc = tpisg011.copr * tpisg007.rate
+			else
+				select	tppdm740.rate
+				from	tppdm740
+				where	tppdm740._index1 = {:tpisg012.cprj}
+				as set with 1 rows
+				selectdo
+					cont.amnt.hc = tpisg011.copr * tppdm740.rate(1)
+				selectempty
+					cont.amnt.hc = 0.00
+				endselect
+			endif
+		selectempty
+			select	tppdm740.rate
+			from	tppdm740
+			where	tppdm740._index1 = {:tpisg011.cprj}
+			as set with 1 rows
+			selectdo
+				cont.amnt.hc = tpisg011.copr * tppdm740.rate(1)
+			selectempty
+				cont.amnt.hc = 0.00
+			endselect
+		endselect
+		
+		contribution.amnt =  cal.con(tpisg012.cprj)
+		select	tpptc100.desc
+		from	tpptc100
+		where	tpptc100._index1 = {:tpisg012.cprj, :tpisg012.elem}
+		as set with 1 rows
+		selectdo
+		selectempty
+			tpptc100.desc = ""
+		endselect
+		
+		select	tdpur401.orno,
+			tdpur401.pono,
+			tdpur401.pric,
+			tdpur401.qoor,
+			tdpur401.oamt
+		from	tdpur401
+		where	tdpur401._index5 = {:tpisg012.cprj}
+		and	tdpur401.cspa = :tpisg012.elem
+		and	tdpur401.oltp in (tdgen.oltp.total, tdgen.oltp.orderline)
+		selectdo
+			if imp.po = tcyesno.no then
+				select	tdpur400.impo.l:imp.po
+				from	tdpur400
+				where	tdpur400._index1 = {:tdpur401.orno}
+				as set with 1 rows
+				selectdo
+				endselect
+			endif
+			
+			rep.oqnt = get.additional.qty.from.401(tdpur401.orno, tdpur401.pono)
+				if	tdpur401.qoor <> 0	then
+				rep.oprc = (tdpur401.oamt / tdpur401.qoor)
+			else
+				rep.oprc = 0
+			endif	
+			if tdpur400.hdst = tdpur.hdst.created or tdpur400.hdst = tdpur.hdst.cancelled then
+				poplaced.amnt = 0
+			else
+				poplaced.amnt = poplaced.amnt + (rep.oqnt * rep.oprc)
+			endif
+			podelivered.amnt = podelivered.amnt + Get_Warehouse_Receipt(tdpur401.orno, tdpur401.pono, tdpur401.pric)
+			podelivered.amnt = podelivered.amnt + Get_Purchase_Receipt(tdpur401.orno, tdpur401.pono, tdpur401.pric)
+			
+			select	tdpur400.impo.l:imp.po
+			from	tdpur400
+			where	tdpur400._index1 = {:tdpur401.orno}
+			and	tdpur400.impo.l = tcyesno.no
+			as set with 1 rows
+			selectdo
+				tpisgdll000021.get.exhausted.amount.of.po.and.line(tdpur401.orno, tdpur401.pono, exhausted.amnt.imp)
+				exhausted.amnt = exhausted.amnt + exhausted.amnt.imp
+			selectempty
+				tpisgdll000021.get.exhausted.amount.of.po.and.line(tdpur401.orno, tdpur401.pono, exhausted.amnt.imp.yes)
+				exhausted.amnt.ye = exhausted.amnt.ye + exhausted.amnt.imp.yes
+			endselect
+		endselect
+		if imp.po = tcyesno.yes then
+			exhausted.amnt = exhausted.amnt
+		else
+			exhausted.amnt = tpisg012.exha
+			exhausted.amnt.ye = 0
+		endif
+		directsanc.amnt = get.utilization()
+| 		balance = (exhausted.amnt - poplaced.amnt - directsanc.amnt)
+		balance = (exhausted.amnt - poplaced.amnt)
+		rprt_send()
+	endselect
+}
+
+function read.main.table.po()
+{
+	initialization()
+	only.sanction = 0
+	
+	select	tpisg012.cprj,
+		tpisg012.elem,
+		tpisg012.exha,
+		tcmcs052.dsca
+	from	tpisg012, tcmcs052
+	where	tpisg012._index1 inrange {:cprj.f} and {:cprj.t}
+	and	tpisg012.elem inrange {:cspa.f} and {:cspa.t}
+	and	tpisg012.cprj refers to tcmcs052
+	selectdo
+		initialization()
+		select	tpisg011.copr
+		from	tpisg011
+		where	tpisg011._index1 = {:tpisg012.cprj}
+		as set with 1 rows
+		selectdo
+		selectempty
+			tpisg011.copr = 0 
+		endselect
+		
+		select	tpisg007.rate,
+			tpisg007.apdt
+		from	tpisg007
+		where	tpisg007._index1 = {:tpisg012.cprj}
+		order by tpisg007.apdt asc
+		as set with 1 rows
+		selectdo
+			if tpisg007.rate > 0 then
+				cont.amnt.hc = tpisg011.copr * tpisg007.rate
+			else
+				select	tppdm740.rate
+				from	tppdm740
+				where	tppdm740._index1 = {:tpisg012.cprj}
+				as set with 1 rows
+				selectdo
+					cont.amnt.hc = tpisg011.copr * tppdm740.rate(1)
+				selectempty
+					cont.amnt.hc = 0.00
+				endselect
+			endif
+		selectempty
+			select	tppdm740.rate
+			from	tppdm740
+			where	tppdm740._index1 = {:tpisg011.cprj}
+			as set with 1 rows
+			selectdo
+				cont.amnt.hc = tpisg011.copr * tppdm740.rate(1)
+			selectempty
+				cont.amnt.hc = 0.00
+			endselect
+		endselect
+		
+		contribution.amnt =  cal.con(tpisg012.cprj)
+		select	tpptc100.desc
+		from	tpptc100
+		where	tpptc100._index1 = {:tpisg012.cprj, :tpisg012.elem}
+		as set with 1 rows
+		selectdo
+		selectempty
+			tpptc100.desc = ""
+		endselect
+		
+		select	tpptc101.cspp
+		from	tpptc101
+		where	tpptc101._index2 = {:tpisg012.cprj, :tpisg012.elem}
+		as set with 1 rows
+		selectdo
+		selectempty
+			tpptc101.cspp = ""
+		endselect
+		
+		directsanc.amnt = get.utilization()		
+		select	tdpur401.orno,
+			tdpur401.pono,
+			tdpur401.pric,
+			tdpur401.qoor,
+			tdpur401.oamt
+		from	tdpur401
+		where	tdpur401._index5 = {:tpisg012.cprj}
+		and	tdpur401.cspa = :tpisg012.elem
+		and	tdpur401.oltp in (tdgen.oltp.total, tdgen.oltp.orderline)
+		order by tdpur401.orno, tdpur401.pono
+		selectdo
+			podelivered.amnt = 0
+			select	tdpur400.impo.l:imp.po,
+				tdpur400.ccur,
+				tdpur400.hdst
+			from	tdpur400
+			where	tdpur400._index1 = {:tdpur401.orno}
+			as set with 1 rows
+			selectdo
+			endselect
+			
+			rep.oqnt = get.additional.qty.from.401(tdpur401.orno, tdpur401.pono)
+				if	tdpur401.qoor <> 0	then
+				rep.oprc = (tdpur401.oamt / tdpur401.qoor)
+			else
+				rep.oprc = 0
+			endif	
+			if tdpur400.hdst = tdpur.hdst.created or tdpur400.hdst = tdpur.hdst.cancelled then
+				poplaced.amnt = 0
+			else
+				poplaced.amnt = (rep.oqnt * rep.oprc)
+			endif
+			podelivered.amnt = Get_Warehouse_Receipt(tdpur401.orno, tdpur401.pono, tdpur401.pric)
+			podelivered.amnt = podelivered.amnt + Get_Purchase_Receipt(tdpur401.orno, tdpur401.pono, tdpur401.pric)
+			
+| 			select	tdpur400.impo.l:imp.po
+| 			from	tdpur400
+| 			where	tdpur400._index1 = {:tdpur401.orno}
+| 			and	tdpur400.impo.l = tcyesno.no
+| 			as set with 1 rows
+| 			selectdo
+				tpisgdll000021.get.exhausted.amount.of.po.and.line(tdpur401.orno, tdpur401.pono, exhausted.amnt.imp)
+				exhausted.amnt = exhausted.amnt.imp
+| 			selectempty
+| 				tpisgdll000021.get.exhausted.amount.of.po.and.line(tdpur401.orno, tdpur401.pono, exhausted.amnt.imp.yes)
+| 				exhausted.amnt.ye = exhausted.amnt.imp.yes
+| 			endselect
+| 			balance = (exhausted.amnt - poplaced.amnt - directsanc.amnt)
+			balance = (poplaced.amnt - podelivered.amnt)
+			only.sanction = 0
+			rprt_send()
+		selectempty
+			only.sanction = 1
+			rprt_send()
+		endselect
+| 		if imp.po = tcyesno.yes then
+| 			exhausted.amnt = exhausted.amnt
+| 		else
+| 			exhausted.amnt = tpisg012.exha
+| 			exhausted.amnt.ye = 0
+| 		endif
+	endselect
+}
+
+function domain tcqiv1	 get.additional.qty.from.401(
+				domain	tcorno	in.orno,
+				domain	tcpono	in.pono
+					)
+{
+
+	domain tcqsl1 ord.qty,app.qty,diff.qty,bac.qty				
+	domain tcqsl1 final.rcpt.qnty, non.final.rcpt.qnty	
+	domain tcqsl1	final.rcpt,non.final.rcpt			
+	ord.qty = 0
+	app.qty = 0
+	bac.qty = 0
+	diff.qty = 0
+	non.final.rcpt.qnty = 0	
+	final.rcpt.qnty = 0	
+	
+	select	sum(tdpur401.qidl):final.rcpt.qnty
+	from 	tdpur401 
+	where 	tdpur401._index1 = {:in.orno, :in.pono}
+	and	tdpur401.oltp <> 1		|* Not Total Line Type
+	and	tdpur401.clyn <> tcyesno.yes 	|* Not Consider Cancelled PO Line
+	selectdo
+	selectempty
+		final.rcpt.qnty = 0.00
+	endselect
+		
+	select	sum(tdpur401.qidl):non.final.rcpt.qnty,
+		sum(tdpur401.qoor):ord.qty
+	from 	tdpur401 
+	where 	tdpur401._index1 = {:in.orno, :in.pono}
+	and	tdpur401.fire = tcyesno.no
+	and	tdpur401.oltp <> 1		|* Not Total Line Type
+	and	tdpur401.clyn <> tcyesno.yes 	|* Not Consider Cancelled PO Line
+	selectdo
+	selectempty
+		ord.qty = 0.00
+		non.final.rcpt.qnty = 0.00
+	endselect
+	
+	diff.qty = final.rcpt.qnty + (ord.qty - non.final.rcpt.qnty)
+							
+	diff.qty = round(diff.qty,6,2)									
+	return(diff.qty)					
+}
+
+function domain	tcamnt Get_Warehouse_Receipt(
+			domain	tcorno		in.orno,
+			domain	tcpono		in.pono,
+			domain	tcpric		in.pric
+					)
+{		
+	domain	tcamnt	ware.rec.amnt
+	
+	ware.rec.amnt = 0
+	
+	select	whinh312.qrcr
+	from	whinh312
+	where	whinh312._index4 = {whinh.oorg.purchase, :in.orno, :in.pono}
+	selectdo
+		ware.rec.amnt = ware.rec.amnt + (in.pric * whinh312.qrcr)
+	selectempty
+		return(ware.rec.amnt)	
+	endselect
+	return(ware.rec.amnt)
+}
+
+function domain	tcamnt Get_Purchase_Receipt(
+			domain	tcorno		in.orno,
+			domain	tcpono		in.pono,
+			domain	tcpric		in.pric			
+					)
+{		
+	domain	tcamnt	pur.rec.amnt
+	
+	pur.rec.amnt = 0
+	
+	select	tdpur406.qiap,
+		tdpur406.rcno
+	from	tdpur406
+	where	tdpur406._index1 = {:in.orno, :in.pono}
+	and	tdpur406.rcno not in (select	whinh312.rcno	from	whinh312
+					where	whinh312._index4 = {whinh.oorg.purchase, :in.orno, :in.pono})
+	selectdo		
+		pur.rec.amnt = pur.rec.amnt + (tdpur406.qiap * in.pric)
+	selectempty
+		return(pur.rec.amnt)
+	endselect
+	
+	return(pur.rec.amnt)
+}
+
+function domain	tcamnt get.utilization()
+{
+	domain	tcamnt	direct.sanc.amnt
+	
+	direct.sanc.amnt = 0
+	
+	select	tpppc215.rtcc,
+		tpppc215.amoc							
+	from	tpppc215
+	where	tpppc215._index1 = {:tpisg012.cprj, :tpisg012.elem}
+	and	tpppc215.tetd = tpppc.tetd.invoice
+	selectdo				
+		direct.sanc.amnt = direct.sanc.amnt + (tpppc215.amoc * tpppc215.rtcc(1))	
+	endselect
+	
+	select	tpppc211.amoc, tpppc211.rtcc						
+	from	tpppc211,tcmcs052
+	where	tpppc211._index8 = {:tpisg012.cprj, :tpisg012.elem}
+	and	tpppc211.tetb = tpppc.tetb.invoice
+	and	tpppc211.cprj refers to tcmcs052
+	selectdo
+		direct.sanc.amnt = direct.sanc.amnt + (tpppc211.amoc * tpppc211.rtcc(1))
+	endselect
+	
+	select 	tpppc271.amoc, tpppc271.rtcc							
+	from	tpppc271,tcmcs052
+	where	tpppc271._index8 = {:tpisg012.cprj, :tpisg012.elem}
+	and	tpppc271.tetf = tpppc.tetf.invoice
+	and	tpppc271.cprj refers to tcmcs052
+	selectdo
+		direct.sanc.amnt = direct.sanc.amnt + (tpppc271.amoc * tpppc271.rtcc(1))
+	endselect
+	
+	select 	
+		tpppc275.amoc, tpppc275.rtcc						 
+	from	tpppc275,tcmcs052
+	where	tpppc275._index1 = {:tpisg012.cprj, :tpisg012.elem}
+	and	tpppc275.tetg = tpppc.tetg.invoice
+	and	tpppc275.cprj refers to tcmcs052
+	selectdo
+		direct.sanc.amnt = direct.sanc.amnt + (tpppc275.amoc * tpppc275.rtcc(1))
+	endselect
+	
+	return(direct.sanc.amnt)
+}
+
+function domain	tcamnt cal.con(domain	tccprj	i.cprj)
+{
+	domain	tcamnt	contingency.amnt, contract.hc.amnt
+	contingency.amnt = 0
+	contract.hc.amnt = 0
+	
+	select	tppdm740.copr,
+		tppdm740.rate
+	from	tppdm740
+	where	tppdm740._index1 = {:i.cprj}
+	as set with 1 rows
+	selectdo
+		contract.hc.amnt =  tppdm740.rate(1) * tppdm740.copr
+	selectempty
+		contract.hc.amnt = 0
+	endselect	
+	
+	select 	tpisg012.totl
+	from	tpisg012
+	where	tpisg012._index1 = {:i.cprj}
+	and	tpisg012.levl = 0
+	as set with 1 rows
+	selectdo
+	selectempty
+		tpisg012.totl = 0
+	endselect
+						
+	select	tpisg082.totl
+	from	tpisg082
+	where	tpisg082._index1 = {:i.cprj}
+	and	tpisg082.parn = ""
+	selectdo
+	selectempty
+		tpisg082.totl = 0
+	endselect
+
+	select	tpisg082.budg
+	from	tpisg082
+	where	tpisg082._index1 = {:i.cprj}
+	and	tpisg082.parn = ""
+	selectdo
+	selectempty
+		tpisg082.budg = 0
+	endselect
+	
+	contingency.amnt = contract.hc.amnt + tpisg082.totl - tpisg012.totl
+	return(contingency.amnt)
+}
+
+function initialization()
+{
+	imp.po = tcyesno.no
+	exhausted.amnt = 0
+	poplaced.amnt = 0
+	directsanc.amnt = 0
+	podelivered.amnt = 0
+	balance = 0
+	rep.oqnt = 0
+	cont.amnt.hc = 0
+	exhausted.amnt.ye = 0
+	exhausted.amnt.imp.yes = 0
+}

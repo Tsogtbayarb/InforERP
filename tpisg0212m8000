@@ -1,0 +1,120 @@
+|******************************************************************************
+|* tpisg0212m800  0  VRC B61U a7 live
+|* Recall Estimate From Sanction
+|* Installation user             
+|* 2014-10-31
+|******************************************************************************
+|* Form Type 4
+|******************************************************************************
+|* GH631.29112021, Utam Kumar Singh
+|* Export Incentive transfer status not changed after recall sanction control                                                                               
+|****************************** declaration section ***************************
+declaration:
+	table	ttpisg011
+	table	ttpisg012
+	table	ttpest200
+	table	ttpisg082	|GH631.29112021.add
+	table	ttpisg081	|GH631.29112021.add
+	
+extern	domain	tccprj		import.cprj
+|****************************** program section ********************************
+before.program:
+	import("tpest200.cprj",import.cprj)
+
+	if not check.sanction.status(import.cprj) then
+		message("Estimate Can't be Recall")
+		execute(end.program)
+	else
+		delete.tpisg012.record(import.cprj)
+		delete.tpisg082.record(import.cprj)		|GH631.29112021.add
+		update.tpisg081.record(import.cprj)		|GH631.29112021.add
+		commit.transaction()
+		message("Recall Sucessful")
+		execute(end.program)
+	endif
+	
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+
+
+functions:
+function boolean check.sanction.status
+			(
+				domain	tccprj	i.cprj
+			)
+{
+	select 	tpisg011.cprj
+	from	tpisg011
+	where	tpisg011._index1 = {:i.cprj}
+	and	tpisg011.acti = tpisg.sanction.launch
+	and	tpisg011.act1 = tpisg.sanction.free
+	as set with 1 rows
+	selectdo
+	selectempty
+		return(false)
+	endselect
+	
+	return(true)
+}
+
+function delete.tpisg012.record
+			(
+				domain	tccprj	i.cprj
+			)
+{
+	select tpisg012.cprj
+	from	tpisg012 for update
+	where	tpisg012._index1 = {:i.cprj}
+	selectdo
+		db.delete(ttpisg012,db.retry,e)
+	selecteos
+		select tpisg011.cprj
+		from	tpisg011 for update
+		where	tpisg011._index1 = {:i.cprj}
+		selectdo
+			db.delete(ttpisg011,db.retry,e)
+		endselect
+		
+		select 	tpest200.laun
+		from	tpest200 for update
+		where	tpest200._index1 = {:i.cprj}
+		and	tpest200.laun = tppdm.yeno.yes
+		selectdo
+			tpest200.laun = tppdm.yeno.no
+			db.update(ttpest200,db.retry,e)
+		endselect
+	endselect
+}
+
+function delete.tpisg082.record
+				(
+					domain	tccprj	i.cprj
+				)
+{
+	select	tpisg082.cprj
+	from	tpisg082
+	for	update
+	where	tpisg082._index1 = {:i.cprj}
+	selectdo
+		db.delete(ttpisg082,db.retry,e)
+	endselect	
+}
+
+function update.tpisg081.record
+				(
+					domain	tccprj	i.cprj
+				)
+{
+	select	tpisg081.cprj
+	from	tpisg081
+	for	update
+	where	tpisg081._index1 = {:i.cprj}
+	selectdo
+		tpisg081.tran = tcyesno.no
+		db.update(ttpisg081,db.retry,e)
+	endselect	
+}	

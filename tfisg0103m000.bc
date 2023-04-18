@@ -1,0 +1,387 @@
+|******************************************************************************
+|* tfisg0103m000  0  VRC B61U a7 live
+|* Link GR
+|* Tools                         
+|* 2014-06-03
+|******************************************************************************
+|* Main table tfisg003 GR Details, Form Type 1
+|******************************************************************************
+|* ESSP Incident: 3797, Sujeet Kumar, 03-06-2014, 	B61U a7 live  
+|*
+|* ISGECDV001059, IT0205, Arjit Gupta, Dt. 25-09-2014, B61U a7 live
+|* Export GR No., Transporter, GR Date when call from zoom 
+|* 
+|* ISGECDV001126, IT0205, Arjit Gupta, Dt. 29-10-2014, B61U a7 live
+|* When called from "tfisg0501m200" then not to check link 'Yes' to link GR
+|*
+|* ISGECDV001145, IT0205, Arjit Gupta, Dt. 06-11-2014, B61U a7 live
+|* Display Project Code on form
+|*
+|* ID: ISGEC01194, Priya Jindal, 25/07/2019, B61U a7 live
+|* Changes in logic for disable_selection_for_delivery_term
+|****************************** declaration section ***************************
+declaration:
+
+  table		ttfisg001	
+  table   	ttfisg003 | GR Details
+  table		ttfisg002
+  table		ttfacp100
+  table		ttcmcs143
+  table		ttccom139
+  table 	ttdisg016
+  
+extern	domain	tcncmp		import.icmp
+extern	domain	tfgld.docn	import.irno
+extern	domain	tccom.bpid	import.irbp
+extern	domain	tfgld.sess	import.program
+extern	domain	tcncmp		i.ncmp, curr.ncmp
+extern	domain	tcdsca		dsca.from,dsca.to
+long ret_val
+
+extern	domain	tccprj		import.cprj
+	extern	domain	tcdsca		var.prjdc	|#ISGECDV001145.n
+								|#ISGECDV001059.sn
+	extern	domain	tcmcs.str16	prog.name
+	|**************** Global Variables **************
+	extern	domain	tfacp.isup	exp.grno
+	extern	domain	tccom.bpid	exp.bpid
+	extern	domain	tfgld.date	exp.grdt
+								|#ISGECDV001059.en
+	extern	domain	tcsess		i.session		|#ISGECDV001126.n
+
+	extern	domain	whinh.pksp	str.dino
+#include <bic_dam>
+|****************************** program section ********************************
+before.program:
+	curr.ncmp = get.compnr()
+	import("tfisg002.irno",import.irno)
+	import("prog.name$",import.program)
+	
+	if import.program = "tfisg0102m000" then
+		import("im.bpid", import.irbp)
+		import("i.session", i.session)			|#ISGECDV001126.n
+		query.extend.where("tfisg003.bpid = " & quoted.string(import.irbp) & " and tfisg003.sele = tcyesno.no")
+| 		query.extension = "tfisg003.link = tcyesno.no"
+	else
+| 		if import.program = "whinh3512m000" then
+| 			ret_val = dynamic.index.switching = 1
+| 		endif
+| 		
+| 		set.synchronized.dialog("tfisg0103m000")
+		
+		if	import.program = "tdisg4151m000"	then
+			import("tdisg451.cprj",import.cprj)
+			query.extend.where("tfisg003.irno in (select tfisg001.irno from tfisg001 where tfisg001.cprj = '" & import.cprj & "')")
+		else	
+			if import.program = "whinh3512m000" then
+				ret_val = dynamic.index.switching = 1
+			endif
+		
+			set.synchronized.dialog("tfisg0103m000")
+		endif	
+	endif
+	
+									|#ISGECDV001059.sn
+before.display.object:
+	import("prog.name$", prog.name)
+	if	trim$(prog.name) = "tdisg4152m000"	then
+		disable.commands(modify.set, mark.delete, add.set, dupl.occur)
+	else
+		enable.commands(modify.set, mark.delete, add.set, dupl.occur)
+	endif
+
+	if disable_selection_for_delivery_term() then					|#Sahil.Sharma.19.02.2019.sn
+		disable.fields("tfisg003.sele", actual.occ)
+	else
+		enable.fields("tfisg003.sele", actual.occ)
+	endif
+											|#Sahil.Sharma.19.02.2019.en
+|******************************* Zoom Section ***********************************
+zoom.from.all:
+on.exit:
+	export("exp.grno", tfisg003.grno)
+	export("exp.bpid", tfisg003.bpid)
+	export("exp.grdt", tfisg003.grdt)
+									|#ISGECDV001059.en
+|******************************* field Section ***********************************
+
+field.tfisg003.ncmp:
+before.display:
+	tfisg003.ncmp = curr.ncmp
+
+
+field.tfisg003.irno:	
+check.input:
+	if import.program = "tfisg0102m000" then
+	else
+		if tfisg003.irno = 0 then
+			message("Enter Valid IR Number")
+			set.input.error("")
+		else
+| 			on.main.table(check.ir,o.tfisg003.irno)
+| 			
+| 			select 	tfisg001.link
+| 			from	tfisg001 
+| 			where	tfisg001._index1 = {:tfisg003.irno}
+| 			and	tfisg001.link = tcyesno.yes
+| 			as set with 1 rows
+| 			selectdo
+| 				message("IR already Linked")
+| 				set.input.error("")
+| 			endselect
+			
+		endif
+	endif	
+
+field.tfisg003.plcf:
+before.zoom:
+	tcmcs143.ccty = tfisg003.cctf
+	
+field.tfisg003.citf:
+before.zoom:
+	tccom139.ccty = tfisg003.cctf
+	tccom139.cste = tfisg003.plcf
+
+field.tfisg003.plct:
+before.zoom:
+	tcmcs143.ccty = tfisg003.cctt
+
+field.tfisg003.citt:
+before.zoom:
+	tccom139.ccty = tfisg003.cctt
+	tccom139.cste = tfisg003.plct
+field.dsca.from:
+before.display:
+	select	tccom139.dsca
+	from	tccom139
+	where	tccom139._index1 = {:tfisg003.cctf,:tfisg003.plcf,:tfisg003.citf}
+	selectdo
+		dsca.from = tccom139.dsca
+	selectempty
+		dsca.from = ""
+	endselect	
+
+field.dsca.to:
+before.display:
+	select	tccom139.dsca
+	from	tccom139
+	where	tccom139._index1 = {:tfisg003.cctt,:tfisg003.plct,:tfisg003.citt}
+	selectdo
+		dsca.to = tccom139.dsca
+	selectempty
+		dsca.from = ""
+	endselect	
+
+					|#ISGECDV001145.sn
+field.var.prjdc:
+before.display:
+	select	pj_tcmcs052.dsca:var.prjdc
+	from	tcmcs052 pj_tcmcs052
+	where	pj_tcmcs052._index1 = {:tfisg003.cprj}
+	selectdo
+	selectempty
+		var.prjdc = ""
+	endselect
+						|#ISGECDV001145.en
+						
+field.tfisg003.fpon:
+before.zoom:
+	query.extend.where.in.zoom("tdisg016.cprj ="&quoted.string(tfisg003.cprj))
+|****************************** choice section **********************************
+choice.dupl.occur:
+before.choice:
+	tfisg003.irno = 0
+	
+choice.link.gr:
+on.choice:
+									|#ISGECDV001126.sn
+	if	trim$(i.session) = "tfisg0501m200"	then
+		insert_in_tfisg002_transporter()
+	else
+									|#ISGECDV001126.en
+		insert_in_tfisg002()
+	endif							|#ISGECDV001126.n	
+	commit.transaction()
+	execute(end.program)
+
+
+choice.end.program:
+before.choice:
+	if	import.program = "tfisg0102m000"	then
+		refresh.parent(-1)
+	endif	
+
+choice.mark.delete:
+before.choice:
+	select 	tfisg001.stat
+	from	tfisg001 
+	where	tfisg001._index1 = {:tfisg003.irno}
+	and	tfisg001.stat = tfisg.status.ir.receipt
+	as set with 1 rows
+	selectdo
+	selectempty
+		message("IR Already Processed!!")
+		choice.again()
+	endselect
+	
+	select 	tfisg002.irno
+	from	tfisg002 for update
+	where	tfisg002._index1 = {:tfisg003.irno,:tfisg003.ncmp,:tfisg003.grno,:tfisg003.bpid,:tfisg003.grdt}
+	selectdo
+		db.delete(ttfisg002,db.retry,e)
+		select tfisg001.link
+		from	tfisg001 for update
+		where	tfisg001._index1 = {:tfisg003.irno}
+		selectdo
+			tfisg001.link = tcyesno.no
+			db.update(ttfisg001,db.retry,e)
+		endselect
+	endselect
+	
+	commit.transaction()
+	
+		
+|***********************************************************************************
+main.table.io:
+before.write:
+| 	tfisg003.link = tcyesno.yes
+
+| 	select 	tfacp100.ifbp,
+| 		tfisg001.ncmp:i.ncmp
+| 	from	tfacp100, tfisg001
+| 	where	tfacp100._index1 = {:tfisg003.irno}
+| 	and	tfacp100.ninv refers to tfisg001
+| 	as set with 1 rows
+| 	selectdo
+| 	endselect
+| 	
+| 	tfisg002.irno = tfisg003.irno
+| 	tfisg002.gcmp = tfisg003.ncmp
+| 	tfisg002.grno = tfisg003.grno
+| 	tfisg002.grbp = tfisg003.bpid
+| 	tfisg002.grdt = tfisg003.grdt
+| 	
+| 	db.insert(ttfisg002,db.skip.dupl,e)
+| 	
+| 	select 	tfisg001.link
+| 	from	tfisg001 for update
+| 	where 	tfisg001._index1 = {:tfisg003.irno}
+| 	as set with 1 rows
+| 	selectdo
+| 		tfisg001.link = tcyesno.yes
+| 		db.update(ttfisg001,db.retry,e)
+| 	endselect
+| 	
+| before.rewrite:
+| 	if dal.is.field.changed("tfisg003.irno") then
+| 		skip.io("")
+| 	endif
+	
+	
+functions:
+function insert_in_tfisg002()
+{
+	select 	tfisg003.ncmp,
+		tfisg003.grno,
+		tfisg003.bpid,
+		tfisg003.grdt
+	from	tfisg003
+	where	tfisg003._index2 = {:tfisg003.bpid}
+	and	tfisg003.sele = tcyesno.yes
+	and	tfisg003.link = tcyesno.no
+	selectdo
+| 		tfisg002.icmp = import.icmp
+		tfisg002.irno = import.irno
+| 		tfisg002.irbp = import.irbp
+		tfisg002.gcmp = tfisg003.ncmp
+		tfisg002.grno = tfisg003.grno
+		tfisg002.grbp = tfisg003.bpid
+		tfisg002.grdt = tfisg003.grdt
+		db.insert(ttfisg002,db.skip.dupl,e)
+		
+		select 	tfisg003.link
+		from	tfisg003 for update
+| 		where	tfisg003._index1 = {:tfisg003.ncmp,:tfisg003.grno,:tfisg003.bpid}
+		where	tfisg003._index1 = {:tfisg003.grno,:tfisg003.bpid}
+		and	tfisg003.sele = tcyesno.yes
+		and	tfisg003.link = tcyesno.no
+		selectdo
+			tfisg003.link = tcyesno.yes
+			db.update(ttfisg003,db.retry,e)
+		endselect
+		
+	endselect
+	
+}
+
+function check.ir
+		(
+			ref	domain 	tfgld.docn	o.irno
+		)
+{
+	select 	tfisg003.irno:o.irno
+	from	tfisg003
+	where	tfisg003._index1 = {:tfisg003.grno,:tfisg003.bpid,:tfisg003.grdt}
+	as set with 1 rows
+	selectdo
+	endselect
+	
+	
+}
+
+								|#ISGECDV001126.sn
+function insert_in_tfisg002_transporter()
+{
+	select 	tfisg003.ncmp,
+		tfisg003.grno,
+		tfisg003.bpid,
+		tfisg003.grdt
+	from	tfisg003
+	where	tfisg003._index2 = {:tfisg003.bpid}
+	and	tfisg003.sele = tcyesno.yes
+	and	tfisg003.tirn = :import.irno
+	selectdo
+		tfisg002.irno = import.irno
+		tfisg002.gcmp = tfisg003.ncmp
+		tfisg002.grno = tfisg003.grno
+		tfisg002.grbp = tfisg003.bpid
+		tfisg002.grdt = tfisg003.grdt
+		db.insert(ttfisg002,db.skip.dupl,e)
+		
+		select 	tfisg003.link
+		from	tfisg003 for update
+		where	tfisg003._index1 = {:tfisg003.grno, :tfisg003.bpid}
+		and	tfisg003.sele = tcyesno.yes
+		and	tfisg003.tirn = :import.irno
+		selectdo
+			tfisg003.link = tcyesno.yes
+			db.update(ttfisg003,db.retry,e)
+		endselect
+		
+	endselect
+	
+}
+								|#ISGECDV001126.en
+
+function long disable_selection_for_delivery_term()		|#Sahil.Sharma.19.02.2019.sn
+{
+	str.dino = ""
+	select	tfisg002.irno
+	from	tfisg002
+	where	tfisg002.grno = :tfisg003.grno
+	and	tfisg002.grbp = :tfisg003.bpid			|ISGEC01194.sn
+	and 	tfisg002.grdt = :tfisg003.grdt			|ISGEC01194.en
+	selectdo
+		str.dino = str$(tfisg002.irno)
+		select	whinh310.dino
+		from	whinh310
+		where	whinh310.dino    = :str.dino
+		and	whinh310.cdf_cdec = "FOR"
+		selectdo
+			return(1)
+		endselect
+	endselect
+	
+	return(0)
+}
+								|#Sahil.Sharma.19.02.2019.sn

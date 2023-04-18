@@ -1,0 +1,1562 @@
+|******************************************************************************
+|* tfmsl0120m000  0  VRC B61U a  live
+|* Advance Request
+|* MCS user (Merino)             
+|* 2010-07-25
+|******************************************************************************
+|* Main table tfmsl020 Advance Request, Form Type 1
+|******************************************************************************
+|* IDENT EMB501007,Manish Kumar ,IT0303 ,01-01-2014 , VRC B61U a7 liv
+|* Modification,calculating and updating Tax Amount and Basic Amount
+|******************************************************************************
+| * IDENT #EMB00120, IT0304,GAURAV GUPTA, 09-01-2014
+|******************************************************************************
+|* IDENT ISG001014 , Manish Kumar , IT0303 , 05-03-2014 , VRC B61U a  live
+|* Modifications As per the Case ID:- 3105
+|*
+|* INCIDENT 3676, Sujeet Kumar,	2014-05-28	
+|* Existing Logic is Removed From UI,Logic is Now moved to DAL.
+|*
+|* ID ISGECDV001061, Sujeet Kumar,	2014-09-26
+|* Functional: Mr. Deepak Rawat
+|*
+|* ISGEC001153,	Sujeet Kumar,	2014-11-10
+|* Intercompany Transactional Issue
+|* Functional: Mr. Deepak Rawat
+|*
+|* ISGEC015073, Shilpa Janardanan, 2015-10-19
+|* New logic to be implemented for "Sent for Approval"
+| ********************************************************************************
+| IDENT ISGEC01137, GAURAV GUPTA, 07-11-2015
+|* 
+|* ID ISGEC002017, Manish Manchanda, 2016-01-05
+|* history record maintained in table
+|*
+|* ID ISGEC002026, Manish Manchanda, 2016-01-27
+|* message for payment method and payment bank fields to be mandatory.
+|
+|* ID ISGEC015091, Ankit Sharma, 2016-03-04
+|* Check for Acknowledge By Accounts is in N.A Status
+|*
+|* ID ISGECGST005, IT0386, Saurabh Dubey, 09-June-2017, VRC B61U a7 isg
+|* GST Related Modifications
+|* Isgec Onsite Deployment
+|
+| ID GSTLIVE01010	, Prabhanjan, 10.06.2017
+|	email send
+|*
+|* ID: ISGEC01050, Priya Jindal, 23/2/2018
+|* Addition of logic for three new fields
+|* check on send to finance
+|*
+|* ID:ISGEC0178,Anadi Shankar,13-06-2018, VRC B61U a7 isg.
+|* Update Data on tpisg229 on Status processed.
+|*
+|* ID ISGEC01071. Priya Jindal, 7/7/2018, VRC B61U a7 isg.
+|* Changes for 3- digit employee code
+|*
+|* ID ISGEC01090, Priya Jindal, 28/7/2018, VRC B61U a7 isg.
+|* Enabling Disabling of fields
+|*
+|* ISGEC01089, Priya Jindal, 14/9/2018, VRC B61U a7 isg.
+|* Changes for enabling disabling
+|*
+|* ID GH374CR685, RAvi Kumar, 21-07-2020
+|* Open entries should open automatically from Payment request
+|*
+|* GH610CR934, RAvi Kumar, 20-07-2021
+|* Identification of Supplier Special Provision and PAN No. in Payment Request and Quick Payment	
+|******************************************************************************
+declaration:
+	table		ttcmcs050
+	table		ttfisg000
+	table		ttcisg001
+	table		ttfcmg103
+	table		ttfcmg112
+	table		ttfcmg113
+	table		ttfcmg100
+	table		ttdpur400
+	table		ttdpur401	|#ISGECGST005.n
+	table		ttfgld206
+	table		ttfgld202
+	table		ttfacp200
+	table		ttfmsl020
+	table		ttfgld112
+	table		ttccom001
+	table		ttpisg229	|#ISGEC0178.n
+	table		ttfgld106
+	table		ttfgld102
+	table		ttfisg035
+	table	ttccom100	|#GSTLIVE01010.sn
+	table	ttppdm600
+	table	tbpmdm001
+	table	ttccom001
+	table	ttcmcs052
+	
+				|#GSTLIVE01010.en
+
+extern	domain	tcpono		o.vrsn
+extern	domain	tfgld.btno	o.btno	
+string error.msg(500), result(80)
+
+
+domain	tfgld.year	o.year
+domain	tfgld.prod	o.prod
+domain	tcmcs.str10	o.document		| 1
+domain	tcmcs.str3	o.line			| 2
+domain	tfgld.ttyp	o.transaction.type
+domain	tfcmg.tran	i.tran
+extern domain	tclogn	logn.f,new.logn
+extern 	domain	tcorno		import.adrq
+extern domain tcncmp	curr.comp
+extern domain	tfgld.amnt	ret_value,i.balc,closing.value
+	extern	domain	tctax.txnb	gstn.c.no	|#ISGECGST005.n	|* Company(Isgec) GSTIN
+	extern	domain	tcfovn		gstn.b.no	|#ISGECGST005.n	|* Supplier GSTIN
+
+						|#ISGECDV001061.sn
+	extern	domain	tcnama		proc.name,veri.name		|ISGEC01050.n					
+	domain	tcamnt		o.oamt
+	domain	tcamnt		o.exc.amnt
+	domain	tcamnt		o.stx.amnt
+	domain	tcamnt		o.oth1
+	domain	tcamnt		o.oth2
+	domain	tctax.seqn	gstn.c	|#ISGECGST005.n		
+	domain	tctax.seqn.l	gstn.b	|#ISGECGST005.n
+						|#ISGECDV001061.sn
+	domain	tcdate		cur.date	|#ISGEC15073.n	
+	string	str(15)				|#ISGEC01050.n
+	extern	domain	tcmcs.str15	sess.code	|ISGEC01050.n
+	extern	domain	tfgld.ttyp	ttyp		|ISGEC01050.n
+	extern	domain	tfgld.docn	docn		|ISGEC01050.n
+	extern	domain	tcorno		adrq		|ISGEC01050.n
+	string	p(1)		|ISGEC01050.n
+	
+	domain	tcdate		var.trdt			|#ISGEC0178.sn 
+	domain	tcmcs.str50	var.bohd, var.iref
+	domain	tcmcs.str100	var.indv			
+	domain	tfgld.user	user
+	long 			srno, flag, var.pono, pos1, pos2		|#ISGEC0178.en 
+	domain	tcwght		v.wght, var.perc,v.count1, v.count, count.adct
+	domain	dmdoc.revv	var.revi,v.revn
+	extern	domain	tcfovn	pan.no				|GH610CR934.a
+	extern	domain	tcyesno	provision.tick			|GH610CR934.a
+
+|**********************************Mail**************************************			|#GSTLIVE01010.sn
+		extern	domain	tfgld.date	date.f,date.t
+		extern	domain	ttdsca		sender.name1
+		extern	domain	tcinfo		sender.mail,sender.mail1
+		extern	domain	tcncmp		g.current.comp
+		extern	domain	ttaad.user	g.current.user
+		extern long ret
+		string	int.file1(100),int.file2(100)					
+		domain	tfmsl.ackn	get.status.for.mail			
+	
+|* CMF Variables
+	domain	ttcmf.prov	service
+	domain	ttcmf.role	cmf.role
+	domain	tcmcs.s512m	attachment.file
+	domain	tcmcs.s132m	cmf.err.mesg
+	long	message.ID,fp
+	long	attachment.ID,i1
+	long	err				
+	#include  <bic_cmf>
+	#pragma used dll ottdllcmf								|#GSTLIVE01010.en
+	#pragma used dll ottdllbw
+
+
+
+
+
+#include<bic_dam>
+#include "itfisg2100"
+|*******************  program Section ******************************************
+before.program:
+	tcmcs.dll0095.read.parm("tfisg000")
+	import("tfmsl020.adrq",import.adrq)
+| after.form.read:
+	update_transactions_from_cmg(import.adrq,import.adrq)
+	logn.f = logname$
+	curr.comp = get.compnr()
+	
+	import("prog.name$",sess.code)				|ISGEC01050.sn
+	if sess.code = "tfgld1504m000" then
+		import("tfgld018.ttyp",ttyp)
+		import("tfgld018.docn",docn)		
+		select	tfgld011.ttyp
+		from	tfgld011
+		where	tfgld011._index1 = {:ttyp}
+		and	tfgld011.catg = tfgld.catg.cash
+		selectdo
+			select	tfgld112.*
+			from	tfgld112
+			where	tfgld112._index1 = {:curr.comp,:ttyp,:docn}
+			selectdo
+				select	tfmsl020.adrq:adrq
+				from	tfmsl020
+				where	tfmsl020.ttyp = :tfgld112.typt
+				and	tfmsl020.docn = :tfgld112.doct
+				selectdo
+					query.extend.where("tfmsl020._index1 = " & quoted.string(adrq))
+					refresh()
+				selectempty
+					message("No payment reqest is linked to the transaction no.")
+					exit()
+				endselect
+			selectempty	
+				select	tfmsl020.adrq:adrq
+				from	tfmsl020
+				where	tfmsl020.ttyp = :ttyp
+				and	tfmsl020.docn = :docn
+				selectdo
+					query.extend.where("tfmsl020._index1 = " & quoted.string(adrq))
+					refresh()
+				selectempty
+					message("No payment reqest is linked to the transaction no.")
+					exit()
+				endselect
+			endselect	
+		selectempty
+			message("The transaction is not of cash type")
+			exit()
+		endselect
+	endif						|ISGEC01050.en	
+
+before.display.object:
+	logn.f = logname$
+	cur.date = utc.num()			|#ISGEC15073.n
+	if (tfmsl020.stat >=ltoe(20)) and (tfmsl020.stat <> tfmsl.lc.stat.rejc) then
+| 		disable.fields("tfmsl020.aprc", "tfmsl020.aamt","tfmsl020.docr")		|ISGEC01050.o
+		disable.fields("tfmsl020.aprc", "tfmsl020.aamt")				|ISGEC01050.n
+	else
+| 		enable.fields("tfmsl020.aprc", "tfmsl020.aamt","tfmsl020.docr")			|ISGEC01050.o
+		enable.fields("tfmsl020.aprc", "tfmsl020.aamt")				|ISGEC01050.n
+	endif
+	
+	if (tfmsl020.stat = tfmsl.lc.stat.sfin) then
+		disable.fields("tfmsl020.poac")
+	else
+		if (tfmsl020.poac = tcyesno.no) or (tfmsl020.stat = tfmsl.lc.stat.rejc) then
+			enable.fields("tfmsl020.poac")
+		else
+			disable.fields("tfmsl020.poac")
+		endif	
+	endif
+	
+	if not isspace(tfmsl020.reas) then
+		disable.fields("tfmsl020.reas")
+		disable.fields("tfmsl020.ackn")
+	endif	
+	
+	if not isspace(tfmsl020.rea1) or not isspace(tfmsl020.reas) then
+		disable.fields("tfmsl020.rea1")
+	endif
+	
+	if not isspace(tfmsl020.rea2) or not isspace(tfmsl020.reas) then
+		disable.fields("tfmsl020.rea2")
+	endif
+	if not isspace(tfmsl020.rea3) or not isspace(tfmsl020.reas) then
+		disable.fields("tfmsl020.rea3")
+	endif
+	if not isspace(tfmsl020.rea4) or not isspace(tfmsl020.reas) then
+		disable.fields("tfmsl020.rea4")
+	endif
+	
+| 	if tfmsl020.stts = tfmsl.stat.verf then			|ISGEC01050.so
+| 		disable.fields("tfmsl020.drcv")
+| 	else								|ISGEC01050.so
+| 		if tfmsl020.docr = tcyesno.no	then
+| 			disable.fields("tfmsl020.drcv")
+| 		else
+| 			enable.fields("tfmsl020.drcv")
+| 		endif							|ISGEC01050.eo
+| 	endif						|ISGEC01050.eo
+	if tfmsl020.stat = tfmsl.lc.stat.crea then	|ISGEC01050.sn
+	else
+		disable.commands(text.manager)
+	endif			
+
+	if tfmsl020.stat = tfmsl.lc.stat.crea or tfmsl020.stat = tfmsl.lc.stat.sapr or tfmsl020.stat = tfmsl.lc.stat.appr then
+		disable.fields("tfmsl020.ackn")
+	endif	
+	if tfmsl020.stat = tfmsl.lc.stat.sver or tfmsl020.stat = tfmsl.lc.stat.veri then
+		disable.fields("tfmsl020.adrq")
+		disable.fields("tfmsl020.optn")
+		disable.fields("tfmsl020.rqdt")
+		disable.fields("tfmsl020.stat")
+		disable.fields("tfmsl020.isup")
+		disable.fields("tfmsl020.idat")
+		disable.fields("tfmsl020.comp")
+		disable.fields("tfmsl020.orno")
+		disable.fields("tfmsl020.srno")
+		disable.fields("tfmsl020.appr")
+		disable.fields("tfmsl020.mpym")
+		disable.fields("tfmsl020.apdt")
+		disable.fields("tfmsl020.bcrg")
+		disable.fields("tfmsl020.poac")
+		disable.fields("tfmsl020.cprj")
+		disable.fields("tfmsl020.rqpr")
+		disable.fields("tfmsl020.bpid")
+		disable.fields("tfmsl020.taxi")
+		disable.fields("tfmsl020.bamt")
+		disable.fields("tfmsl020.tamt")
+		disable.fields("tfmsl020.oamt")
+		disable.fields("tfmsl020.aprc")
+		disable.fields("tfmsl020.aamt")
+		disable.fields("tfmsl020.ccur")
+		disable.fields("tfmsl020.assv")
+		disable.fields("tfmsl020.igsp")
+		disable.fields("tfmsl020.igst")
+		disable.fields("tfmsl020.cgsp")
+		disable.fields("tfmsl020.cgst")
+		disable.fields("tfmsl020.sgsp")
+		disable.fields("tfmsl020.sgst")
+		disable.fields("tfmsl020.totl")
+		disable.fields("tfmsl020.paym")
+		disable.fields("tfmsl020.meth")
+		disable.fields("tfmsl020.bank")
+		disable.fields("tfmsl020.date")
+		disable.fields("tfmsl020.brnc")
+		disable.fields("tfmsl020.bnam")
+		disable.fields("tfmsl020.bano")
+		disable.fields("tfmsl020.fcom")
+		disable.fields("tfmsl020.btno")
+		disable.fields("tfmsl020.ttyp")
+		disable.fields("tfmsl020.docn")
+		disable.fields("tfmsl020.lino")
+		disable.fields("tfmsl020.chqe")
+		disable.fields("tfmsl020.chdt")
+		disable.fields("tfmsl020.txta")
+	endif							
+	
+| 	if tfmsl020.stat = tfmsl.lc.stat.sver or tfmsl020.stat = tfmsl.lc.stat.sfin then	|ISGEC01089.so
+| 		enable.fields("tfmsl020.note")
+| 	else
+| 		disable.fields("tfmsl020.note")
+| 	endif											|ISGEC01089.eo
+											|ISGEC01050.en
+	
+	if logn.f = "MERINO1" then							|ISGEC01090.sn
+		logn.f= "merino1"
+	else
+		if logn.f = "MERINO2" then
+			logn.f = "merino2"
+		endif
+	endif	
+	
+	select	tccom001.emno				
+	from	tccom001
+	where	tccom001._index4 = {:logn.f}
+	selectdo
+	selectempty
+		tccom001.emno = ""	
+	endselect				
+	
+	
+	select	tfisg035.*								
+	from	tfisg035
+	where	tfisg035._index1 = {:tccom001.emno}
+	selectdo
+		if tfisg035.proc = tcyesno.yes or tfisg035.sver = tcyesno.yes or tfisg035.veri = tcyesno.yes then
+			
+| 			if tfmsl020.stat <> tfmsl.lc.stat.veri then		|ISGEC01089.so
+| 				enable.fields("tfmsl020.note")
+| 			endif							|ISGEC01089.eo
+
+			if tfmsl020.stat = tfmsl.lc.stat.sver or tfmsl020.stat = tfmsl.lc.stat.sfin then	|ISGEC01089.sn
+				enable.fields("tfmsl020.note")
+			else
+				disable.fields("tfmsl020.note")
+			endif											|ISGEC01089.en
+			
+			if tfmsl020.stat = tfmsl.lc.stat.sver or tfmsl020.stat = tfmsl.lc.stat.veri 		|ISGEC01089.sn
+				or tfmsl020.stat = tfmsl.lc.stat.sfin then
+				enable.fields("tfmsl020.ackn")
+			else
+				disable.fields("tfmsl020.ackn")
+			endif											|ISGEC01089.en
+			
+			enable.fields("tfmsl020.paym")
+			enable.fields("tfmsl020.bank")
+			enable.fields("tfmsl020.meth")
+			enable.fields("tfmsl020.date")
+			enable.fields("tfmsl020.brnc")
+			enable.fields("tfmsl020.bnam")
+			enable.fields("tfmsl020.bano")
+			
+			disable.fields("tfmsl020.adrq")
+			disable.fields("tfmsl020.rqdt")
+			disable.fields("tfmsl020.comp")
+			disable.fields("tfmsl020.rqpr")
+			disable.fields("tfmsl020.orno")
+			disable.fields("tfmsl020.stat")
+			disable.fields("tfmsl020.txta")
+			disable.fields("tfmsl020.optn")
+			disable.fields("tfmsl020.bpid")
+			disable.fields("tfmsl020.cprj")
+			disable.fields("tfmsl020.puro")
+			disable.fields("tfmsl020.srno")
+			disable.fields("tfmsl020.taxi")
+			disable.fields("tfmsl020.bamt")
+			disable.fields("tfmsl020.tamt")
+			disable.fields("tfmsl020.oamt")
+			disable.fields("tfmsl020.aprc")
+			disable.fields("tfmsl020.aamt")
+			disable.fields("tfmsl020.fcom")
+			disable.fields("tfmsl020.btno")
+			disable.fields("tfmsl020.ttyp")
+			disable.fields("tfmsl020.docn")
+			disable.fields("tfmsl020.lino")
+			disable.fields("tfmsl020.chqe")
+			disable.fields("tfmsl020.chdt")
+			disable.fields("tfmsl020.sfdt")
+			disable.fields("tfmsl020.appr")
+			disable.fields("tfmsl020.user")
+			disable.fields("tfmsl020.stts")
+			disable.fields("tfmsl020.apdt")
+			disable.fields("tfmsl020.poac")
+			disable.fields("tfmsl020.sapr")
+			disable.fields("tfmsl020.verf")
+			disable.fields("tfmsl020.mpym")
+			disable.fields("tfmsl020.bcrg")
+			disable.fields("tfmsl020.sele")
+			disable.fields("tfmsl020.iprq")
+			disable.fields("tfmsl020.pymt")
+			disable.fields("tfmsl020.assv")
+			disable.fields("tfmsl020.igsp")
+			disable.fields("tfmsl020.igst")
+			disable.fields("tfmsl020.cgsp")
+			disable.fields("tfmsl020.cgst")
+			disable.fields("tfmsl020.sgsp")
+			disable.fields("tfmsl020.sgst")
+			disable.fields("tfmsl020.totl")
+			disable.fields("tfmsl020.isup")
+			disable.fields("tfmsl020.idat")
+| 			disable.fields("tfmsl020.reas")
+			disable.fields("tfmsl020.prby")
+| 			disable.fields("tfmsl020.rea1")
+| 			disable.fields("tfmsl020.rea2")
+| 			disable.fields("tfmsl020.rea3")
+| 			disable.fields("tfmsl020.rea4")
+			
+		else
+			disable.fields("tfmsl020.ackn")
+			disable.fields("tfmsl020.note")
+			disable.fields("tfmsl020.paym")
+			disable.fields("tfmsl020.bank")
+			disable.fields("tfmsl020.meth")
+			disable.fields("tfmsl020.date")
+			disable.fields("tfmsl020.brnc")
+			disable.fields("tfmsl020.bnam")
+			disable.fields("tfmsl020.bano")
+				
+		endif	
+											
+	endselect										|ISGEC01090.en	
+		
+	handle.enable.disable()		|#ISGEC002017.n
+	
+
+
+choice.sent_finance:
+before.choice:						|#ISGEC15073.sn
+	select	tdmsl400.vrsn, tdmsl400.orno
+	from	tdmsl400
+	where	tdmsl400._index1 = {:tfmsl020.orno}
+| 	and	tdmsl400.stat = tcyesno.yes				|#ISGEC002017.o
+	and	tdmsl400.stat = tcyesno.no				|#ISGEC002017.n
+| 	and	tdmsl400.work = tdmsl.work.completed			|#ISGEC002017.o
+	and	tdmsl400.work <> tdmsl.work.completed			|#ISGEC002017.n
+	order by tdmsl400.vrsn desc
+	as set with 1 rows
+	selectdo
+| 	selectempty					|#ISGEC002017.o
+		mess("tfisg001006", 1)		|#Order Number not approved by Audit
+		choice.again()
+	endselect
+	
+	if tfmsl020.poac = tcyesno.no then
+		mess("tfisg001007", 1)
+		choice.again()
+	endif					|#ISGEC015073.en
+
+							|ISGEC01050.sn
+| 		logn.f=toupper$(logn.f)
+	
+		
+
+| 	
+| 	if tfmsl020.mpym = tfisg.mpym.rtgs then							|ISGEC01050.so
+| 		if tfmsl020.drcv = tcyesno.no and tfmsl020.docr  = tcyesno.yes then
+| 			mess("tcgenstring", 1, "Document Received must be yes for RTGS")
+| 			choice.again()
+| 		endif
+| 	endif											|ISGEC01050.eo
+
+
+| function  boolean document_received()
+| {
+| 	on case tfmsl020.mpym 
+| 	case	tfisg.mpym.rtgs :
+| 		on case tfmsl020.drcv 
+| 		case tcyesno.no:
+| 			mess("tcgenstring", 1, "Document Received must be yes for RTGS")
+| 			choice.again()
+| 		endcase
+| 	endcase
+	
+	
+	
+| 	return(false)
+		
+| }
+	
+on.choice:
+	select	tfisg207.proc						|ISGEC01050.sn			
+	from	tfisg207
+	where	tfisg207._index1 = {:tfmsl020.cprj}
+	and	tfisg207.proc <> ""
+	and	tfisg207.veri <> ""
+	selectdo
+		if logn.f = "MERINO1" then							|ISGEC01090.sn
+			logn.f= "merino1"
+		else
+			if logn.f = "MERINO2" then
+				logn.f = "merino2"
+			endif
+		endif
+		logn.f = trim$(logn.f)
+		select	tccom001.emno			
+		from	tccom001
+		where	tccom001._index4 ={:logn.f}
+		selectdo
+		selectempty
+			tccom001.emno = ""	
+		endselect		
+		
+		select	tfisg035.*
+		from	tfisg035
+		where	tfisg035._index1 = {:tccom001.emno}
+		and	tfisg035.reqs = tcyesno.yes
+		selectdo
+		selectempty
+			message("Current User is not the Requestor")
+			choice.again()
+		endselect	
+	selectempty
+		message("A/c user matrix not maintained for the project")
+		choice.again()		
+	endselect						|ISGEC01050.en
+	select 	tfmsl020.stat 
+	from 	tfmsl020 for update
+	where 	tfmsl020._index1 = {:tfmsl020.adrq}
+	selectdo
+		tfmsl020.stat = ltoe(20)
+		tfmsl020.sfdt = date.num()
+		db.update(ttfmsl020,db.retry)
+		|send.email()							|#GSTLIVE01010.n
+	endselect
+after.choice:
+	commit.transaction()
+| 	itfisg2100.update.history(tfmsl020.adrq,cur.date)			|#ISGEC015073.n |#ISGEC002017.o
+	itfisg2100.update.history(tfmsl020.adrq,utc.num())			|#ISGEC002017.n
+	
+	
+choice.cont.cancel:
+on.choice:
+	itfisg2100.update.history(tfmsl020.adrq,utc.num())	|ISGEC01050.n
+	select tfmsl020.stat 
+	from tfmsl020 for update
+	where tfmsl020._index1 = {:tfmsl020.adrq}
+	selectdo
+| 		tfmsl020.stat = ltoe(40)			|#ISGECDV001061.o
+| 		if tfmsl020.stat = tfmsl.lc.stat.sfin then
+| 			tfmsl020.stat = tfmsl.lc.stat.crea		|#ISGECDV001061.sn
+| 		endif
+		
+| 		if tfmsl020.stat = tfmsl.lc.stat.proc then		|ISGEC01050.so
+| 			tfmsl020.stat = tfmsl.lc.stat.sfin
+| 		endif							|ISGEC01050.eo
+		
+| 		if tfmsl020.stat = tfmsl.lc.stat.proc then		|ISGEC01050.sn
+| 			tfmsl020.stat = tfmsl.lc.stat.veri
+| 		endif							|ISGEC01050.en
+		
+		tfmsl020.ttyp = ""
+		tfmsl020.btno = 0
+		tfmsl020.docn = 0
+		tfmsl020.lino = 0
+		tfmsl020.chqe = ""
+		tfmsl020.chdt = 0
+| 		tfmsl020.stat = tfmsl.lc.stat.crea						|#ISGECDV001061.en
+| 		tfmsl020.ackn = tfmsl.ackn.na
+		tfmsl020.reas = ""
+		tfmsl020.rea1 = ""
+		tfmsl020.rea2 = ""
+		tfmsl020.rea3 = ""
+		tfmsl020.rea4 = ""
+		if tfmsl020.stat = tfmsl.lc.stat.proc then		|ISGEC01050.sn
+			tfmsl020.stat = tfmsl.lc.stat.sver
+			tfmsl020.ackn = tfmsl.ackn.receive
+		else						|ISGEC01050.en
+| 			if tfmsl020.stat = tfmsl.lc.stat.sfin then
+				tfmsl020.stat = tfmsl.lc.stat.crea
+				tfmsl020.ackn = tfmsl.ackn.na			|#ISGECDV001061.sn
+| 			else
+| 				tfmsl020.stat = tfmsl.lc.stat.crea	
+| 			endif
+		endif	
+		
+		
+		db.update(ttfmsl020,db.retry)
+	endselect
+after.choice:
+	commit.transaction()	
+
+	itfisg2100.update.history(tfmsl020.adrq,utc.num())			|#ISGEC002017.n
+
+choice.sent_verifier:								|ISGEC01050.sn
+on.choice:
+| 	select	tfisg207.proc						|ISGEC01050.sn			
+| 	from	tfisg207
+| 	where	tfisg207._index1 = {:tfmsl020.cprj}
+| 	and	tfisg207.proc =:logn.f
+| 	selectdo
+| 	selectempty
+| 		message("A/c user matrix not maintained for the project")
+| 		choice.again()		
+| 	endselect						|ISGEC01050.en
+	select 	tfmsl020.stat 
+	from 	tfmsl020 for update
+	where 	tfmsl020._index1 = {:tfmsl020.adrq}
+	selectdo
+		tfmsl020.stat = ltoe(80)
+		tfmsl020.verd = utc.num()
+		db.update(ttfmsl020,db.retry)
+| 		commit.transaction()
+	endselect
+after.choice:
+	commit.transaction()	
+
+	itfisg2100.update.history(tfmsl020.adrq,utc.num())			|ISGEC01050.en		
+
+choice.verified:
+on.choice:
+| 	select	tfisg207.proc						|ISGEC01050.sn		
+| 	from	tfisg207
+| 	where	tfisg207._index1 = {:tfmsl020.cprj}
+| 	and	tfisg207.veri =:logn.f
+| 	selectdo
+| 	selectempty
+| 		message("A/c user matrix not maintained for the project")
+| 		choice.again()		
+| 	endselect						|ISGEC01050.en
+| 	if tfmsl020.docr = tcyesno.yes then				|#ISGEC01050.sn
+| 		str = "{" & quoted.string(tfmsl020.adrq) & "}"
+| 		str = trim$(str)
+| 		select	dmcom010.trid
+| 		from	dmcom010
+| 		where	dmcom010.trid = {:str}
+| 		selectdo
+| 		selectempty
+| 			message("Please Attach Document")
+| 		endselect
+| 	endif								|#ISGEC01050.en
+	select 	tfmsl020.stat 
+	from 	tfmsl020 for update
+	where 	tfmsl020._index1 = {:tfmsl020.adrq}
+	selectdo
+		tfmsl020.stat = ltoe(90)
+		tfmsl020.vdat = utc.num()
+		db.update(ttfmsl020,db.retry)
+| 		commit.transaction()
+	endselect	
+after.choice:
+	commit.transaction()	
+
+	itfisg2100.update.history(tfmsl020.adrq,utc.num())		|ISGEC01050.en
+	
+	
+choice.cont.generate:
+before.choice:
+| 	switch.to.company(tfmsl020.fcom)
+					|#ISGEC002026.sn
+	on	case	tfmsl020.ackn				
+	case	tfmsl.ackn.receive:
+		if	tfmsl020.optn	<>	tfoption.retention	then
+			if	isspace(tfmsl020.meth)	or
+				isspace(tfmsl020.bank)	then
+				message("Payment Method and Payment Bank are Mandatory fields, cannot be blank.")
+				choice.again()
+			endif
+		endif
+		break
+	case	tfmsl.ackn.return:
+		if	(tfmsl020.optn	=	tfoption.retention or 
+			tfmsl020.optn	=	tfoption.exchange or
+			tfmsl020.optn	=	tfoption.account or
+			tfmsl020.optn	=	tfoption.advance or
+			tfmsl020.optn	=	tfoption.site.advance)	then
+| 			if	isspace(tfmsl020.meth)	or
+| 				isspace(tfmsl020.bank)	then
+				message("Process not possible,acknowldge by accounts is return")
+				choice.again()
+| 			endif
+		endif
+		break	
+	case	tfmsl.ackn.na:								|#ISGEC015091.sn
+		if	(tfmsl020.optn	=	tfoption.retention or 
+			tfmsl020.optn	=	tfoption.exchange or
+			tfmsl020.optn	=	tfoption.account or
+			tfmsl020.optn	=	tfoption.advance or
+			tfmsl020.optn	=	tfoption.site.advance)	then
+			message("Process not possible because of N.A. Status")
+			choice.again()
+		endif
+		break									|#ISGEC015091.en
+	endcase
+					|#ISGEC002026.en
+
+on.choice:
+	on case tfmsl020.paym
+	case 	tfpaym.advice:
+		on case tfmsl020.optn
+			case 	tfoption.exchange:
+			case 	tfoption.account:
+| 				switch.to.company(tfmsl020.fcom)
+				error.msg = tfmsldll0020.afs_payment_advice(
+							tfmsl020.fcom,
+							tfmsl020.bpid,
+							tfcmg.tadv.unallocated,
+							tfmsl020.aamt,
+							tfmsl020.ccur,
+							tfmsl020.meth,
+							tfmsl020.bank,
+							o.btno)
+| 				switch.to.company(tfmsl020.comp)			
+				if not isspace(error.msg) then
+					message("%s",error.msg)
+				else
+					update.batch.number()
+				endif
+				
+				break
+			case 	tfoption.advance:	
+| 				switch.to.company(tfmsl020.fcom)
+				error.msg = tfmsldll0020.afs_payment_advice(
+							tfmsl020.fcom,
+							tfmsl020.bpid,
+							tfcmg.tadv.advance,
+							tfmsl020.aamt,
+							tfmsl020.ccur,
+							tfmsl020.meth,
+							tfmsl020.bank,
+							o.btno)
+| 				switch.to.company(tfmsl020.comp)			
+				if not isspace(error.msg) then
+					message("%s",error.msg)
+				else
+					update.batch.number()
+				endif	
+				break
+			case 	tfoption.site.advance:
+| 					switch.to.company(tfmsl020.fcom)
+					error.msg = tfmsldll0020.afs_payment_advice(
+								tfmsl020.fcom,
+								tfmsl020.bpid,
+								tfcmg.tadv.alone,
+								tfmsl020.aamt,
+								tfmsl020.ccur,
+								tfmsl020.meth,
+								tfmsl020.bank,
+								o.btno)
+| 					switch.to.company(tfmsl020.comp)			
+					if not isspace(error.msg) then
+						message("%s",error.msg)
+					else
+						error.msg = tfmsldll0020.afs_payment_advice.line(
+								o.btno,
+								tfmsl020.bpid,
+								tfmsl020.fcom,
+								tfcmg.tadv.alone,
+								tfisg000.clpr,
+								tfmsl020.cprj,
+								"",
+								tfmsl020.rqpr,
+								"",
+								"",
+								tfmsl020.aamt)
+						update.batch.number()
+						
+					endif	
+				break
+				
+			default:
+				o.btno = 0
+				update.batch.number()	
+		endcase
+		
+		
+		break
+	default:
+		on case tfmsl020.optn
+			case	tfoption.advance:
+			case 	tfoption.exchange:
+			case 	tfoption.account:
+| 				switch.to.company(tfmsl020.fcom)
+				error.msg = tfmsldll0042.Create.Transaction.Batch(
+							tfmsldll0020.bank.transaction.type(tfmsl020.bank),
+							0,
+							tfmsl020.date,
+							"Advance Payment Functionality",
+							o.btno,
+							o.year,
+							o.prod)
+| 				switch.to.company(tfmsl020.comp)			
+				if not isspace(error.msg) then
+					message("%s",error.msg)
+				else
+					on case tfmsl020.optn 
+						case 	tfoption.exchange:
+						case 	tfoption.account:
+							i.tran = tfcmg.tran.unalloc.paym
+							break
+						case	tfoption.advance:
+							i.tran = tfcmg.tran.advance.paym
+							break
+					endcase
+						
+| 					switch.to.company(tfmsl020.fcom)
+					error.msg = tfmsldll0042.Bank.Transaction.Entry( 	
+						o.year,							| 1
+						o.btno,							| 2
+						tfmsldll0020.bank.transaction.type(tfmsl020.bank),	| 3
+						i.tran,							| 4
+						"",							| 5
+						tfmsl020.bpid,						| 6
+						0,							| 7
+						tfmsl020.ccur,							| 8
+						tfmsl020.aamt,						| 9
+						o.document,		| 1
+						o.line,			| 2
+						o.transaction.type	| 3
+					)
+					tfmsldll0042.close.JV.session()
+| 					switch.to.company(tfmsl020.comp)
+					if isspace(error.msg) then
+						select 	tfmsl020.btno,
+							tfmsl020.ttyp,
+							tfmsl020.docn,
+							tfmsl020.lino
+						from	tfmsl020 for update
+						where	tfmsl020._index1 = {:tfmsl020.adrq}
+						selectdo
+							tfmsl020.btno = o.btno
+							tfmsl020.ttyp = o.transaction.type
+							tfmsl020.docn = lval(o.document)
+							tfmsl020.lino = lval(o.line)
+							tfmsl020.stat = tfmsl.lc.stat.proc
+							db.update(ttfmsl020,db.retry,e)
+							commit.transaction()
+						endselect
+					else
+						message("%s",error.msg)
+					endif
+					
+						
+				endif
+				break
+			case 	tfoption.site.advance:
+| 				switch.to.company(tfmsl020.fcom)
+				error.msg = tfmsldll0042.Create.Transaction.Batch(
+							tfmsldll0020.bank.transaction.type(tfmsl020.bank),
+							0,
+							tfmsl020.date,
+							"Advance Payment Functionality",
+							o.btno,
+							o.year,
+							o.prod)
+| 				switch.to.company(tfmsl020.comp)			
+				if not isspace(error.msg) then
+					message("%s",error.msg)
+				else
+| 					switch.to.company(tfmsl020.fcom)
+					error.msg = tfmsldll0042.Bank.Transaction.Entry( 	
+						o.year,							| 1
+						o.btno,							| 2
+						tfmsldll0020.bank.transaction.type(tfmsl020.bank),	| 3
+						tfcmg.tran.journal,							| 4
+						"",							| 5
+						tfmsl020.bpid,						| 6
+						0,							| 7
+						tfmsl020.ccur,							| 8
+						tfmsl020.aamt,						| 9
+						o.document,		| 1
+						o.line,			| 2
+						o.transaction.type	| 3
+					)
+					
+
+					if isspace(error.msg) then
+						tcmcs.dll0095.read.parm("tfisg000")
+						error.msg = tfmsldll0042.afs.tfcmg2120s000(
+									tfmsl020.fcom,
+									tfisg000.clpr,
+									tfmsl020.cprj,
+									"",
+									tfmsl020.rqpr,
+									"",
+									"",
+									tfmsl020.aamt)
+						if isspace(error.msg) then
+							tfmsldll0042.close.JV.session()
+| 							switch.to.company(tfmsl020.comp)							
+								
+							select 	tfmsl020.btno,
+								tfmsl020.ttyp,
+								tfmsl020.docn,
+								tfmsl020.lino
+							from	tfmsl020 for update
+							where	tfmsl020._index1 = {:tfmsl020.adrq}
+							selectdo
+								tfmsl020.btno = o.btno
+								tfmsl020.ttyp = o.transaction.type
+								tfmsl020.docn = lval(o.document)
+								tfmsl020.lino = lval(o.line)
+								tfmsl020.stat = tfmsl.lc.stat.proc
+								db.update(ttfmsl020,db.retry,e)
+								commit.transaction()
+							endselect
+						else
+							message("%s",error.msg)
+						endif
+							
+					else
+							tfmsldll0042.close.JV.session()
+						message("%s",error.msg)
+					endif
+					
+						
+				endif
+				break
+			default:
+				o.btno = 0
+				update.batch.number()
+			endcase
+			
+		
+	endcase
+| 	itfisg2100.update.history(tfmsl020.adrq,cur.date)			|#ISGEC015073.n	|#ISGEC002017.o
+	itfisg2100.update.history(tfmsl020.adrq,utc.num())			|#ISGEC002017.n
+	
+	
+choice.sent_approval:			|#ISGEC015073.sn
+						|ISGEC01137.SN
+| 	if not check.for.mode.of.paym() then
+| 		choice.again()
+| 	endif
+						|ISGEC01137.EN
+on.choice:
+	if tfmsl020.mpym = tfisg.mpym.n.a. then			|test.sn
+		message("Please choose valid Mode of payment")
+		choice.again()			
+	endif								|test.en
+	
+	select 	tfmsl020.stat , tfmsl020.stts
+	from 	tfmsl020 for update
+	where 	tfmsl020._index1 = {:tfmsl020.adrq}
+	selectdo
+		tfmsl020.stat = tfmsl.lc.stat.sapr
+		tfmsl020.stts = tfmsl.stat.pend
+		tfmsl020.adat = utc.num()		|ISGEC01050.n
+		db.update(ttfmsl020,db.retry,e)
+		commit.transaction()
+	endselect
+	
+	
+| 	itfisg2100.update.history(tfmsl020.adrq,cur.date)		|#ISGEC002017.o
+	itfisg2100.update.history(tfmsl020.adrq,utc.num()+10)		|#ISGEC002017.n       |#ISGEC015073.en
+|*******************  Field Section ******************************************
+field.tfmsl020.adrq:
+before.zoom:
+	tcmcs050.nrgr = tfisg000.nrgr
+
+field.tfmsl020.srno:
+before.zoom:
+	o.vrsn = tfmsldll0020.get.last.approved.version(tfmsl020.orno)
+	if tfmsl020.optn = tfoption.advance then
+		query.extend.where.in.zoom("tcisg001.orno = " & quoted.string(tfmsl020.orno) & 
+		"and tcisg001.vrsn = " & str$(o.vrsn)  & " and tcisg001.catg = 1")
+	else
+		query.extend.where.in.zoom("tcisg001.orno = " & quoted.string(tfmsl020.orno) & 
+		"and tcisg001.vrsn = " & str$(o.vrsn)  & " and tcisg001.catg = 3")
+	endif
+
+field.tfmsl020.meth:
+before.zoom:
+	query.extend.where.in.zoom("tfcmg003.repa = 2")
+
+field.i.balc:
+before.display:
+	i.balc = 0
+	get_balance_amount()
+	i.balc = closing.value
+	
+								|#ISGEC002017.sn
+field.tfmsl020.ackn:	
+when.field.changes:
+	if tfmsl020.ackn = tfmsl.ackn.receive then		|ISGEC01050.sn
+		tfmsl020.akdt = utc.num()
+	endif	
+
+								|ISGEC01050.en
+after.input:
+	handle.enable.disable()
+								|#ISGEC002017.en
+			|#ISGECGST005.sn
+field.gstn.b.no:
+before.display:
+	get.GSTIN()
+
+field.gstn.c.no:
+before.display:
+	get.GSTIN()	|#ISGECGST005.en
+	
+field.tfmsl020.eusr:						|ISGEC01050.sn
+before.field:
+	select	tccom001.emno,
+		tccom001.nama:proc.name,
+		tfisg207.proc
+	from	tfisg207,tccom001
+	where	tfisg207._index1 = {:tfmsl020.cprj}
+	and	tfisg207.proc refers to tccom001  unref clear
+	selectdo
+		tfmsl020.eusr = tccom001.emno
+	selectempty
+		tfmsl020.eusr = ""
+		proc.name = ""
+	endselect	
+	
+field.tfmsl020.veri:
+before.field:
+	select	tccom001.emno,
+		tccom001.nama:veri.name,
+		tfisg207.veri
+	from	tfisg207,tccom001
+	where	tfisg207._index1 = {:tfmsl020.cprj}
+	and	tfisg207.veri refers to tccom001  unref clear
+	selectdo
+		tfmsl020.veri = tccom001.emno
+	selectempty
+		tfmsl020.veri = ""
+		veri.name = ""
+	endselect	
+						|ISGEC01050.en
+	
+field.pan.no:					|GH610CR934.a.s
+before.display:
+	select	tctax400.fovn:pan.no
+	from	tctax400
+	where	tctax400._index1 = {:tfmsl020.bpid}
+	and	tctax400.catg.l = tctax.catg.l.pan
+	as set with 1 rows
+	selectdo
+	selectempty
+		pan.no = ""
+	endselect
+	
+	select	tcisg012.rcom:provision.tick
+	from	tcisg012
+	where	tcisg012._index1 = {:tfmsl020.bpid}
+	as set with 1 rows
+	selectdo
+	selectempty
+		provision.tick = empty
+	endselect
+						|GH610CR934.a.e
+functions:
+function	update.batch.number()						
+{
+	select tfmsl020.btno
+	from	tfmsl020 for update
+	where	tfmsl020._index1 = {:tfmsl020.adrq}
+	selectdo
+		tfmsl020.btno = o.btno
+		tfmsl020.stat = ltoe(30)
+		db.update(ttfmsl020,db.retry,e)
+		commit.transaction()
+	endselect
+	
+}
+
+
+function update_transactions_from_cmg
+			(
+				domain	tcorno		i.adrq.f,
+				domain	tcorno		i.adrq.t
+			)
+{
+	boolean 	found
+	select 	tfmsl020.ttyp,
+		tfmsl020.docn,
+		tfmsl020.chqe,
+		tfmsl020.chdt,
+		tfmsl020.lino,
+		tfmsl020.orno,
+		tfmsl020.cprj,
+		tfmsl020.btno,
+		tfmsl020.fcom,
+		tfmsl020.adrq,
+		tfmsl020.comp
+	from	tfmsl020 for update
+	where	tfmsl020._index1 inrange {:i.adrq.f} and {:i.adrq.t}
+	and	tfmsl020.stat = tfmsl.lc.stat.proc
+	and	tfmsl020.paym = tfpaym.advice
+	selectdo
+| 		tcmcs.dll0095.read.parm("tfisg000")
+| 		found = false
+| 		select 	tcmcs050.seri,tcmcs051.lngt
+| 		from	tcmcs050,tcmcs051
+| 		where	tcmcs050._index1 = {:tfisg000.nrgr}
+| 		and	tcmcs050.nrgr refers to tcmcs051
+| 		selectdo
+| 			if tfmsl020.adrq(1;tcmcs051.lngt) =  strip$(tcmcs050.seri) then
+| 				found = true
+| 			else
+| 				continue
+| 			endif
+| 			
+| 		endselect
+| 		
+| 		if not found then
+| 			continue
+| 		endif
+		
+			
+		mess("tfmsl020.0011",0,tfmsl020.adrq)
+		select	tfcmg113.ttyp,
+			tfcmg113.docn,
+			tfcmg113.cheq,
+			tfcmg113.rdat
+		from	tfcmg113
+		where	tfcmg113._index1 = {:tfmsl020.btno}
+| 		and	tfcmg113._compnr = :tfmsl020.fcom
+		and	tfcmg113._compnr = :tfmsl020.comp
+		as set with 1 rows
+		selectdo
+			select	tfcmg103.bank
+			from	tfcmg103
+			where	tfcmg103._index1 = {:tfmsl020.btno}
+			and	tfcmg103.ttyp = :tfcmg113.ttyp
+			and	tfcmg103.docn = :tfcmg113.docn
+| 			and	tfcmg103._compnr = :tfmsl020.fcom
+			and	tfcmg103._compnr = :tfmsl020.comp
+			selectdo
+				select	tfcmg112.ctyp, tfcmg112.cdoc, tfcmg112.clin
+				from	tfcmg112
+				where	tfcmg112._index1 = {:tfcmg103.bank, :tfcmg113.ttyp, :tfcmg113.docn}
+				and	tfcmg112.cdoc <> 0
+| 				and	tfcmg112._compnr = :tfmsl020.fcom	
+				and	tfcmg112._compnr = :tfmsl020.comp	
+				selectdo
+					tfmsl020.ttyp = tfcmg112.ctyp
+					tfmsl020.docn = tfcmg112.cdoc
+					tfmsl020.lino = tfcmg112.clin
+					tfmsl020.chqe = tfcmg113.cheq
+					tfmsl020.chdt = tfcmg113.rdat
+				selectempty
+					tfmsl020.ttyp = tfcmg113.ttyp
+					tfmsl020.docn = tfcmg113.docn
+					tfmsl020.lino = 1
+					tfmsl020.chqe = tfcmg113.cheq
+					tfmsl020.chdt = tfcmg113.rdat
+				endselect
+			endselect
+			
+			| select 	tfcmg100.ttyp,
+			| 	tfcmg100.docn
+			| from	tfcmg100
+			| where	tfcmg100.typo = :tfcmg113.ttyp
+			| and	tfcmg100.doco = :tfcmg113.docn
+			| as set with 1 rows
+			| selectdo
+			| 	if tfcmg100.docn <> 0 then
+			| 		tfmsl020.ttyp = tfcmg100.ttyp
+			| 		tfmsl020.docn = tfcmg100.docn
+			| 		tfmsl020.chqe = tfcmg113.cheq
+			| 		tfmsl020.chdt = tfcmg113.rdat
+			| 	else
+			| 		tfmsl020.ttyp = tfcmg113.ttyp
+			| 		tfmsl020.docn = tfcmg113.docn
+			| 		tfmsl020.chqe = tfcmg113.cheq
+			| 		tfmsl020.chdt = tfcmg113.rdat
+			| 	endif
+			| 	
+			| selectempty
+			| 	
+			| 	tfmsl020.ttyp = tfcmg113.ttyp
+			| 	tfmsl020.docn = tfcmg113.docn
+			| 	tfmsl020.chqe = tfcmg113.cheq
+			| 	tfmsl020.chdt = tfcmg113.rdat
+			| endselect
+					
+
+		endselect
+		
+		select tdpur400.cdf_qdat
+		from	tdpur400 for update 
+		where	tdpur400._index1 = {:tfmsl020.orno}
+		selectdo
+			put.var(pid,"tdpur400.cdf_qdat",tfmsl020.chdt)
+			db.update(ttdpur400,db.retry,e)
+		endselect
+		
+		domain	tfgld.ttyp	header.transaction.type
+		domain	tfgld.docn	header.document.number
+		domain	tfgld.lino	header.line.number
+		domain	tcmcs.s200m	dummy.error.message
+		
+		header.transaction.type = ""
+		header.document.number = 0
+		
+		if tfmsl020.fcom <> tfmsl020.comp then
+			if not tfgld.dll6042.intercompany.document.present(
+					tfmsl020.comp,			|* Source
+					tfmsl020.ttyp,			|* Source
+					tfmsl020.docn,			|* Source
+					tfmsl020.fcom,			|* Target
+					header.transaction.type,	|* ref
+					header.document.number,		|* ref
+					dummy.error.message) then	|* 
+					continue
+			else
+| 				header.transaction.type = tfmsl020.ttyp
+| 				header.document.number = tfmsl020.docn
+
+				tfmsl020.ttyp = header.transaction.type
+				tfmsl020.docn = header.document.number
+			endif
+		else
+			header.transaction.type = tfmsl020.ttyp
+			header.document.number = tfmsl020.docn	
+			
+		endif
+			
+		update_pur_inv_tfacp200(tfmsl020.fcom, header.transaction.type, header.document.number, 
+				tfmsl020.lino, tfmsl020.orno, tfmsl020.cprj)
+		db.update(ttfmsl020,db.retry,e)
+			commit.transaction()
+		
+	endselect
+}	
+
+function	get_balance_amount()
+{
+	long	day,year,month
+	
+	closing.value = 0
+	ret_value = 0
+	
+	num.to.date(date.num(),year,month,day)
+	select	tfgld206.*
+	from	tfgld206
+	where	tfgld206._index1 = {:curr.comp,:year}
+	and	tfgld206.dim3 = :tfmsl020.rqpr
+	and	tfgld206.leac = :tfisg000.clpr
+	selectdo
+		
+	endselect
+	
+	select	tfgld202.*
+	from	tfgld202
+	where	tfgld202._index1 = {:curr.comp,tfgld.ptyp.financial,:year}
+	and	tfgld202.dtyp = 3
+	and	tfgld202.dimx = :tfmsl020.rqpr
+	and	tfgld202.leac = :tfisg000.clpr
+	selectdo
+		ret_value = ret_value + (tfgld202.fdam - tfgld202.fcam)
+	selectempty
+		tfgld202.fdam = 0
+		tfgld202.fcam = 0
+		ret_value = 0
+	endselect
+	closing.value = tfgld206.fobh(1) + ret_value
+}
+
+function update_pur_inv_tfacp200(
+		domain	tcncmp		i.ncmp,
+		domain	tfgld.ttyp	i.ttyp,
+		domain	tfgld.docn	i.docn,
+		domain	tfgld.lino	i.line,
+		domain	tcorno		i.orno,
+		domain	tccprj		i.cprj	
+			)
+{
+	select	tfacp200.cdf_cprj, tfacp200.cdf_prno
+	from	tfacp200 for update
+	where	tfacp200._index1 = {:i.ttyp, :i.docn, :i.line}
+	and	tfacp200.docn = 0
+	and	tfacp200._compnr = :i.ncmp
+	selectdo
+		put.var(pid,"tfacp200.cdf_prno", i.orno)
+		put.var(pid,"tfacp200.cdf_cprj", i.cprj)
+		db.update(ttfacp200,db.retry,e)
+	endselect
+}			
+									|ISGEC01137.SN
+function boolean check.for.mode.of.paym()
+{
+	if tfmsl020.mpym = tfisg.mpym.rtgs then
+| 		and tfmsl020.drcv = tcyesno.no then				|ISGEC01050.o
+		message("Please change the value of Document Received")
+		return(false)
+	endif
+	return(true)
+}
+									|ISGEC01137.EN
+
+
+										|#ISGEC002017.sn
+function	handle.enable.disable()
+{
+| 	if	tfmsl020.ackn	=	tfmsl.ackn.return	then	|#ISGEC002026.o
+| 		enable.commands("cont.cancel")				|#ISGEC002026.o
+| 	else	
+		disable.commands("cont.cancel")
+| 	endif							|#ISGEC002026.o
+								|#ISGEC002026.sn
+	on	case	tfmsl020.ackn
+		case	tfmsl.ackn.return:
+			enable.commands("cont.cancel")
+		break
+		case	tfmsl.ackn.receive:
+			select 	tfcmg100.cheq
+			from	tfcmg100
+			where	tfcmg100._index1	=	{:tfmsl020.bank,
+								:tfmsl020.meth,
+								:tfmsl020.chqe}
+			and	tfcmg100.chst		=	tfcmg.chst.rejected
+			as set with 1 rows
+			selectdo
+				enable.commands("cont.cancel")
+			endselect	
+		break	
+	endcase		
+					|#ISGEC002026.en
+}
+										|#ISGEC002017.en
+			|#ISGECGST005.sn
+function get.GSTIN()
+{
+	domain	tcpono	bind.pono
+	
+	select	tdpur401.rnso.l:gstn.c, 
+		tdpur401.rnsb.l:gstn.b,
+		tdpur401.pono:bind.pono
+	from	tdpur401
+	where	tdpur401._index1 = {:tfmsl020.orno}
+	order by tdpur401.pono desc
+	as set with 1 rows
+	selectdo
+	selectempty
+		gstn.c = 0
+		gstn.b = 0
+	endselect
+	tctax.dll4100.get.bp.reg.number.based.on.seq.l(gstn.b, gstn.b.no)	|* Supplier GSTIN
+	tctax.dll9140.get.own.reg.number.based.on.seq(gstn.c, gstn.c.no)	|* Company(Isgec) GSTIN
+}
+			|#ISGECGST005.en
+			
+			
+
+function long send.email()								|#GSTLIVE01010.sn
+{
+	long	file.ret1
+	string  file.name1(100),file.name(100),mdir(100),abc(100),d.mdir(100)
+	domain	tcmcs.s132m	mail.subject
+	domain	ttdsca		sender.name
+	domain	ttdsca		recipient.name
+	domain	tcinfo		recipient.mail
+	domain	tcmcs.str6	role.str
+	long	from.ID, to.ID, cc.ID,found 
+	 
+	 
+	domain ttcmf.prov service       
+                        |Infor ERP Enterprise eMessage Connector service for 
+                        |transporting messages
+        long stat       |Variable to hold return values
+        long mid   
+	 
+	 
+	domain	tcmcs.str100m Supplier
+	domain	tcmcs.str100m project
+	domain	tcmcs.str100m tot.amnt 
+	
+	select	bpmdm001.mail
+	from	bpmdm001
+	where	bpmdm001._index1={:tfmsl020.rqpr}
+	as set with 1 rows
+	selectdo
+		
+	selectempty
+		bpmdm001.mail=""
+	endselect
+	
+	select	tccom001.nama
+	from	tccom001
+	where	tccom001._index1={:tfmsl020.rqpr}
+	as set with 1 rows
+	selectdo
+	selectempty
+		tccom001.nama=""
+	endselect
+	
+	Supplier=""
+	project=""
+	
+	select	tccom100.nama
+	from	tccom100
+	where	tccom100._index1={:tfmsl020.bpid}
+	as set with 1 rows
+	selectdo
+		Supplier = strip$(shiftl$(tfmsl020.bpid)) & " - "& strip$(shiftl$(tccom100.nama))
+	selectempty
+		Supplier=""
+		tccom100.nama=""
+	endselect
+	
+	
+	select	tcmcs052.dsca
+	from	tcmcs052
+	where	tcmcs052._index1={:tfmsl020.cprj}
+	as set with 1 rows
+	selectdo
+		project = strip$(shiftl$(tfmsl020.cprj)) & " - "& strip$(shiftl$(tcmcs052.dsca))
+	selectempty
+		project=""
+		tcmcs052.dsca=""
+	endselect
+	
+	
+	tot.amnt =""
+	mail.subject = "Payment Request Number " & tfmsl020.adrq & " has been sent to Finance for Payment Processing."
+
+	message.ID = cmf.create()
+	ret = cmf.setClass(message.ID,"CMF.NOTE")
+	ret = cmf.setSubject(message.ID,mail.subject)
+	ret = cmf.setPriority(message.ID, ttcmf.prio.high)
+	ret = cmf.setSensitivity(message.ID, ttcmf.sens.confidential)
+	
+	|* Set Sender
+	
+	cmf.role = ttcmf.role.from
+	ret = cmf.convertroletostring(cmf.role, role.str)
+
+	tt.user(g.current.user,sender.name)
+		
+	sender.name = trim$(tccom001.nama)
+	sender.mail1 = trim$(bpmdm001.mail)
+		
+	from.ID = cmf.createRecipient(message.ID, ttcmf.role.from)
+	ret = cmf.setRecipientName(from.ID, sender.name)
+	ret = cmf.setRecipientAddress(from.ID,sender.mail1)
+	ret = cmf.setRecipientType(from.ID, "SMTP")
+
+	|* Set To Recipient 
+
+	recipient.mail = "accountspayment@isgec.co.in"
+	recipient.name = "Account"
+
+| 	recipient.mail = "prabhanjanbharti@merinoservices.com"
+| 	recipient.name = "Prabhanjan Bharti"
+		
+	cmf.role = ttcmf.role.to
+	ret = cmf.convertroletostring(cmf.role, role.str)
+	
+	to.ID = cmf.createRecipient(message.ID, ttcmf.role.to)
+	ret = cmf.setRecipientName(to.ID, recipient.name)
+	ret = cmf.setRecipientAddress(to.ID, recipient.mail)
+	ret = cmf.setRecipientType(to.ID, "SMTP")
+	ret = cmf.setRecipientResponsibility(to.ID, "TRUE")
+		
+|	Body
+	abc = bse.tmp.dir$()
+	file.name1 = strip$(abc) &"/Body Text"&".txt"
+	
+	file.ret1 = seq.open(file.name1 , "w+")
+	if file.ret1 <=0 then
+                message("Error in creating file %d",fp)		 
+| 		dal.set.error.message("Error in creating file")
+| 		return(DALHOOKERROR)
+        else
+	
+		tot.amnt = strip$(shiftl$(str$(tfmsl020.ccur))) & " "& strip$(shiftl$(str$(tfmsl020.totl)))
+		
+		file.ret1 = seq.open(file.name1,"w+")
+
+		seq.puts("Dear Sir," & chr$(13),file.ret1)
+		seq.puts("" & chr$(13),file.ret1)
+		seq.puts("Payment Request Number " & strip$(shiftl$(tfmsl020.adrq)) &" , has been sent to Finance for Payment Processing.",file.ret1)
+		seq.puts("" & chr$(13),file.ret1)
+		seq.puts("Project Code & Description " & strip$(shiftl$(project)) &",",file.ret1)
+		seq.puts("" & chr$(13),file.ret1)
+		seq.puts("Supplier Code & Name " & strip$(shiftl$(Supplier)) &", ",file.ret1)
+		seq.puts("" & chr$(13),file.ret1)
+		seq.puts("Payment Amount " & strip$(shiftl$(tot.amnt)) &".",file.ret1)
+		seq.puts("" & chr$(13),file.ret1)
+		seq.puts("Thanking you," & chr$(13),file.ret1)		
+		seq.puts(strip$(shiftl$(tccom001.nama)),file.ret1)		
+		
+	endif
+
+		
+	seq.close(file.ret1)
+	
+	attachment.ID = cmf.createAttachment(message.ID)
+	ret = cmf.setAttachmentBody(attachment.ID,ttyeno.yes)
+	ret = cmf.setAttachmentMIME(attachment.ID,"text/plain")
+	ret = cmf.setAttachmentFileName(attachment.ID,file.name1)
+|*********  Send mail
+        if message.ID <>0 then
+                stat = cmf.startService("SMTP",2)
+                if stat<>0 then
+|                         dal.set.error.message("@ Message could not be sent "&
+|                                 "(Infor ERP Enterprise eMessage Connector"&
+|                                 " service did not start)")
+message("Message could not be sent (Infor ERP Enterprise eMessage Connector service did not start")
+                        return(1)
+                endif
+                stat = cmf.send(message.ID,"SMTP")
+                if stat<>0 then
+|                         dal.set.error.message("@ Message could not be sent "& "(Infor ERP Enterprise eMessage Connector "&
+|                                 "service refused message)")
+message("Message could not be sent(Infor ERP Enterprise eMessage Connector service refused message)")
+                        cmf.stopService("SMTP",2)
+                        return(1)
+                endif
+                stat = cmf.stopService("SMTP",2)
+		
+| 		  if stat<>0 then 
+| 		  return(DALHOOKERROR)
+| 			show.dal.messages(MSG.ALL)
+| 		  endif
+		
+        endif
+	return(0)
+
+		
+}										|#GSTLIVE01010.sn
+
+										|GH374CR685.a.s
+function extern open.entry()
+{
+	domain	tcncmp	curr_comp
+	
+	curr_comp = get.compnr()
+	switch.to.company(tfmsl020.fcom)
+	session.zoomindex = 2	
+	start.synchronized.child.with(FIND.DATA)			
+	start.synchronized.child ("tfacp2520m000",
+		"tfmsl020.bpid", "tfacp200.ifbp")
+	switch.to.company(curr_comp)
+}
+										|GH374CR685.a.e

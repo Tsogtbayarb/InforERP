@@ -1,0 +1,357 @@
+|******************************************************************************
+|* tpisg086  0  VRC B61U a7 isg 
+|* tpisg086-DAL 2
+|* RAvi Kumar
+|* 24/12/2019 [12:54]
+|******************************************************************************
+|* Script Type: DAL
+|******************************************************************************
+|* ISGEC01171, RAvi Kumar, 24/12/2019, VRC B61U a7 isg
+|* New Development  
+|******************************************************************************
+#include <bic_dal2>
+
+	table	ttpisg086	|Budgetted Billing
+	table	ttpisg186
+	table	ttppdm600
+	table	tcisli235
+	table	ttdisg831
+	table	ttdisg832
+	table	ttpisg039
+	table	tcisli205
+	table	ttcemm030
+	
+function extern long before.open.object.set()
+{
+	define.field.dependencies()
+	return(0)
+}
+
+function extern long before.save.object(long type)
+{
+	select	tppdm600.ncmp
+	from	tppdm600
+	where	tppdm600._index1 = {:tpisg086.cprj}
+	as set with 1 rows
+	selectdo
+		select	tcemm030.eunt
+		from	tcemm030
+		where	tcemm030.fcmp = :tppdm600.ncmp
+		as set with 1 rows
+		selectdo
+			tpisg086.eunt = tcemm030.eunt
+		selectempty
+			tpisg086.eunt = ""
+		endselect
+	endselect
+	return(0)
+}
+
+function define.field.dependencies()
+{
+	dal.field.depends.on("tpisg086.year", HOOK_IS_VALID, "tpisg086.mnth")
+	dal.field.depends.on("tpisg086.budg", HOOK_IS_READONLY, "tpisg086.cprj", "tpisg086.rvsn", "tpisg086.year", "tpisg086.mnth")
+	dal.field.depends.on("tpisg086.outl", HOOK_IS_READONLY + HOOK_UPDATE, "tpisg086.cprj", "tpisg086.rvsn", "tpisg086.year", "tpisg086.mnth", "tpisg086.budg")
+	dal.field.depends.on("tpisg086.actu", HOOK_UPDATE, "tpisg086.cprj", "tpisg086.year", "tpisg086.mnth")
+}
+
+function extern boolean tpisg086.year.is.valid()
+{
+	if tpisg086.year < 1970	then
+		return(false)
+	endif
+	
+	return(true)
+}
+
+function extern boolean tpisg086.budg.is.readonly()
+{
+	if readonly_budget() then
+		return(true)
+	else
+		if check_readonly_budgeted_outlook_amount() then
+			return(true)
+		else
+			return(false)
+		endif
+	endif
+}
+
+function extern boolean tpisg086.outl.is.readonly()
+{
+	if check_readonly_budgeted_outlook_amount() then
+		return(true)
+	else
+		return(false)
+	endif
+}
+
+function extern boolean tpisg086.rmks.is.readonly()
+{
+	if check_readonly_budgeted_outlook_amount() then
+		return(true)
+	else
+		return(false)
+	endif
+}
+
+function extern void tpisg086.outl.update(long mode)
+{
+	if mode = DAL_NEW then
+		if launch_found() then
+| 			tpisg086.outl = tpisg086.budg
+			tpisg086.outl = 0
+		endif
+	endif
+}
+
+function extern void tpisg086.actu.update(long mode)
+{
+	select	tppdm600.ccur
+	from	tppdm600
+	where	tppdm600._index1 = {:tpisg086.cprj}
+	as set with 1 rows
+	selectdo
+	endselect
+	
+	if trim$(tppdm600.ccur) = "INR" then
+		tpisg086.actu = update_actual_domestic()
+	else
+		tpisg086.actu = update_actual_export()
+	endif
+}
+
+function boolean check_readonly_budgeted_outlook_amount()
+{
+	string		date.result(80)
+	long		mnth.num
+	domain	tfgld.year	year
+	domain	tpisg.month	month
+	
+	date.result = sprintf$("%D(%02d/%02m/%04Y)", date.num())
+	year = lval(trim$(date.result(7;4)))
+	mnth.num = lval(trim$(date.result(4;2)))
+	month = ltoe(mnth.num)
+	
+	select	tpisg186.rtyp,
+		tpisg186.stat
+	from	tpisg186
+	where	tpisg186._index1 = {:tpisg086.cprj, :tpisg086.rvsn}
+	as set with 1 rows
+	selectdo
+		if (tpisg186.rtyp = tpisg.rvsntype.complete or tpisg186.rtyp = tpisg.rvsntype.launch)
+				and (tpisg186.stat = tpisg.rvsnstat.free or tpisg186.stat = tpisg.rvsnstat.reject) then
+			return(false)
+		else
+			if tpisg186.rtyp = tpisg.rvsntype.partial and (tpisg186.stat = tpisg.rvsnstat.free or tpisg186.stat = tpisg.rvsnstat.reject) then
+				if year < tpisg086.year then
+					return(false)
+				else
+					if year = tpisg086.year then
+						if mnth.num > etol(tpisg086.mnth) then
+							return(true)
+						else
+							return(false)
+						endif
+					else
+						return(true)
+					endif
+				endif
+			else
+				return(true)
+			endif
+		endif
+	endselect
+	return(false)
+}
+
+function boolean readonly_budget()
+{
+	select	tpisg186.rtyp
+	from	tpisg186
+	where	tpisg186._index1 = {:tpisg086.cprj, :tpisg086.rvsn}
+	and	tpisg186.rtyp = tpisg.rvsntype.partial
+	as set with 1 rows
+	selectdo
+		return(true)
+	endselect
+	return(false)
+}
+
+function boolean launch_found()
+{
+	select	tpisg186.rtyp
+	from	tpisg186
+	where	tpisg186._index1 = {:tpisg086.cprj, :tpisg086.rvsn}
+	and	tpisg186.rtyp = tpisg.rvsntype.launch
+	as set with 1 rows
+	selectdo
+		return(true)
+	endselect
+	return(false)
+}
+
+function domain	tcamnt	update_actual_domestic()
+{
+
+	domain	tcamnt	ci999.amnt, ci235.amnt, actu.amnt.dom
+	domain	tcyesno	tmp.remb
+	domain	tcdate	cdot.f, cdot.l
+	domain	tfgld.date	date.f, date.l
+	long	dd, dd.l, mm, yy, hh, mn, ss
+	
+	ci999.amnt = 0 
+	ci235.amnt = 0
+	actu.amnt.dom = 0
+	dd = 01
+	mm = etol(tpisg086.mnth)
+	yy = tpisg086.year
+	hh = 05
+	mn = 30
+	ss = 24
+	
+	cdot.f = date.to.utc (yy , mm, dd, hh, mn, ss)
+| 	cdot.l = date.to.utc (yy , mm + 1, dd, hh, mn, ss)
+	if mm = 12 then
+		cdot.l = date.to.utc (yy + 1, 1, dd, hh, mn, ss)
+	else
+		cdot.l = date.to.utc (yy, mm + 1, dd, hh, mn, ss)
+	endif
+	date.f = date.to.num(yy, mm, dd)
+	if mm = 12 then
+		date.l = date.to.num(yy + 1, 1, dd)
+	else
+		date.l = date.to.num(yy, mm + 1, dd)
+	endif
+		
+	select	sum(ciisg999.cprc):ci999.amnt
+	from	ciisg999												
+	where	ciisg999._index3 = {:tpisg086.cprj}
+	and	(ciisg999.date >= :date.f and ciisg999.date < :date.l)
+	selectdo					
+	selectempty
+		ci999.amnt = 0
+	endselect
+	
+	select	cisli235.cprj,
+		cisli235.ofbp,
+		cisli235.nins,
+		cisli235.amth,
+		cisli235.slcp
+	from	cisli235				
+	where	cisli235.cprj = :tpisg086.cprj
+	and	cisli235.stat in (cisli.stat.printed, cisli.stat.posted)
+	and	(cisli235.codt >= :cdot.f and cisli235.codt < :cdot.l)
+	selectdo	
+		select	tppin020.cdf_remb:tmp.remb
+		from	tppin020
+		where	tppin020._index1 = {:cisli235.cprj, :cisli235.ofbp, :cisli235.nins}
+		and	tppin020._compnr = :cisli235.slcp
+		selectdo
+		endselect
+		if	tmp.remb = tcyesno.no	then
+			ci235.amnt = ci235.amnt + cisli235.amth(1)
+		endif
+	endselect
+	
+	actu.amnt.dom = ci999.amnt + ci235.amnt
+	actu.amnt.dom = actu.amnt.dom/100000
+	return(actu.amnt.dom)
+}
+
+function domain	tcamnt	update_actual_export()
+{
+	domain	tcamnt	actu.amnt.exp
+	domain 	tctran 	new.var.type, prev.var.type
+	domain	tcgld.docn	new.var.docn, prev.var.docn
+	domain 	tcpono	temp
+	domain	tfgld.date	date.f, date.l
+	long	dd, mm, yy
+	
+	actu.amnt.exp = 0
+	dd = 01
+	mm = etol(tpisg086.mnth)
+	yy = tpisg086.year
+	
+	date.f = date.to.num(yy, mm, dd)
+| 	date.l = date.to.num(yy, mm + 1, dd)
+	if mm = 12 then
+		date.l = date.to.num(yy + 1, 1, dd)
+	else
+		date.l = date.to.num(yy, mm + 1, dd)
+	endif
+	
+	select	tppdm600.ncmp
+	from	tppdm600
+	where	tppdm600._index1 = {:tpisg086.cprj}
+	selectdo
+	endselect
+		
+	select	tdisg831.cprj,
+		tdisg831.ofbp,
+		tdisg831.cinv
+	from	tdisg831,
+		tcmcs052,
+		tccom100
+	where	tdisg831._index4 = {:tpisg086.cprj}
+	and	tdisg831.type = tdisg.type.export
+	and	tdisg831.stat in (2,3)
+	and	tdisg831.cinv <> ""
+	and	(tdisg831.cind >= :date.f and tdisg831.cind < :date.l)
+	and	tdisg831.cprj refers to tcmcs052
+	and	tdisg831.ofbp refers to tccom100
+	order by tdisg831.cinv
+	selectdo
+		select	tdisg832.edrn,
+			tdisg832.rcno,
+			tdisg832.rcln,
+			tdisg832.nins
+		from	tdisg832
+		where	tdisg832.cinv = {:tdisg831.cinv}
+		selectdo
+			select	tpisg039.ityp,
+				tpisg039.idoc
+			from	tpisg039
+			where	tpisg039._index1 = {:tdisg831.cprj, :tdisg831.ofbp, :tdisg832.nins, :tdisg832.edrn, :tdisg832.rcno, :tdisg832.rcln}
+			selectdo
+				select	cisli205.ityp,
+					cisli205.idoc
+				from	cisli205
+				where	cisli205._index1 = {:tppdm600.ncmp, :tpisg039.ityp, :tpisg039.idoc}
+				order by cisli205.ityp, cisli205.idoc
+				selectdo
+					new.var.type  = shiftl$(strip$(cisli205.ityp))
+					new.var.docn  = cisli205.idoc
+					if new.var.type = prev.var.type  and  new.var.docn = prev.var.docn then
+						continue
+					endif	
+					if cisli205.ityp <> "" and cisli205.idoc <> 0 then
+						if temp = 0 then
+							select tppdm600.ncmp		
+							from    tppdm600
+							where   tppdm600._index1 = {:tdisg831.cprj}
+							as set with 1 rows
+							selectdo
+								select cisli235.amth
+								from   cisli235
+								where  cisli235._index2 = {:tppdm600.ncmp, :cisli205.ityp, :cisli205.idoc}
+								and    cisli235.cprj = :tdisg831.cprj
+								and    cisli235.ofbp = :tdisg831.ofbp
+								and    cisli235.invt = tcinvt.installment
+								selectdo
+									actu.amnt.exp = actu.amnt.exp + cisli235.amth(1)
+									temp = 1
+								endselect	
+							endselect
+							temp = 0
+						endif
+					endif	
+				endselect
+			endselect
+			prev.var.type = shiftl$(strip$(cisli205.ityp))
+			prev.var.docn = cisli205.idoc
+		endselect
+	endselect
+	actu.amnt.exp = actu.amnt.exp/100000
+	return(actu.amnt.exp)
+}

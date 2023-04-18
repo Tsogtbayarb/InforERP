@@ -1,0 +1,85 @@
+|******************************************************************************
+|* tpisg0412m400  0  VRC B61U a7 isg 
+|* Saving/Loss Report
+|* Adarsh Pal                    
+|* 2020-02-14
+|******************************************************************************
+|* Main table tpisg012 Sanction Control Lines, Form Type 4
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+		table   ttpisg012	|Sanction Control Lines
+		table	ttdisg214
+		table	ttdisg215
+
+	extern	domain	tccprj		cprj.f    fixed
+	extern  domain  tccprj          cprj.t    fixed
+	extern  domain  tppdm.cspa      cspa.f    fixed
+	extern  domain  tppdm.cspa      cspa.t    fixed
+	
+		domain	tcamnt		saving.loss
+
+|****************************** program section ********************************
+
+|****************************** group section **********************************
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+choice.cont.process:
+on.choice:
+   execute(print.data)
+
+choice.print.data:
+on.choice:
+   if rprt_open() then
+       read.main.table()
+       rprt_close()
+   else
+       choice.again()
+   endif
+
+
+|****************************** field section *********************************
+field.cprj.f:
+when.field.changes:
+   cprj.t = cprj.f
+
+field.elem.f:
+when.field.changes:
+   cspa.t = cspa.f
+
+|****************************** function section ******************************
+functions:
+
+function read.main.table()
+{
+	select	tpisg012.*,tcmcs052.dsca,tppdm090.desc
+	from 	tpisg012,tcmcs052,tppdm090
+	where   tpisg012._index1 inrange {:cprj.f} and {:cprj.t}
+	and	tpisg012.elem inrange {:cspa.f} and {:cspa.t}
+	and	tpisg012.levl = 2
+	and	tpisg012.cprj refers to tcmcs052
+	and	tpisg012.elem refers to tppdm090
+	order by	tpisg012._index1
+	selectdo
+		saving.loss = tpisg012.totl - tpisg012.exha
+		select	tdisg215.orno,tdisg214.podt
+		from	tdisg215,tdisg214
+		where	tdisg215.cprj = :tpisg012.cprj
+		and	tdisg215.cspa = :tpisg012.elem
+		and	tdisg214._index1 refers to tdisg215._index1
+		order by	tdisg215.orno desc
+		as set with 1 rows
+		selectdo			
+			rprt_send()
+		selectempty
+			db.set.to.default(ttdisg215)
+			db.set.to.default(ttdisg214)
+			rprt_send()
+		endselect
+	endselect
+}

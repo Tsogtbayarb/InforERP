@@ -1,0 +1,293 @@
+|******************************************************************************
+|* tiisg9410m030  0  VRC B61U a7 live
+|* Print Manhours Data
+|* Installation user             
+|* 2014-09-18
+|******************************************************************************
+|* Main table tiisg910 Hours Transaction, Form Type 4
+|******************************************************************************
+|* ID: ISGEC01041, Sumit Bansal, 16/08/2107
+|* Corrections in fields
+|*
+|* ID: GH373CR687, RAvi Kumar, 21-07-2020
+|* Modifications in Print Manhours data report
+|*
+|* GH407CR000, RAvi Kumar, 24-09-2020
+|* 153719 - Issue of Group code filter in Report Print Manhour Data
+|*
+|* GH542CR873, RAvi Kumar, 15-04-2021
+|* Common Manhours booking reports to be developed for Isgec and Redecam
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttiisg910 | Hours Transaction
+	table	ttiisg905
+	table	ttiisg906
+	table	ttiisg908
+	table	ttiisg911
+	table	ttccom001
+	table	ttcmcs052
+	table	ttpptc100
+	table	ttdsmi110
+
+	|**************** Form Variables ******************
+	extern	domain	tcemno		emno.f    fixed
+	extern	domain	tcemno		emno.t    fixed
+	extern	domain	tcmcs.str10	grcd.f
+	extern	domain	tcmcs.str10	grcd.t
+	extern	domain	tccprj		cprj.f, cprj.t
+	extern	domain	tfgld.date	tdat.f
+	extern	domain	tfgld.date	tdat.t
+	
+	|*************** File Handling Variables *******************
+	string		err.file(100), file.name(100), line3(2000), line4(2000)
+	long		ret2, stat.fp
+	
+	|*************** File Utilization Variables ****************
+	extern	domain	tcemno		rep.emno
+	extern	domain	tcnama		rep.nama				
+	extern	domain	tcmcs.int	rep.rlid				
+	extern	domain	tcdsca		rep.rldc
+	extern	domain	tfgld.date	rep.tdat
+	extern	domain	tcmcs.long	rep.acid
+	extern	domain	tcdsca		rep.acdc
+	extern	domain	tccprj		rep.cprj	
+	extern	domain	tcdsca		rep.pjdc
+	extern	domain	tppdm.cspa	rep.cspa
+	extern	domain	tcdsca		rep.eldc
+	extern	domain	tcnych		rep.hhrs
+	extern	domain	tcmcs.str10	rep.grcd
+	extern	domain	tcdsca		rep.grdc
+	extern	domain	tcopty		rep.opty
+	extern	domain	tcdsca		rep.opty.dsca
+	extern	domain	tcmcs.str50		rep.remk
+	extern domain	tcorno		rep.dcat, rep.dsno			|#ISGEC01041.n
+	extern domain  tcmcs.str30	rep.docn
+			domain	tcncmp		curr.comp			|GH542CR873.a
+	
+|*************** Include **************
+#include<bic_desktop>	
+
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+group.1:
+init.group:
+	get.screen.defaults()
+
+|****************************** choice section ********************************
+choice.cont.process:
+on.choice:
+	generate.file()
+|****************************** field section *********************************
+field.emno.f:
+when.field.changes:
+	emno.t = emno.f
+
+field.grcd.f:
+when.field.changes:
+	grcd.t = grcd.f
+
+field.tdat.f:
+when.field.changes:
+	tdat.t = tdat.f
+				|#SD04082017.sn
+field.cprj.f:
+when.field.changes:
+	cprj.t = cprj.f		|#SD04082017.en
+|****************************** function section ******************************
+
+functions:
+
+function generate.file()
+{
+	curr.comp = get.compnr()			|GH542CR873.a
+	open.file()
+	generate.header()
+	if curr.comp = 810 then
+		read.main.table(810)
+	else	
+		read.main.table(200)			|GH542CR873.a
+		read.main.table(651)			|GH542CR873.a
+		read.main.table(700)			|GH542CR873.a
+	endif
+	close.file()
+}
+
+function read.main.table(	domain	tcncmp	i.comp)		|GH542CR873.a
+{
+	switch.to.company(i.comp)		|GH542CR873.a
+	select	tiisg910.emno, tiisg910.rlid, tiisg910.tdat, 
+		tiisg910.acid, tiisg910.cprj, tiisg910.cspa, 
+		tiisg910.hhrs, tiisg906.grcd, tiisg910.opty,
+		tiisg910.dcat, tiisg910.dsno, tiisg910.dsrv,	|#SD04082017.n
+		tiisg911.desc, tccom001.nama, tiisg905.rdes,
+		tiisg908.desc, tcmcs052.dsca, tiisg910.remk, tiisg910.grcd,		|GH407CR000.a.grcd
+		tdsmi110.dsca 	|#SD04082017.n
+	from	tiisg910, tiisg906, tiisg911, tccom001, 
+		tiisg905, tiisg908, tcmcs052, tdsmi110
+	where	tiisg910._index2 inrange {:emno.f, :tdat.f}	and {:emno.t, :tdat.t}
+	and	tiisg910.cprj inrange {:cprj.f} and {:cprj.t}
+	and	tiisg910.cmbb refers to tiisg906
+| 	and	tiisg906.grcd inrange :grcd.f	and	:grcd.t		|GH407CR000.co.
+	and	tiisg910.grcd inrange :grcd.f	and	:grcd.t		|GH407CR000.a
+|  	and	tiisg906.stat = tcyesno.yes				|GH373CR687.com
+	and	tiisg906.grcd = tiisg910.grcd				|GH407CR000.a
+	and	tiisg906.grcd refers to tiisg911 Unref Clear
+	and	tiisg910.emno refers to tccom001 Unref Clear
+	and	tiisg910.rlid refers to tiisg905 Unref Clear
+	and	tiisg910.acid refers to tiisg908 Unref Clear
+	and	tiisg910.cprj refers to tcmcs052 Unref Clear
+	and	tiisg910.opty refers to tdsmi110 UNREF CLEAR	|#SD04082017.n
+	order by tiisg910.emno, tiisg910.rlid, tiisg910.tdat, tiisg910.acid
+	selectdo
+		Initialize_Variables()
+		rep.emno = tiisg910.emno
+		rep.nama = tccom001.nama
+		rep.rlid = tiisg910.rlid
+		rep.rldc = tiisg905.rdes
+		rep.tdat = tiisg910.tdat
+		rep.acid = tiisg910.acid
+		rep.acdc = tiisg908.desc
+		rep.cprj = tiisg910.cprj
+		rep.pjdc = tcmcs052.dsca
+		rep.cspa = tiisg910.cspa
+		rep.hhrs = tiisg910.hhrs
+| 		rep.grcd = tiisg906.grcd				|GH407CR000.com
+		rep.grcd = tiisg910.grcd				|GH407CR000.a
+		rep.grdc = tiisg911.desc
+		rep.remk = tiisg910.remk
+		rep.opty = tiisg910.opty	|#SD04082017.n
+		rep.opty.dsca = tdsmi110.dsca	|#SD04082017.n
+		
+		select	tpptc100.desc:rep.eldc
+		from	tpptc100
+		where	tpptc100._index1 = {:tiisg910.cprj, :tiisg910.cspa}
+		selectdo
+		endselect
+		
+		if isdigit(tiisg910.dcat) then						|#ISGEC01041.sn
+			rep.dcat = "'" & tiisg910.dcat
+		else
+			rep.dcat = tiisg910.dcat
+		endif									
+		
+		if isdigit(tiisg910.dsno) then
+			rep.dsno = "'" & tiisg910.dsno
+		else
+			rep.dsno = tiisg910.dsno
+		endif	
+								|#ISGEC01041.en
+								
+		if strip$(tiisg910.dcat) <> "" and strip$(tiisg910.dsno) <> "" then
+								
+			rep.docn = strip$(rep.cprj) & "-" & strip$(rep.cspa) & "-" & strip$(tiisg910.dcat) & "-" & strip$(tiisg910.dsno)
+		else
+			rep.docn = ""
+		endif
+		
+		print.details()
+	endselect
+	switch.to.company(curr.comp)		|GH542CR873.a	
+}
+
+
+function	generate.header()
+{
+	line4 =	concat$("	",
+		sprintf$("Employee"),					|1		
+		sprintf$("Employee Name"),				|2		
+		sprintf$("Role ID"),					|3		
+		sprintf$("Role Description"),				|4
+		sprintf$("Transaction Date"),				|5
+		sprintf$("Activity Code"),				|6
+		sprintf$("Activity Description"),		  	|7
+		sprintf$("Project"),					|8
+		sprintf$("Project Description"),			|9
+		sprintf$("Oppurtunity"),				|9.A	|#SD04082017.n
+		sprintf$("Oppurtunity Description"),			|9.B	|#SD04082017.n
+		sprintf$("Element"),					|10
+		sprintf$("Element Description"),		        |11
+		sprintf$("Drawing Category"),		      	  	|11.A	|#SD04082017.sn
+		sprintf$("Drawing Sr. No."),			        |11.B
+		sprintf$("Rev No."),		        		|11.C	|#SD04082017.en
+		sprintf$("Document No."),				|11.D
+		sprintf$("Hours"),					|12
+		sprintf$("Group Code"),				|13
+		sprintf$("Group Description"),				|14
+		sprintf$("Remarks"))					|15		
+		
+	line4 = strip$(shiftl$(line4))		
+	seq.puts(line4, stat.fp)	
+}
+
+function print.details()
+{
+	line3 =	concat$("	",
+		sprintf$("%s", rep.emno),				|1
+		sprintf$("%s", rep.nama),				|2				
+		sprintf$("%d", rep.rlid),				|3				
+		sprintf$("%s", rep.rldc),				|4
+		sprintf$("%D(%02d/%02m/%04Y)", rep.tdat),		|5
+		sprintf$("%d", rep.acid),				|6
+		sprintf$("%s", rep.acdc),				|7
+		sprintf$("%s", rep.cprj),				|8	
+		sprintf$("%s", rep.pjdc),				|9
+		sprintf$("%s", rep.opty),				|9.A	|#SD04082017.n
+		sprintf$("%s", rep.opty.dsca),				|9.B	|#SD04082017.n
+		sprintf$("%s", rep.cspa),				|10
+		sprintf$("%s", rep.eldc),				|11
+		sprintf$("%s", rep.dcat),				|11.A		|#ISGEC01041.n
+		sprintf$("%s", rep.dsno),				|11.B		|#ISGEC01041.n
+		sprintf$("%s", tiisg910.dsrv),				|11.C
+		sprintf$("%s", rep.docn),				|11.D
+		sprintf$("%f", rep.hhrs),				|12
+		sprintf$("%s", rep.grcd),				|13
+		sprintf$("%s", rep.grdc),				|14
+		sprintf$("%s", rep.remk))				|15
+	
+		line3 = strip$(shiftl$(line3))
+		seq.puts(line3, stat.fp)
+}
+
+function Initialize_Variables()
+{
+	rep.emno = ""				|1
+	rep.nama = ""				|2				
+	rep.rlid = 0				|3				
+	rep.rldc = ""				|4
+	rep.tdat = 0				|5
+	rep.acid = 0				|6
+	rep.acdc = ""				|7
+	rep.cprj = ""				|8	
+	rep.pjdc = ""				|9
+	rep.opty = ""				|9.A
+	rep.opty.dsca = ""			|9.B
+	rep.cspa = ""				|10
+	rep.eldc = ""				|11
+	rep.hhrs = 0				|12
+	rep.grcd = ""				|13
+	rep.grdc = ""				|14
+	rep.remk = ""				|15
+}
+
+
+function open.file()
+{
+	err.file = bse.tmp.dir$() & str$(utc.num()) & ".xls"
+	
+	file.name = "c:\temp\" & str$(utc.num())  & ".xls"
+	
+	stat.fp = seq.open(err.file, "w+")
+	if stat.fp >0 then
+ 		seq.seek(0, 0, stat.fp)
+	endif
+}
+
+function close.file()
+{
+	seq.close(stat.fp)
+	ret2 = server2client(err.file,file.name,1)
+	ret2 = app_start(file.name,"c:","","","")
+}
