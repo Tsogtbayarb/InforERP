@@ -1,0 +1,245 @@
+|******************************************************************************
+|* tdisg8431m000  0  VRC B61U a7 live
+|* Print Detail of Export Sales
+|* Tools                         
+|* 2014-08-13
+|******************************************************************************
+|* Main table tdisg831 Billing Advice, Form Type 4
+|******************************************************************************
+|* ID: ISGECDV001120, IT0327, Ritu Shrivastava, Dt. 20-10-2014, VRC B61U a7 live
+|* Print report in xls format
+|*
+|* ID: ISGEC001147, IT0327, Ritu Shrivastava, Dt. 03-11-2014, VRC B61U a7 isg
+|* Pick value based on Billing Schedule
+|****************************** declaration section ***************************
+declaration:
+
+table   ttdisg831 | Billing Advice
+table	ttppdm740
+table	ttcmcs002
+table	ttdisg839
+table	ttcmcs052
+table	ttcmcs010
+table	ttdisg832
+table	ttdisg825
+table	ttpisg031
+table	ttpisg039
+
+extern	domain	tccprj		cprj.f,cprj.t
+extern	domain	tppdm.nins	nins.f,nins.t
+extern	domain	tcamnt		tot_gwgt,tot_nwgt
+extern	domain	tcmcs.long	srno
+extern	domain	tcyesno		i.ship
+
+string		str(300), err.file(100), file.name(100), line1(3000), line2(3000), line3(3000), line4(3000)	
+long		ret2, stat.fp											
+string		acc.voucher(20)
+#include<bic_desktop>
+
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.cont.process:
+on.choice:
+	generate.file()
+
+
+|****************************** field section *********************************
+field.cprj.f:
+when.field.changes:
+   cprj.t = cprj.f
+  
+field.nins.f:
+when.field.changes:
+   nins.t = nins.f 
+   
+before.zoom:
+	query.extend.where.in.zoom("tpisg031.cprj = " & quoted.string(cprj.f))
+
+field.nins.t:
+before.zoom:
+	query.extend.where.in.zoom("tpisg031.cprj = " &  quoted.string(cprj.t))
+	
+|****************************** function section ******************************
+
+functions:
+
+function read.main.table()
+{
+	tot_nwgt = 0
+	tot_gwgt = 0
+	srno = 0
+	
+	select 	tdisg831.*,tccom100.nama,tdisg839.biln,tdisg839.pddt,tcmcs052.dsca,tcmcs010.dsca
+	from 	tdisg831,tccom100,tdisg839,tcmcs052,tcmcs010
+	where  	tdisg831._index4 inrange {:cprj.f} and {:cprj.t}
+| 	and	tdisg831.type = tdisg.type.export
+	and	tdisg831.ofbp refers to tccom100 unref clear
+	and	tdisg831.bold refers to tdisg839 unref clear
+	and	tdisg831.cprj refers to tcmcs052 unref clear
+	and	tdisg831.dcty refers to tcmcs010 unref clear
+	order by tdisg831.cprj
+	selectdo
+		srno = srno + 1
+		
+		select	tppdm740.ccur,tcmcs002.dsca
+		from	tppdm740,tcmcs002
+		where	tppdm740._index1 = {:tdisg831.cprj,:tdisg831.ofbp}
+		and	tppdm740.ccur refers to tcmcs002
+		selectdo
+		selectempty
+			tppdm740.ccur = ""
+			tcmcs002.dsca = ""
+		endselect
+			
+		select	tdisg832.*
+		from	tdisg832
+		where	tdisg832._index1 = {:tdisg831.edrn}
+| 		and     tdisg832.nins inrange {:nins.f} and {:nins.t}				|#ISGEC001147.o
+		and     tdisg832.ninc inrange {:nins.f} and {:nins.t}				|#ISGEC001147.n
+		order by tdisg832.ninc
+		selectdo
+			tot_gwgt = tot_gwgt + tdisg832.gwgt
+			tot_nwgt = tot_nwgt + tdisg832.nwgt
+			
+			select tpisg031.nins, tpisg031.dsca, tpisg031.insa		
+			from   tpisg031
+			where  tpisg031._index1 = {:tdisg831.cprj}
+| 			and    tpisg031.nins = :tdisg832.nins					|#ISGEC001147.o
+			and    tpisg031.nins = :tdisg832.ninc					|#ISGEC001147.n
+			selectdo
+			selectempty
+				tpisg031.nins = 0						
+				tpisg031.dsca = ""
+				tpisg031.insa = 0
+			endselect							
+			
+										|#ISGECDV001163.sn
+			select 	tpisg039.ityp,
+				tpisg039.idoc
+			from	tpisg039
+			where	tpisg039._index2 = {:tdisg831.edrn}
+			and	tpisg039.idoc <> 0
+			as set with 1 rows
+			selectdo
+			selectempty
+				tpisg039.ityp = ""
+				tpisg039.idoc = 0
+			endselect
+			
+			if tpisg039.idoc <> 0 then
+				acc.voucher = tpisg039.ityp & "-" & str$(tpisg039.idoc)
+			endif
+			
+										|#ISGECDV001163.en
+
+			if i.ship = tcyesno.yes then
+				if isspace(tdisg831.bold) then
+					write.data()						
+				endif
+			else
+				write.data()							
+			endif	
+		endselect	
+										
+	endselect
+}
+
+function generate.file()
+{
+	err.file = bse.tmp.dir$() & str$(utc.num()) & ".xls"
+	
+	file.name = "c:\temp\" & str$(utc.num())  & ".xls"
+	
+	stat.fp = seq.open(err.file, "w+")
+	if stat.fp >0 then
+ 		seq.seek(0, 0, stat.fp)
+	endif
+	
+	generate.header()
+	read.main.table()
+	seq.close(stat.fp)
+	ret2 = server2client(err.file,file.name,1)
+	ret2 = app_start(file.name,"c:","","","")
+}
+
+function generate.header()
+{
+	line1 =	concat$("	",
+		sprintf$(" "),		
+		sprintf$(" "),		
+		sprintf$(" "),		
+		sprintf$(" "),		
+		sprintf$(" "),		
+		sprintf$(" "),		
+		sprintf$("PRINT INSTALLMENT DETAILS FOR EXPORT PROJECTS"))
+	line1 = strip$(shiftl$(line1))		
+	seq.puts(line1, stat.fp)
+
+	line2 =	concat$("	",
+		sprintf$(" "),		
+		sprintf$(" "),		
+		sprintf$(" "),		
+		sprintf$(" "),		
+		sprintf$(" "),		
+		sprintf$("Project From"),
+		sprintf$(cprj.f),
+		sprintf$("TO"),
+		sprintf$(cprj.t))
+	line2 = strip$(shiftl$(line2))		
+	seq.puts(line2, stat.fp)
+	
+	line3 =	concat$("	",
+		sprintf$("Project"),							|1	
+		sprintf$("Description"),						|2
+		sprintf$("Billing Schedule"),						|3
+		sprintf$("Billing Schedule Description"),				|4
+		sprintf$("Billing Schedule Amount"),					|5
+		sprintf$("Billing Advice"),						|6
+		sprintf$("Receipt No"),						|7
+		sprintf$("Position"),	                                                |8
+		sprintf$("Custom Inv. No."),                           		|9
+		sprintf$("Commercial Invoice No"),					|10
+		sprintf$("Invoice Date"),						|11
+		sprintf$("Invoice Amt "),						|12
+		sprintf$("Package No"),						|13
+		sprintf$("B/L No"),							|14
+		sprintf$("B/L Date"),							|15
+		sprintf$("Accounting Voucher"))					|16	|#ISGECDV001163.n
+		
+	line3 = strip$(shiftl$(line3))		
+	seq.puts(line3, stat.fp)
+}
+
+function write.data()
+{
+	
+	line4 =	concat$("	",
+		sprintf$("%s", tdisg831.cprj),						|1
+		sprintf$("%s", tcmcs052.dsca),						|2
+		sprintf$("%s", tpisg031.nins),						|3
+		sprintf$("%s", tpisg031.dsca),						|4
+		sprintf$("%s", str$(tpisg031.insa)),					|5
+		sprintf$("%s", tdisg831.edrn),						|6
+		sprintf$("%s", tdisg832.rcno),						|7
+		sprintf$("%s", tdisg832.rcln),		                                |8
+                sprintf$("%s", tdisg831.invn),                                  	|9
+		sprintf$("%s", tdisg831.cinv),						|10
+		sprintf$("%D(%2d-%2m-%4Y)", tdisg831.cind),				|11
+		sprintf$("%s", tdisg832.bivl),						|12
+		sprintf$("%s", tdisg832.pkgd),						|13
+		sprintf$("%s", tdisg839.biln),						|14
+		sprintf$("%D(%2d-%2m-%4Y)", tdisg839.pddt),				|15
+		sprintf$("%s",acc.voucher))     					|16	|#ISGECDV001163.n
+	line4 = strip$(shiftl$(line4))
+	seq.puts(line4, stat.fp)
+
+}

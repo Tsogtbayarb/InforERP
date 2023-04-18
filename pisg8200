@@ -1,0 +1,158 @@
+|******************************************************************************
+|* tdisg820  0  VRC B61U a7 live
+|* Bond Register
+|* tools2
+|* 14-04-28 [16:14]
+|******************************************************************************
+|* Script Type: DAL
+|*Ident ISG001016,Neera Singh,IT0319,28-04-2014,B61U a7 live
+|*
+|* IDENT ISG001047, Arjit Kumar Gupta, IT0205, 07-06-2014,B61U a7 live
+|* Change Calculation of Balance Value 
+|******************************************************************************
+#ident "@(#)ISG001016, Neerav Singh, IT0319, 28-04-2014 , VRC B61U a7 live"																		
+#ident "@(#)ISG001047, Arjit Kumar Gupta, IT0205, 07-06-2014 , VRC B61U a7 live"																		
+#include <bic_dal2>
+
+	table 	ttdisg820 |Bond Register
+	table	ttdisg800
+
+function extern long before.open.object.set()
+{
+	dal.field.depends.on("tdisg820.bdbl", HOOK_UPDATE, 
+| 						"tdisg820.bdvl","tdisg820.bdco") 	|#ISG001047.o
+						"tdisg820.bdvl",			|#ISG001047.sn
+						"tdisg820.bdco",
+						"tdisg820.vlcr") 	
+										|#ISG001047.sn
+
+	return(0)
+}
+
+function extern long before.save.object(long type)
+{
+	if type = DAL_NEW then
+	
+		if  tcmcs.dll0050.check.and.generate.order.number( 3, tdisg820.bdno, tdisg800.bngr, 12, tdisg820.bdno ) then
+			return(DALHOOKERROR)
+		endif
+	endif
+
+	return(0)
+}
+
+function extern long after.save.object(long type)
+{
+
+| 	with.object.set.do(UpdateExistingRecord,tdisg820.bdty,tdisg820.bdct,tdisg820.bdno,tdisg820.efdt)
+	return(0)
+}
+
+
+function extern long before.new.object()
+{
+	tcmcs.dll0095.read.parm("tdisg800")
+	
+	tdisg820.bdno = tdisg800.bsri
+	return(0)
+}
+|******************************************Field Section *****************************
+
+
+function extern boolean tdisg820.bdno.is.mandatory()
+{
+    if isspace(tdisg820.bdno) then
+	dal.set.error.message("@Bond Number can't Blank")
+	return(true)
+    else
+	return(false)
+    endif
+}
+
+
+function extern void tdisg820.bdbl.update()
+{
+|     tdisg820.bdbl=tdisg820.bdvl-tdisg820.bdco		|#ISG001047.o
+	tdisg820.bdbl = (tdisg820.bdvl + tdisg820.vlcr) - tdisg820.bdco		|#ISG001047.o
+}
+
+
+
+|*** FIELD HOOKS FOR tdisg820.eccd ****
+function extern boolean tdisg820.eccd.is.valid(long type)
+{
+	domain	 tctax.seqn	o.seqn 
+	select 	tctax940.seqn:o.seqn
+	from	tctax940
+	where	tctax940._index1 = {:tdisg820.eccd}
+	and	tctax940.catg = tctax.catg.l.excise
+	as set with 1 rows 
+	selectdo
+	selectempty
+		dal.set.error.message("@ Enter Only Excise Category Sequence")
+		return(DALHOOKERROR)
+	endselect
+	
+	return(true)
+}
+
+
+|***  FIELD HOOKS FOR tdisg820.efdt ****
+
+function extern boolean tdisg820.efdt.is.mandatory(long type)
+{
+	if tdisg820.efdt = 0 then
+		dal.set.error.message("@ Kindly Enter Effective Date")
+		return(true)
+	endif
+	
+	return(false)
+}
+
+|***  FIELD HOOKS FOR tdisg820.exdt ****
+function extern boolean tdisg820.exdt.is.mandatory(long type)
+{
+	if tdisg820.exdt = 0 then
+		dal.set.error.message("@ Kindly Enter Expiry Date")
+		return(true)
+	endif
+	
+	return(false)
+}
+
+function extern boolean tdisg820.exdt.is.valid(long type)
+{
+	if tdisg820.exdt < tdisg820.efdt then
+		dal.set.error.message("@ Expriy Date Should be Greater than Effective Date")
+		return(DALHOOKERROR)
+	endif
+	
+	return(true)
+}
+
+|********************  USER DEFIEND FUNCTIONS ******************************
+
+function UpdateExistingRecord
+			(
+				domain	tdisg.bnd.type	i.type,		|Bond Type
+				domain	tdisg.bnd.catg	i.category,	|Bond Category
+				domain tcorno	i.bdno	,		|Bond No
+				domain tcdate	i.efdt			|Bond effective date
+				
+			)
+{
+	domain 	tcdate	x.exdt
+	
+	
+	select 	tdisg820.exdt:x.exdt 
+	from	tdisg820 for update
+	where	tdisg820._index1 = {:i.type,:i.category,:i.bdno}
+	and	tdisg820.efdt < :i.efdt
+	and	tdisg820.exdt = 0 
+	selectdo
+		
+		tdisg820.exdt = i.efdt
+		db.update(ttdisg820,db.retry,e)
+	endselect
+	
+}

@@ -1,0 +1,174 @@
+|******************************************************************************
+|* tdisg841  0  VRC B61U a7 live
+|* LC Terms Lines Details
+|* tools1
+|* 14-05-30 [11:16]
+|******************************************************************************
+|* Script Type: DAL
+|******************************************************************************
+                                                                                
+#include <bic_dal2>
+table	ttdisg841
+table	ttdisg825
+extern domain tcpono max.v
+extern	domain	tcamnt	var.amnt
+extern	domain	tcaajc	var.perc
+
+function extern long before.open.object.set()
+{
+	max.v = 0
+	dal.field.depends.on("tdisg841.lpct",HOOK_UPDATE, "tdisg841.amnt")
+	dal.field.depends.on("tdisg841.amnt",HOOK_UPDATE, "tdisg841.lpct")
+	return(0)
+}
+
+function extern long before.save.object(long type)
+{
+	if type = DAL_NEW then
+		select	tdisg841.cprj
+		from	tdisg841
+		where	tdisg841._index2 = {:tdisg841.cprj}
+		and	tdisg841.lcno = :tdisg841.lcno
+		selectdo
+			dal.set.error.message("@Project alredy linked")
+			return(DALHOOKERROR)
+		endselect
+	endif	
+	return(0)
+}
+
+function extern long before.new.object()
+{
+	select	max(tdisg841.srno):max.v
+	from	tdisg841
+ 	where	tdisg841._index1 = {:tdisg841.lcno}
+	selectdo
+		tdisg841.srno = max.v + 1
+	selectempty
+		tdisg841.srno = 1
+	endselect
+	return(0)
+}
+|****************************** Validation ******************************************
+function extern boolean tdisg841.lpct.is.valid(long i.type)
+{
+	
+	with.old.object.values.do(get_percentage)
+| 	select tdisg825.valu
+| 	from	tdisg825
+| 	where	tdisg825._index1 = {:tdisg841.lcno}
+| 	selectdo
+| 		select sum(tdisg841.lpct):var.perc
+| 		from	tdisg841
+| 		where	tdisg841._index1 = {:tdisg841.lcno}
+| 		selectdo
+			|var.perc = var.perc + tdisg841.lpct
+| 			if (tdisg841.lpct > 100) or (var.perc >100) then
+| 				dal.set.error.message("@Percentage Can't be Greater Than 100 !")
+| 				return(false)
+| 			endif	
+| 		endselect
+| 	endselect	
+
+	on case i.type
+	case DAL_NEW :
+		if var.perc + tdisg841.lpct > 100 then
+			dal.set.error.message("@Percentage Can't be Greater Than 100 !")
+			return(false)
+		endif
+		break
+	case	DAL_UPDATE :
+		if tdisg841.lpct > 100 then	
+			dal.set.error.message("@Percentage Can't be Greater Than 100 !")
+			return(false)
+		endif
+		break
+	endcase	
+	
+	return(true)
+}
+
+function extern boolean tdisg841.amnt.is.valid()
+{
+	select tdisg825.valu
+	from	tdisg825
+	where	tdisg825._index1 = {:tdisg841.lcno}
+	selectdo
+		select sum(tdisg841.amnt):var.amnt
+		from	tdisg841
+		where	tdisg841._index1 = {:tdisg841.lcno}
+		selectdo
+| 			var.amnt = var.amnt + tdisg841.amnt
+			if tdisg841.amnt > tdisg825.valu or var.amnt > tdisg825.valu then
+				dal.set.error.message(" @Amount Can't Be Greater Than L/C Value !")
+				return(false)
+			endif
+		endselect
+	endselect	
+	return(true)
+}
+
+|****************************** Update_Hooks ******************************************
+function extern void tdisg841.lpct.update()
+{
+	if (tdisg841.lpct=0) then
+		select tdisg825.valu
+		from	tdisg825
+		where	tdisg825._index1 = {:tdisg841.lcno}
+		selectdo
+			tdisg841.lpct = (tdisg841.amnt*100)/tdisg825.valu
+			
+		endselect
+	endif	
+}
+
+function extern void tdisg841.amnt.update()
+{
+| 	if(tdisg841.amnt = 0) then
+		select tdisg825.valu
+		from	tdisg825
+		where	tdisg825._index1 = {:tdisg841.lcno}
+		selectdo
+			tdisg841.amnt = (tdisg825.valu*tdisg841.lpct)/100
+		endselect
+| 	endif	
+
+	tdisg841.amnt = round(tdisg841.amnt,2,1)	
+}
+
+|Last Shipment Date *************
+
+function extern boolean tdisg841.shdt.is.valid()
+{
+	if tdisg841.shdt < date.num() then
+		dal.set.error.message("@ Last Shipment Date Cannot be less than Current Date")
+		return(DALHOOKERROR)
+	endif
+	
+	return(true)
+}
+
+|Last Presentation Date ****************
+function extern boolean tdisg841.pddt.is.valid()
+{
+	if tdisg841.pddt < date.num() then
+		dal.set.error.message("@ Last Presentation Date Cannot be less than Current Date")
+		return(DALHOOKERROR)
+	endif
+	
+	return(true)
+}
+
+
+
+function	get_percentage()
+{
+	select	sum(tdisg841.lpct):var.perc
+	from	tdisg841
+	where	tdisg841._index1 = {:tdisg841.lcno}
+	selectdo
+	selectempty
+		var.perc = 0
+	endselect	
+}
+

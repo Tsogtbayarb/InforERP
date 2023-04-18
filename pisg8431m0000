@@ -1,0 +1,134 @@
+|******************************************************************************
+|* tdisg8431m000  0  VRC B61U a7 live
+|* Print Detail of Export Sales
+|* Tools                         
+|* 2014-08-13
+|******************************************************************************
+|* Main table tdisg831 Billing Advice, Form Type 4
+|******************************************************************************
+|* ISGEC001131, IT0205, Arjit Gupta, VRC B61U a7 isg, Dt. 30-10-2014
+|* Initializaion 
+
+|* IDENT ISGEC015011,Shilpa Janardanan, 26/05/2015
+|* Filter records in which commercial invoice is blank
+|****************************** declaration section ***************************
+declaration:
+
+table   ttdisg831 | Billing Advice
+table	ttppdm740
+table	ttcmcs002
+table	ttdisg839
+table	ttcmcs052
+table	ttcmcs010
+
+extern	domain	tccprj		cprj.f,cprj.t
+extern	domain	tfgld.date	date.f,date.t
+
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.cont.process:
+on.choice:
+   execute(print.data)
+
+choice.print.data:
+on.choice:
+   if rprt_open() then
+       read.main.table()
+|        read.main.table1()
+       rprt_close()
+   else
+       choice.again()
+   endif
+
+
+|****************************** field section *********************************
+field.cprj.f:
+when.field.changes:
+   cprj.t = cprj.f
+   
+field.date.f:
+when.field.changes:
+   date.t = date.f
+
+|****************************** function section ******************************
+
+functions:
+
+function read.main.table()
+{
+	select 	tdisg831.*,tccom100.nama,tcmcs052.dsca,tcmcs010.dsca
+	from 	tdisg831,tccom100,tcmcs052,tcmcs010
+	where  	tdisg831._index4 inrange {:cprj.f} and {:cprj.t}
+	and	tdisg831.cind inrange {:date.f} and {:date.t}
+	and	tdisg831.type = tdisg.type.export
+	and	tdisg831.ofbp refers to tccom100 unref clear
+| 	and	tdisg831.bold refers to tdisg839 unref clear
+	and	tdisg831.cprj refers to tcmcs052 unref clear
+	and	tdisg831.dcty refers to tcmcs010 unref clear
+	selectdo
+		select	tdisg839.biln,tdisg839.pddt
+		from	tdisg839
+		where	tdisg839._index1 = {:tdisg831.bold}
+		selectdo
+						|#ISGEC001131.sn
+		selectempty
+			tdisg839.biln = ""
+			tdisg839.pddt = 0
+						|#ISGEC001131.en
+		endselect
+		
+		select	tppdm740.ccur,tcmcs002.dsca
+		from	tppdm740,tcmcs002
+		where	tppdm740._index1 = {:tdisg831.cprj,:tdisg831.ofbp}
+		and	tppdm740.ccur refers to tcmcs002 Unref clear
+		selectdo
+						|#ISGEC001131.sn
+		selectempty
+			tppdm740.ccur = ""
+						|#ISGEC001131.en
+		endselect	
+				
+		if isspace(tdisg831.cinv) then		|ISGEC015011.n
+			continue
+		endif					|ISGEC015011.n
+		
+		rprt_send()
+	selectempty
+		tdisg839.biln = ""	
+	endselect
+}
+
+function read.main.table1()
+{
+	select 	tdisg831.*
+	from 	tdisg831
+	where  	tdisg831.cprj inrange {:cprj.f} and {:cprj.t}
+	and	tdisg831.cind inrange {:date.f} and {:date.t}
+	and	tdisg831.type = tdisg.type.export
+	selectdo
+		select	tdisg839.biln,tdisg839.pddt
+		from	tdisg839
+		where	tdisg839._index1 = {:tdisg831.bold}
+		selectdo
+		endselect
+		
+		select	tppdm740.ccur,tcmcs002.dsca
+		from	tppdm740,tcmcs002
+		where	tppdm740._index1 = {:tdisg831.cprj,:tdisg831.ofbp}
+		and	tppdm740.ccur refers to tcmcs002
+		selectdo
+		endselect	
+		rprt_send()
+	selectempty
+		tdisg839.biln = ""	
+	endselect
+}

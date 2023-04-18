@@ -1,0 +1,706 @@
+|******************************************************************************
+|* tdisg8431m802  0  VRC B61U a7 isg 
+|* Print Certificate of Origin
+|* Installation User             
+|* 2015-05-13
+|******************************************************************************
+|* Main table tdisg831 Billing Advice, Form Type 4
+|******************************************************************************
+|* IDENT PATCH002039, Mani Sharma, 15-05-2015, VRC B61u a7 isg
+|* New report generated
+|* Functional - Rahul Kumar                 
+|*
+|* IDENT ISGEC015031, Ankit Sharma, 06-08-2015, VRC B61u a7 isg
+|* Concatination of all items in a single commercial invoice
+
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttdisg831 | Billing Advice
+  table   ttdisg825
+  table   ttpisg031
+  table   ttppdm740
+  table   ttcmcs002
+  table   ttpisg036
+  table   ttdisg832
+  table   ttcmcs041
+  table   ttdisg864
+  table   ttdisg865
+  table   ttpisg037
+  table   ttcmcs010
+  table   ttdisg869
+  table   ttdisg861
+  
+   extern  domain  tcyesno  cadr.txt
+   extern  domain  tcorno           edrn.f    fixed
+   extern  domain  tcorno           edrn.t    fixed
+   extern   domain  tcorno          cinv.f,cinv.t
+   extern   domain  tcorno          bold.f,bold.t
+   extern   domain  tcorno          cinv.p,cinv.n
+   extern  domain  tcorno           cinv,i.cinv
+   string 	err.file(100),file.name(100),line(1500),line1(1500),line2(1500),line3(1500),line4(1500),
+		dsca(500)					|#ISGEC015031.n
+   long   	stat.fp,ret2,
+		i 						|#ISGEC015031.n
+  |**************************************************************************
+extern	domain	tcmcs.str12	temp.blno
+extern	domain	tccom.bpid	temp.cons
+extern	domain	tfgld.date	temp.date
+extern	domain	tcorno		temp.pold, temp.pods, temp.pldv
+extern	domain	tcdsca		temp.vfln, temp.voyg
+extern	domain	tcccty		temp.coor, temp.cofd
+extern	domain	tcdesc		temp.itod
+extern	domain	tcmcs.str15	temp.lcno
+extern	domain	tcsern		temp.srno
+extern domain  tcyesno		detail90.yn
+extern domain  tcorno		orno
+extern domain  tcpono		pono,seqn, xyz
+extern domain  tcwset		oset
+extern	domain	tcmcs.str70	text(2), text1,text2
+long		rt1,get.data
+string		error(100),error1(100)
+	|* Report Variables
+extern	domain	tcnama		i.bpid.dsca
+extern	domain	tcnama		i.cons.dsca
+extern	domain	tcdsca		i.origin.ccty
+extern	domain	tcdsca		i.dest.ccty
+extern	domain	tcmcs.str60	all.our.ref
+extern	domain	tcpono		srno
+extern	domain	tcamnt		i.total.cif,net.pay,i.total.fob,tot_nwgt,tot_gwgt
+extern	domain	tcamnt		i.fob.amount,i.freight,i.insurance
+extern	domain	tcamnt		i.advance.payment,i.ret.payment,lac
+extern	domain	tcmcs.long	tot.nopk,tmp.nopk,total.pack,linem,z
+extern	domain	tcmcs.str100m	i.exp.ln01,i.exp.ln02,i.exp.ln03,i.exp.ln04
+extern	domain	tcmcs.str100m	i.bp.ln01,i.bp.ln02,i.bp.ln03,i.bp.ln04
+extern	domain	tcdisc		o.total.adv.perc,o.total.ret.perc
+domain	tcbool		first.call,i.first.customer
+domain	tclogn		i.user
+extern	domain	tcmcs.str50		buyer1,buyer2,buyer3,buyer4,buyer5
+extern	domain	tcmcs.str50		con1,con2,con3,con4,con5,container_no
+extern	domain	tcmcs.str50	exp1,exp2,exp3,exp4,exp5
+extern	domain	tcmcs.str50	goods1,goods2,goods3,goods4,goods5,goods6
+extern	domain	tcclot		inco_term,mode
+extern	domain	tcdsca		delivery_term,desc,desc1,desc2,desc3,desc4
+extern	domain	tcmcs.str50	i.heading,term_delivery
+extern	domain	tcmcs.str90	r.word1,v.lacs,lacs,decode0,decode1,decode2,decode3,decode4,decode5,decode6,decode7
+extern	domain	tcmcs.str60	custom_invoice
+extern	domain	tcmcs.str60	custom.invoice(7)
+extern	domain	tcmcs.str15	packing_qty
+extern	domain	tcbool	free.line
+extern	domain	tcmcs.long	i.pos
+extern	domain	tcclot		i.item
+extern domain tcmcs.str12     lumpsum
+extern domain tcpono 		p,q
+extern	domain	tcmcs.str100m	description3		|#ISGEC01031.n
+|extern	domain	tcmcs.str256	text3			|#ISGEC015031.n
+string text3(500)
+
+#pragma used dll ottdllbw 
+#include <bic_text>
+|****************************** program section ********************************
+before.program:
+		 
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.cont.process:
+on.choice:
+   execute(print.data)
+
+choice.print.data:
+on.choice:
+   if rprt_open() then
+       read.main.table()
+       rprt_close()
+   else
+       choice.again()
+   endif
+
+choice.generate:
+on.choice:
+	generate.file()
+
+|****************************** field section *********************************
+
+field.cinv.f:
+when.field.changes:
+   cinv.t = cinv.f
+
+
+check.input:
+	if not isspace(cinv.f) then
+		select tdisg831.cinv
+		from    tdisg831
+		where   tdisg831._index3 = {:cinv.f}
+		selectdo
+		selectempty
+			message("Commercial invoice not valid")
+			set.input.error("",e)
+		endselect	
+	endif	
+	
+field.cinv.t:
+check.input:
+	if not isspace(cinv.t) then
+		select tdisg831.cinv
+		from    tdisg831
+		where   tdisg831._index3 = {:cinv.t}
+		selectdo
+		selectempty
+			message("Commercial invoice not valid")
+			set.input.error("",e)
+		endselect	
+	endif	
+
+field.bold.f:
+when.field.changes:
+   bold.t = bold.f
+   
+ check.input:
+	if not isspace(bold.f) then
+		select tdisg831.bold
+		from    tdisg831
+		where   tdisg831.bold = {:bold.f}
+		selectdo
+		selectempty
+			message("Bill of Lading No. not valid")
+			set.input.error("",e)
+		endselect	
+	endif	
+	
+field.bold.t:
+check.input:
+	
+	if not isspace(bold.t) then
+		select tdisg831.bold
+		from    tdisg831
+		where   tdisg831.bold = {:bold.t}
+		selectdo
+		selectempty
+			message("Bill of Lading No. not valid")
+			set.input.error("",e)
+		endselect	
+	endif	  
+|****************************** function section ******************************
+
+functions:
+	
+
+function generate.file()
+{
+	err.file = bse.dir$() & str$(utc.num()) & ".xls"
+	
+	file.name = "c:\temp\" & str$(utc.num())  & ".xls"
+	
+	stat.fp = seq.open(err.file, "w+")
+	
+	process.file()
+	
+	message("Please refer to file %s in C:", file.name)
+	
+	seq.close(stat.fp)
+	ret2 = server2client(err.file,file.name,1)
+	ret2 = app_start(file.name,"c:","","","")
+}
+
+function process.file()
+{
+	generate.header()
+	read.main.table()
+	
+}
+
+function generate.header()
+{
+	if stat.fp >0 then
+		
+		line =concat$("	", 
+			sprintf$("Goods Assigned from(Exporter's Business Name,Address,Country)"),		|1
+			sprintf$("Goods Assigned from(Consignee Name,Address,Country)"),			|2	
+			sprintf$("Means of Transport and route(as far as known)"),				|3
+			sprintf$("Number and Type of Packages,description of goods(including Quantity where appropriate and HS Number of the importing Country"), 		|4
+			sprintf$("Origin Criterion"),						|5
+			sprintf$("Gross Weight or Other Quantity"),				|6
+			sprintf$("Number and Date Invoices"),					|7
+			sprintf$("Item"),							|8
+			sprintf$(""),								|9			
+			sprintf$("Declaration by the Exporter"),				|10
+			sprintf$("Under Line"),		|11
+			sprintf$("Label Partial Shipment"),				|12
+			sprintf$(""))								|9.1			|#ISGEC015031.n
+		line = strip$(shiftl$(line))
+		seq.puts(line, stat.fp)		
+	endif
+}
+
+
+function read.main.table()
+{
+   	domain	tccom.cadr	o.cadr.bpid,o.cadr.cons
+	total.pack = 0
+	custom_invoice = ""
+	lumpsum = "Lumpsum"
+	
+	i.heading = "COMMERCIAL INVOICE"
+	
+	select	tdisg831.bpid,tdisg831.cprj,tdisg831.invn,tdisg831.octy,tdisg831.dcty,
+		tdisg831.fovv,tdisg831.frgt,tdisg831.insu,
+		tdisg831.ofbp,tdisg831.cinv,tdisg831.lcno,
+		tdisg831.motp,tdisg831.xref,tdisg831.cind		|INV-6
+	from	tdisg831
+	where	tdisg831._index3 inrange {:cinv.f} and {:cinv.t}
+	and     tdisg831.bold    inrange {:bold.f} and {:bold.t}
+	order by tdisg831.cinv
+ 	selectdo
+		cinv.n = tdisg831.cinv
+		if cinv.p = cinv.n then
+			continue
+		endif	
+		select	tppdm740.ccur
+		from	tppdm740
+		where	tppdm740._index1 = {:tdisg831.cprj,:tdisg831.ofbp}
+		selectdo
+			select	tcmcs002.dsca
+			from	tcmcs002
+			where	tcmcs002._index1 = {:tppdm740.ccur}
+			selectdo
+			selectempty
+				tcmcs002.dsca = ""
+			endselect
+		endselect	
+		description()
+		select	tpisg036.exad,tpisg036.exp1,tpisg036.exp2,tpisg036.head,tpisg036.txta
+		from	tpisg036
+		where	tpisg036._index1 = {:tdisg831.cprj}
+		selectdo			
+		endselect
+		
+		select	tdisg825.*
+		from	tdisg825
+		where	tdisg825._index1 = {:tdisg831.lcno}
+		selectdo
+			inco_term = tdisg825.inco
+			mode = tdisg825.mpay
+			
+			exp1 = tdisg825.exp1			|INV-1.sn
+			exp2 = tdisg825.exp2
+			exp3 = tdisg825.exp3
+			exp4 = tdisg825.exp4
+			exp5 = tdisg825.exp5			|INV-1.en
+			
+			goods1 = tdisg825.des1			|INV-3.sn
+			goods2 = tdisg825.des2
+			goods3 = tdisg825.des3
+			goods4 = tdisg825.des4
+			goods5 = tdisg825.des5
+			goods6 = tdisg825.des6			|INV-3.en
+			
+			buyer1 = tdisg825.buy1
+			buyer2 = tdisg825.buyr2
+			buyer3 = tdisg825.buy3
+			buyer4 = tdisg825.buy4
+			buyer5 = tdisg825.buy5
+			
+			con1 = tdisg825.con1			|INV-2.sn
+			con2 = tdisg825.con2
+			con3 = tdisg825.con3
+			con4 = tdisg825.con4
+			con5 = tdisg825.con5			|INV-2.en
+			
+			select	tcmcs041.cdec,tcmcs041.dsca
+			from	tcmcs041
+			where	tcmcs041._index1 = {:tdisg825.cdec}
+			selectdo
+				delivery_term = tcmcs041.cdec
+			endselect
+			term_delivery = delivery_term(1;3) & " " & trim$(tdisg831.ctyd) & " " & trim$(inco_term)
+		selectempty
+			select	tpisg036.*
+			from	tpisg036
+			where	tpisg036._index1 = {:tdisg831.cprj}
+			selectdo
+				inco_term = tpisg036.inco
+				mode = tpisg036.mpay
+				
+				exp1 = tpisg036.exp5
+				exp2 = tpisg036.exp6
+				exp3 = tpisg036.exp7
+				exp4 = tpisg036.exp8
+				exp5 = tpisg036.exp9
+				
+				goods1 = tpisg036.good1
+				goods2 = tpisg036.good2
+				goods3 = tpisg036.good3
+				goods4 = tpisg036.good4
+				goods5 = tpisg036.good5
+				goods6 = tpisg036.good6
+				
+				buyer1 = tpisg036.buyr1			|INV-8.sn
+				buyer2 = tpisg036.buyr2
+				buyer3 = tpisg036.buyr3
+				buyer4 = tpisg036.buyr4
+				buyer5 = tpisg036.buyr5			|INV-8.en
+				
+				con1 = tpisg036.cons1
+				con2 = tpisg036.cons2
+				con3 = tpisg036.cons3
+				con4 = tpisg036.cons4
+				con5 = tpisg036.cons5
+				
+				select	tcmcs041.cdec,tcmcs041.dsca
+				from	tcmcs041
+				where	tcmcs041._index1 = {:tpisg036.cdec}
+				selectdo
+					delivery_term = tcmcs041.cdec
+				endselect
+				term_delivery = delivery_term(1;3) & " " & trim$(tdisg831.ctyd) & " " & trim$(inco_term)
+			endselect
+			
+		endselect
+		cinv.p = tdisg831.cinv
+		get_insurance_freight()								|#ISGEC015031.n
+		lines.get.data()
+		package_no_print_commercial()
+		print.detail()
+		initialise()
+	endselect
+	
+	
+	
+| 	get_insurance_freight()
+| 	get_payment_break_up()
+| 	template()
+	
+	
+
+}
+
+function package_no_print_commercial()
+{
+	select	tdisg864.type
+	from	tdisg864
+	selectdo
+		tot.nopk = 0
+		select	tdisg832.rcno,tdisg832.rcln					|#ISG001080.n
+		from	tdisg832
+| 		where	tdisg832._index1 = {:tdisg831.edrn}
+		where	tdisg832._index3 = {:tdisg831.cinv}
+		selectdo
+			select	tdisg007.type,sum(tdisg007.nopk):tmp.nopk
+			from	tdisg007
+			where	tdisg007._index1 = {:tdisg832.rcno,:tdisg832.rcln}
+			and	tdisg007.type = :tdisg864.type
+			and	tdisg007.slct = tcyesno.yes
+			group by tdisg007.type
+			selectdo
+			selectempty
+				tmp.nopk = 0
+			endselect
+			tot.nopk = tot.nopk + tmp.nopk
+		endselect
+		if	tot.nopk <> 0	then
+			q = 0
+			p = 1
+			total.pack = total.pack + tot.nopk
+| 			rprt_send()	
+		endif	
+	endselect
+	q = 0
+	p = 2
+	total.pack = total.pack
+| 	rprt_send()
+}
+
+function	get_insurance_freight()
+{
+	text3 = ""										|#ISGEC015031.sn
+	text(1,1) =""										
+	text(1,2)= ""										|#ISGEC015031.en
+	i.fob.amount = i.fob.amount + tdisg831.fovv
+		
+	i.freight = i.freight + tdisg831.frgt
+
+	i.insurance = i.insurance + tdisg831.insu
+	
+	if not isspace(tdisg831.lcno) then
+		select	tdisg825.temp
+		from	tdisg825
+		where	tdisg825._index1 = {:tdisg831.lcno}
+		selectdo
+		endselect
+		
+		select	tdisg861.head,tdisg861.fval,tdisg861.lfre,tdisg861.lprc,tdisg861.pfob,tdisg861.ltva,
+			tdisg861.text
+		from	tdisg861
+		where	tdisg861._index1 = {:tdisg825.temp,:tdisg831.motp}
+		selectdo
+			text.to.buf("tdisg861.text","2",2,text)					|#ISGEC015031.sn
+			for xyz = 1 to 2
+				if	xyz = 1	then
+					text1 = text(1,xyz)
+				else	
+					text2 = text(1,xyz)
+				endif	
+			endfor										|#ISGEC015031.en
+		selectempty
+			tdisg861.head = ""
+			text(1,1) =""									|#ISGEC015031.sn
+			text(1,2)= ""									|#ISGEC015031.en
+		endselect
+		text3 = strip$(shiftl$(text1)) & " " & strip$(shiftl$(text2))				|#ISGEC015031.n
+	else
+		select	tpisg036.temp
+		from	tpisg036
+		where	tpisg036._index1 = {:tdisg831.cprj}
+		selectdo
+		endselect
+		
+		select	tdisg861.head,tdisg861.fval,tdisg861.lfre,tdisg861.lprc,tdisg861.pfob,tdisg861.ltva,
+			tdisg861.text
+		from	tdisg861
+		where	tdisg861._index1 = {:tpisg036.temp,:tdisg831.motp}
+		selectdo
+			text.to.buf("tdisg861.text","2",2,text)					|#ISGEC015031.sn
+			for xyz = 1 to 2
+				if	xyz = 1	then
+					text1 = text(1,xyz)
+				else	
+					text2 = text(1,xyz)
+				endif	
+			endfor										|#ISGEC015031.en	
+		selectempty
+			tdisg861.head = ""
+			text(1,1) =""									|#ISGEC015031.sn
+			text(1,2)= ""									|#ISGEC015031.en
+		endselect
+		text3 = strip$(shiftl$(text1)) & strip$(shiftl$(text2))				|#ISGEC015031.n	
+	endif
+	
+
+}
+
+|GET PAYMENT BREAKUP
+function	get_payment_break_up()
+{
+	domain	tcpono	v.ptcd
+	if not isspace(tdisg831.lcno) then
+		v.ptcd = 0
+| 		get.max.ptcd(tdisg831.cinv,tdisg831.lcno,v.ptcd)
+		select	tdisg865.ptcd,tdisg865.amnt,tdisg865.desc
+		from	tdisg865
+		where	tdisg865._index1 = {:tdisg831.cinv,:tdisg831.lcno}
+		selectdo
+| 			p = 6
+			p = 7
+| 			get.amount.in.word1(tdisg865.amnt)
+			if v.ptcd > tdisg865.ptcd then
+				rprt_send()
+			endif	
+			
+		endselect
+	else
+		v.ptcd = 0
+| 		get.max.ptcd(tdisg831.cinv,tdisg831.cprj,v.ptcd)
+		select	tdisg865.ptcd,tdisg865.amnt,tdisg865.desc
+		from	tdisg865
+		where	tdisg865._index1 = {:tdisg831.cinv,:tdisg831.cprj}
+		selectdo
+| 			p = 6
+			p = 7
+| 			get.amount.in.word1(tdisg865.amnt)
+			if v.ptcd > tdisg865.ptcd then
+				rprt_send()
+			endif
+		selectempty
+				
+		endselect
+	endif		
+	}
+
+function description()
+{
+	select tpisg037.desc
+	from	tpisg037
+	where	tpisg037._index1 = {:tdisg831.ptld}
+	selectdo
+		desc = tpisg037.desc
+	endselect
+	
+	select tpisg037.desc
+	from	tpisg037
+	where	tpisg037._index1 = {:tdisg831.ptds}
+	selectdo
+		desc1 = tpisg037.desc
+	endselect
+
+	select tpisg037.desc
+	from	tpisg037
+	where	tpisg037._index1 = {:tpisg036.pldv}
+	selectdo
+		desc2 = tpisg037.desc
+	endselect
+
+	select tcmcs010.dsca
+	from	tcmcs010
+	where	tcmcs010._index1={:tdisg831.octy}
+	selectdo
+		desc3= tcmcs010.dsca					|INV-4
+	selectempty
+		desc3 = " "
+		tcmcs010.dsca=" "	
+	endselect	
+	
+	select tcmcs010.dsca
+	from	tcmcs010
+	where	tcmcs010._index1={:tdisg831.dcty}
+	selectdo
+		desc4 = tcmcs010.dsca
+	selectempty
+		desc4 =" "
+		tcmcs010.dsca=" "		
+	endselect	
+}
+
+
+function print.detail()
+{
+| 	line = concat$("	",
+| 		sprintf$("%s%s%s%s%s",exp1,exp2,exp3,exp4,exp5),					|1			
+| 		sprintf$("%s%s%s%s%s",con1,con2,con3,con4,con5),  					|2
+| 		sprintf$("%s",""),  									|3
+| 		sprintf$("%s%s%s%s%s",goods1,goods2,goods3,goods4,goods5),				|4
+| 		sprintf$("%s",desc3),									|5
+| 		sprintf$("%d%s",tot_gwgt,"Kgs"),								|6
+| 		sprintf$("%s%s%D(%02d/%02m/%04Y)",tdisg831.cinv,"  ",tdisg831.cind),			|7
+| 		sprintf$("%s",tpisg031.dsca),								|8	
+| 		sprintf$("%s%s%s%s%s%s","Notify Party ",buyer1,buyer2,buyer3,buyer4,buyer5),		|9
+| 		sprintf$("%s",desc4))								|10
+
+| 		line = strip$(shiftl$(line))
+| 		seq.puts(line, stat.fp)
+
+ 	line = concat$("	",
+ 		sprintf$("%s",strip$(shiftl$(exp1)) & " " & strip$(shiftl$(exp2)) & " " & strip$(shiftl$(exp3)) & " " & strip$(shiftl$(exp4)) & " " & strip$(shiftl$(exp5))), |1	
+ 		sprintf$("%s",strip$(shiftl$(con1)) & " " & strip$(shiftl$(con2)) & " " & strip$(shiftl$(con3)) & " " & strip$(shiftl$(con4)) & " " & strip$(shiftl$(con5))), |2
+ 		sprintf$("%s","SEA/ROAD"),  									|3
+ 		sprintf$("%s",strip$(shiftl$(goods1)) & " " & strip$(shiftl$(goods2)) & " " & strip$(shiftl$(goods3)) & " " & strip$(shiftl$(goods4)) & " " & strip$(shiftl$(goods5))),				|4
+ 		sprintf$("%s",desc3),									|5
+ 		sprintf$("%d%s",tot_gwgt,"Kgs"),								|6
+ 		sprintf$("%s%s%D(%02d/%02m/%04Y)",tdisg831.cinv," Dated ",tdisg831.cind),			|7
+|  		sprintf$("%s",tpisg031.dsca),								|8			|#ISGEC015031.n	
+ 		sprintf$("%s",dsca),								|8				|#ISGEC015031.n
+ 		sprintf$("%s","Notify Party :-" & strip$(shiftl$(buyer1)) & " " & strip$(shiftl$(buyer2)) & " " & strip$(shiftl$(buyer3)) & " " & strip$(shiftl$(buyer4)) & " " & strip$(shiftl$(buyer5))), |9	
+		sprintf$("%s",desc4),
+		sprintf$("%s","=============================="),
+		sprintf$("%s","(PARTIAL SHIPMENT)"),		
+		sprintf$("%s",strip$(shiftl$(text3)))) |9.1				|10
+ 		line = strip$(shiftl$(line))
+ 		seq.puts(line, stat.fp)	
+
+
+}
+function initialise()
+{
+	exp1 = ""
+	exp2 = ""
+	exp3 = ""
+	exp4 = ""
+	exp5 = ""
+	con1 = ""
+	con2 = ""
+	con3 = ""
+	con4 = ""
+	con5 = ""
+	goods1 = ""
+	goods2 = ""
+	goods3 = ""
+	goods4 = ""
+	goods5 = ""
+	desc3 = ""
+	tot_gwgt = 0
+	tdisg831.cinv = ""
+	tdisg831.cind = 0
+	tpisg031.dsca = ""
+	buyer1 = ""
+	buyer2 = ""
+	buyer3 = ""
+	buyer4 = ""
+	buyer5 = ""
+	desc4 = ""
+
+}
+
+function lines.get.data()
+{
+	domain tcmcs.str70 text4(10)
+	string text5(1000)
+
+	tot_nwgt = 0
+	tot_gwgt = 0
+	dsca = ""										|#ISGEC015031.n
+	i = 0 											|#ISGEC015031.n
+	select	tdisg832.qnty,tdisg832.slrt,tdisg832.bivl,
+		tdisg832.pkgn,tdisg832.item,tdisg832.ninc,
+		tdisg832.nwgt,tdisg832.gwgt,tdisg832.pqty,tdisg832.dsca,
+		tdisg832.pcun,tcibd001.dsca,
+		tcibd001.cuni
+	from	tdisg832,tcibd001
+	where	tdisg832._index3 = {:tdisg831.cinv}
+	and	tdisg832.bivl <> 0
+	and	tdisg832.item refers to tcibd001 UNREF CLEAR
+	selectdo
+		i.advance.payment = 0.00
+		i.ret.payment = 0.00
+		
+		tot_nwgt = tot_nwgt + tdisg832.nwgt
+		tot_gwgt = tot_gwgt + tdisg832.gwgt				|INV-5
+		
+		srno = srno + 1
+		i.total.fob = i.total.fob + tdisg832.bivl
+		i.total.cif = i.total.fob - (tdisg831.ded1 + tdisg831.ded2)
+		i.advance.payment = (i.total.fob * o.total.adv.perc)/100
+		
+		i.ret.payment = (i.total.fob * o.total.ret.perc)/100
+		
+		select	tpisg031.dsca,tpisg031.txta
+		from	tpisg031
+		where	tpisg031._index1 = {:tdisg831.cprj,:tdisg831.ofbp,:tdisg832.ninc}
+		selectdo
+			text5 = ""
+			for xyz = 1 to 10
+				text4(1,xyz) = ""
+			endfor
+			
+			text.to.buf("tpisg031.txta","2",10,text4)
+			for xyz = 1 to 10
+				|message(text4(1,xyz))
+				text5 = text5 & " " & text4(1,xyz)
+			endfor
+			|-----------
+								|INV-7
+			if i = 0 then									|#ISGEC015031.sn
+				dsca = strip$(tpisg031.dsca) & " " & strip$(shiftl$(text5))
+				i = i + 1
+			else	
+				dsca = 	 dsca & "," &	strip$(tpisg031.dsca) & " " & strip$(shiftl$(text5)) 						
+			endif										|#ISGEC015031.en
+		selectempty
+			if i = 0 then									|#ISGEC015031.sn
+				dsca = 	 strip$(tdisg832.dsca)	
+				i = i + 1
+			else	
+				dsca = 	 dsca & "," &	strip$(tdisg832.dsca) 						
+			endif										|#ISGEC015031.en
+			
+| 			tpisg031.dsca = tdisg832.dsca							|#ISGEC015031.o
+			description3 = tpisg031.dsca(51;100)	
+		endselect
+	
+	endselect
+
+}

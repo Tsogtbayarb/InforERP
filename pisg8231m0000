@@ -1,0 +1,78 @@
+|******************************************************************************
+|* tdisg8231m000  0  VRC B61U a7 live
+|* Generate Commercial Invoice
+|* Tools                         
+|* 2014-06-11
+|******************************************************************************
+|* Main table tdisg831 Billing Advice, Form Type 4
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+  table   	ttdisg831 | Billing Advice
+  table		ttdisg800
+
+
+extern	domain	tccom.bpid		bpid.f
+extern	domain	tccprj			cprj.f
+
+extern	domain	tcorno			o.cinv
+
+#include <bic_dam>
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section **********************************
+
+choice.cont.link:
+on.choice:
+	start.synchronized.child("tdisg8131m200","cprj.f","tdisg831.cprj","bpid.f","tdisg831.bpid",MULTI_OCC)
+after.choice:
+	select 	tdisg831.edrn
+	from	tdisg831
+	where	tdisg831._index4 = {:cprj.f,:bpid.f}
+	and	tdisg831.sele = tcyesno.yes
+	and	tdisg831.link = tcyesno.no
+	as set with 1 rows
+	selectdo
+		tcmcs.dll0095.read.parm("tdisg800")
+		o.cinv = tdisg800.ciri
+		if  tcmcs.dll0050.check.and.generate.order.number(
+				3, o.cinv, tdisg800.cnrg, 
+				9, o.cinv) then
+| 			return(DALHOOKERROR)
+			show.dal.messages(MSG.ALL)
+			abort.transaction()
+			choice.again()
+		else
+			update.custom.invoice.number()
+		endif
+	endselect
+
+	commit.transaction()
+
+functions:
+function update.custom.invoice.number()
+{
+	select 	tdisg831.cinv,
+		tdisg831.link
+| 		tdisg831.edrn
+	from	tdisg831 for update
+	where	tdisg831._index4 = {:cprj.f,:bpid.f}
+	and	tdisg831.sele = tcyesno.yes
+	and	tdisg831.link = tcyesno.no
+	selectdo
+		tdisg831.cinv = o.cinv
+		tdisg831.link = tcyesno.yes
+		db.update(ttdisg831,db.retry,e)
+	endselect
+	
+}
+	

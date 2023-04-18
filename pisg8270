@@ -1,0 +1,167 @@
+|******************************************************************************
+|* tdisg827  0  VRC B61U a7 live
+|* PGB Terms Details
+|* tools1
+|* 14-05-01 [15:35]
+|******************************************************************************
+|* Script Type: DAL
+|******************************************************************************
+|* IDEN ISG001018    Somak Mondal	01-05-2014	VRC B61U a7 live
+|******************************************************************************
+#include <bic_dal2>
+
+	table 	ttdisg827 | PGB Terms Details
+	table 	ttdisg800 | Export Parameter
+	table	ttfcmg011
+	domain	tfgld.date	curr.date
+|*****************************  Object Hooks *********************************	
+function extern long before.open.object.set()
+{	
+	tcmcs.dll0095.read.parm("tdisg800")
+	curr.date = date.num()
+	dal.field.depends.on("tdisg827.dsc1",
+				HOOK_UPDATE +
+				HOOK_IS_DERIVED,
+					"tdisg827.iscd")	
+	return(0)
+}
+
+function extern long before.save.object(long type)
+{
+	if type = DAL_NEW then
+		if  tcmcs.dll0050.check.and.generate.order.number(
+				3, tdisg827.pbgn, tdisg800.pgbr, 
+				9, tdisg827.pbgn ) then
+			return(DALHOOKERROR)
+		endif
+	endif
+	
+	return(0)
+}
+
+function extern long before.new.object()
+{
+	tdisg827.pbgn = tdisg800.pgbs
+	tdisg827.isdt = date.num()	
+	return(0)
+}
+|************************** Method *******************************
+function extern boolean method.is.allowed(long method)
+{
+	on case method
+	case DAL_UPDATE:
+		if tdisg827.exdt <> 0 and tdisg827.exdt < curr.date then
+			return(false)
+		endif
+		break
+	case DAL_DESTROY:
+		if tdisg827.exdt <> 0 and tdisg827.exdt < curr.date then
+			return(false)
+		endif
+		break
+	endcase	
+	return(true)
+}
+|*************************** tdisg827.pbgn Hooks *****************************
+function extern boolean tdisg827.pbgn.is.mandatory()
+{
+	if isspace(tdisg827.pbgn) then
+		return(DALHOOKERROR)
+	endif
+	return(false)
+}
+|*************************** tdisg827.exdt Hooks *****************************
+function extern boolean tdisg827.exdt.is.valid()
+{
+	if  tdisg827.exdt < tdisg827.isdt then
+		dal.set.error.message("@Expiry Date should not be before Effective Date")
+		return(false)
+	endif
+	return(true)
+}
+
+function extern boolean tdisg827.exdt.is.mandatory(long type)
+{
+	if tdisg827.exdt = 0 then
+		dal.set.error.message("@ Expiry Date is Mandatory")
+		return(true)
+	endif
+	return(false)
+}
+
+
+|*************************** tdisg827.isdt Hooks *****************************
+
+function extern boolean tdisg827.isdt.is.mandatory(long type)
+{
+	if tdisg827.isdt = 0 then
+		dal.set.error.message("@ Issue Date is Mandatory")
+		return(true)
+	endif
+	return(false)
+}
+
+
+
+|******  tdisg826.dsc1   Issuing Bank Description *******************
+function extern tdisg827.dsc1.update()
+{
+	tdisg827.dsc1 = get.bank.description(tdisg827.iscd)
+}
+
+function extern boolean tdisg827.dsc1.is.derived()
+{
+	if not isspace(tdisg827.iscd) then
+		return(true)
+	endif
+	
+	return(false)
+}
+
+
+function extern boolean tdisg827.dsc1.is.mandatory(long type)
+{
+	if isspace(tdisg827.iscd) and isspace(tdisg827.dsc1) then
+		dal.set.error.message("@ Enter Issuing Bank Description")
+		return(true)
+	endif
+	return(false)	
+}
+
+
+|********** tdisg827.idat Invoked Date **************************************
+
+function extern boolean tdisg827.idat.is.derived()
+{
+	if tdisg827.stat = tdisg.pbf.stat.invoked then
+		return(false)
+	endif
+	
+	return(true)
+}
+
+function extern boolean tdisg827.idat.is.mandatory(long type)
+{
+	if 	tdisg827.stat = tdisg.pbf.stat.invoked  and 
+		tdisg827.idat = 0 then
+		dal.set.error.message("@ Kindly Enter Invoked Date")
+		return(true)
+	endif
+	
+	return(false)
+}
+|**********************  USER DEFINED FUNCTIONS *****************************
+
+function domain tfgld.desc get.bank.description(domain tcbank	i.bank)
+{
+	select 	tfcmg011.desc
+	from	tfcmg011
+	where	tfcmg011._index1 = {:i.bank}
+	as set with 1 rows
+	selectdo
+	selectempty
+		tfcmg011.desc = ""
+	endselect
+	
+	return(tfcmg011.desc)
+}

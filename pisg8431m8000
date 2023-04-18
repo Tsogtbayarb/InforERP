@@ -1,0 +1,179 @@
+|******************************************************************************
+|* tdisg8431m800  0  VRC B61U a7 isg 
+|* Details of Export Sale with Custom Data
+|* Installation user             
+|* 2014-10-21
+|******************************************************************************
+|* Main table tdisg831 Billing Advice, Form Type 4
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+	table   ttdisg831 | Billing Advice
+	table	ttdisg839
+	table	ttcmcs052
+	table	ttppdm740
+	table	ttccom100
+	table	ttdisg842
+
+	extern	domain	tccprj		cprj.f,cprj.t
+	extern	domain	tfgld.date	date.f,date.t
+	string		str(300), err.file(100), file.name(100), line1(2000)
+	long		ret2, stat.fp
+
+	#include<bic_desktop>
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.cont.process:
+on.choice:
+	generate.file()
+
+
+|****************************** field section *********************************
+
+|****************************** field section *********************************
+field.cprj.f:
+when.field.changes:
+   cprj.t = cprj.f
+   
+field.date.f:
+when.field.changes:
+   date.t = date.f
+
+|****************************** function section ******************************
+
+functions:
+
+function generate.file()
+{
+	open.file()
+	generate.top.header()
+	read.main.table()
+	close.file()
+}
+
+function open.file()
+{
+	err.file = bse.tmp.dir$() & str$(utc.num()) & ".xls"
+	
+	file.name = "c:\temp\" & str$(utc.num())  & ".xls"
+	
+	stat.fp = seq.open(err.file, "w+")
+	if stat.fp >0 then
+ 		seq.seek(0, 0, stat.fp)
+	endif
+}
+
+function	generate.top.header()
+{
+	line1 =	concat$("	",
+		sprintf$("Project"),			|1		
+		sprintf$("Description"),		|2		
+		sprintf$("Country"),			|3		
+		sprintf$("Billing Advice No."),	|4		
+		sprintf$("Final Invoice"),		|5		
+		sprintf$("Final Inv. Date"),		|6
+		sprintf$("Total Billing Value"),	|7
+		sprintf$("Currency"),			|8		
+		sprintf$("Bill of Ladding No."),	|9
+		sprintf$("Date"),		  	|10
+		sprintf$("Supplier Code"),		|11
+		sprintf$("Name"),			|12
+		sprintf$("Custom Invoice No."),	|13
+		sprintf$("Custom Inv. Date"),		|14
+		sprintf$("Custom Inv. Amount"),	|15
+		sprintf$("Shipping Bill No."),		|16
+		sprintf$("Shipping Date"))		|17
+		
+
+	line1 = strip$(shiftl$(line1))		
+	seq.puts(line1, stat.fp)	
+}
+
+
+function read.main.table()
+{
+	select	tdisg831.*
+	from	tdisg831
+	where	tdisg831._index4 inrange {:cprj.f} and {:cprj.t}
+	selectdo
+		select	tdisg839.*
+		from	tdisg839
+		where	tdisg839._index1 = {:tdisg831.bold}
+		and	tdisg839.pddt between :date.f and :date.t
+		selectdo
+			select	tcmcs052.dsca
+			from	tcmcs052
+			where	tcmcs052._index1 = {:tdisg831.cprj}
+			selectdo
+			selectempty
+				tcmcs052.dsca = ""
+			endselect	
+	
+			select tppdm740.ccur, tppdm740.pfbp, tccom100.nama
+			from   tppdm740, tccom100
+			where  tppdm740._index1 = {:tdisg831.cprj}
+			and	tppdm740.pfbp refers to tccom100
+			selectdo
+			selectempty
+				tppdm740.ccur = ""
+				tccom100.nama = ""
+			endselect
+	
+			select	tdisg842.scod
+			from	tdisg842
+			where	tdisg842._index1 = {:tdisg831.sbno}
+			selectdo
+			selectempty
+				tdisg842.scod = ""
+			endselect
+			
+			print.detail()
+		endselect
+	endselect
+
+}
+
+function print.detail()
+{
+	line1 =	concat$("	",
+		sprintf$("%s", tdisg831.cprj),				|1
+		sprintf$("%s", tcmcs052.dsca),				|2				
+		sprintf$("%s", tdisg831.octy),				|3				
+		sprintf$("%s", tdisg831.edrn),				|4				
+		sprintf$("%s", tdisg831.cinv),				|5				
+		sprintf$("%D(%02d/%02m/%04Y)", tdisg831.cind),		|6
+		sprintf$("%f", tdisg831.amti),				|7
+		sprintf$("%s", tppdm740.ccur),				|8				
+		sprintf$("%s", tdisg839.biln),				|9
+		sprintf$("%D(%02d/%02m/%04Y)", tdisg839.pddt),		|10
+		sprintf$("%s", tppdm740.pfbp),				|11	
+		sprintf$("%s", tccom100.nama),				|12
+		sprintf$("%s", tdisg831.invn),				|13
+		sprintf$("%D(%02d/%02m/%04Y)", tdisg831.invd),		|14
+		sprintf$("%f", tdisg831.amti),				|15
+		sprintf$("%s", tdisg842.scod),				|16
+		sprintf$("%D(%02d/%02m/%04Y)", tdisg831.shdt))		|17
+	
+		line1 = strip$(shiftl$(line1))
+		seq.puts(line1, stat.fp)
+
+}
+
+function close.file()
+{
+	seq.close(stat.fp)
+	ret2 = server2client(err.file,file.name,1)
+	ret2 = app_start(file.name,"c:","","","")
+}
+

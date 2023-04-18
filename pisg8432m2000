@@ -1,0 +1,1395 @@
+|******************************************************************************
+|* tdisg8432m200  0  VRC B61U a7 live
+|* Purchase to Sale Register 
+|* Installation user             
+|* 2014-10-09
+|******************************************************************************
+|* Main table tdisg832 Billing Advice Lines, Form Type 4
+|******************************************************************************
+|* ISGEC001189, IT0205, Arjit Gupta, VRC B61U a7 isg, Dt. 20-12-2014
+|* Add Receipt No. Filter and incase of FOC/FIV only print Code not enum
+|* Description as suggested by Mr. Nishant Verma & Mr. Deepak Rawat.
+|*
+|* ISGEC01036, IT0301, Ritu Sharma, VRC B61U a7 isg, Dt. 31-01-2015
+|* Added the filters for Invoice Date and Invoice Number, And have corrected the 
+|* logic for Invoice Numbers.
+|*
+|* ISGEC01072, IT0375, Sandhyarani, Dt. 03-03-2015, VRC B61U a7 live
+|* Add Transport Column
+|******************************************************************************
+|*IDENT	PATCH002014, Mani sharma, Dt. 23-03-2015 , VRC B61U a7 isg
+|* Add Fields in report
+|******************************************************************************
+|*ID PATCH001067, Ankit sharma, 2015-05-11 , VRC B61U a7 isg
+|* Add Fields in report
+
+|* IDENT ISGEC015010,IT0289, Shilpa Janardanan, 26-05-2015, VRC B61U a7 live
+|* Date format to be changed into dd/mm/yy 
+|
+|* IDENT PATCH001068,IT0387,Radheshyam Yadav,04-06-2015,VRC B61U a7 isg
+|* add fields in report
+|*
+|* IDENT ISGEC015046,IT0302, Ankit SHarma, 25-08-2015, VRC B61U a7 live
+|* Added division column in report
+|*
+|* IDENT ISGEC015049, IT0388, Gokul Chaurasia, 28-08-2015, VRC B61U a7 isg
+|* Change Date format
+|****************************** declaration section ***************************
+declaration:
+	
+	table	ttdpur400
+	table	ttdpur401
+	table	ttdpur406
+	table	twhinh310
+	table	twhinh312
+	table	ttcibd001
+	table	ttccom100
+	table	ttccom130
+	table	ttppdm740
+	table	ttdisg832	|#ISGEC01036.sn
+	table	ttdisg831
+	table	ttfgld005	
+	table	ttpisg039	|#ISGEC01036.en
+	table   twhisg312
+	table   ttfisg001
+	table   ttpisg031
+	table   ttfacp200
+	table   ttfisg001	|#PATCH001067.sn		
+	table   ttfisg002
+	table   ttfisg003
+	table   twhinh310
+	table   ttccom139
+	table   tfmfmd047	|#PATCH001067.en
+        table   ttpisg045       |#PATCH001068.sn	
+        table   ttdisg839	 |#PATCH001068.en
+	
+	|******************* Form Variables ****************
+	extern	domain	tccprj		cprj.f
+	extern	domain	tccprj		cprj.t
+	extern	domain	tcorno		orno.f    fixed
+	extern	domain	tcorno		orno.t    fixed
+	extern	domain	tcdate		odat.f	
+	extern	domain	tcdate		odat.t	
+	extern	domain	tcorno		edrn.f    fixed
+	extern	domain	tcorno		edrn.t    fixed
+	extern	domain	tcdate		rcdt.f
+	extern	domain	tcdate		rcdt.t
+	extern	domain	tccom.bpid	suno.f
+	extern	domain	tccom.bpid	suno.t
+	extern	domain	tcyesno		all.rcpt
+	extern	domain	tcyesno		rcpt.conf
+	extern	domain	tcyesno		only.stck
+	extern	domain	tpproj.type	var.type
+	extern	domain	tcorno		rcno.f				|#ISGEC001189.n
+	extern	domain	tcorno		rcno.t				|#ISGEC001189.n
+	extern	domain	tcdsca		dsca1,dsca2			|#PATCH001067.sn
+	extern	domain	tfgld.docn	dino			|#PATCH001067.en
+	
+	
+	|*************** File Handling Variables *******************
+	string		str(300), err.file(100), file.name(100), line3(3000), line4(3000)
+	long		ret2, stat.fp
+	
+	|******************* Script Variables ***************
+	extern	domain	tcdate		v.odat.f
+	extern	domain	tcdate		v.odat.t
+	extern	domain	tcdate		v.rcdt.f
+	extern	domain	tcdate		v.rcdt.t
+	extern	domain	whinh.lstc	lsta.f
+	extern	domain	whinh.lstc	lsta.t
+	extern	domain	tcccty		ccty.f
+	extern	domain	tcccty		ccty.t
+	extern	domain	tcccty		ccty.exp
+	extern	domain	tcccur		ccur.f
+	extern	domain	tcccur		ccur.t
+	extern	domain	tcccur		ccur.exp
+		domain	tcbool		not.found
+		domain	tdisg.stat	tbl.stat
+		domain	tdisg.type	tbl.type
+		domain	tcorno		tbl.bold
+	extern	domain	tcyesno		conf.f	
+	extern	domain	tcyesno		conf.t	
+	|************** File Utilization Variables ******************
+	extern	domain	tccprj		rep.bprj			|1
+	extern	domain	tcdsca		rep.bpdc			|2	
+	extern	domain	tcmcs.str10	rep.bptp			|3	
+	extern	domain	tfgld.ttyp	rep.tptr			|4
+	extern	domain	tfgld.docn	rep.dptr			|4				
+	extern	domain	tcmcs.str12	rep.ptrn			|4				
+	extern	domain	tcmcs.str10	rep.ptdt			|5
+	extern	domain	tcmcs.str5	rep.ptfy			|6
+	extern	domain	tcmcs.str2	rep.ptfp			|7
+	extern	domain	tcorno		rep.born			|8				
+	extern	domain	tcmcs.str10	rep.odat			|9				
+	extern	domain	tccom.bpid	rep.bsup			|10				
+	extern	domain	tcnama		rep.bsnm			|11
+	extern	domain	tcmcs.str10	rep.rtyp			|12
+	extern	domain	whinh.shpm	rep.rcno			|13
+	extern	domain	tcpono		rep.rcln			|14
+	extern	domain	tcmcs.str10	rep.rcdt			|15
+	extern	domain	tcmcs.str15	rep.rstt			|16
+	extern	domain	tfacp.isup	rep.isup			|17
+	extern	domain	tcmcs.str10	rep.isdt			|18				
+	extern	domain	tcdsca		rep.grno			|19				
+	extern	domain	tcmcs.str10	rep.grdt			|20				
+	extern	domain	tcdsca		rep.fmst			|21				
+	extern	domain	tcdsca		rep.tost			|22				
+	extern	domain	tcitem		rep.item			|23
+	extern	domain	tcdsca		rep.itdsc			|24
+	extern	domain	tcqiv1		rep.qnty			|25	
+	extern	domain	tcamnt		rep.rprc			|26	
+	extern	domain	tcamnt		rep.rbmt			|27	
+	extern	domain	tcamnt		rep.rexc			|28	
+	extern	domain	tcamnt		rep.rcst			|29	
+	extern	domain	tcamnt		rep.rvat			|30	
+	extern	domain	tcamnt		rep.rsrv			|31	
+	extern	domain	tcamnt		rep.roth			|32	
+	extern	domain	tcamnt		rep.bamt			|33
+	extern	domain	tcorno		rep.edrn			|34
+	extern	domain	tcdsca		rep.stat			|35	
+	extern	domain	tccom.bpid	rep.cuno			|36
+	extern	domain	tcnama		rep.cnnm			|37
+	extern	domain	tcdsca		rep.blno			|38
+	extern	domain	tcmcs.str10	rep.bldt			|39
+	extern	domain	tcmcs.str12	rep.cinv			|40
+	extern	domain	tcmcs.str10	rep.cidt			|41
+	extern	domain	tcmcs.str12	rep.sinv			|42
+	extern	domain	tcmcs.str10	rep.sidt			|43
+	extern	domain	tcmcs.str5	rep.slfy			|44
+	extern	domain	tcmcs.str2	rep.slfp			|45
+	extern	domain	tcamnt		rep.bval			|46
+	extern	domain	tcamnt		rep.ed.reim			|47
+	extern	domain	tcamnt		rep.cst.reim			|48
+	extern	domain	tcamnt		rep.fgt.reim			|49
+	extern	domain	tcamnt		rep.misc.claim			|50
+	extern	domain	tcamnt		rep.cstm			|51
+	extern	domain	tcamnt		rep.vatm			|52
+	extern	domain	tcamnt		rep.serv			|53
+	extern	domain	tcamnt		rep.sale			|54
+	extern	domain	tcdsca		rep.loca			|55
+	extern	domain	tccom.bpid	rep.tran			|56		|#ISGEC01072.n
+	extern	domain	tcnama		rep.nama			|57		|#ISGEC01072.n
+	
+	extern domain 	tctran 		tran.f, tran.t			|#ISGEC01036.sn
+	extern domain 	tcgld.docn	docn.f, docn.t
+	extern domain 	tfgld.date	invd.f, invd.t, temp.date	|#ISGEC01036.en
+	extern domain  tcmcs.str10     rep.irdate,rep.crdt,irdate
+	extern domain  whinh.pksp      rep.irno
+	extern domain tfgld.docn      ir.var
+	extern domain tppdm.cspa      element
+	extern domain tcpono      schedule.no
+	extern domain tcdesc          rep.schedule.dsca
+	extern domain tcamnt 		rep.ptr.amnt
+	extern domain tcmcs.str3      ptr.type
+	extern domain tcorno       	ptr.docn    
+	long ptr.len
+	extern domain tfgld.docn      in.docn.v
+	
+	extern domain	tcmcs.str4	mm,dd,yy
+	extern domain tcmcs.str30m	rep.divs					|#ISGEC015046.n
+	
+|*************** Include **************
+#include<bic_desktop>
+|****************************** program section ********************************
+
+before.display.object:
+	set.enable.disable.fields()
+|****************************** group section **********************************
+
+group.1:
+init.group:
+	get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.cont.process:
+before.choice:
+	if	all.rcpt = tcyesno.yes	or
+		only.stck = tcyesno.yes	or
+		rcpt.conf = tcyesno.yes	then
+	else	
+		message("Please Check All Receipt or All Confirm Receipt or Only Stock")
+		choice.again()
+	endif
+	
+	
+on.choice:
+	generate.file()
+
+
+|****************************** field section *********************************
+field.cprj.f:
+when.field.changes:
+	cprj.t = cprj.f
+	
+field.orno.f:
+when.field.changes:
+	orno.t = orno.f	
+	
+before.zoom:
+	str = "tdpur400.orno in ("
+	str = str & "select tdpur401.orno from tdpur401 where tdpur401._index5 inrange '" &cprj.f&"' and '"&cprj.t&"')"
+	query.extend.where.in.zoom(str)
+	
+field.orno.t:
+before.zoom:
+	str = "tdpur400.orno in ("
+	str = str & "select tdpur401.orno from tdpur401 where tdpur401._index5 inrange '" &cprj.f&"' and '"&cprj.t&"')"
+	query.extend.where.in.zoom(str)	
+	
+field.odat.f:
+when.field.changes:
+	odat.t = odat.f	
+
+field.edrn.f:
+when.field.changes:
+	edrn.t = edrn.f
+
+field.rcdt.f:
+when.field.changes:
+	rcdt.t = rcdt.f
+	
+field.suno.f:
+when.field.changes:
+	suno.t = suno.f
+	
+					|#ISGEC001189.sn
+field.rcno.f:
+when.field.changes:
+	rcno.t = rcno.f
+					|#ISGEC001189.en
+	
+field.all.rcpt:
+when.field.changes:
+	set.enable.disable.fields()
+	
+field.only.stck:
+when.field.changes:
+	set.enable.disable.fields()
+	
+field.rcpt.conf:
+when.field.changes:
+	set.enable.disable.fields()	
+	
+	
+field.tran.f:						|#ISGEC01036.sn
+when.field.changes:
+	tran.t=tran.f
+	
+field.docn.f:	
+when.field.changes:
+	docn.t=docn.f	
+	
+field.invd.f:	
+when.field.changes:
+	invd.t=invd.f					|#ISGEC01036.en
+		
+	
+|****************************** function section ******************************
+
+functions:
+
+function generate.file()
+{
+	open.file()
+	generate.header()
+	read.main.table()
+	close.file()
+}
+
+function read.main.table()
+{
+	Get_Wrh_Receipt()
+	Get_Pur_Receipt()
+}
+
+function Get_Wrh_Receipt()
+{
+	domain	tcccty		tmp.ccty
+	domain	tcamnt		tmp.st.reim, tmp.vat.reim, tmp.exc.amnt
+	
+	
+	get.date.utc(odat.f, 00, 00, 00, v.odat.f)
+	get.date.utc(odat.t, 23, 59, 59, v.odat.t)
+	get.date.utc(rcdt.f, 00, 00, 00, v.rcdt.f)
+	get.date.utc(rcdt.t, 23, 59, 59, v.rcdt.t)
+	
+	get.filter.field()
+	
+	db.set.to.default(twhinh312)
+	db.set.to.default(ttdpur400)
+	db.set.to.default(ttdpur401)
+	db.set.to.default(ttcibd001)
+	select	whinh312.rcno, whinh312.rcln, whinh312.psno, whinh312.lsta,
+		whinh312.orno, whinh312.pono, whinh312.item, whinh312.qrec, 
+		whinh312.ardt, tdpur401.cprj, tdpur400.otbp, tdpur400.odat, 
+		tcibd001.dsca
+	from	whinh312, tdpur401, tdpur400, tcibd001
+	where	whinh312._index4 inrange {whinh.oorg.purchase, :orno.f}	and
+					{whinh.oorg.purchase, :orno.t}
+	and	whinh312.ardt inrange :v.rcdt.f	and	:v.rcdt.t
+	and	whinh312._index1 inrange {:rcno.f}	and	{:rcno.t}		|#ISGEC001189.n
+	and	whinh312._index7 inrange {:lsta.f}	and	{:lsta.t}
+	and	whinh312.item refers to tcibd001 Unref Clear
+	and	whinh312.orno = tdpur401.orno 
+	and	whinh312.pono = tdpur401.pono 
+	and	whinh312.seqn = tdpur401.sqnb 
+	and	tdpur401._index5 inrange {:cprj.f}	and	{:cprj.t}
+	and	whinh312.orno refers to tdpur400
+	and	tdpur400.odat inrange :v.odat.f	and	:v.odat.t
+	and	tdpur400._index2 inrange {:suno.f}	and	{:suno.t}
+	selectdo
+		
+		db.set.to.default(ttppdm740)
+		select	tppdm740.ccur, tppdm740.ofbp, tppdm740.rtyp
+		from	tppdm740
+		where	tppdm740._index1 = {:tdpur401.cprj}
+		and	(tppdm740.ccur	inrange :ccur.f	and	:ccur.t
+		and	tppdm740.ccur <> :ccur.exp)
+		selectdo
+			tmp.ccty = ""
+			not.found = false
+			if	tppdm740.ccur = "INR"	then
+				select	prj_tccom130.ccty:tmp.ccty
+				from	tccom100 prj_tccom100, tccom130 prj_tccom130
+				where	prj_tccom100._index1 = {:tppdm740.ofbp}
+				and	prj_tccom100.cadr refers to prj_tccom130
+				and	prj_tccom130.ccty inrange :ccty.f	and	:ccty.t
+				and	prj_tccom130.ccty <> :ccty.exp
+				selectdo
+				selectempty
+					not.found = true	
+				endselect
+				if	not.found	and var.type <> tpproj.type.both	then
+					continue
+				endif
+			endif	
+			Initialize_Variables()
+			rep.bprj = tdpur401.cprj
+			rep.bpdc = tdisg.dll0003.get.project.desc(tdpur401.cprj)
+													|#ISGEC015046.en
+			select	tppdm600.cdf_divs
+			from	tppdm600
+			where	tppdm600._index1 = {:tdpur401.cprj}
+			selectdo
+				get.var(pid,"tppdm600.cdf_divs",rep.divs)
+			selectempty
+				rep.divs = ""	
+			endselect	
+													|#ISGEC015046.en
+			if	(tmp.ccty = "IN ")	or
+				(tppdm740.ccur = "INR")	then
+				rep.bptp = "Domestic"
+			else
+				rep.bptp = "Export"
+			endif	
+			
+			tdisg.dll0003.Get_PTR_Detail(whinh312.rcno, whinh312.rcln, whinh312.psno, rep.ptrn, rep.ptdt,
+					rep.ptfy, rep.ptfp)
+			rep.irno = whinh312.psno
+			ptr.len = len(rep.ptrn)								|PATCH002014.sn
+			ptr.type = rep.ptrn(1;3)
+			ptr.docn = rep.ptrn(4;ptr.len)
+			get.ptr.amount(ptr.type,ptr.docn,whinh312.psno)
+			ir.var = lval(whinh312.psno)
+			|*****	ISGEC015010.sn *******
+			if not isspace(rep.ptdt) then
+				mm = rep.ptdt(1;2)
+				dd = rep.ptdt(4;2)
+				yy = rep.ptdt(7;4)
+				rep.ptdt = dd& "/" & mm & "/" & yy
+			endif
+			|*****	ISGEC015010.en ********
+			
+			select tfisg001.irdt
+			from   tfisg001
+			where  tfisg001._index1 = {:ir.var}
+			selectdo	
+| 				rep.irdate = sprintf$("%u(%02m/%02d/%04Y)", tfisg001.irdt)		|#ISGEC015010.o
+				rep.irdate = sprintf$("%u(%02d/%02m/%04Y)", tfisg001.irdt)		|#ISGEC015010.n
+			selectempty
+				rep.irdate = ""
+			endselect						
+			get.elememt(whinh312.rcno,whinh312.rcln)				|PATCH002014.en
+			
+			rep.born = whinh312.orno
+| 			rep.odat = sprintf$("%u(%02m/%02d/%04Y)", tdpur400.odat)		|#ISGEC015010.o
+			rep.odat = sprintf$("%u(%02d/%02m/%04Y)", tdpur400.odat)		|#ISGEC015010.n
+			rep.bsup = tdpur400.otbp
+			rep.bsnm = tdisg.dll0003.get.bp.name(tdpur400.otbp)
+			rep.rtyp = "Warehouse"
+			rep.rcno = whinh312.rcno
+			rep.rcln = whinh312.rcln
+| 			rep.rcdt = sprintf$("%u(%02m/%02d/%04Y)", whinh312.ardt)		|#ISGEC015010.o
+			rep.rcdt = sprintf$("%u(%02d/%02m/%04Y)", whinh312.ardt)		|#ISGEC015010.n
+			rep.rstt = enum.descr$("whinh.lstc", whinh312.lsta)	
+			
+			tdisg.dll0003.Get_Supplier_Inv_Detail(whinh312.psno, rep.isup, rep.isdt)
+			
+| 			tdisg.dll0003.Get_gr_detail(whinh312.psno, rep.grno, rep.grdt, rep.fmst, rep.tost)				|#ISGEC01072.o
+			tdisg.dll0003.Get_gr_detail(whinh312.psno, rep.grno, rep.grdt, rep.fmst, rep.tost, rep.tran, rep.nama)		|#ISGEC01072.n	
+			rep.item = whinh312.item
+			rep.itdsc = tcibd001.dsca
+			
+			
+			|*****	ISGEC015010.sn *******
+			if not isspace(rep.grdt) then
+				mm = rep.grdt(1;2)
+				dd = rep.grdt(4;2)
+				yy = rep.grdt(7;4)
+				rep.grdt = dd& "/" & mm & "/" & yy
+			endif
+			mm = ""
+			dd = ""
+			yy =""
+			if not isspace(rep.isdt) then
+				mm = rep.isdt(1;2)
+				dd = rep.isdt(4;2)
+				yy = rep.isdt(7;4)
+				rep.isdt = dd& "/" & mm & "/" & yy
+			endif
+			
+			|*****	ISGEC015010.en ********
+			tdisg.dll0002.Get_Warehouse_Receipt(whinh312.rcno, whinh312.rcln, rep.qnty, rep.rprc, rep.rbmt, rep.rexc,
+							rep.rcst, rep.rvat, rep.rsrv, rep.roth, rep.bamt)
+			
+			tbl.stat = empty
+			tbl.type = empty
+			tbl.bold = ""
+			tmp.st.reim = 0
+			tmp.vat.reim = 0
+			tmp.exc.amnt = 0
+			tdisg.dll0003.Get_Billing_Advice_Detail(whinh312.rcno, whinh312.rcln, whinh312.orno,
+						whinh312.pono, tdpur401.cprj,
+						tppdm740.ofbp, tppdm740.ccur, tppdm740.rtyp,
+						tbl.stat, tbl.type, tbl.bold,
+						rep.edrn, rep.stat, rep.cinv, rep.cidt, rep.sidt, 
+						rep.slfy, rep.slfp, rep.sinv, rep.blno, rep.bldt,
+						rep.cuno, rep.cnnm, rep.loca, rep.bval, rep.ed.reim,
+						tmp.st.reim, rep.cst.reim, tmp.vat.reim, rep.fgt.reim, 
+						tmp.exc.amnt, rep.serv, rep.cstm, rep.vatm, rep.misc.claim)
+						
+			get.invoice.number(	whinh312.rcno, whinh312.rcln,			|#ISGEC01036.n
+						whinh312.orno, whinh312.pono)			|#ISGEC01036.n
+			get.schedule.detail(rep.edrn,whinh312.rcno,whinh312.rcln)		|PATCH002014.sn
+			select tdisg831.crdt,tdisg831.edrn,tdisg831.cprj,tdisg831.ofbp,tdisg831.invd,tdisg831.invn
+			from   tdisg831
+			where  tdisg831._index1 = {:rep.edrn}
+			selectdo
+| 				rep.crdt = sprintf$("%u(%02m/%02d/%04Y)",tdisg831.crdt)		|#ISGEC015010.o
+				rep.crdt = sprintf$("%u(%02d/%02m/%04Y)",tdisg831.crdt)	|#ISGEC015010.n
+				select	tdisg839.blno,tdisg839.pddt,tdisg839.plod,tdisg839.vfln,tdisg839.voyg,tdisg839.shpl   |#PATCH001068.sn
+				from	tdisg839
+				where	tdisg839._index1 = {:tdisg831.bold}
+				selectdo
+				selectempty
+			
+				endselect	
+				
+				select tpisg045.cprj,tpisg045.agre
+				from   tpisg045
+				where  tpisg045._index1 = {:tdisg831.cprj}
+				selectdo
+				endselect				|#PATCH001068.en
+				
+				select tdisg832.tobi,tdisg832.pkgd
+				from    tdisg832
+				where   tdisg832._index1 = {:rep.edrn,:whinh312.rcno,:whinh312.rcln}
+				selectdo
+				endselect	
+			endselect
+						
+			get.schedule.description(tdisg831.cprj,tdisg831.ofbp,schedule.no)
+												|PATCH002014.en
+				
+			select	whinh310.dino							|#PATCH001067.sn
+			from	whinh310
+			where	whinh310._index1 = {:whinh312.rcno}
+			selectdo
+				dino = lval(whinh310.dino)
+				select	tfisg002.irno,tfisg002.grno,tfisg002.grbp,tfisg002.grdt,tfisg002.gcmp
+				from	tfisg002
+				where	tfisg002._index1 = {:dino}
+				selectdo
+					select	tfisg003.vhno,tfisg003.vhcp,tfisg003.cctf,tfisg003.cctt,
+						tfisg003.plcf,tfisg003.plct,tfisg003.citf,tfisg003.citt
+					from	tfisg003
+					where	tfisg003._index1 = {:tfisg002.grno,:tfisg002.grbp,:tfisg002.grdt}
+					and	tfisg003.irno = :tfisg002.irno
+					and	tfisg003.ncmp = :tfisg002.gcmp
+					selectdo	
+						select	tccom139.dsca:dsca1
+						from	tccom139
+						where	tccom139._index1 = {:tfisg003.cctf,:tfisg003.plcf,:tfisg003.citf}
+						selectdo
+						selectempty
+							dsca1 = ""
+						endselect	
+						
+						select	tccom139.dsca:dsca2
+						from	tccom139
+						where	tccom139._index1 = {:tfisg003.cctt,:tfisg003.plct,:tfisg003.citt}
+						selectdo
+						selectempty
+							dsca2 = ""	
+						endselect
+						
+						select	fmfmd047.dsca
+						from	fmfmd047
+						where	fmfmd047._index1 = {:tfisg003.vhcp}
+						selectdo
+						selectempty
+							fmfmd047.dsca = ""	
+						endselect
+					selectempty
+						tfisg003.vhno = ""
+						dsca1 = ""
+						dsca2 = ""
+						fmfmd047.dsca = ""
+					endselect	
+				selectempty
+					tfisg003.vhno = ""
+					dsca1 = ""
+					dsca2 = ""	
+					fmfmd047.dsca = ""
+				endselect
+			selectempty
+				tfisg003.vhno = ""
+				dsca1 = ""
+				dsca2 = ""	
+				fmfmd047.dsca = ""
+			endselect								|#PATCH001067.en	
+				
+			rep.sale = (rep.bval + rep.ed.reim + rep.misc.claim + rep.cst.reim + rep.fgt.reim +
+					rep.serv + rep.cstm + rep.vatm)
+			if	only.stck = tcyesno.yes	then
+				if	whinh312.lsta = whinh.lstc.confirmed	then
+					if	(tbl.stat <> tdisg.stat.process)	then
+						if	tbl.type = tdisg.type.domestic	then
+							print.detail()
+						else
+							if	isspace(tbl.bold)	then
+								print.detail()
+							endif
+						endif
+					endif
+				endif	
+			else
+				print.detail()
+			endif
+		endselect	
+	endselect
+}
+
+function Get_Pur_Receipt()
+{
+	domain	tcccty		tmp.ccty
+	domain	tcamnt		tmp.st.reim, tmp.vat.reim, tmp.exc.amnt
+	
+	
+	get.date.utc(odat.f, 00, 00, 00, v.odat.f)
+	get.date.utc(odat.t, 23, 59, 59, v.odat.t)
+	get.date.utc(rcdt.f, 00, 00, 00, v.rcdt.f)
+	get.date.utc(rcdt.t, 23, 59, 59, v.rcdt.t)
+	
+	get.filter.field()
+	
+	db.set.to.default(ttdpur406)
+	db.set.to.default(ttdpur400)
+	db.set.to.default(ttdpur401)
+	db.set.to.default(ttcibd001)
+	
+	select	tdpur406.rcno, tdpur406.rseq, tdpur406.dino, tdpur406.conf,
+		tdpur406.orno, tdpur406.pono, tdpur406.qiap, tdpur406.ddte,
+		tdpur401.item, tdpur401.cprj, tdpur400.otbp, tdpur400.odat,
+		tcibd001.dsca
+	from	tdpur406, tdpur401, tdpur400, tcibd001
+	where	tdpur406._index1 inrange {:orno.f}	and	{:orno.t}
+	and	tdpur406.ddte inrange :v.rcdt.f	and	:v.rcdt.t
+	and	tdpur406._index2 inrange {:rcno.f}	and	{:rcno.t}	|#ISGEC001189.n
+	and	tdpur406.conf inrange :conf.f	and	:conf.t	
+	and	tdpur406.orno = tdpur401.orno 
+	and	tdpur406.pono = tdpur401.pono 
+	and	tdpur406.sqnb = tdpur401.sqnb 
+	and	tdpur401._index5 inrange {:cprj.f}	and	{:cprj.t}
+	and	tdpur401.item refers to tcibd001 Unref Clear
+	and	tdpur406.orno refers to tdpur400
+	and	tdpur400.odat inrange :v.odat.f	and	:v.odat.t
+	and	tdpur400._index2 inrange {:suno.f}	and	{:suno.t}
+ 	and	tdpur406.rcno not in (select	whinh312.rcno	from	whinh312
+ 					where	whinh312._index4 inrange {whinh.oorg.purchase, :orno.f}	and
+ 									{whinh.oorg.purchase, :orno.t}
+ 					and	whinh312.ardt inrange	:v.rcdt.f	and	:v.rcdt.t)	
+	selectdo
+		db.set.to.default(ttppdm740)	
+		select	tppdm740.ccur, tppdm740.ofbp, tppdm740.rtyp
+		from	tppdm740
+		where	tppdm740._index1 = {:tdpur401.cprj}
+		and	(tppdm740.ccur	inrange :ccur.f	and	:ccur.t
+		and	tppdm740.ccur <> :ccur.exp)
+		selectdo
+			tmp.ccty = ""
+			not.found = false
+			if	tppdm740.ccur = "INR"	then
+				select	prj_tccom130.ccty:tmp.ccty
+				from	tccom100 prj_tccom100, tccom130 prj_tccom130
+				where	prj_tccom100._index1 = {:tppdm740.ofbp}
+				and	prj_tccom100.cadr refers to prj_tccom130
+				and	prj_tccom130.ccty inrange :ccty.f	and	:ccty.t
+				and	prj_tccom130.ccty <> :ccty.exp
+				selectdo
+				selectempty
+					not.found = true	
+				endselect
+				if	not.found	and var.type <> tpproj.type.both	then
+					continue
+				endif
+			endif	
+			Initialize_Variables()
+			rep.bprj = tdpur401.cprj
+			rep.irno = tdpur406.dino					|PATCH002014.sn
+			
+			ir.var = lval(tdpur406.dino)
+			select tfisg001.irdt
+			from   tfisg001
+			where  tfisg001._index1 = {:ir.var}
+			selectdo
+| 				rep.irdate = sprintf$("%u(%02m/%02d/%04Y)", tfisg001.irdt)		|#ISGEC015010.o
+				rep.irdate = sprintf$("%u(%02d/%02m/%04Y)", tfisg001.irdt)		|#ISGEC015010.n
+			selectempty
+				rep.irdate = ""
+			endselect
+			get.elememt(tdpur406.rcno,tdpur406.rseq)			|PATCH002014.en
+			
+			rep.bpdc = tdisg.dll0003.get.project.desc(tdpur401.cprj)
+			if	(tmp.ccty = "IN ")	or
+				(tppdm740.ccur = "INR")	then
+				rep.bptp = "Domestic"
+			else
+				rep.bptp = "Export"
+			endif	
+			
+			tdisg.dll0003.Get_PTR_Detail(tdpur406.rcno, tdpur406.rseq, tdpur406.dino, rep.ptrn, rep.ptdt,
+					rep.ptfy, rep.ptfp)
+					
+			|*****	ISGEC015010.sn *******
+			if not isspace(rep.ptdt) then
+				mm = rep.ptdt(1;2)
+				dd = rep.ptdt(4;2)
+				yy = rep.ptdt(7;4)
+				rep.ptdt = dd& "/" & mm & "/" & yy
+			endif
+			|*****	ISGEC015010.en ********		
+			ptr.len = len(rep.ptrn)								|PATCH002014.sn
+			ptr.type = rep.ptrn(1;3)
+			ptr.docn = rep.ptrn(4;ptr.len)
+			get.ptr.amount(ptr.type,ptr.docn,tdpur406.dino)	
+			rep.born = tdpur406.orno
+| 			rep.odat = sprintf$("%u(%02m/%02d/%04Y)", tdpur400.odat)		|#ISGEC015010.o
+			rep.odat = sprintf$("%u(%02d/%02m/%04Y)", tdpur400.odat)		|#ISGEC015010.n
+			
+			rep.bsup = tdpur400.otbp
+			rep.bsnm = tdisg.dll0003.get.bp.name(tdpur400.otbp)
+			rep.rtyp = "Purchase"
+			rep.rcno = tdpur406.rcno
+			rep.rcln = tdpur406.rseq
+| 			rep.rcdt = sprintf$("%u(%02m/%02d/%04Y)", tdpur406.ddte)		|#ISGEC015010.o
+			rep.rcdt = sprintf$("%u(%02d/%02m/%04Y)", tdpur406.ddte)		|#ISGEC015010.n
+			
+			if	tdpur406.conf = tcyesno.yes	then
+				rep.rstt = "Confirm"
+			else
+				rep.rstt = "Open"
+			endif	
+			
+			tdisg.dll0003.Get_Supplier_Inv_Detail(tdpur406.dino, rep.isup, rep.isdt)
+			
+| 			tdisg.dll0003.Get_gr_detail(tdpur406.dino, rep.grno, rep.grdt, rep.fmst, rep.tost)			|#ISGEC01072.o
+			tdisg.dll0003.Get_gr_detail(tdpur406.dino, rep.grno, rep.grdt, rep.fmst, rep.tost, rep.tran, rep.nama)			|#ISGEC01072.n
+			
+			rep.item = tdpur401.item
+			rep.itdsc = tcibd001.dsca
+			|*****	ISGEC015010.sn *******
+			if not isspace(rep.grdt) then
+				mm = rep.grdt(1;2)
+				dd = rep.grdt(4;2)
+				yy = rep.grdt(7;4)
+				rep.grdt = dd& "/" & mm & "/" & yy
+			endif
+			
+			if not isspace(rep.isdt) then
+				mm = rep.isdt(1;2)
+				dd = rep.isdt(4;2)
+				yy = rep.isdt(7;4)
+				rep.isdt = dd& "/" & mm & "/" & yy
+			endif
+			|*****	ISGEC015010.en ********
+			tdisg.dll0002.Get_Purchase_Receipt(tdpur406.rcno, tdpur406.rseq, v.rcdt.f, v.rcdt.t,
+							rep.qnty, rep.rprc, rep.rbmt, rep.rexc,
+							rep.rcst, rep.rvat, rep.rsrv, rep.roth, rep.bamt)
+			
+			tbl.stat = empty
+			tbl.type = empty
+			tbl.bold = ""
+			tmp.st.reim = 0
+			tmp.vat.reim = 0
+			tmp.exc.amnt = 0
+			tdisg.dll0003.Get_Billing_Advice_Detail(tdpur406.rcno, tdpur406.rseq, tdpur406.orno,
+						tdpur406.pono, tdpur401.cprj,
+						tppdm740.ofbp, tppdm740.ccur, tppdm740.rtyp,
+						tbl.stat, tbl.type, tbl.bold,
+						rep.edrn, rep.stat, rep.cinv, rep.cidt, rep.sidt, 
+						rep.slfy, rep.slfp, rep.sinv, rep.blno, rep.bldt,
+						rep.cuno, rep.cnnm, rep.loca, rep.bval, rep.ed.reim,
+						tmp.st.reim, rep.cst.reim, tmp.vat.reim, rep.fgt.reim, 
+						tmp.exc.amnt, rep.serv, rep.cstm, rep.vatm, rep.misc.claim)
+			
+			get.invoice.number(	tdpur406.rcno, tdpur406.rseq,			|#ISGEC01036.n
+						tdpur406.orno, tdpur406.pono)			|#ISGEC01036.n
+			get.schedule.detail(rep.edrn,tdpur406.rcno,tdpur406.rseq)			|PATCH002014.sn
+			select tdisg831.crdt,tdisg831.edrn,tdisg831.cprj,tdisg831.ofbp,tdisg831.invd,tdisg831.invn
+			from   tdisg831
+			where  tdisg831._index1 = {:rep.edrn}
+			selectdo
+				rep.crdt = sprintf$("%u(%02m/%02d/%04Y)",tdisg831.crdt)
+				select	tdisg839.blno,tdisg839.pddt,tdisg839.plod,tdisg839.vfln,tdisg839.voyg,tdisg839.shpl          |#PATCH001068.sn  
+				from	tdisg839
+				where	tdisg839._index1 = {:tdisg831.bold}
+				selectdo
+				selectempty
+			
+				endselect	
+				
+				select tpisg045.cprj,tpisg045.agre
+				from   tpisg045
+				where  tpisg045._index1 = {:tdisg831.cprj}
+				selectdo
+				endselect                                                                                   |#PATCH001068.en
+			select tdisg832.tobi,tdisg832.pkgd
+			from    tdisg832
+			where   tdisg832._index1 = {:rep.edrn,:tdpur406.rcno,:tdpur406.rseq}
+			selectdo
+			endselect	
+				
+			endselect
+			
+| 			select	whinh310.dino							|#PATCH001067.sn
+| 			from	whinh310
+| 			where	whinh310._index1 = {:tdpur406.rcno}
+| 			selectdo
+				dino = lval(tdpur406.dino)
+				select	tfisg002.irno,tfisg002.grno,tfisg002.grbp,tfisg002.grdt,tfisg002.gcmp
+				from	tfisg002
+				where	tfisg002._index1 = {:dino}
+				selectdo
+					select	tfisg003.vhno,tfisg003.vhcp,tfisg003.cctf,tfisg003.cctt,
+						tfisg003.plcf,tfisg003.plct,tfisg003.citf,tfisg003.citt
+					from	tfisg003
+					where	tfisg003._index1 = {:tfisg002.grno,:tfisg002.grbp,:tfisg002.grdt}
+					and	tfisg003.irno = :tfisg002.irno
+					and	tfisg003.ncmp = :tfisg002.gcmp
+					selectdo	
+						select	tccom139.dsca:dsca1
+						from	tccom139
+						where	tccom139._index1 = {:tfisg003.cctf,:tfisg003.plcf,:tfisg003.citf}
+						selectdo
+						selectempty
+							dsca1 = ""
+						endselect	
+						
+						select	tccom139.dsca:dsca2
+						from	tccom139
+						where	tccom139._index1 = {:tfisg003.cctt,:tfisg003.plct,:tfisg003.citt}
+						selectdo
+						selectempty
+							dsca2 = ""	
+						endselect
+						
+						select	fmfmd047.dsca
+						from	fmfmd047
+						where	fmfmd047._index1 = {:tfisg003.vhcp}
+						selectdo
+						selectempty
+							fmfmd047.dsca = ""	
+						endselect
+					selectempty
+						tfisg003.vhno = ""
+						dsca1 = ""
+						dsca2 = ""
+						fmfmd047.dsca = ""
+					endselect	
+				selectempty
+					tfisg003.vhno = ""
+					dsca1 = ""
+					dsca2 = ""	
+					fmfmd047.dsca = ""
+				endselect
+| 			selectempty
+| 				tfisg003.vhno = ""
+| 				dsca1 = ""
+| 				dsca2 = ""	
+| 				fmfmd047.dsca = ""
+| 			endselect								|#PATCH001067.en	
+			
+			get.schedule.description(tdisg831.cprj,tdisg831.ofbp,schedule.no)			|PATCH002014.en
+			rep.sale = (rep.bval + rep.ed.reim + rep.misc.claim + rep.cst.reim + rep.fgt.reim +
+					rep.serv + rep.cstm + rep.vatm)
+			if	only.stck = tcyesno.yes	then
+				if	tdpur406.conf = tcyesno.yes	then
+					if	(tbl.stat <> tdisg.stat.process)	then
+						if	tbl.type = tdisg.type.domestic	then
+							print.detail()
+						else
+							if	isspace(tbl.bold)	then
+								print.detail()
+							endif
+						endif
+					endif
+				endif	
+			else
+				print.detail()
+			endif
+		endselect	
+	endselect
+}
+
+function	generate.header()
+{
+	line4 =	concat$("	",
+		sprintf$("Project"),					|1		
+		sprintf$("Description"),				|2		
+		sprintf$("Project Type"),				|3
+		sprintf$("Division"),					|3.1			|#ISGEC015046.n	
+		sprintf$("PTR No."),					|4		
+		sprintf$("PTR Date"),					|5	
+		sprintf$("PTR Amount"),
+		sprintf$("PTR Year"),					|6		
+		sprintf$("PTR Period"),				|7		
+		sprintf$("PO Number"),					|8		
+		sprintf$("PO Date"),					|9		
+		sprintf$("Supplier"),					|10		
+		sprintf$("Supplier Name"),				|11
+		sprintf$("IRN No."),					|12
+		sprintf$("IRN Date"),					|13
+		sprintf$("Receipt Type"),				|14
+		sprintf$("Receipt"),					|15
+		sprintf$("Line"),					|16
+		sprintf$("Receipt Date"),				|17
+		sprintf$("Receipt Status"),				|18
+		sprintf$("Bill Number"),				|19
+		sprintf$("Bill Date"),					|20		
+		sprintf$("GR No"),					|21		
+		sprintf$("GR Date"),					|22
+		sprintf$("Transporter Code"),				|23			|#ISGEC01072.n		
+		sprintf$("Transporter Name"),				|24			|#ISGEC01072.n	
+		sprintf$("From State"),				|25		
+		sprintf$("To State"),					|26
+		sprintf$("Element"),					|27
+		sprintf$("Item"),					|28
+		sprintf$("Description"),		  		|29
+		sprintf$("Quantity"),					|30
+		sprintf$("Receipt Price"),				|31
+		sprintf$("Basic Amount"),				|32
+		sprintf$("Excise"),					|33
+		sprintf$("CST"),					|34
+		sprintf$("VAT"),					|35
+		sprintf$("Service"),					|36
+		sprintf$("Other Charge"),				|37
+		sprintf$("Gross Amount"),				|38
+		sprintf$("Billing Advice"),			  	|39
+		sprintf$("Billing Advice Status"),		  	|40
+		sprintf$("Billing Advice Creation Date"),		|41
+		sprintf$("Billing Schedule No."),			|42
+		sprintf$("Billing Schedule Description"),		|43
+		sprintf$("Custom Invoice "),                           |44                             |#PATCH001068.sn						
+		sprintf$("Invoice Date"),				|45
+		sprintf$("Customer"),				  	|46
+		sprintf$("Customer Name"),				|47
+		sprintf$("Bill of Lading"),			        |48
+		sprintf$("B/L Date"),					|49
+		sprintf$("Commercial Invoice"),			|50
+		sprintf$("Invoice Date"),				|51
+		sprintf$("Accounting Voucher No"),			|52
+		sprintf$("Date"),					|53	
+		sprintf$("Year"),					|54	
+		sprintf$("Period"),					|55	
+		sprintf$("Billing Value"),				|56
+		sprintf$("ED Reimbursement"),				|57
+		sprintf$("CST Reimbursement"),				|58
+		sprintf$("Freight Reimbursement"),			|59
+		sprintf$("Misc. Claims"),				|60
+		sprintf$("CST"),					|61
+		sprintf$("VAT"),					|62
+		sprintf$("Service Tax"),				|63
+		sprintf$("Total"),					|64
+		sprintf$("Location[State]"),				|65
+		sprintf$("Vehicle No"),				|66				|#PATCH001067.sn
+		sprintf$("Vehicle Type"),				|67
+		sprintf$("From Place"),				|68
+		sprintf$("To Place"),					|69				|#PATCH001067.en	
+		sprintf$("Package No"),				|72			
+		sprintf$("Port Of Loading"),				|73		
+		sprintf$("Shipping / Air Line "),			|74			
+		sprintf$("Vessel / Flight Number "),			|75			
+		sprintf$("Voyage Number  "),				|76		
+		sprintf$("Contract / Agreement No "))                  |77                                |#PATCH001068.en						
+		
+		
+	line4 = strip$(shiftl$(line4))		
+	seq.puts(line4, stat.fp)	
+}
+
+function	print.detail()
+{	
+	get.invoice.date()						|#ISGEC01036.sn
+
+	if (	strip$(shiftl$(rep.sinv(1;3))) >= strip$(shiftl$(tran.f)) 			
+		and  strip$(shiftl$(rep.sinv(1;3))) <= strip$(shiftl$(tran.t))) 
+	and	(lval(rep.sinv(5;8)) >= docn.f 
+		and  lval(rep.sinv(5;8)) <= docn.t )
+	and	(temp.date >= invd.f  and temp.date <= invd.t) then		|#ISGEC01036.en
+	rep.sidt = sprintf$("%D(%02d/%02m/%04Y)", temp.date)			|#ISGEC015049.n(24/09/2015)
+		line3 =	concat$("	",
+			sprintf$("%s", rep.bprj),				|1
+			sprintf$("%s", rep.bpdc),				|2				
+			sprintf$("%s", rep.bptp),				|3
+			sprintf$("%s", rep.divs),				|3.1			|#ISGEC015046.n			
+			sprintf$("%s", rep.ptrn),				|4				
+			sprintf$("%s", rep.ptdt),				|5
+			sprintf$("%f", rep.ptr.amnt),
+			sprintf$("%s", rep.ptfy),				|6				
+			sprintf$("%s", rep.ptfp),				|7				
+			sprintf$("%s", rep.born),				|8				
+			sprintf$("%s", rep.odat),				|9				
+			sprintf$("%s", rep.bsup),				|10				
+			sprintf$("%s", rep.bsnm),				|11
+			sprintf$("%s", rep.irno),				|12
+			sprintf$("%s", rep.irdate),				|13
+			sprintf$("%s", rep.rtyp),				|14
+			sprintf$("%s", rep.rcno),				|15
+			sprintf$("%d", rep.rcln),				|16
+			sprintf$("%s", rep.rcdt),				|17
+			sprintf$("%s", rep.rstt),				|18
+			sprintf$("%s", rep.isup),				|19
+			sprintf$("%s", rep.isdt),				|20				
+			sprintf$("%s", rep.grno),				|21
+			sprintf$("%s", rep.grdt),				|22	
+			sprintf$("%s", rep.tran),				|23		|#ISGEC01072.n	
+			sprintf$("%s", rep.nama),				|24		|#ISGEC01072.n	
+			sprintf$("%s", rep.fmst),				|25
+			sprintf$("%s", rep.tost),				|26
+			sprintf$("%s", element),				|27
+			sprintf$("%s", rep.item),				|28
+			sprintf$("%s", rep.itdsc),				|29
+			sprintf$("%f", rep.qnty),				|30	
+			sprintf$("%f", rep.rprc),				|31	
+			sprintf$("%f", rep.rbmt),				|32	
+			sprintf$("%f", rep.rexc),				|33	
+			sprintf$("%f", rep.rcst),				|34	
+			sprintf$("%f", rep.rvat),				|35	
+			sprintf$("%f", rep.rsrv),				|36	
+			sprintf$("%f", rep.roth),				|37	
+			sprintf$("%f", rep.bamt),				|38	
+			sprintf$("%s", rep.edrn),				|39
+			sprintf$("%s", rep.stat),				|40
+			sprintf$("%s", rep.crdt),				|41
+			sprintf$("%s", schedule.no),				|42
+			sprintf$("%s", rep.schedule.dsca),			|43
+			sprintf$("%s",tdisg831.invn),                          |44                     |#PATCH001068.sn 
+			sprintf$("%D(%02m/%02d/%04Y)",tdisg831.invd),          |45
+			sprintf$("%s", rep.cuno),				|46
+			sprintf$("%s", rep.cnnm),				|47
+			sprintf$("%s", rep.blno),				|48
+			sprintf$("%s", rep.bldt),				|49
+			sprintf$("%s", rep.cinv),				|50
+			sprintf$("%s", rep.cidt),				|51
+			sprintf$("%s", rep.sinv),				|52
+			sprintf$("%s", rep.sidt),				|53			|#ISGEC015049.o
+| 			sprintf$("%u(%02d/%02m/%04Y)", rep.sidt),		|53			|#ISGEC015049.n
+			sprintf$("%s", rep.slfy),				|54
+			sprintf$("%s", rep.slfp),				|55
+			sprintf$("%f", rep.bval),				|56
+			sprintf$("%f", rep.ed.reim),				|57
+			sprintf$("%f", rep.cst.reim),				|58
+			sprintf$("%f", rep.fgt.reim),				|59
+			sprintf$("%f", rep.misc.claim),			|60
+			sprintf$("%f", rep.cstm),				|61
+			sprintf$("%f", rep.vatm),				|62
+			sprintf$("%f", rep.serv),				|63
+			sprintf$("%f", rep.sale),				|64
+			sprintf$("%s", rep.loca),				|65
+			sprintf$("%s", tfisg003.vhno),				|66			|#PATCH001067.sn
+			sprintf$("%s", fmfmd047.dsca),				|67
+			sprintf$("%s", dsca1),					|68
+			sprintf$("%s", dsca2),					|69			|#PATCH001067.en	
+			sprintf$("%s",tdisg832.pkgd),                          |72	  
+			sprintf$("%s",tdisg839.plod),                          |73  
+			sprintf$("%s",tdisg839.shpl),                          |74
+			sprintf$("%s",tdisg839.vfln),                          |75
+			sprintf$("%s",tdisg839.voyg),                          |76
+			sprintf$("%s",tpisg045.agre))                          |77
+			line3 = strip$(shiftl$(line3))                         |78                    |#PATCH001068.en
+			seq.puts(line3, stat.fp)
+	endif									|#ISGEC01036.n				
+}	
+
+function Initialize_Variables()
+{
+	rep.bprj = ""				|1
+	rep.bpdc = ""				|2				
+	rep.bptp = ""				|3				
+	rep.tptr = ""				|4
+	rep.dptr = 0				|5				
+	rep.ptrn = ""				|6				
+	rep.ptdt = ""				|7				
+	rep.ptfy = ""				|8				
+	rep.ptfp = ""				|9				
+	rep.born = ""				|10				
+	rep.odat = ""				|11				
+	rep.bsup = "" 				|12				
+	rep.bsnm = ""				|13
+	rep.irno = ""				|14
+	rep.irdate = ""				|15
+	rep.rtyp = ""				|16
+	rep.rcno = ""				|17
+	rep.rcln = 0				|18
+	rep.rcdt = ""				|19
+	rep.rstt = ""				|20
+	rep.isup = ""				|21
+	rep.isdt = ""				|22				
+	rep.grno = ""				|23				
+	rep.grdt = ""				|24				
+	rep.fmst = ""				|25				
+	rep.tost = ""				|26				
+	rep.item = ""				|27
+	rep.itdsc = ""				|28
+	element = ""				|29
+	rep.qnty = 0				|30	
+	rep.rprc = 0				|31	
+	rep.rbmt = 0				|32	
+	rep.rexc = 0				|33	
+	rep.rcst = 0				|34	
+	rep.rvat = 0				|35	
+	rep.rsrv = 0				|36	
+	rep.roth = 0				|37	
+	rep.bamt = 0				|38
+	rep.edrn = ""				|39	
+	rep.stat = ""				|40	
+	rep.cuno = ""				|41
+	rep.cnnm = ""				|42
+	rep.crdt = ""				|43
+	schedule.no = 0				|44
+	rep.schedule.dsca = ""			|45
+	rep.blno = ""				|46
+	rep.bldt = ""				|47
+	rep.cinv = ""				|48
+	rep.cidt = ""				|49
+	rep.sinv = ""				|50
+	rep.sidt = ""				|51
+	rep.slfy = ""				|52
+	rep.slfp = ""				|53
+	rep.bval = 0				|54
+	rep.ed.reim = 0				|55
+	rep.cst.reim = 0			|56
+	rep.fgt.reim = 0			|57
+	rep.misc.claim = 0			|58
+	rep.cstm = 0				|59
+	rep.vatm = 0				|60
+	rep.serv = 0				|61
+	rep.sale = 0				|62
+	rep.loca = ""				|63
+	rep.tran = ""				|64					|#ISGEC01072.n
+	rep.nama = ""				|65	
+	rep.ptr.amnt = 0			|66					|#ISGEC01072.n
+	tdisg831.invn = ""
+	tdisg831.invd = 0
+	tdisg832.pkgd = ""
+	tdisg839.plod = ""
+	tdisg839.shpl = ""
+	tdisg839.vfln = ""
+	tdisg839.voyg = ""
+	tpisg045.agre = ""
+}
+
+function get.date.utc(
+		domain	tcdate	i.date,
+		long		i.hh,
+		long		i.mn,
+		long		i.ss,
+	ref	domain	tcdate	o.date
+			)
+{
+	long	dd, mm, yy, hh, mn, ss
+	
+	utc.to.date(i.date, yy , mm, dd, hh, mn, ss)
+	o.date = date.to.utc(yy, mm, dd, i.hh, i.mn, i.ss)
+	if	o.date < 0	then
+		o.date = 0
+	endif
+}	
+
+function open.file()
+{
+	err.file = bse.tmp.dir$() & str$(utc.num()) & ".xls"
+	
+	file.name = "c:\temp\" & str$(utc.num())  & ".xls"
+	
+	stat.fp = seq.open(err.file, "w+")
+	if stat.fp >0 then
+ 		seq.seek(0, 0, stat.fp)
+	endif
+}
+
+function close.file()
+{
+	seq.close(stat.fp)
+	ret2 = server2client(err.file,file.name,1)
+	ret2 = app_start(file.name,"c:","","","")
+}
+
+
+function set.enable.disable.fields()
+{
+	if	all.rcpt = tcyesno.yes	then
+		only.stck = tcyesno.no
+		rcpt.conf = tcyesno.no
+		lsta.f = whinh.lstc.unexpected
+		lsta.t = whinh.lstc.confirmed
+		conf.f = tcyesno.yes
+		conf.t = tcyesno.no
+		disable.fields("only.stck", "rcpt.conf")
+	else
+		if	only.stck = tcyesno.yes	then
+			all.rcpt = tcyesno.no
+			rcpt.conf = tcyesno.no
+			lsta.f = whinh.lstc.confirmed
+			lsta.t = whinh.lstc.confirmed
+			conf.f = tcyesno.yes
+			conf.t = tcyesno.yes
+			disable.fields("all.rcpt", "rcpt.conf")
+		else	
+			if	rcpt.conf = tcyesno.yes	then
+				only.stck = tcyesno.no
+				all.rcpt = tcyesno.no
+				lsta.f = whinh.lstc.confirmed
+				lsta.t = whinh.lstc.confirmed
+				conf.f = tcyesno.yes
+				conf.t = tcyesno.yes
+				disable.fields("all.rcpt", "only.stck")
+			else	
+				only.stck = tcyesno.no
+				all.rcpt = tcyesno.no
+				rcpt.conf = tcyesno.no
+				lsta.f = empty
+				lsta.t = empty
+				conf.f = tcyesno.no
+				conf.t = tcyesno.no
+				enable.fields("all.rcpt", "only.stck", "rcpt.conf")
+			endif
+		endif
+	endif
+		
+		
+}
+
+function get.filter.field()
+{
+	on case var.type
+		case tpproj.type.dom:
+			ccur.f = "INR"
+			ccur.t = "INR"
+			set.fmin(ccur.exp)
+			ccty.f = "IN "
+			ccty.t = "IN "
+			set.fmin(ccty.exp)
+			break
+		case tpproj.type.exp:
+			set.fmin(ccur.f)
+			set.fmax(ccur.t)
+| 			ccur.exp = "INR"
+			set.fmin(ccur.exp)
+			set.fmin(ccty.f)
+			set.fmax(ccty.t)
+			ccty.exp = "IN "
+			break
+		case tpproj.type.both:
+			set.fmin(ccur.f)
+			set.fmax(ccur.t)
+			set.fmin(ccur.exp)
+			set.fmin(ccty.f)
+			set.fmax(ccty.t)
+			set.fmin(ccty.exp)
+			break
+	ENDCASE		
+}
+
+
+function get.invoice.number(domain tcorno i.rcno, domain tcpono i.rcln,						|#ISGEC01036.sn
+			     domain tcorno i.orno, domain tcpono i.pono)									
+{
+	domain	tcbool		foc.found
+	long day,month,year,date.temp, time.temp
+
+	db.set.to.default(ttdisg831)
+	db.set.to.default(ttdisg832)
+	select	tdisg832.*, tdisg831.cinv, tdisg831.type, tdisg831.stat,tdisg831.invn,tdisg831.invd,
+		tdisg831.cind, tdisg831.bold, tdisg831.ofbp,tdisg831.ivdt	
+	from	tdisg832, tdisg831
+	where	tdisg832._index4 = {:i.rcno, :i.rcln}
+	and	tdisg832.oorg = whinh.oorg.purchase
+	and	tdisg832.orno = :i.orno
+	and	tdisg832.pono = :i.pono
+	and	tdisg832.edrn refers to tdisg831.edrn 
+	and	tdisg831._index4 = {:tdpur401.cprj}
+	order by tdisg832._index1
+	selectdo
+		foc.found = false
+		if	tdisg832.tobi = tcyesno.no	then
+			foc.found = true
+		endif
+
+		select	tpisg039.ityp, tpisg039.idoc, tpisg039.sidt
+		from	tpisg039
+		where	tpisg039._index1 = {:tdpur401.cprj, :tdisg831.ofbp, :tdisg832.nins, :tdisg832.edrn, :tdisg832.rcno, :tdisg832.rcln}
+		selectdo
+		selectempty
+			tpisg039.ityp = ""
+			tpisg039.idoc = 0
+			tpisg039.sidt = 0
+		endselect
+			
+		if	tdisg831.type = tdisg.type.domestic	then
+			if	tpisg039.idoc <> 0	then
+				rep.sinv = tpisg039.ityp & " " & str$(tpisg039.idoc)
+			endif
+		else
+			if	isspace(tdisg831.bold)	and
+				(tdisg831.stat = tdisg.stat.process)then
+				if	tpisg039.idoc <> 0	then
+					rep.sinv = tpisg039.ityp & " " & str$(tpisg039.idoc)
+				else
+					rep.sinv = tdisg832.reas		
+				endif
+			else	
+				if	tpisg039.idoc <> 0	then
+					rep.sinv = tpisg039.ityp & " " & str$(tpisg039.idoc)
+				endif
+			endif	
+		endif	
+		
+		if	foc.found	then	
+			rep.sinv = tdisg832.reas
+			
+			utc.to.local(tdisg831.ivdt,date.temp,time.temp)
+			
+| 			date.temp = date.to.num(year,month,day)
+			
+			rep.sidt =sprintf$("%u(%02m/%02d/%04Y)",tdisg831.ivdt) 	|#ISGEC015010.o		|#ISGEC015049.n
+| 			rep.sidt =sprintf$("%u(%02d/%02m/%04Y)",tdisg831.ivdt) 		|#ISGEC015010.n		|#ISGEC015049.o
+			
+			select tfgld005.year, tfgld005.prno,tfgld005.stdt
+			from	tfgld005
+			where	tfgld005._index1 = {tfgld.ptyp.financial}
+			and	tfgld005.stdt <= :date.temp
+			and	tfgld005.corr = tcyesno.no
+			order by tfgld005.stdt desc
+			as set with 1 rows
+			selectdo
+				rep.slfy = str$(tfgld005.year)
+				rep.slfp = str$(tfgld005.prno)
+			selectempty
+				rep.slfy = ""
+				rep.slfp = ""	
+			endselect
+			
+		endif	
+	endselect	
+}
+
+function get.invoice.date()
+{
+	long length,pos1,pos2, day,month,year
+	
+	length = len(rep.sidt)
+	
+	if length >=8 then
+		pos1 = pos(rep.sidt,"/")
+		pos2 = rpos(rep.sidt,"/")
+		
+		month = lval(rep.sidt(1;pos1-1))
+		length = pos2-pos1
+		day = lval(rep.sidt(pos1+1;length-1))
+		year = lval(rep.sidt(pos2+1;4))
+		
+		temp.date = date.to.num(year,month,day)
+	else
+		temp.date = 0
+	endif	
+	
+}
+
+
+									|#ISGEC01036.en
+function get.elememt(domain whinh.shpm in.rcno.var,domain tcpono in.rcln.var)				|PATCH002014.sn
+{
+	select whisg312.cspa
+	from   whisg312
+	where  whisg312._index1 = {:in.rcno.var,:in.rcln.var}
+	selectdo
+		element = whisg312.cspa
+	selectempty
+		element = ""
+	endselect	
+
+}
+
+function get.schedule.detail(domain tcorno in.edrn.var , domain  whinh.shpm in.receipt,domain tcpono in.rcline)
+{
+
+	select tdisg832.ninc
+	from    tdisg832
+	where   tdisg832._index1 = {:in.edrn.var,:in.receipt,:in.rcline}
+	selectdo
+		schedule.no = tdisg832.ninc 
+	selectempty
+		schedule.no = 0
+	endselect	
+}
+
+function get.schedule.description(domain tccprj in.cprj.var, domain tccom.bpid in.bpid,domain tcpono in.schedule)
+{
+	select tpisg031.dsca
+	from    tpisg031
+	where   tpisg031._index1 = {:in.cprj.var,:in.bpid,:in.schedule}
+	selectdo
+		rep.schedule.dsca = tpisg031.dsca
+	selectempty
+		rep.schedule.dsca = ""
+	endselect
+	
+}												
+
+function get.ptr.amount(domain tcmcs.str3 in.type,domain tcorno in.docn,domain whinh.pksp in.psno.var)
+{
+	
+	select	tfisg001.ncmp
+	from	tfisg001
+	where	tfisg001._index1 = {:1}
+	wherebind(1, lval(trim$(in.psno.var)))
+	selectdo
+	endselect
+	in.docn.v = lval(in.docn)
+	if	tfisg001.ncmp <> 0	then
+		select	pt_tfacp200.docd,
+			pt_tfacp200.year,
+			pt_tfacp200.prod,
+			pt_tfacp200.amth					
+		from	tfacp200 pt_tfacp200
+		where	pt_tfacp200._index1 = {:in.type,:in.docn.v}
+		and	pt_tfacp200.docn = 0
+		and	pt_tfacp200._compnr = :tfisg001.ncmp
+		selectdo
+			rep.ptr.amnt = tfacp200.amth(1)
+		endselect
+	endif
+}									|PATCH002014.en

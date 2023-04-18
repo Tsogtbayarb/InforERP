@@ -1,0 +1,135 @@
+|******************************************************************************
+|* tdisg8231m002  0  VRC B61U a7 live
+|* Commercial Invoice Cancellation Process
+|* Installation user             
+|* 2014-10-17
+|******************************************************************************
+|* Main table tdisg831 Billing Advice, Form Type 4
+|******************************************************************************
+|* ID: ISGECDV001116, IT0327, Ritu Shrivastava, Dt. 17-10-2014, VRC B61U a7 live
+|* Functionality to cancel commercial invoice process
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttdisg831 | Billing Advice
+  table   ttdisg830
+  table   ttdisg832
+  table   ttdisg860
+  table   ttdisg865
+  table   ttdisg866
+  table   ttdisg824
+
+   extern  domain  tcorno	cinv
+
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** field section **********************************
+field.cinv:
+before.zoom:
+	query.extend.where.in.zoom("tdisg831.cinv <>" & quoted.string("") & "and tdisg831.stat = tdisg.stat.freeze")
+|****************************** choice section **********************************
+choice.update:
+before.choice:
+	select tdisg831.nvst
+	from   tdisg831
+	where  tdisg831._index3 = {:cinv}
+	and    tdisg831.nvst = tdisg.nvst.transfer
+	selectdo
+		message("Record Already Processed, Commercial Invoice Cannot be Cancelled",1)
+		choice.again()
+	endselect
+	
+on.choice:
+	if not isspace(cinv) then
+		if(ask.enum("tdisg8231.001",tcyesno.no, cinv)) = tcyesno.yes then
+			cancel.commercial.invoice()
+			message("%s Commercial Invoice Cancelled Successfully",cinv,1)
+		else
+			choice.again()
+		endif
+	endif
+|**************************** functions *****************************************
+functions:
+
+function cancel.commercial.invoice()
+{
+	select tdisg831.*
+	from   tdisg831 for update
+	where  tdisg831._index3 = {:cinv}
+	and    tdisg831.stat <> tdisg.stat.process
+	and    tdisg831.nvst <> tdisg.nvst.transfer
+	selectdo
+		
+		select 	tdisg832.cinv
+		from	tdisg832 for update
+		where	tdisg832._index1  = {:tdisg831.edrn}
+		selectdo
+			tdisg832.cinv = ""
+			db.update(ttdisg832,db.retry,e)
+		endselect
+		
+		select	tdisg830.*
+		from	tdisg830
+		where	tdisg830._index1 = {:tdisg831.bold}
+		and	tdisg830.sele = tcyesno.yes
+		selectdo
+			select	tdisg866.*
+			from	tdisg866 for update
+			where	tdisg866._index1 = {:tdisg831.bold,:tdisg830.srno,:cinv}
+			selectdo
+				db.delete(ttdisg866,db.retry,e)
+			endselect
+		endselect
+		
+		if not isspace (tdisg831.lcno) then
+			select	tdisg860.lcno, tdisg860.ptcd
+			from	tdisg860
+			where	tdisg860._index1 = {:tdisg831.lcno}
+			selectdo
+				select	tdisg865.*
+				from	tdisg865 for update 
+				where	tdisg865._index1 = {:cinv, :tdisg860.lcno, :tdisg860.ptcd}
+				selectdo
+					db.delete(ttdisg865,db.retry,e)
+				endselect	
+			endselect
+		else
+			select	tdisg824.cprj, tdisg824.ptcd
+			from	tdisg824
+			where	tdisg824._index1 = {:tdisg831.cprj}
+			selectdo
+				select	tdisg865.*
+				from	tdisg865 for update
+				where	tdisg865._index1 = {:cinv, :tdisg824.cprj, :tdisg824.ptcd}
+				selectdo
+					db.delete(ttdisg865,db.retry,e)
+				endselect	
+			endselect
+		endif
+		
+		tdisg831.cinv = ""
+		tdisg831.cind = 0
+		tdisg831.link = tcyesno.no
+		tdisg831.sele = tcyesno.no
+		tdisg831.bold = ""
+		tdisg831.bodt = 0
+		tdisg831.camt = 0
+		tdisg831.ded1 = 0 
+		tdisg831.ded2 = 0
+		tdisg831.nvst = tdisg.nvst.postship
+		db.update(ttdisg831,db.retry,e)
+| 	selectempty
+| 		message("Record Cannot be Cancelled",1)
+| 		choice.again()
+	endselect
+	commit.transaction()
+}
+	
+	

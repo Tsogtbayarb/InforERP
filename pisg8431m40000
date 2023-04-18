@@ -1,0 +1,316 @@
+|******************************************************************************
+|* tdisg8431m4000  0  VRC B61U a7 isg 
+|* Domestic Project wise under Process Billing Advice
+|* Installation User             
+|* 2015-03-13
+|******************************************************************************
+|* Main table tdisg831 Billing Advice, Form Type 4
+|******************************************************************************
+|* ISGEC01087 , Mani sharma , Dt. 13.03.2015   VRC B61U a7 isg     
+|*****************************************************************************
+|* ISGEC01094, Mani sharma , Dt. 18.03.2015 
+|* Modification
+|*
+|* IDENT ISGEC015052,IT0302, Ankit Sharma, 31-08-2015, VRC B61U a7 live
+|* Added division column in report
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttdisg831 | Billing Advice
+  table   ttdisg832
+  table   ttcmcs052
+  table   ttfacp100
+  table   twhisg312
+  table   ttccom100
+  table   ttfisg001
+  table   twhinh312
+  table   ttdpur406
+  
+extern  domain 	tfgld.date	        bldt.f, bldt.t
+extern  domain 	tccprj 			cprj.f, cprj.t 
+extern  domain 	whinh.shpm		rcno.f, rcno.t
+extern  domain  	tccom.bpid		bpid.f, bpid.t
+
+|****************************** Excel Variables ********************************
+
+string		str(300), err.file(100), file.name(100), line1(3000), line2(3000), line3(3000), line4(3000)	
+long		ret2, stat.fp,rc 											
+#include<bic_desktop>
+#include<bic_text>
+#pragma used dll ottdllbw 
+|****************************** Report Variable *******************************
+ extern  domain  tccprj   project.code
+ extern  domain  tcdsca   project.desc
+ extern  domain  tcorno   billing.advice
+ extern  domain  tcamnt   invoice.value
+ extern  domain  tcdate   freeze.date
+ extern  domain  whinh.shpm  receipt.no
+ extern  domain  tcpono   receipt.line
+ extern  domain  tcorno   supplier 
+ extern  domain  tcdsca   supp.name
+ extern  domain  tcorno   whr.status
+ extern  domain  tcmcs.str6  rep.stat
+ extern  domain  tfacp.isup  bill.no
+ extern  domain  tfgld.date  bill.date
+ extern  domain  tcmcs.str80 remarks
+extern domain tcmcs.str30m	rep.divs					|#ISGEC015052.n
+|****************************Temporary Variable *******************************
+extern domain whinh.shpm   old.rcno,new.rcno
+extern domain tcpono       old.rcln,new.rcln
+extern domain tcdsca       ir.no
+extern domain tfgld.docn   ir.number
+extern domain tcmcs.str80 text(1) 
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.print:
+on.choice:
+	generate.file()
+
+|****************************** field section *********************************
+
+field.cprj.f:
+when.field.changes:
+   cprj.t = cprj.f
+
+field.rcno.f:
+when.field.changes:
+   rcno.t = rcno.f
+   
+field.bpid.f:
+when.field.changes:
+   bpid.t = bpid.f
+
+|****************************** function section ******************************
+
+functions:
+
+
+function generate.file()
+{
+	err.file = bse.tmp.dir$() & str$(utc.num()) & ".xls"
+	
+	file.name = "c:\temp\" & str$(utc.num())  & ".xls"
+	
+	stat.fp = seq.open(err.file, "w+")
+	if stat.fp >0 then
+ 		seq.seek(0, 0, stat.fp)
+	endif
+	
+	generate.header()
+	read.main.table()
+	seq.close(stat.fp)
+	ret2 = server2client(err.file,file.name,1)
+	ret2 = app_start(file.name,"c:","","","")
+}
+
+
+function generate.header()
+{
+	line1 =	concat$("	",
+		sprintf$(" "),		
+		sprintf$(" "),		
+		sprintf$(" "),		
+		sprintf$(" "),		
+		sprintf$(" "),		
+		sprintf$(" "),		
+		sprintf$("DOMESTIC PROJECT WISE UNDER PROCESS BILLING ADVICE"))
+	line1 = strip$(shiftl$(line1))		
+	seq.puts(line1, stat.fp)
+
+	
+	line2 =	concat$("	",
+		sprintf$("Project"),							|1
+		sprintf$("Division"),							|1.1			|#ISGEC015052.n			
+		sprintf$("Description"),						|2
+		sprintf$("Billing Advice No."),					|3
+		sprintf$("Invoice Value(INR)"),					|4
+		sprintf$("(FOC/FIV)"),							|5
+		sprintf$("Freeze Date"),						|6
+		sprintf$("WHR"),							|7
+		sprintf$("WHR Line No."),	                                        |8
+		sprintf$("WHR Status"),                           			|9
+		sprintf$("Supplier"),							|10
+		sprintf$("Supplier Name"),						|11
+		sprintf$("Bill No"),							|12
+		sprintf$("Bill Date "))						|13
+| 		sprintf$("Remarks"))							|14
+						
+		
+	line2 = strip$(shiftl$(line2))		
+	seq.puts(line2, stat.fp)
+}
+
+function read.main.table()
+{
+	select tdisg831.edrn,tdisg831.cprj,tdisg831.ofbp,tdisg831.type,tdisg831.stat,tdisg832.rcno,tdisg832.rcln,tdisg831.frzd,
+		tdisg832.reas,tdisg832.txta,tdisg832.edrn
+	from    tdisg831,tdisg832
+	where  tdisg831._index4 inrange  {:cprj.f}	 and 	{:cprj.t}
+	and    tdisg832.rcno 	inrange  {:rcno.f}	 and 	{:rcno.t}
+	and    tdisg831.type = tdisg.type.domestic
+	and    tdisg831.stat = tdisg.stat.freeze
+	and     tdisg831.edrn refers to tdisg832
+	order by tdisg831.cprj,tdisg831.edrn
+	selectdo	
+		
+		get.ir.from.warehouse(tdisg832.rcno,tdisg832.rcln) 
+		if ir.no = "" then
+			get.ir.from.purchase(tdisg832.rcno,tdisg832.rcln)  
+		endif	
+			
+		ir.number = lval(strip$(shiftl$(ir.no)))
+		select tfacp100.ninv,tfacp100.ifbp,tfacp100.isup,tfacp100.invd
+		from    tfacp100
+		where   tfacp100.ifbp   inrange  {:bpid.f}	and     {:bpid.t}
+		and	tfacp100.invd    inrange  {:bldt.f}	 and  	{:bldt.t}
+		and      tfacp100._index1 = {:ir.number}
+		selectdo
+			
+			select whisg312.conf
+			from    whisg312
+			where   whisg312._index1 = {:tdisg832.rcno}
+			selectdo
+				if whisg312.conf = tcyesno.no then
+					whr.status = "OPEN"
+				else
+					whr.status = "CONFIRMED"
+				endif	
+			endselect	
+			new.rcno = tdisg832.rcno
+			new.rcln = tdisg832.rcln
+			if new.rcno = old.rcno and new.rcln = old.rcln then
+				continue
+			endif	
+			project.code = tdisg831.cprj
+													|#ISGEC015052.sn
+			select	tppdm600.cdf_divs
+			from	tppdm600
+			where	tppdm600._index1 = {:project.code}
+			selectdo
+				get.var(pid,"tppdm600.cdf_divs",rep.divs)
+			selectempty
+				rep.divs = ""	
+			endselect	
+													|#ISGEC015052.en
+			
+			select tcmcs052.dsca
+			from    tcmcs052
+			where   tcmcs052._index1 = {:tdisg831.cprj}
+			selectdo
+				project.desc = tcmcs052.dsca
+			endselect
+			
+			billing.advice = tdisg832.edrn
+			
+			select tdisg832.bivl
+			from    tdisg832
+			where   tdisg832._index1 = {:tdisg831.edrn,:tdisg832.rcno,:tdisg832.rcln}
+			selectdo
+				invoice.value = tdisg832.bivl  
+			endselect
+
+			freeze.date = tdisg831.frzd
+			
+			receipt.no = tdisg832.rcno
+			receipt.line = tdisg832.rcln
+			
+			rep.stat = tdisg832.reas
+			supplier = tfacp100.ifbp
+			
+			select tccom100.nama 
+			from   tccom100
+			where  tccom100._index1 = {:tfacp100.ifbp}
+			selectdo
+				supp.name = tccom100.nama
+			selectempty
+				supp.name = ""
+			endselect
+			
+			bill.no = tfacp100.isup
+			bill.date = tfacp100.invd
+			old.rcno = new.rcno
+			old.rcln = new.rcln
+| 			old.billing  = new.billing
+			rc = text.to.buf("tdisg832.txta",language$,1,text)
+		
+			write.data()
+			initialise.variables()
+		endselect			
+	endselect	
+}
+
+
+function initialise.variables()
+{
+	project.code = ""
+	project.desc = ""
+	billing.advice = ""
+	invoice.value = 0
+	freeze.date = 0
+	receipt.no = ""
+	receipt.line = 0
+	whr.status = ""
+	rep.stat = ""
+	supplier = ""
+	supp.name = ""
+	bill.no = ""
+	bill.date = 0
+	text(1,1) = ""
+}
+
+
+function write.data()
+{
+	
+	line4 =	concat$("	",
+		sprintf$("%s", project.code),						|1
+		sprintf$("%s", rep.divs),						|1.1			|#ISGEC015052.n
+		sprintf$("%s", project.desc),						|2
+		sprintf$("%s", billing.advice),					|3
+		sprintf$("%f", invoice.value),						|4
+		sprintf$("%s", rep.stat),						|5
+		sprintf$("%s", freeze.date),						|6
+		sprintf$("%s", receipt.no),						|7
+		sprintf$("%s", receipt.line),		                                |8
+                sprintf$("%s", whr.status),                                 	 	|9
+		sprintf$("%s", supplier),						|10
+		sprintf$("%s", supp.name),						|11
+		sprintf$("%s", bill.no),						|12
+		sprintf$("%D(%2d-%2m-%4Y)", bill.date))				|13
+| 		sprintf$("%s", text))						|14
+	line4 = strip$(shiftl$(line4))
+	seq.puts(line4, stat.fp)
+
+}
+
+function  get.ir.from.warehouse(domain whinh.shpm in.rcno,domain tcpono in.rcln)
+{
+	
+	select whinh312.psno,whinh312.rcno,whinh312.rcln
+	from    whinh312
+	where  whinh312._index1 = {:in.rcno,:in.rcln}
+	selectdo
+		ir.no = whinh312.psno
+	selectempty
+		ir.no = ""
+	endselect
+	
+}
+
+function get.ir.from.purchase(domain whinh.shpm in.rcno,domain tcpono in.rcln)
+{
+	select tdpur406.dino
+	from    tdpur406
+	where   tdpur406._index2 = {:in.rcno,:in.rcln}
+	selectdo
+		ir.no = tdpur406.dino
+	selectempty
+		ir.no = ""
+	endselect	
+}

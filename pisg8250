@@ -1,0 +1,263 @@
+|******************************************************************************
+|* tdisg825  0  VRC B61U a7 live
+|* LC Terms Details
+|* tools1
+|* 14-05-01 [15:08]
+|******************************************************************************
+|* Script Type: DAL
+|******************************************************************************
+|* IDEN ISG001018    Somak Mondal	01-05-2014	VRC B61U a7 live
+|* ESSP INCIDENT - 3766, Sujeet Kumar, 	2014-06-01
+|******************************************************************************
+#include <bic_dal2>
+
+	table 	ttdisg825 | LC Terms Details
+	table 	ttdisg800 | Export Parameter
+	table	ttfcmg011
+	table  ttdisg841
+	table	ttccom100 |Bussiness Partner
+	domain	tfgld.date	curr.date
+	
+|*****************************  Object Hooks *********************************	
+function extern long before.open.object.set()
+{	
+	curr.date = utc.num()
+	tcmcs.dll0095.read.parm("tdisg800")
+	dal.field.depends.on("tdisg825.dsc1",
+					HOOK_UPDATE +
+					HOOK_IS_DERIVED,"tdisg825.isbk")
+					
+	dal.field.depends.on("tdisg825.dsc2",
+					HOOK_UPDATE +
+					HOOK_IS_DERIVED,"tdisg825.ngbk")
+
+	dal.field.depends.on("tdisg825.dsc3",
+					HOOK_UPDATE +
+					HOOK_IS_DERIVED,"tdisg825.rvbk")
+	dal.field.depends.on("tdisg825.ccur",
+					HOOK_UPDATE, "tdisg825.bpid")
+	return(0)
+}
+
+function extern long before.save.object(long type)
+{
+	if type = DAL_NEW then
+		if  tcmcs.dll0050.check.and.generate.order.number(
+				3, tdisg825.lcno, tdisg800.lcnr, 
+				9, tdisg825.lcno ) then
+			return(DALHOOKERROR)
+		endif
+	endif
+	
+	return(0)
+}
+
+function extern long after.save.object(long type)
+{
+	long	ret_val
+	
+	if type = DAL_UPDATE then
+		select tdisg841.lpct,tdisg841.amnt
+		from	tdisg841 for update
+		where	tdisg841._index1 = {:tdisg825.lcno}
+		selectdo
+			dal.change.object("tdisg841")
+			
+			if tdisg825.valu <> 0 then
+| 				dal.set.field("tdisg841.lpct",((tdisg841.amnt*100)/tdisg825.valu))
+				dal.set.field("tdisg841.amnt",((tdisg825.valu*tdisg841.lpct)/100))
+			endif
+			
+			ret_val = dal.save.object("tdisg841")
+			
+			if ret_val <> 0 then
+				return(DALHOOKERROR)
+			endif
+		endselect
+	endif
+	
+	return(0)
+}
+
+function extern long before.new.object()
+{
+	tdisg825.lcno = tdisg800.lcsr
+	tdisg825.isdt = date.num()	
+	return(0)
+}
+|************************** Mandatory Hooks *******************************
+
+function extern boolean tdisg825.bpid.is.mandatory()
+{
+	if isspace(tdisg825.bpid) then
+		dal.set.error.message("Bussiness Partner is Mandatory !")
+		return(true)
+	endif
+	return(false)	
+}
+
+function extern boolean tdisg825.valu.is.mandatory()
+{
+| 	if isspace(tdisg825.valu) then			|#3766.o
+	if tdisg825.valu = 0 then			|#3766.n
+		dal.set.error.message("@Value is Mandatory !")
+		return(true)
+	endif
+	return(false)	
+}
+
+
+
+
+|************************** Method *******************************
+function extern boolean method.is.allowed(long method)
+{
+	return(true)
+}
+
+
+|************************** tdisg825.ccur Hooks ***************************
+function extern tdisg825.ccur.update()
+{
+	select	tccom100.ccur
+	from	tccom100
+	where	tccom100.bpid= {:tdisg825.bpid}
+	selectdo
+		tdisg825.ccur = tccom100.ccur
+	endselect
+	
+}
+
+|************************** tdisg825.lcno Hooks ***************************
+function extern boolean tdisg825.lcno.is.mandatory()
+{
+	if isspace(tdisg825.lcno) then
+		return(DALHOOKERROR)
+	endif
+	return(false)
+}
+
+|************************** tdisg825.isbk Hooks ***************************
+							|#3766.sn
+function extern  boolean tdisg825.isbk.is.derived()
+{
+	if not isspace(tdisg825.dsc1) and isspace(tdisg825.isbk) then
+		return(true)
+	endif
+	return(false)
+}
+							|#3766.en
+|******  tdisg825.dsc1   Issuing Bank Description *******************
+function extern tdisg825.dsc1.update()
+{
+	tdisg825.dsc1 = get.bank.description(tdisg825.isbk)
+}
+
+function extern boolean tdisg825.dsc1.is.derived()
+{
+	if not isspace(tdisg825.isbk) then
+		return(true)
+	endif
+	
+	return(false)
+}
+
+function extern boolean tdisg825.dsc1.is.mandatory(long type)
+{
+	if isspace(tdisg825.isbk) and isspace(tdisg825.dsc1) then
+		dal.set.error.message("@ Enter Issuing Bank Description")
+		return(true)
+	endif
+	return(false)	
+}
+
+|************************** tdisg825.ngbk Hooks ***************************
+								|#3766.sn
+function extern  boolean tdisg825.ngbk.is.derived()
+{
+	if not isspace(tdisg825.dsc2) and isspace(tdisg825.ngbk) then
+		return(true)
+	endif
+	return(false)
+}
+								|#3766.en
+
+|******  tdisg825.dsc2   Negotiating Bank Description *******************
+function extern tdisg825.dsc2.update()
+{
+	tdisg825.dsc2 = get.bank.description(tdisg825.ngbk)
+}
+
+function extern boolean tdisg825.dsc2.is.derived()
+{
+	if not isspace(tdisg825.ngbk) then
+		return(true)
+	endif
+	
+	return(false)
+}
+
+|*****
+
+function extern boolean tdisg825.dsc2.is.mandatory(long type)
+{
+	if isspace(tdisg825.ngbk) and isspace(tdisg825.dsc2) then
+		dal.set.error.message("@ Enter Negotiating Bank Description")
+		return(true)
+	endif
+	return(false)	
+}
+
+
+|************************** tdisg825.rvbk Hooks ***************************
+								|#3766.sn
+function extern  boolean tdisg825.rvbk.is.derived()
+{
+	if not isspace(tdisg825.dsc3) and isspace(tdisg825.rvbk) then
+		return(true)
+	endif
+	return(false)
+}
+								|#3766.en
+
+
+|******  tdisg825.dsc3   Receiving Bank Description *******************
+function extern tdisg825.dsc3.update()
+{
+	tdisg825.dsc3 = get.bank.description(tdisg825.rvbk)
+}
+
+function extern boolean tdisg825.dsc3.is.derived()
+{
+	if not isspace(tdisg825.rvbk) then
+		return(true)
+	endif
+	
+	return(false)
+}
+
+|*****
+
+function extern boolean tdisg825.dsc3.is.mandatory(long type)
+{
+	if isspace(tdisg825.rvbk) and isspace(tdisg825.dsc3) then
+		dal.set.error.message("@ Enter Issuing Bank Description")
+		return(true)
+	endif
+	return(false)	
+}
+|**********************  USER DEFINED FUNCTIONS *****************************
+
+function domain tfgld.desc get.bank.description(domain tcbank	i.bank)
+{
+	select 	tfcmg011.desc
+	from	tfcmg011
+	where	tfcmg011._index1 = {:i.bank}
+	as set with 1 rows
+	selectdo
+	selectempty
+		tfcmg011.desc = ""
+	endselect
+	
+	return(tfcmg011.desc)
+}

@@ -1,0 +1,169 @@
+|******************************************************************************
+|* tdisg8231m600  0  VRC B61U a7 isg 
+|* 
+|* baan
+|* 14-10-10 [16:15]
+|******************************************************************************
+|* Script Type: 4
+|******************************************************************************
+                                                                                
+|****************************** DECLARATION SECTION ***************************
+declaration:
+	table	ttdisg831
+	table	ttdisg832
+	table	twhisg311
+	table	twhisg312
+	table	ttcibd001
+	table	ttdpur401
+	extern	domain	tcorno		edrn.f
+#include <bic_dam>
+|****************************** PROGRAM     SECTION ***************************
+|****************************** ZOOM FROM   SECTION ***************************
+|****************************** FORM	     SECTION ***************************
+|****************************** CHOICE      SECTION ***************************
+|****************************** FIELD       SECTION ***************************
+|****************************** MAIN TABLE  SECTION ***************************
+|****************************** FUNCTION    SECTION ***************************
+
+
+choice.cont.generate:
+on.choice:
+	if process.billing.advice.with.installment(edrn.f) then
+		show.dal.messages(MSG.ALL)
+		abort.transaction()
+	else
+		
+		commit.transaction()
+	endif
+	
+functions:
+function  long process.billing.advice.with.installment
+				(
+					domain	tcorno		i.edrn		|Billing Advice
+				)
+{
+	|******  Create Warehouse Order & Warehouse Line
+	
+	domain	tcorno	o.orno
+	domain	tcwset	o.oset
+	domain	tcpono	o.wlin,o.wseq
+	domain	tcamnt	bill.valu,tot.sasa.l	|#arjit.22.07.2014.n
+	domain	tccprj		prv.cprj	|#arjit.22.07.2014.n
+	domain	tccom.bpid	prv.ofbp	|#arjit.22.07.2014.n
+	domain	tppdm.nins	prv.nins	|#arjit.22.07.2014.n
+	domain	tcdate		curr.date
+	long ret_val
+	domain	tcncmp		curr.comp,fin.comp
+	domain	tcamnt		o.insa
+	
+ 	domain	tfgld.date	tmp.date
+	long	tmp.time
+	
+	long tot.tobi,tot.tobi1
+								|#sujeet.sn
+	boolean o.found
+	domain 	tccwar		o.cwar
+								|#sujeet.en
+	prv.cprj = ""
+	prv.ofbp = ""
+	prv.nins = 0
+	tot.sasa.l = 0
+	
+	curr.date = utc.num()
+	curr.comp = get.compnr()
+	
+	
+	select 	tdisg832.*,whisg312.*,tdisg831.*
+	from	tdisg832,whisg312,tcibd001,tdisg831
+	where	tdisg832._index1 = {:i.edrn}
+	and	tdisg832.cmbc refers to whisg312
+	and	tdisg832.item refers to tcibd001
+	and	(tcibd001.kitm = tckitm.purchase or tcibd001.kitm = tckitm.manufacture)
+	and	tdisg832.edrn refers to tdisg831
+	selectdo
+		
+		if not isspace(tdisg832.reas) and tdisg832.tobi = tcyesno.no then
+			select 	whisg311.type
+			from	whisg311
+			where	whisg311._index1 = {:tdisg832.reas}
+| 			and 	whisg311.type = whreas.type.stock
+			as set with 1 rows
+			selectdo
+			endselect
+		
+			if whisg311.type = whreas.type.stock then
+				continue
+			endif
+			
+		endif
+								|#sujeet.sn
+		select tdpur401.cwar:o.cwar
+		from	tdpur401
+		where	tdpur401._index1 = {:whisg312.orno,:whisg312.line,:whisg312.seqn}
+		as set with 1 rows
+		selectdo
+			if isspace(o.cwar) then
+				o.found = true
+			endif
+		endselect
+		
+		if  o.found then
+			continue
+		endif
+								|#sujeet.en
+		
+		if isspace(tdisg832.worn) then
+			if tdisgdll0831.create.warehouse.order.header(
+							whinh.oorg.project.man,
+							whinh.ittp.issue,
+							whisg312.cwar,
+							tdisg831.cprj,
+							o.orno,
+							o.oset) then
+				update.error.flag(i.edrn,10)			|Error Creation of Warehouse Project Transfer Manual 		
+				return(DALHOOKERROR)
+			else
+				|Update Warehouse Order/Set on Line
+				tdisgdll0831.update.warehouse.order.tdisg832(
+							tdisg832.edrn,
+							tdisg832.rcno,
+							tdisg832.rcln,
+							o.orno,
+							o.oset)
+				tdisg832.worn = o.orno
+				tdisg832.wset = o.oset
+			endif
+		endif				
+		|* If Warehouse Order Line is not Generated then
+		|* Generate Warehouse Order Line
+		if tdisg832.wlin = 0 then  
+			if tdisgdll0831.create.warehouse.order.line(
+						whinh.oorg.project.man,
+						tdisg832.worn,
+						tdisg832.wset,
+						tdisg832.item,
+						tdisg832.qnty,
+						whisg312.cprj,
+						whisg312.cspa,
+						whisg312.cact,
+						whisg312.ccco,
+						o.wlin,
+						o.wseq) then
+				update.error.flag(i.edrn,20)	|Error Creation of Warehouse Project Transfer Manual Lines 					
+				return(DALHOOKERROR)
+			else
+				|Update Warehouse Line Number/Sequence Number on 
+				|tdisg832 table.
+				tdisgdll0831.update.warehouse.order.line.tdisg832(
+							tdisg832.edrn,
+							tdisg832.rcno,
+							tdisg832.rcln,
+							o.wlin,
+							o.wseq)
+			endif
+		endif	
+| 		endif
+	endselect
+
+return(0)
+}

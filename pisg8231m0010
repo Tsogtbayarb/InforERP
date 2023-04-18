@@ -1,0 +1,1610 @@
+|******************************************************************************
+|* tdisg8231m001  0  VRC B61U a7 live
+|* Generate Invoice
+|* Tools                         
+|* 2014-08-09
+|******************************************************************************
+|* Main table tdisg831 Billing Advice, Form Type 4
+|******************************************************************************
+|*  ID	ISGECDV001094	Sujeet Kumar,		2014-10-09
+|* Multiple Installment Export Invoicing is not processed,
+|* Due to Status of the Lines will be On-Hold, instead of Confirmed
+|* Functional: Mr. Vikas Yadav
+|*
+|* ID ISGEC001096,		Sujeet Kumar		2014-10-14
+|* Only Transferred to Central Invoicing lines are validated, whose
+|* to be billed [tdisg832.tobi] should  be yes [tcyesno.yes]
+|* Functional: Mr. Nishant Verma
+|*
+|* ISGEC001164, IT0205, Arjit Gupta, VRC B61U a7 isg, Dt. 25-11-2014
+|* Currency Rate & Fixed Currency Rate.
+|*
+|* ISGEC001208, IT0047, Dharmendra, VRC B61U a7 isg, Dt. 30-12-2014
+|* Check if Fixed currency rate is "Document Date" for Particular
+|* Project and Customer
+|*
+|* ID ISG01016, 	Shilpa ,	2015-01-12
+|* Update of tpppc211
+|* Functional: Mr. Nishant Kaushik.
+|*
+|* 34495,	Sujeet Kumar,	2015-06-23
+|* Check Billing Advice Installment having Same Payment Terms
+|*
+|* ISGEC002014, Manish Manchanda, 2015-10-27
+|* Modification 
+|*
+|* ISGEC01082, Dharmendra, 06-11-2015
+|* Modification for processing billing advice which contains those receipts which
+|* are send for subcontracting
+|*
+|* ISGEC002022, Shilpa Janardanan, 17-11-2015
+|* Change of date for shipment
+|* shipment confirmation
+
+|****************************** declaration section ***************************
+declaration:
+
+table	ttdisg831 | Billing Advice
+table	ttdisg832
+table	ttdisg839
+table	twhisg311
+table	twhisg312
+table	ttppin020
+table	ttpisg039
+table	ttppdm600
+table	tcisli100
+table	tcisli000
+table	ttctax400
+table	tciisg101
+table	ttcmcs052
+table	tcisli235
+table	tcisli200
+table	twhinh312
+table	ttfisg001
+table	tcisli205
+table	ttfisg005
+table	ttdpur406
+table	twhwmd260
+table	ttppdm740				|#ISGEC001208.n
+table	ttdisg867
+table	ttdisg873
+table	twhinh220
+table	ttdisg867
+|***************  Form Variables ************************************************
+extern 	domain  tcorno           cinv.f    fixed
+
+
+extern	domain	tcccty		ccty.f
+extern	domain	tccvat		cvat.f
+extern	domain	tcccty		bptc.f
+extern	domain	tcdate		ivdt.f
+
+extern	domain	tctax.seqn	rnso.l
+extern	domain	tctax.seqn.l	rnsb.l
+extern	domain	tppdm.cpro	cpro.f
+extern	domain	tcorno		import.cinv
+
+extern	domain	tfgld.ttyp	ltyp.f
+extern	domain	tfgld.docn	ltsr.f
+extern	domain	tcdate		ldat.f
+
+
+extern	domain	tccprj		cprj.f
+extern	domain	tccom.bpid	ofbp.f
+extern	domain	tfgld.date	cind.f
+extern	domain	tcdsca		bold.f
+extern	domain	tcdsca		bodt.f
+
+extern	domain	tcdsca		cprj.dsca
+extern	domain	tcnama		ofbp.nama
+extern	domain	tcdsca		cpro.dsca
+extern	domain	tcdsca		ccty.dsca
+extern	domain	tcdsca		cvat.dsca
+extern	domain	tcdsca		bptc.dsca
+extern	domain	tfgld.dimx	o.dimx
+long				  i.count
+long 	ret_val
+long found
+domain	tcqsl1		on.hand
+
+	extern	domain	tcfcrt		var.fcrt			|#ISGEC001164.n
+	extern	domain	tcratc		var.rate			|#ISGEC001164.n
+						|#34495.sn
+	domain	tccpay		o.cpay
+	domain	tccpay		tmp.cpay
+						|#34495.en
+	domain	whinh.shpm	i.rcno	
+extern	domain	tcorno	advice.number	
+
+long	ret		|#ISGEC002022.n
+#include <bic_dam>
+#pragma used dll ottstpapihand
+
+	
+|****************************** program section ********************************
+before.program:
+	import("tdisg831.cinv",import.cinv)
+	
+before.display.object:
+	select	tdisg831.flag,
+		tdisg831.stat
+	from	tdisg831
+	where	tdisg831._index3 = {:import.cinv}
+	as set with 1 rows 
+	selectdo
+		if tdisg831.stat = tdisg.stat.freeze then
+			if tdisg831.flag <> 0 then
+				disable.fields("ccty.f","cvat.f","bptc.f","ivdt.f",
+						"rnso.l","rnsb.l","cpro.f")
+			else
+				enable.fields("ccty.f","cvat.f","bptc.f","ivdt.f",
+						"rnso.l","rnsb.l","cpro.f")
+			endif
+		else if tdisg831.stat = tdisg.stat.process then
+			disable.fields("ccty.f","cvat.f","bptc.f","ivdt.f",
+						"rnso.l","rnsb.l","cpro.f")
+			disable.commands("generate")
+		endif
+		endif
+	endselect
+|****************************** group section **********************************
+group.1:
+init.group:
+   get.screen.defaults()
+|***************************** choice section **********************************
+choice.generate:
+before.choice:
+							|# ISGEC01082.sn
+	if all.lines.are.without.tobe.filled() then						
+		if subcon.advice.present.for.all.lines() then						
+			message("Subcon Advice present. Can't be processed")
+			choice.again()
+		endif	
+	endif	
+							|# ISGEC01082.en
+
+							|#ISGEC002014.sn
+	select	tdisg832.rcno, tdisg832.rcln
+	from	tdisg832
+	where	tdisg832._index1	=	{:tdisg831.edrn}
+	selectdo
+		select	a_whisg312.rcno:i.rcno
+		from	whisg312	a_whisg312
+		where	a_whisg312._index1	=	{:tdisg832.rcno}
+		and	a_whisg312.rcln		<>	:tdisg832.rcln
+		and	a_whisg312.inrq		=	" "
+		selectdo
+			message("All lines of receipt " &i.rcno&" are not Linked, Cannot process.")
+			choice.again()
+		endselect
+	endselect
+							|#ISGEC002014.sn
+	if ivdt.f > utc.num() then
+		message("Invoice Date is Greater Than Current Date")
+		choice.again()
+	endif
+	
+	if not check.registration.sequence(tdisg.type.export,rnso.l) then
+		message("Enter Valid Registration Sequence Own")
+		choice.again()
+	endif
+	
+	select 	tfgld010.dimx:o.dimx
+	from	tfgld010
+	where 	tfgld010._index1 = {1,:cprj.f}
+	as set with 1 rows
+	selectdo
+	selectempty
+		message("Dimension Not Exists")
+		choice.again()
+	endselect
+	check_receipt_status()					|#sujeet.sn
+	if found then
+		message("Cannot Process As Receipt Not yet confirmed")
+		choice.again()
+	endif
+						|#sujeet.en
+	check_receipt_confirmation_date()	|#ISGEC002022				|#ISGEC001208.sn
+	
+	select	tppdm740.fcrt
+	from	tppdm740
+	where	tppdm740._index1 = {:cprj.f, :ofbp.f}
+	and	tppdm740.fcrt = tcfcrt.docd
+	selectdo
+	selectempty
+		message("Cannot Process as Fixed Currency rate is not Document Date.")
+		choice.again()
+	endselect
+	
+						|#ISGEC001208.en
+						
+						|#34495.sn		
+	select tdisg831.edrn
+	from	tdisg831
+	where	tdisg831._index3 = {:cinv.f}
+	selectdo
+		if tdisg.dll0831.check.payment.terms(tdisg831.edrn,o.cpay) then
+			message("Payment Terms are different of Billing Advice Line")
+			choice.again()
+		else
+			tmp.cpay = o.cpay
+			if tmp.cpay <> o.cpay then
+				message("Payment Terms are different on Commercial Invoice")
+				choice.again()
+			endif
+			
+		endif
+		
+	endselect
+						|#34495.en
+on.choice:
+	
+	if update.tax.data() then
+		show.dal.messages(MSG.ALL)
+		choice.again()
+	endif
+	
+	if process.billing.advice.with.installment(cinv.f) then
+		show.dal.messages(MSG.ALL)
+		choice.again()
+	else
+		select 	tdisg831.edrn
+		from	tdisg831
+		where	tdisg831._index3 = {:cinv.f}
+		selectdo
+			tdisgdll0831.update.billing.advice.process.status(tdisg831.edrn,tdisg.stat.process)
+		endselect
+		
+		commit.transaction()
+		
+| 		tdisgdll0831.get.transfer.order.against.billing.advice.export(cinv.f)		|#ISG01016.o
+	endif
+	
+
+|***************************** field section **********************************
+
+field.cinv.f:
+before.field:
+	cinv.f = import.cinv
+after.field:
+	select 	tdisg831.ccty:ccty.f,
+		tdisg831.cvat:cvat.f,
+		tdisg831.bptc:bptc.f,
+		tdisg831.rnsb.l:rnsb.l,
+		tdisg831.rnso.l:rnso.l,
+		tdisg831.cpro:cpro.f,
+		tdisg831.cprj:cprj.f,
+		tdisg831.ofbp:ofbp.f,
+		tdisg831.ivdt:ivdt.f,
+		tdisg831.cind:cind.f,
+		tdisg831.bodt:bodt.f,
+		tdisg831.bold
+	from	tdisg831 
+	where	tdisg831._index3 = {:cinv.f}
+	as set with 1 rows
+	selectdo
+		select	tdisg839.biln:bold.f
+		from	tdisg839
+		where	tdisg839._index1 = {:tdisg831.bold}
+		selectdo
+		endselect	
+	endselect
+	
+	
+	
+field.rnso.l:
+before.zoom:
+	query.extend.where.in.zoom("ciisg101.type = 1")
+after.field:
+	select 	ciisg101.ltyp:ltyp.f,
+		ciisg101.ltsr:ltsr.f,
+		ciisg101.ldat:ldat.f
+	from	ciisg101
+	where	ciisg101._index1 = {:rnso.l}
+	as set with 1 rows
+	selectdo
+	endselect
+
+field.rnsb.l:
+before.zoom:
+	tctax400.bpid = ofbp.f
+	
+	
+field.cprj.f:
+after.field:
+	select	tcmcs052.dsca:cprj.dsca
+	from	tcmcs052
+	where	tcmcs052._index1 = {:cprj.f}
+	as set with 1 rows
+	selectdo
+	endselect	
+
+field.ofbp.f:
+after.field:
+	select	tccom100.nama:ofbp.nama
+	from	tccom100
+	where	tccom100._index1 = {:ofbp.f}
+	as set with 1 rows
+	selectdo
+	endselect
+	
+field.cpro.f:
+after.field:
+	select	tppdm043.desc:cpro.dsca
+	from	tppdm043
+	where	tppdm043._index1 = {:cpro.f}
+	as set with 1 rows
+	selectdo
+	endselect
+
+field.ccty.f:
+after.field:
+	select	tcmcs010.dsca:ccty.dsca
+	from	tcmcs010
+	where	tcmcs010._index1 = {:ccty.f}
+	as set with 1 rows
+	selectdo
+	endselect
+
+field.cvat.f:
+after.field:
+	select	tcmcs036.dsca:cvat.dsca
+	from	tcmcs036
+	where	tcmcs036._index1 = {:cvat.f}
+	as set with 1 rows
+	selectdo
+	endselect
+	
+field.bptc.f:
+after.field:
+	select	tcmcs010.dsca:bptc.dsca
+	from	tcmcs010
+	where	tcmcs010._index1 = {:bptc.f}
+	as set with 1 rows
+	selectdo
+	endselect
+	
+						|#ISGEC001164.sn
+field.var.fcrt:
+before.display:
+	Get_Currency_Rate(cprj.f, ofbp.f, var.fcrt, var.rate)
+	
+field.var.rate:
+before.display:
+	Get_Currency_Rate(cprj.f, ofbp.f, var.fcrt, var.rate)
+						|#ISGEC001164.en
+|*************************** function section **********************************
+functions:
+function long update.tax.data()
+{
+	select 	tdisg831.ccty,
+		tdisg831.cvat,
+		tdisg831.bptc,
+		tdisg831.rnsb.l,
+		tdisg831.rnso.l,
+		tdisg831.cpro
+	from	tdisg831 for update
+	where	tdisg831._index3 = {:cinv.f}
+	selectdo
+		dal.change.object("tdisg831")
+		dal.set.field("tdisg831.ccty",  ccty.f)
+		dal.set.field("tdisg831.cvat",  cvat.f)
+		dal.set.field("tdisg831.bptc",  bptc.f)
+		dal.set.field("tdisg831.rnsb.l",  rnsb.l)
+		dal.set.field("tdisg831.rnso.l",  rnso.l)
+		dal.set.field("tdisg831.cpro",  cpro.f)
+		dal.set.field("tdisg831.ivdt",  ivdt.f)
+		ret_val = dal.save.object("tdisg831")
+		if ret_val = 0 then
+			commit.transaction()
+		else
+			return(DALHOOKERROR)
+			abort.transaction()
+		endif
+	endselect
+	
+	return(0)
+}	
+
+
+
+function long process.billing.advice.with.installment
+				(
+					domain	tcorno		i.cinv		|Commercial Invoice
+				)
+{
+	|******  Create Warehouse Order & Warehouse Line
+	
+	domain	tcorno	o.orno
+	domain	tcwset	o.oset
+	domain	tcpono	o.wlin,o.wseq
+	domain	tcamnt	bill.valu		
+	domain	tccprj		prv.cprj	
+	domain	tccom.bpid	prv.ofbp	
+	domain	tppdm.nins	prv.nins	
+	domain	tcdate		curr.date
+	long ret_val
+	domain	tcncmp		curr.comp,fin.comp
+	domain	tcamnt		o.insa
+| 	domain	tcncmp		curr.comp,fin.comp
+	domain	tcorno		o.brid,v.brid
+	domain	tcncmp		o.comp
+	boolean	error.found
+	string		error.msg(500)
+	
+	domain	tfgld.docn	ir.number
+	
+	domain	tfgld.date	tmp.date
+	long	tmp.time
+	
+	domain	tccwar		o.cwar
+	boolean			o.found
+	
+	
+	domain	whinh.shpm	o.shpm	|test
+	domain	tcpono			o.shln	 
+	
+	prv.cprj = ""
+	prv.ofbp = ""
+	prv.nins = 0
+	
+| 	curr.date = utc.num()
+	curr.comp = get.compnr()
+	
+	
+	select 	tdisg832.*,whisg312.*
+	from	tdisg832,whisg312,tcibd001
+	where	tdisg832._index3 = {:i.cinv}
+	and	tdisg832.cmbc refers to whisg312
+	and	tdisg832.item refers to tcibd001
+	and	(tcibd001.kitm = tckitm.purchase or tcibd001.kitm = tckitm.manufacture)
+	selectdo
+		if not isspace(tdisg832.reas) and tdisg832.tobi = tcyesno.no then
+			select 	whisg311.type
+			from	whisg311
+			where	whisg311._index1 = {:tdisg832.reas}
+			as set with 1 rows
+			selectdo
+			endselect
+		
+			if whisg311.type = whreas.type.stock then
+				continue
+			endif
+			
+		endif		
+		
+								|#sujeet.sn
+		
+		if not isspace(whisg312.cwar) then		|# ISGEC01082.n		
+			select tdpur401.cwar:o.cwar
+			from	tdpur401
+			where	tdpur401._index1 = {:whisg312.orno,:whisg312.line,:whisg312.seqn}
+			as set with 1 rows
+			selectdo
+				if isspace(o.cwar) then
+					o.found = true
+				endif
+			endselect
+			
+			if  o.found then
+				continue
+			endif
+								|#sujeet.en
+		endif						|# ISGEC01082.n	
+							
+		
+								|# ISGEC01082.sn
+		if check.subcon.advice.and.process(
+					tdisg832.orno,
+					tdisg832.pono) then
+			return(DALHOOKERROR)
+		endif			
+
+
+		if not isspace(whisg312.cwar) then		|# ISGEC01082.en		
+			if isspace(tdisg832.worn) then
+				if tdisgdll0831.create.warehouse.order.header(
+								whinh.oorg.project.man,
+								whinh.ittp.issue,
+								whisg312.cwar,
+								tdisg831.cprj,
+								o.orno,
+								o.oset) then
+					update.error.flag(tdisg832.edrn,10)			|Error Creation of Warehouse Project Transfer Manual 		
+					show.dal.messages(MSG.ALL)
+					return(DALHOOKERROR)
+				else
+					|Update Warehouse Order/Set on Line
+					tdisgdll0831.update.warehouse.order.tdisg832(
+								tdisg832.edrn,
+								tdisg832.rcno,
+								tdisg832.rcln,
+								o.orno,
+								o.oset)
+					tdisg832.worn = o.orno
+					tdisg832.wset = o.oset
+				endif
+			endif	
+		endif							
+		|* If Warehouse Order Line is not Generated then
+		|* Generate Warehouse Order Line
+		if tdisg832.wlin = 0 then  
+			if tdisgdll0831.create.warehouse.order.line(
+						whinh.oorg.project.man,
+						tdisg832.worn,
+						tdisg832.wset,
+						tdisg832.item,
+						tdisg832.qnty,
+						whisg312.cprj,
+						whisg312.cspa,
+						whisg312.cact,
+						whisg312.ccco,
+									|#ISGECDV001097.sn
+						tcyesno.yes,
+						(whisg312.amnt/tdisg832.qnty),
+									|#ISGECDV001097.en
+						o.wlin,
+						o.wseq) then
+				update.error.flag(tdisg832.edrn,20)	|Error Creation of Warehouse Project Transfer Manual Lines 					
+				return(DALHOOKERROR)
+			else
+				|Update Warehouse Line Number/Sequence Number on 
+				|tdisg832 table.
+				tdisgdll0831.update.warehouse.order.line.tdisg832(
+							tdisg832.edrn,
+							tdisg832.rcno,
+							tdisg832.rcln,
+							o.wlin,
+							o.wseq)
+			endif
+		endif	
+	endselect	
+	
+	
+|******  Process Outbound ********************	
+
+	select 	tdisg832.worg,
+		tdisg832.worn,
+		tdisg832.wset,
+		tdisg832.edrn,
+		tdisg832.wlin
+	from	tdisg832
+	where	tdisg832._index3 = {:i.cinv}
+	and	tdisg832.worn <> ""
+	group by tdisg832.edrn,tdisg832.worg,tdisg832.worn,tdisg832.wset,tdisg832.wlin
+	selectdo
+		generate.outbound.advise( 	tdisg832.worg,		|Order Origin
+						tdisg832.worn,		|Order Number
+						tdisg832.wlin,		|Order Number
+						tdisg832.wset,
+						o.shpm,
+						o.shln)		|Set
+		
+| 		tdisgdll0831.generate.outbound(
+| 						tdisg832.worg,		|Order Origin
+| 						tdisg832.worn,		|Order Number
+| 						tdisg832.wset)		|Set
+| 						
+| 		tdisgdll0831.process.outbound(
+| 						tdisg832.worg,		|Order Origin
+| 						tdisg832.worn,		|Order Number
+| 						tdisg832.wset)		|Set
+		commit.transaction()				
+		ret = tdisg.dll0831.update.planned.invdate(								|#ISGEC002022.n
+						tdisg832.worg,		|Order Origin
+						tdisg832.worn,		|Order Number
+						tdisg832.wset,		|Set
+						ivdt.f			|Invoice Date
+						)		
+		commit.transaction()
+						
+		select 	whinh200.hsta
+		from	whinh200
+		where	whinh200._index1 = {:tdisg832.worg,:tdisg832.worn,:tdisg832.wset}
+		and	whinh200.hsta = whinh.hsta.shipped
+		as set with 1 rows
+		selectdo
+		selectempty
+			update.error.flag(tdisg832.edrn,30)	|Error in Process Outbound 					
+			dal.set.error.message("@ Inventory Not Transferred!! Please Process Again...")
+			return(DALHOOKERROR)	
+		endselect
+					
+	endselect					
+
+
+	long count_tobi 
+	
+	count_tobi = 0
+	
+	select 	count(tdisg832.tobi):count_tobi
+	from	tdisg832
+	where	tdisg832._index3 = {:i.cinv}
+	and	tdisg832.tobi = tcyesno.yes
+	selectdo
+	endselect
+	
+	if not count_tobi then
+		message("Process Completed!!!")
+		return(0)
+	endif
+
+|****** Update Installment Billing With Billing Schedule ***********
+
+		
+		bill.valu = 0
+		
+		select sum(tdisg832.bivl):bill.valu,
+			tdisg832.nins
+		from	tdisg832
+		where	tdisg832._index3 = {:i.cinv}
+		group by tdisg832.nins
+		selectdo
+			
+										
+			select 	tppin020.*,
+				tppin020.cdf_insa:o.insa
+			from	tppin020 for update
+			where	tppin020._index1 = {:cprj.f,:ofbp.f,:tdisg832.nins}
+			selectdo
+				
+				if tppin020.invo = tppdm.yeno.no then
+				
+					dal.change.object("tppin020")
+					if tppin020.ccty <> ccty.f then
+	| 					dal.set.field("tppin020.ccty",tdisg831.ccty)
+						dal.set.field("tppin020.ccty",ccty.f)
+					endif
+					
+					if tppin020.cvat <> cvat.f then
+	| 					dal.set.field("tppin020.cvat",tdisg831.cvat)
+						dal.set.field("tppin020.cvat",cvat.f)
+					endif
+					
+					if tppin020.bptc <> bptc.f then
+	| 					dal.set.field("tppin020.bptc",tdisg831.bptc)
+						dal.set.field("tppin020.bptc",bptc.f)
+					endif
+					
+					if tppin020.rnso.l <> rnso.l then
+	| 					dal.set.field("tppin020.rnso.l",tdisg831.rnso.l)
+						dal.set.field("tppin020.rnso.l",rnso.l)
+					endif
+					
+					if tppin020.rnsb.l <> rnsb.l then
+	| 					dal.set.field("tppin020.rnsb.l",tdisg831.rnsb.l)
+						dal.set.field("tppin020.rnsb.l",rnsb.l)
+					endif
+					
+					
+					dal.set.field("tppin020.invo",tppdm.yeno.yes)
+					dal.set.field("tppin020.inia", bill.valu)
+					dal.set.field("tppin020.vasv.l",bill.valu)
+					dal.set.field("tppin020.sasv.l",bill.valu)
+					
+					dal.set.field("tppin020.easv.l",bill.valu)
+					dal.set.field("tppin020.cpro", cpro.f)
+					dal.set.field("tppin020.sidt",ivdt.f)
+					
+					ret_val = dal.save.object("tppin020")
+					if ret_val <> 0 then
+						select 	tdisg831.edrn
+						from	tdisg831
+						where	tdisg831._index3 = {:i.cinv}
+						selectdo
+							update.error.flag(tdisg831.edrn,40)	|Error in Updating the Tax Data
+						endselect
+						
+						show.dal.messages(MSG.ALL)
+						return(DALHOOKERROR)
+					endif
+				else if tppin020.invo = tppdm.yeno.yes then
+					tppin020.sidt = ivdt.f
+					db.update(ttppin020,db.retry,e)
+				endif
+				endif
+			endselect
+| 		endif
+		endselect
+		|*********
+		|Update Planned Invoice Date on tpisg039
+		|*********
+		
+		select 	tdisg832.rcno,
+			tdisg832.rcln,
+			tdisg832.ninc,
+			tdisg832.nins,
+			tdisg831.cprj,
+			tdisg831.ofbp,
+			tdisg832.edrn
+		from	tdisg832,tdisg831
+		where	tdisg832._index3 = {:i.cinv}
+		and	tdisg832.edrn refers to tdisg831
+		selectdo
+			
+			if tdisgdll0831.update.inst.wise.receipt(tdisg832.edrn,		|Billing Advice
+							tdisg831.cprj,	|Project
+							tdisg831.ofbp,	|Sold-to Business Partner
+							tdisg832.nins,	|Installments
+							tdisg832.rcno,	|Receipt Number
+							tdisg832.rcln,	|Receipt Line 
+							0.0,		|Billing Value
+							tdisg832.ninc,	|Billing Schedule
+							"",		|Sales Transaction Type
+							0,		|Sales Document Number
+							ivdt.f,		|Planned Invoice Date
+							tcyesno.no,	|Rembursement
+							"",		|Rembursement Type
+							10) then	|Action
+				return(DALHOOKERROR)
+			endif
+		endselect
+		
+| 	endselect
+	
+	commit.transaction()
+	
+
+|*********  Transfer Data to Central Invoicing ******************
+	select 	tdisg831.cprj
+	from	tdisg831
+	where	tdisg831._index3 = {:i.cinv}
+	group by tdisg831.cinv,tdisg831.cprj
+	selectdo
+		error.msg = tpisgdll0038.Transfer.Project.Data.to.Central.Invoicing(
+				tppdm.yeno.no,		|Advance Payment Requests
+				tppdm.yeno.no,		|Unit Rates
+				tppdm.yeno.yes,		|Installments
+				tppdm.yeno.no,		|Extensions
+				tppdm.yeno.no,		|Cost Plus
+				tppdm.yeno.no,		|Hold Back
+				tdisg831.cprj,		|Project From
+				tdisg831.cprj,		|Project To
+				"",			|Sold-to Business Partner
+				"ZZZZZZZZZ",		|Sold-to Business Partern
+				"",			|Extension From
+				"ZZZZ",			|Extension To
+				0,			|Transaction Time From
+				utc.num(),		|Transaction Time To
+				tppdm.yeno.no,		|Print Draft Invoice
+				empty,			|Print Euro
+				"",			|Printing Sequence
+				"",			|Device for Draft Invoice
+				empty,			|Invoice Status
+| 				tdisg831.ivdt)		|Cut Off Date
+				ivdt.f)			|Cut Off Date
+				
+		if not isspace(error.msg) then
+			message("%s",error.msg)
+		endif
+
+		select 	tdisg832.nins,
+			tdisg831.cprj,
+			tdisg831.ofbp,
+			tdisg832.edrn,
+			tdisg831.ivdt
+		from	tdisg832,tdisg831
+		where	tdisg832._index3 = {:i.cinv}
+		and	tdisg832.tobi = tcyesno.yes			|#ISGEC001096.n
+		and	tdisg832.edrn refers to tdisg831
+		selectdo
+			select 	tppin020.trsl
+			from	tppin020
+			where	tppin020._index1 = {:tdisg831.cprj,:tdisg831.ofbp,:tdisg832.nins}
+			and	tppin020.trsl = tppdm.yeno.yes
+			as set with 1 rows
+			selectdo
+				select cisli235.codt
+				from	cisli235 for update
+				where	cisli235._index1 = {:curr.comp,:tdisg831.cprj,:tdisg831.ofbp,tcinvt.installment}
+				and	cisli235.stat <> cisli.stat.posted
+				and	cisli235.nins = :tdisg832.nins
+				selectdo
+					cisli235.codt = tdisg831.ivdt
+					db.update(tcisli235,db.retry,e)
+					commit.transaction()
+				endselect
+				
+			selectempty
+				update.error.flag(tdisg832.edrn,50)	|Error in Transfer Project Data to Central Invoicing
+				dal.set.error.message("@ Installment Lines Not Transferred to Invoicing.Process Again...") 
+				return(DALHOOKERROR)
+			endselect
+		endselect
+
+
+	endselect
+	
+	
+|** Change Status of Billing Advice
+
+	
+
+	select 	tdisg831.cprj,
+		tdisg831.ofbp,
+		tppdm600.ncmp,
+		tdisg831.brid,
+		tdisg831.scmp,
+		tdisg831.edrn
+	from	tdisg831,tppdm600
+	where	tdisg831._index3 = {:i.cinv}
+	and	tdisg831.cprj refers to tppdm600
+| 	as set with 1 rows
+	selectdo
+		
+		switch.to.company(tppdm600.ncmp)
+				
+| 		if  tpisgdll0038.Change.Status.of.Project.Inst.data(tdisg831.edrn,get.compnr(),tdisg831.cprj,tdisg831.ofbp) then		|#ISGECDV001094.o
+		if  tpisgdll0038.Change.Status.of.Project.Inst.data.for.export(i.cinv,get.compnr(),tdisg831.cprj,tdisg831.ofbp) then		|#ISGECDV001094.n
+			update.error.flag(tdisg831.edrn,60)	|Transferred Central Invoice Data Status Modification
+			
+			return(DALHOOKERROR)
+			abort.transaction()
+		else
+			commit.transaction()
+		endif
+	endselect
+
+	
+	
+	
+	
+	
+
+
+	select 	cisli000.*
+	from	cisli000
+	where	cisli000._index1 = {0,:tppdm600.ncmp}
+	selectdo
+	endselect
+	
+	
+	select 	tdisg831.cprj,
+		tdisg831.brid,
+		tdisg831.ofbp,
+		tdisg831.scmp,
+		tdisg831.ivdt
+	from	tdisg831
+	where	tdisg831._index3 = {:i.cinv}
+	as set with 1 rows
+	selectdo
+	endselect
+	
+	
+	
+	if isspace(tdisg831.brid) then
+	
+		error.msg = tpisgdll0038.BillingRequestsAFS(
+					cisli000.brtp,		|Template
+					cisli000.brad,		|Billing Request Addition
+					tdisg831.ofbp,		|Invoice To Business Partner
+					"",			|Sales Invoice Transaction
+					0,			|Series Number
+					curr.comp,		|Logistic Company
+					tdisg831.cprj,		|Project
+					o.brid	,		|Billing Request Number	
+					o.comp )
+		if not isspace(error.msg) then
+			select tdisg831.edrn
+			from	tdisg831
+			where	tdisg831._index3 = {:i.cinv}
+			selectdo
+				update.error.flag(tdisg831.edrn,70)	|Error In Creation of Billing Request
+			endselect
+			message("%s",error.msg)
+			return(1)
+		else
+			select 	tdisg831.brid,
+				tdisg831.scmp
+			from	tdisg831 for update
+			where	tdisg831._index3 = {:i.cinv}
+			and	tdisg831._compnr = :curr.comp
+			selectdo
+				tdisg831.brid = o.brid
+				tdisg831.scmp = o.comp
+				db.update(ttdisg831,db.retry,e)
+				commit.transaction()
+			endselect
+		endif
+	endif
+	
+	
+	select 	cisli200.codt
+	from	cisli200 for update
+	where	cisli200._index1 = {:tdisg831.scmp,:tdisg831.brid}
+	and	cisli200.brst <> cisli.brst.posted
+	selectdo
+		cisli200.codt = tdisg831.ivdt
+		db.update(tcisli200,db.retry,e)
+		commit.transaction()
+	endselect
+	
+	
+	select 	cisli200.brst
+	from	cisli200
+	where	cisli200._index1 = {:tdisg831.scmp,:tdisg831.brid}
+	and	cisli200.brst = cisli.brst.posted
+	as set with 1 rows
+	selectdo
+	selectempty
+		error.msg = tpisgdll0038.Compose_Print_PostInvoice(
+				tcyesno.no,		|Billing Request Set
+				tdisg831.brid,		|Billing Request Number
+				tcyesno.yes,		|Composing
+				tcyesno.yes,		|Compose 
+				ivdt.f,			|Invoice Date
+				tcyesno.yes,		|Printing
+				cisli.prno.original,
+				tcyesno.no,		|Invoice Delivery Method
+				tcyesno.no,		|Euro
+				"",			|Printing Sequence
+				tcyesno.yes,		|Posting
+				utc.num())		|Transaction Entry Date	
+		
+		if not isspace(error.msg) then
+			select 	tdisg831.edrn
+			from	tdisg831 
+			where	tdisg831._index3 = {:i.cinv}
+			selectdo
+				update.error.flag(tdisg831.edrn,80)		|Error Duing Compose/Print/Post
+			endselect
+			
+			message("%s",error.msg)
+			return(1)
+		else
+			select 	cisli200.brst
+			from	cisli200
+			where	cisli200._index1 = {:tdisg831.scmp,:tdisg831.brid}
+			and	cisli200.brst = cisli.brst.posted
+			as set with 1 rows
+			selectdo
+			selectempty
+				select 	tdisg831.edrn
+				from	tdisg831
+				where	tdisg831._index3 = {:i.cinv}
+				selectdo
+					update.error.flag(tdisg831.edrn,80)		|Error Duing Compose/Print/Post
+				endselect
+				update.invoice(i.cinv,curr.comp)
+				message("Invoice is Not Posted. Process Again...")
+				return(-1)
+			endselect
+		endif
+	endselect
+
+
+	update.invoice(i.cinv,curr.comp)
+
+
+	return(0)
+}
+
+|** Update Invoice Data of Billing Advice Lines
+function update.invoice
+		(
+			domain tcorno		i.cinv,
+			domain tcncmp		curr.comp
+		)
+{
+	
+	domain	tfgld.date	tmp.date
+	long	tmp.time
+
+	domain	tcyesno		o.tppin020.cdf_remb
+	domain	tcorno		o.tppin020.cdf_edrn
+	domain	tfgld.docn	ir.number
+
+	switch.to.company(curr.comp)
+
+	select 	tdisg832.nins,
+		tdisg832.rcno,
+		tdisg832.rcln,
+		tdisg831.cprj,
+		tdisg831.ofbp,
+		tdisg831.brid,
+		tdisg831.scmp,
+		tdisg831.edrn
+	from	tdisg832,tdisg831
+	where 	tdisg832._index3 = {:i.cinv}
+	and	tdisg832.edrn refers to tdisg831
+	selectdo
+
+		select	cisli205.ityp,
+			cisli205.idoc
+		from	cisli205
+		where	cisli205._index2 = {:tdisg831.scmp,:tdisg831.brid}
+		and	cisli205._compnr = :tdisg831.scmp
+		as set with 1 rows
+		selectdo
+		endselect
+		
+| 		select 	tppin020.idoc,
+| 			tppin020.ityp,
+| 			tppin020.nins,
+| 			tppin020.sidt,
+| 			tppin020.cdf_remb:o.tppin020.cdf_remb,
+| 			tppin020.cdf_edrn:o.tppin020.cdf_edrn
+| 		from	tppin020
+| 		where	tppin020._index1 = {:tdisg831.cprj,:tdisg831.ofbp,:tdisg832.nins}
+| 	| 		and	tppin020.idoc <> 0 
+| 		as set with 1 rows
+| 		selectdo
+			select 	tpisg039.ityp,
+				tpisg039.idoc
+			from	tpisg039 for update
+			where	tpisg039._index1 = {:tdisg831.cprj,:tdisg831.ofbp,:tdisg832.nins,:tdisg831.edrn,
+							:tdisg832.rcno,:tdisg832.rcln}
+			and	tpisg039.idoc = 0				
+			selectdo
+| 				tpisg039.ityp = tppin020.ityp
+				tpisg039.ityp = cisli205.ityp
+| 				tpisg039.idoc = tppin020.idoc
+				tpisg039.idoc = cisli205.idoc
+				db.update(ttpisg039,db.retry,e)
+				
+				select 	whinh312.psno
+				from	whinh312
+				where	whinh312._index1 = {:tdisg832.rcno,:tdisg832.rcln}
+				as set with 1 rows
+				selectdo
+				selectempty
+					select	tdpur406.dino
+					from	tdpur406
+					where	tdpur406._index2 = {:tdisg832.rcno,:tdisg832.rcln}
+					as set with 1 rows
+					selectdo
+						whinh312.psno = tdpur406.dino
+					endselect
+					
+				endselect
+				
+				ir.number = lval(whinh312.psno)
+				
+				utc.to.local(tdisg831.crdt, tmp.date, tmp.time)	|#arjit.01.08.2014.n
+				select 	tfisg001.ivdt,
+					tfisg001.ityp,
+					tfisg001.idoc
+				from	tfisg001 for update
+				where	tfisg001._index1 = {:ir.number}
+				selectdo
+					tfisg001.ivdt = tmp.date		|#arjit.01.08.2014.n
+					tfisg001.ityp = cisli205.ityp
+					tfisg001.idoc = cisli205.idoc
+					db.update(ttfisg001,db.retry,e)
+					
+					select	tfisg005.irno
+					from	tfisg005
+					where	tfisg005._index1 = {:ir.number,:cisli205.ityp,:cisli205.idoc}
+					as set with 1 rows
+					selectdo
+					selectempty
+						tfisg005.irno = ir.number
+						tfisg005.ttyp = cisli205.ityp
+						tfisg005.docn = cisli205.idoc
+						tfisg005.date = tmp.date
+						db.insert(ttfisg005,db.skip.dupl,e)
+					endselect
+					
+					
+					commit.transaction()
+				endselect
+
+			endselect
+| 		endselect
+	endselect
+
+}
+
+
+
+|************
+							|#sujeet.sn
+function check_receipt_status()
+{
+	found = 0
+	on.hand = 0
+	select	tdisg832.rcno,tdisg832.rcln
+	from	tdisg832
+	where	tdisg832._index3 = {:cinv.f}
+	selectdo
+		select	whisg312.cwar,whisg312.cprj,whisg312.item,whisg312.cspa,whisg312.cact,whisg312.conf
+		from	whisg312
+		where	whisg312._index1 = {:tdisg832.rcno,:tdisg832.rcln}
+		selectdo
+			if whisg312.conf = tcyesno.no then
+				found = 1
+			endif
+			if not isspace(whisg312.cwar) then
+				select	whwmd260.qhnd
+				from	whwmd260
+				where	whwmd260._index1 = {:whisg312.cwar,:whisg312.cprj,:whisg312.item,:whisg312.cspa,:whisg312.cact}
+				selectdo
+					if whwmd260.qhnd = 0 then
+						on.hand = 1
+					endif
+				endselect
+			endif	
+		endselect
+	endselect	
+}
+							|#sujeet.en
+
+							|#ISGEC001164.sn
+function Get_Currency_Rate(
+			domain	tccprj		in.cprj,
+			domain	tccom.bpid	in.ofbp,
+		ref	domain	tcfcrt		ot.fcrt,
+		ref	domain	tcratc		ot.rate
+			)
+{
+	ot.fcrt = empty
+	ot.rate = 0
+	
+	select	cr_tppdm740.fcrt:ot.fcrt,
+		cr_tppdm740.rate:ot.rate
+	from	tppdm740 cr_tppdm740
+	where	cr_tppdm740._index1 = {:in.cprj, :in.ofbp}
+	selectdo
+	endselect
+}
+							|#ISGEC001164.en
+function check_receipt_confirmation_date()			|ISGEC002022.n
+{
+	long ardt,yearno, monthno, month_dayno,hours,  minutes,  seconds
+	domain	tfgld.date	o.tdisg831.cind
+	
+	select	tdisg832.rcno,tdisg832.rcln
+	from	tdisg832
+	where	tdisg832._index3 = {:cinv.f}
+	selectdo
+		select	whinh312.ardt
+		from	whinh312
+		where	whinh312._index1 = {:tdisg832.rcno,:tdisg832.rcln}
+		and	whinh312.conf =  tcyesno.yes
+		selectdo
+			select	tdisg831.cind:o.tdisg831.cind
+			from	tdisg831
+			where	tdisg831._index3 = {:cinv.f}
+			selectdo
+			endselect
+			
+			utc.to.date  (whinh312.ardt,  yearno,  monthno,  month_dayno,  hours,  minutes,  seconds)
+			ardt = date.to.num  (yearno,  monthno,  month_dayno)
+			
+			if ardt > o.tdisg831.cind then
+				mess("tcgenstring",1,"Invoice date cannot be less than receipt confirmation date")
+				choice.again()
+			endif
+		endselect
+	endselect
+	
+	
+	
+}							|#ISGEC002022.en
+
+
+								|# ISGEC01082.sn
+function long check.subcon.advice.and.process(
+				domain tcorno i.orno,
+				domain tcpono i.pono)
+{
+	domain	tcorno	o.orno
+	domain	tcwset	o.oset
+	domain	tccprj	o.cprj
+	domain tcorno	o.worn
+	domain tcpono 	o.wlin
+	domain tcpono	o.wseq
+	domain tccwar	o.cwar
+	domain tcitem	o.item
+	domain tppdm.cspa o.cspa
+	domain tppdm.cact o.cact
+	domain tccpcp	o.ccco
+	domain tcamnt 	o.amnt
+	domain	tcqiv1	isg832.qnty
+	domain	tcqiv1	isg873.qnty
+	domain	tckitm	item.type
+	domain	tcdate		o.tdisg831.ivdt		|#ISGEC002022.n
+	domain	whinh.shpm	o.shpm
+	domain	tcpono		o.shln			|#ISGEC0020.en
+	
+	select	tdisg867.*
+	from	tdisg867
+	where	tdisg867._index2 = {:i.orno, :i.pono}
+	selectdo
+		select	tdisg873.*
+		from	tdisg873 for update 
+		where	tdisg873._index1 = {:tdisg832.edrn, :tdisg832.rcno, :tdisg832.rcln,
+					:tdisg867.edrn, :tdisg867.rcno, :tdisg867.rcln}
+		selectdo
+			select	isg831.cprj:o.cprj
+			from	tdisg831 isg831
+			where	isg831._index1 = {:tdisg867.edrn}
+			selectdo
+			endselect
+			
+			select	isg832.worn:o.worn,
+				isg832.wlin:o.wlin,
+				isg312.cwar:o.cwar,
+				isg832.item:o.item,
+				isg312.cspa:o.cspa,
+				isg312.cact:o.cact,
+				isg312.ccco:o.ccco,
+				isg312.amnt:o.amnt
+			from	tdisg832 isg832,
+				whisg312 isg312
+			where	isg832._index1 = {:tdisg867.edrn, :tdisg867.rcno, :tdisg867.rcln}
+			and	isg832.cmbc refers to isg312
+			selectdo
+			endselect
+			
+			select	tcibd001.kitm:item.type
+			from	tcibd001
+			where	tcibd001._index1 = {:o.item}
+			selectdo
+			endselect
+			
+			if item.type = tckitm.purchase or item.type = tckitm.manufacture then
+				if isspace(tdisg873.worn) then
+					if tdisgdll0831.create.warehouse.order.header(
+								whinh.oorg.project.man,
+								whinh.ittp.issue,
+								o.cwar,
+								o.cprj,
+								o.orno,
+								o.oset) then
+						update.error.flag(tdisg867.edrn,10)	
+						return(DALHOOKERROR)
+					else
+						tdisg873.worn = o.orno
+						tdisg873.wset = o.oset		
+					endif
+				endif	
+
+				if tdisg873.wlin = 0 then  
+					if tdisgdll0831.create.warehouse.order.line(
+							whinh.oorg.project.man,
+							o.orno,
+							o.oset,
+							o.item,
+							tdisg873.issu,
+							o.cprj,
+							o.cspa,
+							o.cact,
+							o.ccco,
+							tcyesno.yes,
+							(o.amnt/tdisg873.issu),
+							o.wlin,
+							o.wseq) then
+						update.error.flag(tdisg867.edrn,20) 					
+						return(DALHOOKERROR)
+					else
+						tdisg873.wlin = o.wlin
+						tdisg873.wseq = o.wseq
+					endif
+				endif	
+				db.update(ttdisg873, db.retry)
+				commit.transaction()
+			endif	
+		endselect		
+	endselect
+	
+	select	tdisg867.*
+	from	tdisg867
+	where	tdisg867._index2 = {:i.orno, :i.pono}
+	selectdo
+		select	tdisg873.*
+		from	tdisg873 
+		where	tdisg873._index1 = {:tdisg832.edrn, :tdisg832.rcno, :tdisg832.rcln,
+					:tdisg867.edrn, :tdisg867.rcno, :tdisg867.rcln}
+		selectdo
+			select	isg832.item:o.item
+			from	tdisg832 isg832
+			where	isg832._index1 = {:tdisg867.edrn, :tdisg867.rcno, :tdisg867.rcln}
+			selectdo
+			endselect
+			
+			select	tcibd001.kitm:item.type
+			from	tcibd001
+			where	tcibd001._index1 = {:o.item}
+			selectdo
+			endselect
+			
+			if item.type = tckitm.purchase or item.type = tckitm.manufacture then			
+				generate.outbound.advise( tdisg873.worg,		|Order Origin			|#ISGEC002022.n
+							tdisg873.worn,		|Order Number
+							tdisg873.wlin,		|Order Number
+							tdisg873.wset,
+							o.shpm,
+							o.shln)	
+			
+				select 	tdisg831.ivdt:o.tdisg831.ivdt				|#ISGEC002022.sn
+				from	tdisg831
+				where	tdisg831._index1 = {:tdisg832.edrn}
+				as set with 1 rows
+				selectdo
+				endselect
+				
+				tdisg.dll0831.update.planned.invdate(							
+							tdisg873.worg,		|Order Origin
+							tdisg873.worn,		|Order Number
+							tdisg873.wset,		|Set
+							o.tdisg831.ivdt		|Invoice Date
+							)					|#ISGEC002022.en
+							
+				select 	whinh200.hsta
+				from	whinh200
+				where	whinh200._index1 = {:tdisg873.worg,:tdisg873.worn,:tdisg873.wset}
+				and	whinh200.hsta = whinh.hsta.shipped
+				as set with 1 rows
+				selectdo
+				selectempty
+					update.error.flag(tdisg867.edrn,30)	|Error in Process Outbound 					
+					dal.set.error.message("@ Inventory Not Transferred!! Please Process Again...")
+					return(DALHOOKERROR)	
+				endselect
+			endif	
+		endselect
+		
+		select	isg832.qnty:isg832.qnty
+		from	tdisg832 isg832
+		where	isg832._index1 = {:tdisg867.edrn, :tdisg867.rcno, :tdisg867.rcln}
+		selectdo
+		endselect
+			
+		select	sum(isg873.issu):isg873.qnty
+		from	tdisg873 isg873
+		where	isg873._index2 = {:tdisg867.edrn, :tdisg867.rcno, :tdisg867.rcln}
+		selectdo
+		endselect
+
+		if isg832.qnty = isg873.qnty then
+			tdisgdll0831.update.billing.advice.process.status(tdisg867.edrn,tdisg.stat.process)
+		endif	
+	endselect
+
+	return(0)
+}
+								|# ISGEC01082.en
+function  	boolean check.registration.sequence
+				(
+					domain	tdisg.type	i.type,		|Billing Advice Type
+					domain	tctax.seqn	i.rnso.l	|Registration Sequence					
+				)
+{
+		
+	on case i.type
+		case tdisg.type.domestic:
+			if not check.registration.sequence.own(i.rnso.l,tcyesno.no) then
+				dal.set.error.message("@ Enter Valid Registration Sequence OWN")
+				return(DALHOOKERROR)
+			endif
+			break
+		case	tdisg.type.export:
+			if not check.registration.sequence.own(i.rnso.l,tcyesno.yes) then
+				dal.set.error.message("@ Enter Valid Registration Sequence OWN")
+				return(DALHOOKERROR)
+			endif
+			break
+	endcase
+	return(true)	
+		
+
+}
+function boolean check.registration.sequence.own
+				(
+					domain	tctax.seqn	i.seqn,		|Regisgration Sequence 
+					domain	tcyesno		i.type		|Export 
+				)
+{
+	select	ciisg101.seqn
+	from	ciisg101
+	where	ciisg101._index1 = {:i.seqn}
+	and	ciisg101.type = :i.type
+	as set with 1 rows
+	selectdo
+	selectempty
+		return(false)
+	endselect
+	
+	return(true)
+}
+
+function boolean generate.outbound.advise(
+				domain	whinh.oorg	i.oorg,
+				domain	tcorno		i.orno,
+				domain	tcpono		i.pono,
+				domain	tcpono		i.seqn,
+		ref	domain	whinh.shpm		o.shpm,
+		ref	domain	tcpono			o.shln)
+{
+	
+	
+
+	
+	select	whinh220.*
+	from	whinh220
+	where	whinh220._index1 = {:i.oorg, :i.orno,:i.pono, :i.seqn}
+	selectdo
+		if  process.outbound.lines(whinh.outb.advice,
+				o.shpm,
+				o.shln ) then
+				
+			if  process.outbound.lines(whinh.outb.release,
+					o.shpm,
+					o.shln ) then
+			else
+				return(false)
+			endif
+		endif
+				
+	endselect
+		
+	return(true)
+}
+
+
+
+
+function boolean process.outbound.lines(
+				domain whinh.outb	outbound.action,
+			ref	domain	whinh.shpm		o.shpm,
+			ref	domain	tcpono			o.shln)
+{
+	domain	whinh.btno	run.number	fixed
+	domain	tcyesno		recalculate.excess.att
+	domain	tcqiv1		to.be.advised.quantity
+	domain	tcqiv1		qty.shortage
+	long ret
+	domain	tcdate	max.of.today, min.date
+	
+	boolean		lock.set
+	lock.set = false
+	run.number = ""
+	
+	commit.transaction()
+	if (outbound.action = whinh.outb.advice or
+				outbound.action = whinh.outb.direct)  then
+			db.retry.point()
+		
+			ret = whinh.dll0400.run.handle.for.specific.user(
+							whinh.kofr.outbound,
+							logname$,
+							run.number,
+							lock.set)
+			if ret <> 0 then	
+				abort.transaction()
+			else
+				commit.transaction()
+			endif
+	endif
+		
+	db.retry.point()
+| 	ret = whinh.dll0000.get.automatic.recalculation.of.excess.and.att(
+| 					recalculate.excess.att)
+	
+	
+	set.fmax  (max.of.today, "tcdate")
+
+	set.fmin  (min.date, "tcdate")
+
+	ret =    whinh.dll4200.process.outbound( 
+			outbound.action,
+			tcyesno.yes, 
+			0, 
+			0, 
+			whinh220.oorg,
+			whinh220.orno,
+			whinh220.oset,
+			whinh220.pono,
+			whinh220.seqn,
+			0,		|* advice
+			0,		|* BOM line
+			whinh220.qoro,
+			"",
+			"",		|* handling unit
+			min.date,
+			max.of.today,
+			false,
+			whinh.oalg.no,	|* advice log
+			true,		|* according mask
+			true,		|* cross-dock orders
+			tcyesno.no,	|* Load Plan Based
+			"",		|* Load
+			"",		|* Shipment 
+			"",		|* To Location
+			empty,
+			empty,
+			empty, 
+			false, 
+			qty.shortage) 
+			
+	if ret <> 0 then
+		show.dal.messages(MSG.ALL)
+		message("Outbound line not processed")
+		return(false)
+	else
+		if outbound.action = whinh.outb.release then
+			select	whinh431.shpm:o.shpm, whinh431.pono:o.shln
+			from	whinh431
+			where	whinh431._index2= {whinh.oorg.sales,:whinh220.orno,:whinh220.oset,:whinh220.pono,:whinh220.seqn}
+			selectdo
+			selectempty
+				o.shpm = ""
+				o.shln = 0
+			endselect
+		endif
+	endif	
+	
+	return(true)
+}
+
+									|# ISGEC01082.sn
+function boolean all.lines.are.without.tobe.filled()
+{
+	select 	tdisg831.edrn
+	from	tdisg831
+	where	tdisg831._index3 = {:cinv.f}
+	selectdo
+		select	tdisg832.edrn
+		from	tdisg832
+		where	tdisg832._index1 = {:tdisg831.edrn}
+		and	tdisg832.tobi = tcyesno.yes
+		as set with 1 rows
+		selectdo
+			return(false)
+		endselect
+	endselect
+	return(true)
+
+}
+
+
+function boolean subcon.advice.present.for.all.lines()
+{
+	long subcon.found
+	
+	subcon.found = 0
+	
+| 	select	tdisg832.orno, tdisg832.pono
+| 	from	tdisg832
+| 	where	tdisg832._index1 = {:tdisg831.edrn}
+| 	and	tdisg832.tobi = tcyesno.no 
+| 	selectdo
+| 		select	tdisg867.*
+| 		from	tdisg867
+| 		where 	tdisg867._index2 = {:tdisg832.orno, :tdisg832.pono}
+| 		selectdo
+| 		selectempty
+| 			subcon.found = 1
+| 		endselect
+| 	endselect
+| 	if subcon.found = 0 then
+| 		return(true)
+| 	endif
+
+	select 	tdisg831.edrn
+	from	tdisg831
+	where	tdisg831._index3 = {:cinv.f}
+	selectdo
+		select	tdisg832.rcno, tdisg832.rcln
+		from	tdisg832
+		where	tdisg832._index1 = {:tdisg831.edrn}
+		and	tdisg832.tobi = tcyesno.no 
+		selectdo
+			select	tdisg867.*
+			from	tdisg867
+			where 	tdisg867._index1 = {:tdisg831.edrn, :tdisg832.rcno, :tdisg832.rcln}
+			selectdo
+			selectempty
+				subcon.found = 1
+			endselect
+		endselect
+	endselect
+	if subcon.found = 0 then
+		return(true)
+	endif
+	
+	return(false)
+}
+									|# ISGEC01082.en
+

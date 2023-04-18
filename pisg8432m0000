@@ -1,0 +1,967 @@
+|******************************************************************************
+|* tdisg8432m000  0  VRC B61U a7 live
+|* Print Stock Report
+|* Installation user             
+|* 2014-10-09
+|******************************************************************************
+|* Main table tdisg832 Billing Advice Lines, Form Type 4
+|******************************************************************************
+|* ISGEC001098, IT0205, Arjit Gupta, VRC B61U a7 isg, Dt. 14-10-2014
+|* Add some column as per new requirement as suggested by Mr. Nishant Verma
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttdisg832 | Billing Advice Lines
+	table	ttdisg831
+	table	ttdpur400
+	table	ttdpur401
+	table	twhinh310
+	table	twhinh312
+	table	ttfacp935
+	table	twhinh936
+	table	ttcibd001
+	table	ttccom130
+	table	ttccom139
+	table	ttctax941
+	table	ttcmcs036
+	table	ttcmcs032
+	table	ttpisg039
+	table	ttdisg867
+
+	|******************* Form Variables ****************
+	extern	domain	tccprj		cprj.f
+	extern	domain	tccprj		cprj.t
+	extern	domain	tcorno		orno.f    fixed
+	extern	domain	tcorno		orno.t    fixed
+	extern	domain	tcdate		odat.f	
+	extern	domain	tcdate		odat.t	
+	extern	domain	tcorno		edrn.f    fixed
+	extern	domain	tcorno		edrn.t    fixed
+	extern	domain	tcdate		rcdt.f
+	extern	domain	tcdate		rcdt.t
+	extern	domain	tcyesno		all.rcpt
+	extern	domain	tcyesno		only.stck
+	
+	|*************** File Handling Variables *******************
+	string		str(300), err.file(100), file.name(100), line3(2000), line4(2000), line1(2000), line2(2000)
+	long		ret2, stat.fp
+	
+	|******************* Script Variables ***************
+	extern	domain	tcdate		v.odat.f
+	extern	domain	tcdate		v.odat.t
+	extern	domain	tcdate		v.rcdt.f
+	extern	domain	tcdate		v.rcdt.t
+	extern	domain	tcbool		fwhinh936.found
+	
+	|************** File Utilization Variables ******************
+	extern	domain	tccprj		rep.bprj			|1
+	extern	domain	tcdsca		rep.bpdc			|2	
+	extern	domain	tfgld.ttyp	rep.tptr			|3
+	extern	domain	tfgld.docn	rep.dptr			|3				
+	extern	domain	tcmcs.str12	rep.ptrn			|3				
+	extern	domain	tcorno		rep.born			|4				
+	extern	domain	tccom.bpid	rep.bsup			|5				
+	extern	domain	tcnama		rep.bsnm			|6
+	extern	domain	tfacp.isup	rep.isup			|7
+	extern	domain	tcmcs.str10	rep.isdt			|8				
+	extern	domain	tcitem		rep.item			|9
+	extern	domain	tcdsca		rep.itdsc			|10
+	extern	domain	tcqiv1		rep.qnty			|11	
+	extern	domain	tccom.bpid	rep.fsup			|12
+	extern	domain	tcnama		rep.fsnm			|13
+	extern	domain	tcdsca		rep.fcty			|14
+	extern	domain	tcmcs.cste	rep.fstt			|14
+	extern	domain	tcnama		rep.loca			|14
+	extern	domain	tcorno		rep.forn			|15
+	extern	domain	tccprj		rep.fprj			|16
+	extern	domain	tcdsca		rep.fpdc			|17
+	extern	domain	tcamnt		rep.bamt			|18
+	extern	domain	tcmcs.str12	rep.sinv			|19
+	extern	domain	tcmcs.str10	rep.sidt			|20
+	extern	domain	tcmcs.str30	rep.blno			|21
+	extern	domain	tcmcs.str10	rep.bldt			|22
+	extern	domain	tcorno		rep.edrn			|23
+	extern	domain	tcorno		rep.stat			|24
+	extern	domain	tcmcs.str10	rep.type			|25
+	extern	domain	whinh.shpm	rep.rcno			|26
+	extern	domain	tcpono		rep.rcln			|27
+	extern	domain	tcmcs.str15	rep.rcst			|28
+	extern	domain	tcorno		rep.cinv			|29
+	extern	domain	tcmcs.str10	rep.cind			|30
+
+|*************** Include **************
+#include<bic_desktop>
+|****************************** program section ********************************
+
+before.display.object:
+	set.enable.disable.fields()
+|****************************** group section **********************************
+
+group.1:
+init.group:
+	get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.cont.process:
+before.choice:
+	if	all.rcpt = tcyesno.yes	or
+		only.stck = tcyesno.yes	then
+	else	
+		message("Please Check All Receipt or Only Stock")
+		choice.again()
+	endif
+	
+	
+on.choice:
+	generate.file()
+
+
+|****************************** field section *********************************
+field.cprj.f:
+when.field.changes:
+	cprj.t = cprj.f
+	
+field.orno.f:
+when.field.changes:
+	orno.t = orno.f	
+	
+before.zoom:
+	str = "tdpur400.orno in ("
+	str = str & "select tdpur401.orno from tdpur401 where tdpur401._index5 inrange '" &cprj.f&"' and '"&cprj.t&"')"
+	query.extend.where.in.zoom(str)
+	
+field.orno.t:
+before.zoom:
+	str = "tdpur400.orno in ("
+	str = str & "select tdpur401.orno from tdpur401 where tdpur401._index5 inrange '" &cprj.f&"' and '"&cprj.t&"')"
+	query.extend.where.in.zoom(str)	
+	
+field.odat.f:
+when.field.changes:
+	odat.t = odat.f	
+
+field.edrn.f:
+when.field.changes:
+	edrn.t = edrn.f
+
+field.rcdt.f:
+when.field.changes:
+	rcdt.t = rcdt.f
+
+field.all.rcpt:
+when.field.changes:
+	set.enable.disable.fields()
+	
+field.only.stck:
+when.field.changes:
+	set.enable.disable.fields()
+	
+|****************************** function section ******************************
+
+functions:
+
+function generate.file()
+{
+	open.file()
+	generate.top.header()
+	generate.header.separator()
+	generate.header()
+	read.main.table()
+	close.file()
+}
+
+function read.main.table()
+{
+	domain	tfgld.date	tmp.isdt
+	domain	tfgld.date	tmp.bldt
+	
+	get.date.utc(odat.f, 00, 00, 00, v.odat.f)
+	get.date.utc(odat.t, 23, 59, 59, v.odat.t)
+	get.date.utc(rcdt.f, 00, 00, 00, v.rcdt.f)
+	get.date.utc(rcdt.t, 23, 59, 59, v.rcdt.t)
+	
+	select	tdisg832.*, tdisg831.cprj, tdisg831.type, tdisg831.stat,
+		tdisg831.ofbp, tdisg831.bold, tdisg831.cinv, tdisg831.cind,
+		tdpur400.otbp, whinh312.psno, tcibd001.dsca, whinh312.lsta
+	from	tdisg832, tdisg831, tdpur400, whinh312, tcibd001, whinh310
+	where	tdisg832._index1 inrange {:edrn.f}	and	{:edrn.t}
+	and	tdisg832.oorg = whinh.oorg.purchase
+	and	tdisg832.orno inrange :orno.f	and	:orno.t
+	and	tdisg832.edrn refers to tdisg831.edrn 
+	and	tdisg831._index4 inrange {:cprj.f}	and	{:cprj.t}
+	and	tdisg832.orno refers to tdpur400 
+	and	tdpur400.odat inrange :v.odat.f	and	:v.odat.t
+	and	tdisg832.cmbc refers to whinh312
+	and	whinh312.ardt inrange :v.rcdt.f	and	:v.rcdt.t
+	and	whinh312.rcno refers to whinh310
+	and	tdisg832.item refers to tcibd001 Unref Clear
+	order by tdisg832._index1
+	selectdo
+		Initialize_Variables()
+		rep.bprj = tdisg831.cprj
+		rep.bpdc = get.project.desc(tdisg831.cprj)
+		rep.edrn = tdisg832.edrn
+		rep.rcno = tdisg832.rcno
+		rep.rcln = tdisg832.rcln
+		rep.stat = enum.descr$("tdisg.stat", tdisg831.stat)
+		rep.rcst = enum.descr$("whinh.lstc", whinh312.lsta)
+		select	ptr_tfacp251.ityp:rep.tptr,
+			ptr_tfacp251.idoc:rep.dptr
+		from	tfacp251 ptr_tfacp251
+		where	ptr_tfacp251.rcno = :tdisg832.rcno
+		and	ptr_tfacp251.rseq = :tdisg832.rcln
+		as set with 1 rows
+		selectdo
+		endselect
+		if	rep.dptr <> 0	then
+			rep.ptrn = rep.tptr & " " & str$(rep.dptr)
+		endif	
+		rep.born = tdisg832.orno
+		rep.bsup = tdpur400.otbp
+		rep.bsnm = get.bp.name(tdpur400.otbp)
+		tmp.isdt = 0
+		select	sp_tfacp100.isup:rep.isup,
+			sp_tfacp100.invd:tmp.isdt
+		from	tfacp100 sp_tfacp100
+		where	sp_tfacp100._index1 = {:1}
+		wherebind(1, lval(trim$(whinh312.psno)))
+		selectdo
+		endselect
+		if	tmp.isdt <> 0	then
+			rep.isdt = sprintf$("%D(%02d/%02m/%04Y)", tmp.isdt)
+		endif	
+		rep.item = tdisg832.item
+		rep.itdsc = tcibd001.dsca
+		rep.qnty = tdisg832.qnty
+		
+		if	tdisg832.tobi = tcyesno.no	and
+			(get.reason.type(tdisg832.reas) = whreas.type.free.vendor or
+			get.reason.type(tdisg832.reas) =  whreas.type.stock)	then
+			
+			select	tdisg867.orno, tdisg867.pono
+			from	tdisg867
+			where	tdisg867._index1 = {:tdisg832.edrn, :tdisg832.rcno, :tdisg832.rcln}
+			selectdo
+				select	tdpur401.cprj, tdpur400.otbp:rep.fsup, tccom130.cste,
+					tccom139.dsca
+				from	tdpur401, tdpur400, tccom130, tccom139
+				where	tdpur401._index1 = {:tdisg867.orno, :tdisg867.pono}
+				and	tdpur401.orno refers to tdpur400
+				and	tdpur400.otad refers to tccom130 Unref Clear
+				and	tccom130.cmbb refers to tccom139 Unref Clear
+				selectdo
+				endselect
+				rep.fsnm = get.bp.name(rep.fsup)
+				rep.forn = tdisg867.orno
+				rep.fcty = tccom139.dsca
+				rep.fstt = tccom130.cste
+				rep.fprj = tdpur401.cprj
+				rep.fpdc = get.project.desc(tdpur401.cprj)
+				if	not isspace(rep.fstt)	and	not isspace(rep.fcty)	then
+					rep.loca = rep.fcty & "(" & rep.fstt & ")"
+				endif	
+			endselect
+		endif	
+		rep.bamt = get.rcpt.amnt(tdisg832.rcno, tdisg832.rcln)
+		tmp.bldt = 0
+		rep.type = enum.descr$("tdisg.type", tdisg831.type)
+		rep.cinv = tdisg831.cinv
+		rep.cind = sprintf$("%D(%02d/%02m/%04Y)", tdisg831.cind)
+		select	tpisg039.ityp, tpisg039.idoc, tpisg039.sidt
+		from	tpisg039
+		where	tpisg039._index1 = {:tdisg831.cprj, :tdisg831.ofbp, :tdisg832.nins, :tdisg832.edrn, :tdisg832.rcno, :tdisg832.rcln}
+		selectdo
+		endselect
+		
+		if	tpisg039.sidt <> 0	then
+			get.utc.to.date(tpisg039.sidt, tmp.bldt)
+			rep.sidt = sprintf$("%D(%02d/%02m/%04Y)", tmp.bldt)
+		endif 
+		if	tdisg831.type = tdisg.type.domestic	then
+			if	tpisg039.idoc <> 0	then
+				rep.sinv = tpisg039.ityp & " " & str$(tpisg039.idoc)
+			endif	
+		else
+			if	isspace(tdisg831.bold)	and
+				(tdisg831.stat = tdisg.stat.process)then
+				if	tpisg039.idoc <> 0	then
+					rep.sinv = tpisg039.ityp & " " & str$(tpisg039.idoc)
+				else
+					rep.sinv = enum.descr$("whreas.type", get.reason.type(tdisg832.reas))
+				endif	
+			else	
+				if	tpisg039.idoc <> 0	then
+					rep.sinv = tpisg039.ityp & " " & str$(tpisg039.idoc)
+				endif
+				select	bl_tdisg839.biln:rep.blno,
+					bl_tdisg839.pddt:tmp.bldt
+				from	tdisg839 bl_tdisg839
+				where	bl_tdisg839._index1 = {:tdisg831.bold}
+				selectdo
+				endselect
+				if	tmp.bldt <> 0	then
+					rep.bldt = sprintf$("%D(%02d/%02m/%04Y)", tmp.bldt)
+				endif
+			endif	
+		endif	
+		if	only.stck = tcyesno.yes	then
+			if	whinh312.lsta = whinh.lstc.confirmed	then
+				if	(tdisg831.stat <> tdisg.stat.process)	then
+					if	tdisg831.type = tdisg.type.domestic	then
+						print.detail()
+					else
+						if	isspace(tdisg831.bold)	then
+							print.detail()
+						endif
+					endif
+				endif
+			endif	
+		else
+			print.detail()
+		endif	
+	endselect
+}
+
+function domain tcdsca get.project.desc
+			(
+			domain	tccprj	i.cprj
+			)
+{
+	domain	tcdsca	tmp.dsca
+	
+	tmp.dsca = ""
+	select	pj_tcmcs052.dsca:tmp.dsca
+	from	tcmcs052 pj_tcmcs052
+	where	pj_tcmcs052._index1 = {:i.cprj}
+	selectdo
+	endselect
+	
+	return(tmp.dsca)
+}
+
+function domain tcnama get.bp.name
+			(
+			domain	tccom.bpid	i.otbp
+			)
+{
+	domain	tcnama	tmp.nama
+	
+	tmp.nama = ""
+	select	bp_tccom100.nama:tmp.nama
+	from	tccom100 bp_tccom100
+	where	bp_tccom100._index1 = {:i.otbp}
+	selectdo
+	endselect
+	
+	return(tmp.nama)
+}
+
+function domain whreas.type get.reason.type
+			(
+			domain	tcmcs.str6	i.reas
+			)
+{
+	domain	whreas.type	tmp.type
+	
+	tmp.type = empty
+	select	rt_whisg311.type:tmp.type
+	from	whisg311 rt_whisg311
+	where	rt_whisg311._index1 = {:i.reas}
+	selectdo
+	endselect
+	
+	return(tmp.type)
+}
+
+function domain tcamnt get.rcpt.amnt
+		(
+		domain	whinh.shpm	i.rcno,
+		domain	tcpono		i.rcln
+		)
+{
+	domain	tcpvat	r.eces.per
+	domain	tcpvat	r.cess.per
+	domain	tcpvat	r.cst.per
+	domain	tcpvat	r.ser.per
+	domain	tcpvat	r.sces.per
+	domain	tcamnt	v.eces
+	domain	tcamnt	v.cess
+	domain	tcamnt	v.serv
+	domain	tcamnt	v.sces
+	domain	tcamnt	tmp.amnt
+	domain	tcamnt	tmp.rbsc
+	domain	tcamnt	tmp.roch
+	domain	tcamnt	tmp.rexc
+	domain	tcamnt	tmp.rcst
+	domain	tcamnt	tmp.rstx
+	
+	select	whinh312.qrcr, whinh312.orno, whinh312.pono, whinh312.seqn,
+		whinh312.ardt, whinh310.stat
+	from	whinh312, whinh310
+	where	whinh312._index1 = {:i.rcno, :i.rcln}
+	and	whinh312.rcno refers to whinh310
+	selectdo
+		select	tdpur401.qoor, tdpur401.pric, tdpur401.ccty, tdpur401.cvat,
+			tdpur401.tasv.l, tdpur401.tase.l, tdpur401.tass.l
+		from	tdpur401
+		where	tdpur401._index1 = {:whinh312.orno, :whinh312.pono}
+		and	tdpur401.oltp in (tdgen.oltp.total, tdgen.oltp.orderline)
+		selectdo
+		endselect		
+			
+		r.eces.per = 0
+		r.cess.per = 0
+		r.cst.per = 0
+		r.ser.per = 0
+		r.sces.per = 0
+		v.eces = 0
+		v.cess = 0
+		v.serv = 0
+		v.sces = 0
+		tmp.amnt = 0
+		tmp.rbsc = 0
+		tmp.roch = 0
+		tmp.rexc = 0
+		tmp.rcst = 0
+		tmp.rstx = 0
+		tmp.rbsc = tdpur401.pric * whinh312.qrcr
+		fwhinh936.found = false		
+		Calculate_Other_Charge(i.rcno, i.rcln, tmp.roch)
+		
+		on case whinh310.stat
+			case whinh.rhst.confirmed:
+				get.tax.from.tfacp935(i.rcno, i.rcln, whinh312.orno, whinh312.pono,
+								whinh312.seqn, tmp.rexc, tmp.rcst, tmp.rstx)	
+				break
+			case whinh.rhst.open:
+				fwhinh936.found = false		
+				get.tax.from.whinh936(i.rcno, i.rcln, tmp.rexc, tmp.rcst, tmp.rstx)
+				if	fwhinh936.found = false		then		
+					get.tax.rate(tdpur401.ccty, tdpur401.cvat, whinh312.ardt, r.eces.per, r.cess.per, r.cst.per, r.ser.per, r.sces.per)
+					|Excise
+					if	tdpur401.qoor <> 0	then
+						tdpur401.tase.l = (tdpur401.tase.l/tdpur401.qoor)* whinh312.qrcr
+						tdpur401.tass.l = (tdpur401.tass.l/tdpur401.qoor)* whinh312.qrcr
+					else
+						tdpur401.tase.l = 0
+						tdpur401.tass.l = 0
+					endif
+				
+					v.eces =  ((tdpur401.tase.l * r.eces.per) / 100 )			
+					v.cess = ((v.eces * r.cess.per) / 100) 
+					tmp.rexc = tmp.rexc + (v.eces + v.cess)
+					|Service
+					v.serv = ((tdpur401.tass.l * r.ser.per) / 100)		
+					v.sces = ((v.serv * r.sces.per) / 100)
+					tmp.rstx = tmp.rstx + (v.serv + v.sces)
+					|CST / VAT				
+					if	tdpur401.qoor <> 0	then
+						tdpur401.tasv.l = (tdpur401.tasv.l/tdpur401.qoor)* whinh312.qrcr
+					else
+						tdpur401.tasv.l = 0
+					endif	
+					tmp.rcst = ((tdpur401.tasv.l + tmp.rexc) * r.cst.per) / 100
+				endif	
+				break	
+			default:
+				get.tax.rate(tdpur401.ccty, tdpur401.cvat, whinh312.ardt, r.eces.per, r.cess.per, r.cst.per, r.ser.per, r.sces.per)
+				|Excise
+				if	tdpur401.qoor <> 0	then
+					tdpur401.tase.l = (tdpur401.tase.l/tdpur401.qoor)* whinh312.qrcr
+					tdpur401.tass.l = (tdpur401.tass.l/tdpur401.qoor)* whinh312.qrcr
+				else
+					tdpur401.tase.l = 0
+					tdpur401.tass.l = 0
+				endif
+												
+				v.eces =  ((tdpur401.tase.l * r.eces.per) / 100 )		
+				v.cess = ((v.eces * r.cess.per) / 100) 
+				tmp.rexc = tmp.rexc + (v.eces + v.cess)
+				|Service
+				v.serv = ((tdpur401.tass.l * r.ser.per) / 100)		
+				v.sces = ((v.serv * r.sces.per) / 100)
+				tmp.rstx = tmp.rstx + (v.serv + v.sces)
+				|CST / VAT				
+				if	tdpur401.qoor <> 0	then
+					tdpur401.tasv.l = (tdpur401.tasv.l/tdpur401.qoor)* whinh312.qrcr
+				else
+					tdpur401.tasv.l = 0
+				endif	
+				tmp.rcst = ((tdpur401.tasv.l + tmp.rexc) * r.cst.per) / 100
+		ENDCASE	
+		tmp.amnt = (tmp.rbsc + tmp.roch + tmp.rexc + tmp.rcst + tmp.rstx)
+	endselect
+	
+	return(tmp.amnt)
+}
+
+function Calculate_Other_Charge(
+			domain	tcorno	i.rcno,
+			domain	tcpono	i.rcln,
+		ref	domain	tcamnt	tmp.roch	
+				)
+{
+	domain tcamnt	additional.amount
+	
+	tmp.roch = 0
+	select 	tclct200.lcos, sum(tclct200.lcam):additional.amount
+	from	tclct200
+	where	tclct200._index1 = {21, 100, :i.rcno, :1}
+	group by tclct200.lcos
+	wherebind(1, str$(i.rcln))
+	selectdo
+		tmp.roch = tmp.roch + additional.amount
+	endselect
+}
+
+function get.tax.rate(
+			domain	tcccty	i.ccty, 
+			domain	tccvat	i.cvat,
+			domain	tcdate	i.ddte,
+		ref	domain	tcpvat	o.eces.per,
+		ref	domain	tcpvat	o.cess.per,
+		ref	domain	tcpvat	o.vat.per,
+		ref	domain	tcpvat	o.serv.per,
+		ref	domain	tcpvat	o.sces.per
+			)
+{
+	o.eces.per = 0 
+	o.cess.per = 0
+	o.vat.per = 0
+	o.serv.per = 0
+	o.sces.per = 0
+	
+	select 	tctax941.ccty, tctax941.cvat
+	from 	tctax941
+	where	tctax941._index1={:i.ccty, :i.cvat}
+	and	tctax941.type = {20}
+	selectdo
+		select 	tcmcs036.ccty, tcmcs036.cvat, tcmcs036.indt.l
+		from 	tcmcs036
+		where	tcmcs036._index1 = {:tctax941.ccty, :tctax941.cvat}
+		selectdo
+			on case	tcmcs036.indt.l
+				case tctax.indt.l.bed:
+					o.eces.per = get.rate.from.tcmcs032(tcmcs036.ccty, tcmcs036.cvat, i.ddte)
+					break
+				case tctax.indt.l.service:
+					o.serv.per = get.rate.from.tcmcs032(tcmcs036.ccty, tcmcs036.cvat, i.ddte)
+					break	
+				case tctax.indt.l.e.cess.excise:	
+				case tctax.indt.l.hse.cess.excise:	
+					o.cess.per = o.cess.per + get.rate.from.tcmcs032(tcmcs036.ccty, tcmcs036.cvat, i.ddte)
+					break
+				case tctax.indt.l.e.cess.service:	
+				case tctax.indt.l.hse.cess.servic:
+					o.sces.per = o.sces.per + get.rate.from.tcmcs032(tcmcs036.ccty, tcmcs036.cvat, i.ddte)
+					break	
+				case tctax.indt.l.vat:	
+				case tctax.indt.l.cst:	
+				case tctax.indt.l.lst:	
+				case tctax.indt.l.n.a:	
+					o.vat.per = o.vat.per + get.rate.from.tcmcs032(tcmcs036.ccty, tcmcs036.cvat, i.ddte)
+					break
+			ENDCASE		
+		endselect
+	endselect	
+}
+
+function domain tcpvat get.rate.from.tcmcs032(
+			domain	tcccty	in.ccty,
+			domain	tccvat	in.cvat,
+			domain	tcdate	in.ddte
+			)
+{
+	domain	tcpvat	tmp.pvat
+	
+	tmp.pvat = 0
+	select 	tcmcs032.ccty, tcmcs032.cvat, tcmcs032.edat, tcmcs032.pvat
+	from 	tcmcs032
+	where	tcmcs032._index1 = {:in.ccty, :in.cvat}
+	and	tcmcs032.edat <= :in.ddte
+	order by tcmcs032._index1 desc
+	as set with 1 rows
+	selectdo
+		tmp.pvat = tmp.pvat + tcmcs032.pvat
+	selectempty
+		tmp.pvat = 0
+	endselect
+	
+	return(tmp.pvat)
+}
+
+function get.tax.from.tfacp935(
+			domain	tcorno	i.rcno,
+			domain	tcpono	i.rcln,
+			domain	tcorno	i.orno,			
+			domain	tcpono	i.pono,			
+			domain	tcpono	i.sqnb,			
+		ref	domain	tcamnt	o.rexc.amnt,
+		ref	domain	tcamnt	o.rcst.amnt,
+		ref	domain	tcamnt	o.ser.amnt
+				)
+{
+	domain	tcamnt	amount
+	
+	o.rexc.amnt = 0
+	o.rcst.amnt = 0
+	o.ser.amnt = 0
+	amount = 0
+	
+	select	tfacp935.ccty, tfacp935.cvat, sum(tfacp935.vamt):amount
+	from	tfacp935
+	where	tfacp935.rcno = :i.rcno
+	and	tfacp935.rseq = :i.rcln
+	and	tfacp935.orno = :i.orno			
+	and	tfacp935.pono = :i.pono			
+	and	tfacp935.sqnb = :i.sqnb			
+	group by tfacp935.ccty, tfacp935.cvat
+	selectdo
+		select	tcmcs036.indt.l
+		from	tcmcs036
+		where	tcmcs036._index1 = {:tfacp935.ccty, :tfacp935.cvat}
+		selectdo
+			on case etol(tcmcs036.indt.l)
+				case 4:				|Basic Excise Duty
+				case 9:				|Basic Custom Duty	
+				case 10:			|Countervailing Duty
+				case 14:			|ECess CVD
+				case 15:			|ECess on Custom
+				case 17:			|Ecess on Excise
+				case 19:			|SHE Cess on CVD
+				case 20:			|SHE Cess on Excise
+				case 22:			|SHE Cess on Custom
+					o.rexc.amnt = o.rexc.amnt + amount
+					break
+				case 1:				|Service
+				case 16:			|Ecess on Service
+				case 21:			|SHE Cess on Service	
+					o.ser.amnt = o.ser.amnt + amount
+					break	
+				case 2:				|Local Sales Tax	
+				case 3:				|Central Sales Tax
+				case 26:			|VAT
+				case 30:			|Not Applicable
+					o.rcst.amnt = o.rcst.amnt + amount
+					break
+			endcase
+		endselect
+	endselect
+}
+
+function get.tax.from.whinh936(
+			domain	tcorno	in.rcno,
+			domain	tcpono	in.rcln,	
+		ref	domain	tcamnt	o.exc.amnt,
+		ref	domain	tcamnt	o.cst.amnt,
+		ref	domain	tcamnt	o.ser.amnt
+			)
+{
+	domain	tcamnt	amount
+	
+	o.exc.amnt = 0
+	o.cst.amnt = 0
+	o.ser.amnt = 0
+	
+	select	sum(whinh936.aamt):amount, whinh936.rcno, whinh936.taxc, whinh936.pvat
+	from	whinh936
+	where	whinh936._index1 = {:in.rcno, :in.rcln}
+	group by whinh936.rcno,whinh936.taxc,whinh936.pvat
+	selectdo
+		fwhinh936.found = true		
+		select	tcmcs036.indt.l
+		from	tcmcs036
+		where	tcmcs036._index1 = {"IN", :whinh936.taxc}
+		selectdo
+			on case etol(tcmcs036.indt.l)
+				case 4:				|Basic Excise Duty
+				case 9:				|Basic Custom Duty	
+				case 10:			|Countervailing Duty
+				case 14:			|ECess CVD
+				case 15:			|ECess on Custom
+				case 17:			|Ecess on Excise
+				case 19:			|SHE Cess on CVD
+				case 20:			|SHE Cess on Excise
+				case 22:			|SHE Cess on Custom
+					o.exc.amnt = o.exc.amnt + amount
+					break
+				case 1:				|Service
+				case 16:			|Ecess on Service
+				case 21:			|SHE Cess on Service	
+					o.ser.amnt = o.ser.amnt + amount
+					break	
+				case 2:				|Local Sales Tax	
+				case 3:				|Central Sales Tax
+				case 26:			|VAT
+				case 30:			|Not Applicable
+					o.cst.amnt = o.cst.amnt + amount
+					break
+			endcase
+		endselect
+	endselect
+}
+
+function get.utc.to.date(
+		domain	tcdate		i.date,
+	ref	domain	tfgld.date	o.date
+			)
+{
+	long	dd, mm, yy, hh, mn, ss
+	
+	utc.to.date(i.date, yy , mm, dd, hh, mn, ss)
+	o.date = date.to.num(yy, mm, dd)
+	
+	if	o.date < 0	then
+		o.date = 0
+	endif
+}
+
+function	generate.top.header()
+{
+	line1 =	concat$("	",
+		sprintf$(" "),				|1		
+		sprintf$(" "),				|2		
+		sprintf$(" "),				|3		
+		sprintf$(" "),				|4		
+		sprintf$(" "),				|5		
+		sprintf$(" "),				|6
+		sprintf$(" "),				|7
+		sprintf$(" "),				|8		
+		sprintf$(" "),				|9
+		sprintf$(" "),		  		|10
+		sprintf$(" "),				|11
+		sprintf$("|" & string.set$(" ", 8)),	|12
+		sprintf$(string.set$(" ", 35)),	|13
+		sprintf$("Sent"),			|14
+		sprintf$("To"),			|15
+		sprintf$(string.set$(" ", 9)),	|16
+		sprintf$(string.set$(" ", 29) & "|"),|17
+		sprintf$(string.set$(" ", 16)),	|18	
+		sprintf$("|Sale Invoice(STR)/"),	|19
+		sprintf$(string.set$(" ", 30)),	|20			|#ISGEC001098.n
+		sprintf$(string.set$(" ", 10)),	|21			|#ISGEC001098.n
+		sprintf$("Bill of Lading|"),		|22
+		sprintf$(" "),				|23
+		sprintf$(" "),				|24
+		sprintf$(" "),				|25			|#ISGEC001098.n
+		sprintf$(" "),				|26
+		sprintf$(" "),				|27
+		sprintf$(" "),				|28
+		sprintf$(" "),				|29			|#ISGEC001098.n
+		sprintf$(" "),				|30			|#ISGEC001098.n
+		sprintf$(" "),				|31
+		sprintf$(" "))				|32											
+		
+	line1 = strip$(shiftl$(line1))		
+	seq.puts(line1, stat.fp)	
+}
+
+function	generate.header.separator()
+{
+	line2 =	concat$("	",
+		sprintf$(string.set$("-", 9)),				|1		
+		sprintf$(string.set$("-", 30)),				|2		
+		sprintf$(string.set$("-", 12)),				|3		
+		sprintf$(string.set$("-", 9)),				|4		
+		sprintf$(string.set$("-", 9)),				|5		
+		sprintf$(string.set$("-", 35)),				|6
+		sprintf$(string.set$("-", 20)),				|7
+		sprintf$(string.set$("-", 10)),				|8		
+		sprintf$(string.set$("-", 47)),				|9
+		sprintf$(string.set$("-", 30)),		  		|10
+		sprintf$(string.set$("-", 16)),				|11
+		sprintf$(string.set$("-", 9)),			  	|12
+		sprintf$(string.set$("-", 35)),				|13
+		sprintf$(string.set$("-", 35)),				|14
+		sprintf$(string.set$("-", 9)),				|15
+		sprintf$(string.set$("-", 9)),				|16
+		sprintf$(string.set$("-", 30)),				|17
+		sprintf$(string.set$("-", 16)),				|18	
+		sprintf$(string.set$("-", 20)),				|19
+		sprintf$(string.set$("-", 15)),				|20
+		sprintf$(string.set$("-", 30)),				|21		|#ISGEC001098.n
+		sprintf$(string.set$("-", 10)),				|22		|#ISGEC001098.n
+		sprintf$(string.set$("-", 15)),				|23
+		sprintf$(string.set$("-", 25)),				|24
+		sprintf$(string.set$("-", 10)),				|25		|#ISGEC001098.n
+		sprintf$(string.set$("-", 9)),				|26
+		sprintf$(string.set$("-", 5)),				|27
+		sprintf$(string.set$("-", 15)),				|28
+		sprintf$(string.set$("-", 18)),				|29		|#ISGEC001098.n
+		sprintf$(string.set$("-", 12)),				|30		|#ISGEC001098.n
+		sprintf$(string.set$("-", 30)),				|31
+		sprintf$(string.set$("-", 20)))				|32											
+		
+	line2 = strip$(shiftl$(line2))		
+	seq.puts(line2, stat.fp)	
+}
+
+function	generate.header()
+{
+	line4 =	concat$("	",
+		sprintf$("Project"),					|1		
+		sprintf$("Description"),				|2		
+		sprintf$("PTR No."),					|3		
+		sprintf$("PO Number"),					|4		
+		sprintf$("Supplier"),					|5		
+		sprintf$("Supplier Name"),				|6
+		sprintf$("Bill Number"),				|7
+		sprintf$("Bill Date"),					|8		
+		sprintf$("Item"),					|9
+		sprintf$("Description"),		  		|10
+		sprintf$("Quantity"),					|11
+		sprintf$("Party Code"),			  	|12
+		sprintf$("Party Name"),				|13
+		sprintf$("Location"),				        |14
+		sprintf$("PO Number"),					|15
+		sprintf$("Project"),					|16
+		sprintf$("Description"),				|17
+		sprintf$("Amount"),					|18	
+		sprintf$("Number"),					|19
+		sprintf$("Date"),					|20
+		sprintf$("Bill of Lading"),				|21			|#ISGEC001098.n
+		sprintf$("B/L Date"),					|22			|#ISGEC001098.n
+		sprintf$("Billing Advice"),				|23
+		sprintf$("Billing Advice Status"),			|24
+		sprintf$("Type"),					|25			|#ISGEC001098.n
+		sprintf$("Receipt"),					|26
+		sprintf$("Line"),					|27
+		sprintf$("Receipt Status"),				|28
+		sprintf$("Commercial Invoice"),			|29			|#ISGEC001098.n
+		sprintf$("Invoice Date"),				|30			|#ISGEC001098.n
+		sprintf$("Reference"),					|31
+		sprintf$("Manual Feed"))				|32											
+		
+	line4 = strip$(shiftl$(line4))		
+	seq.puts(line4, stat.fp)	
+}
+
+function	print.detail()
+{	
+	line3 =	concat$("	",
+		sprintf$("%s", rep.bprj),				|1
+		sprintf$("%s", rep.bpdc),				|2				
+		sprintf$("%s", rep.ptrn),				|3				
+		sprintf$("%s", rep.born),				|4				
+		sprintf$("%s", rep.bsup),				|5				
+		sprintf$("%s", rep.bsnm),				|6
+		sprintf$("%s", rep.isup),				|7
+		sprintf$("%s", rep.isdt),				|8				
+		sprintf$("%s", rep.item),				|9
+		sprintf$("%s", rep.itdsc),				|10
+		sprintf$("%f", rep.qnty),				|11	
+		sprintf$("%s", rep.fsup),				|12
+		sprintf$("%s", rep.fsnm),				|13
+		sprintf$("%s", rep.loca),				|14
+		sprintf$("%s", rep.forn),				|15
+		sprintf$("%s", rep.fprj),				|16
+		sprintf$("%s", rep.fpdc),				|17
+		sprintf$("%f", rep.bamt),				|18
+		sprintf$("%s", rep.sinv),				|19		|#ISGEC001098.n
+		sprintf$("%s", rep.sidt),				|20		|#ISGEC001098.n
+		sprintf$("%s", rep.blno),				|21
+		sprintf$("%s", rep.bldt),				|22
+		sprintf$("%s", rep.edrn),				|23
+		sprintf$("%s", rep.stat),				|24
+		sprintf$("%s", rep.type),				|25		|#ISGEC001098.n
+		sprintf$("%s", rep.rcno),				|26
+		sprintf$("%d", rep.rcln),				|27
+		sprintf$("%s", rep.rcst),				|28
+		sprintf$("%s", rep.cinv),				|29		|#ISGEC001098.n
+		sprintf$("%s", rep.cind),				|30		|#ISGEC001098.n
+		sprintf$("%s", ""),					|31
+		sprintf$("%s", ""))					|32
+	
+		line3 = strip$(shiftl$(line3))
+		seq.puts(line3, stat.fp)
+}	
+
+function Initialize_Variables()
+{
+	rep.bprj = ""				|1
+	rep.bpdc = ""				|2				
+	rep.tptr = ""				|3
+	rep.dptr = 0				|3				
+	rep.ptrn = ""				|3				
+	rep.born = ""				|4				
+	rep.bsup = "" 				|5				
+	rep.bsnm = ""				|6
+	rep.isup = ""				|7
+	rep.isdt = ""				|8				
+	rep.item = ""				|9
+	rep.itdsc = ""				|10
+	rep.qnty = 0				|11	
+	rep.fsup = ""				|12
+	rep.fsnm = ""				|13
+	rep.fcty = ""				|14
+	rep.fstt = ""				|14
+	rep.loca = ""				|14
+	rep.forn = ""				|15
+	rep.fprj = ""				|16
+	rep.fpdc = ""				|17
+	rep.bamt = 0				|18
+	rep.sinv = ""				|19				|#ISGEC001098.n
+	rep.sidt = ""				|20				|#ISGEC001098.n
+	rep.blno = ""				|21
+	rep.bldt = ""				|22
+	rep.edrn = ""				|23
+	rep.stat = ""				|24
+	rep.type = ""				|25				|#ISGEC001098.n
+	rep.rcno = ""				|26
+	rep.rcln = 0				|27
+	rep.rcst = ""				|28
+	rep.cinv = ""				|29				|#ISGEC001098.n
+	rep.cind = ""				|30				|#ISGEC001098.n
+}
+
+function get.date.utc(
+		domain	tcdate	i.date,
+		long		i.hh,
+		long		i.mn,
+		long		i.ss,
+	ref	domain	tcdate	o.date
+			)
+{
+	long	dd, mm, yy, hh, mn, ss
+	
+	utc.to.date(i.date, yy , mm, dd, hh, mn, ss)
+	o.date = date.to.utc(yy, mm, dd, i.hh, i.mn, i.ss)
+	if	o.date < 0	then
+		o.date = 0
+	endif
+}	
+
+function open.file()
+{
+	err.file = bse.tmp.dir$() & str$(utc.num()) & ".xls"
+	
+	file.name = "c:\temp\" & str$(utc.num())  & ".xls"
+	
+	stat.fp = seq.open(err.file, "w+")
+	if stat.fp >0 then
+ 		seq.seek(0, 0, stat.fp)
+	endif
+}
+
+function close.file()
+{
+	seq.close(stat.fp)
+	ret2 = server2client(err.file,file.name,1)
+	ret2 = app_start(file.name,"c:","","","")
+}
+
+
+function set.enable.disable.fields()
+{
+	if	all.rcpt = tcyesno.yes	then
+		disable.fields("only.stck")
+	else
+		enable.fields("only.stck")
+	endif
+	if	only.stck = tcyesno.yes	then
+		disable.fields("all.rcpt")
+	else	
+		enable.fields("all.rcpt")
+	endif	
+}

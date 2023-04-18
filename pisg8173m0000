@@ -1,0 +1,131 @@
+|******************************************************************************
+|* tdisg8173m000  0  VRC B61U a7 isg 
+|* FIV Against Sub-Contracting Order
+|* Installation User             
+|* 2015-11-03
+|******************************************************************************
+|* Main table tdisg873 FIV Against Sub-Contracting Order, Form Type 1
+|******************************************************************************
+|*
+|* ISGEC004024, Dharmendra, 03-11-2015, B61U a7 isg
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttdisg873 | FIV Against Sub-Contracting Order
+  table	ttdisg831
+  extern	domain	tcqiv1	receipt.qnty
+
+
+|****************************** program section ********************************
+before.display.object:
+	if tdisg873.frez = tcyesno.yes then
+		disable.commands("freeze")
+		select	tdisg831.stat
+		from	tdisg831
+		where	tdisg831._index1 = {:tdisg873.sdrn}
+		and	tdisg831.stat = tdisg.stat.created
+		selectdo
+			enable.commands("unfreeze")
+		selectempty
+			disable.commands("unfreeze")
+		endselect
+	else
+		enable.commands("freeze")
+		disable.commands("unfreeze")	
+	endif	
+
+|****************************** choice section ********************************
+choice.freeze:
+on.choice:
+	on.main.table(freeze.records)
+	
+choice.unfreeze:
+on.choice:
+	on.main.table(unfreeze.records)
+	
+|****************************** field section **********************************
+field.receipt.qnty:
+before.display:
+	select	tdisg832.qnty:receipt.qnty
+	from	tdisg832
+	where	tdisg832._index1 = {:tdisg873.edrn, :tdisg873.rcno, :tdisg873.rcln}
+	selectdo
+	selectempty
+		receipt.qnty = 0
+	endselect
+	
+	
+|****************************** function section **********************************
+
+functions:
+
+function freeze.records()
+{
+	domain	tcqiv1	receipt.qty
+	
+	db.retry.point()	
+
+	select	isg832.qnty:receipt.qty
+	from	tdisg832 isg832
+	where	isg832._index1 = {:tdisg873.edrn, :tdisg873.rcno, :tdisg873.rcln}
+	selectdo
+	selectempty
+		receipt.qty = 0 
+	endselect
+	
+	select	tdisg873.*
+	from	tdisg873 for update
+	where	tdisg873._index1 = {:tdisg873.sdrn, :tdisg873.scno, :tdisg873.scln}
+| 	where	tdisg873._index2 = {:tdisg873.edrn, :tdisg873.rcno, :tdisg873.rcln}
+	selectdo
+| 		tdisg873.qnty = tdisg873.qnty + tdisg873.issu
+		tdisg873.qnty = tdisg873.issu + get.issu()
+| 		tdisg873.balc = tdisg873.balc - tdisg873.issu
+		tdisg873.balc = receipt.qty - tdisg873.issu - get.issu()
+		tdisg873.frez = tcyesno.yes
+		db.update(ttdisg873, db.retry)
+	endselect
+	commit.transaction()
+}
+
+function unfreeze.records()
+{
+	domain	tcqiv1	i.issu
+	domain	tcorno	i.sdrn
+	
+	db.retry.point()
+		
+	i.issu	=	tdisg873.issu
+	i.sdrn	=	tdisg873.sdrn
+	
+	select	tdisg873.*
+	from	tdisg873 for update
+	where	tdisg873._index1 = {:tdisg873.sdrn, :tdisg873.scno, :tdisg873.scln}
+| 	where	tdisg873._index2 = {:tdisg873.edrn, :tdisg873.rcno, :tdisg873.rcln}
+	selectdo
+| 		tdisg873.qnty = tdisg873.qnty - tdisg873.issu
+		tdisg873.qnty = tdisg873.qnty - i.issu
+| 		tdisg873.balc = tdisg873.balc + tdisg873.issu
+		tdisg873.balc = tdisg873.balc + i.issu
+		if	i.sdrn	=	tdisg873.sdrn	then	
+			tdisg873.frez = tcyesno.no
+		endif
+		db.update(ttdisg873, db.retry)
+	endselect
+	commit.transaction()		
+}
+
+function	domain	tcqiv1	get.issu()
+{
+	domain	tcqiv1	i.issu
+	
+	select	sum(tdisg873.issu):i.issu
+	from	tdisg873 
+	where	tdisg873._index2 = {:tdisg873.edrn, :tdisg873.rcno, :tdisg873.rcln}
+	and	tdisg873.sdrn	<> :tdisg873.sdrn
+	selectdo
+	selectempty
+		i.issu	=	0
+	endselect
+	return(i.issu)
+}

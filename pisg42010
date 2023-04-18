@@ -1,0 +1,184 @@
+|******************************************************************************
+|* tdisg4201  0  VRC B61U a7 live
+|* Update Purchase Order Line Type
+|* Sanjay S                      
+|* 2014-03-01
+|******************************************************************************
+|* Main table tdpur401 Purchase Order Lines, Form Type 4
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttdpur401 | Purchase Order Lines
+
+   extern  domain  tcyesno  btx1.txt
+   extern  domain  tcyesno  btx2.txt
+   extern  domain  tcorno           orno.f    fixed
+   extern  domain  tcorno           orno.t    fixed
+   extern	domain	tcorno		order.no
+   extern  domain  tcpono           pono.f
+   extern  domain  tcpono           pono.t
+   extern  domain  tcpono           sqnb.f
+   extern  domain  tcpono           sqnb.t
+   extern	domain	tcsern		line, curr.line, sequence 
+   extern  domain  tcyesno  txta.txt
+
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+choice.process:
+on.choice:
+	update.seq.1()
+| 	update.seq.0()
+	update.seq.all()
+	message("Updation Sucessful.")
+	
+field.orno.f:
+when.field.changes:
+	orno.t = orno.f
+	
+functions:
+
+function update.seq.1()
+{
+	select	tdpur401a.orno:order.no,
+		tdpur401a.pono:pono.f
+	from	tdpur401	tdpur401a
+	where	tdpur401a._index1 inrange {:orno.f} and {:orno.t}
+	and	tdpur401a.sqnb = 1
+	selectdo
+		select	 count(*):line 
+		from	tdpur401
+		where	tdpur401._index1 = {:order.no, :pono.f}
+		selectdo
+		endselect
+		
+		if line = 1 then
+			select	tdpur401.oltp, tdpur401.qibo, tdpur401.qbbc
+			from	tdpur401 for update
+			where	tdpur401._index1 = {:order.no, :pono.f}
+			selectdo
+				tdpur401.oltp = tdgen.oltp.orderline
+				if tdpur401.qibo > 0 then
+					tdpur401.qbbc = tdpur401.qibo
+				endif
+				db.update(ttdpur401, db.retry)
+				commit.transaction()
+			endselect
+		endif
+	endselect
+	
+}
+
+
+function update.seq.0()
+{
+	select	tdpur401a.orno:order.no,
+		tdpur401a.pono:pono.f
+	from	tdpur401	tdpur401a
+	where	tdpur401a._index1 inrange {:orno.f} and {:orno.t}
+	and	tdpur401a.sqnb = 0
+	selectdo
+		select	 count(*):line 
+		from	tdpur401
+		where	tdpur401._index1 = {:order.no, :pono.f}
+		selectdo
+		endselect
+		
+		if line > 2 then
+			curr.line = 0
+			select	tdpur401.oltp, tdpur401.lseq, tdpur401.sqnb
+			from	tdpur401 for update
+			where	tdpur401._index1 = {:order.no, :pono.f}
+			order by tdpur401.sqnb desc
+			selectdo
+				curr.line = curr.line + 1
+				if curr.line > 1 then
+					if tdpur401.sqnb = 0 then
+						tdpur401.oltp =  tdgen.oltp.total
+						db.update(ttdpur401, db.retry)
+						commit.transaction()
+					else
+						tdpur401.lseq = sequence
+						db.update(ttdpur401, db.retry)
+						commit.transaction()
+						sequence = tdpur401.sqnb
+					endif
+				else
+					sequence = tdpur401.sqnb
+				endif
+			endselect
+			
+		else
+			select	tdpur401.oltp, tdpur401.pseq
+			from	tdpur401 for update
+			where	tdpur401._index1 = {:order.no, :pono.f}
+			and	tdpur401.sqnb = 0
+			selectdo
+				tdpur401.oltp = tdgen.oltp.total
+				db.update(ttdpur401, db.retry)
+				commit.transaction()
+			endselect
+		endif
+	endselect
+
+}
+
+function update.seq.all()
+{
+	domain tcqiv1	quantity
+	
+	select	tdpur401a.orno:order.no,
+		tdpur401a.pono:pono.f
+	from	tdpur401	tdpur401a
+	where	tdpur401a._index1 inrange {:orno.f} and {:orno.t}
+	and	tdpur401a.sqnb = 0
+	selectdo
+		quantity = 0
+		select	tdpur401.oltp, tdpur401.lseq, tdpur401.sqnb, tdpur401.pseq, tdpur401.qibp, tdpur401.qibo
+		from	tdpur401 for update
+		where	tdpur401._index1 = {:order.no, :pono.f}
+| 		order by tdpur401.sqnb desc
+		selectdo
+			on case tdpur401.sqnb
+			case 0:
+				tdpur401.oltp = tdgen.oltp.total
+				tdpur401.pseq = 0
+				tdpur401.lseq = 0
+				tdpur401.qibp = 0
+				db.update(ttdpur401, db.retry)
+				break
+			case 1:
+				quantity = tdpur401.qibo
+				tdpur401.oltp = tdgen.oltp.detail
+				tdpur401.pseq = 0
+				tdpur401.lseq = 2
+				tdpur401.qibp = 0
+				db.update(ttdpur401, db.retry)
+				break
+			default:
+				tdpur401.oltp = tdgen.oltp.backorder
+				tdpur401.pseq = tdpur401.sqnb - 1
+				tdpur401.lseq = tdpur401.sqnb + 1
+				tdpur401.qibp = quantity
+				quantity = tdpur401.qibo
+				db.update(ttdpur401, db.retry)
+				break
+			endcase
+		selecteos
+			tdpur401.lseq = 0
+			db.update(ttdpur401, db.retry)
+			commit.transaction()
+		endselect
+	endselect
+	
+
+}
+

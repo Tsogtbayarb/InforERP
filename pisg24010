@@ -1,0 +1,534 @@
+|******************************************************************************
+|* tdisg2401  0  VRC B61U a7 live
+|* Pending Indent Report
+|* Tools                         
+|* 2014-05-08
+|******************************************************************************
+|* Main table tdpur201 Purchase Requisition Lines, Form Type 4
+|******************************************************************************
+|* IDENT ISG001024  Somak Mondal  14-05-2014	   VRC B61U a7 live    
+|*****************************************************************************
+|* ID: ISGEC001103, IT0327, Ritu Shrivastava, VRC B61U a7 isg	Dt. 15-10-2014
+|* Initialization of variables
+|* 
+|* ISGEC001126, IT0205, Arjit Gupta, VRC B61U a7 isg, Dt. 27-10-2014
+|* Logic Change for calculating Tenure, new logic diff. between Indent Approval date
+|* (if Approval date not present then indent Creation ) and PO Date
+|* (if PO date not present then Current Date).
+|*
+|* ISGECDV001130, IT0205, Arjit Gupta, VRC B61U a7 live, Dt. 31-10-2014
+|* Add a column Indent Priority.
+|*
+|* ID ISGEC001144,	Sujeet Kumar,		2014-11-03
+|* Reference-A and Reference-B Field is Added in Report.
+|* Functional: Mr. Vikas Yadav
+|*
+|* ISGECDV001163, IT0205, Arjit Gupta, VRC B61U a7 live, Dt. 17-11-2014
+|* When Indent Priority empty then print "Normal"
+|*
+|* ID: ISGEC34975, IT0294,	Priya Ranjan , VRC B61U a7 isg, Dt. 16-05-2015
+|* Updated Approval date is capturing from new customized table .
+
+|*IDENT ISGEC015023, Shilpa Janardanan, 09/07/2015, VRC B61U a7 isg
+|* Logic for tenure to be changed
+|* check the customized table for approval date if not found then check in standard
+|*
+|* ID: ISGEC015025,Ankit Sharma,2015-07-13,VRC B61U a7 isg
+|* Logic changed for data filteration in report
+|*
+|* IDENT ISGEC015060,Shilpa Janardanan, 19-09-2015, VRC B61U a7 isg
+|* Correcting Tenure field
+|****************************** declaration section ***************************
+declaration:
+
+	table  	ttdpur201 | Purchase Requisition Lines
+	table	ttdpur200 | Purchase Requisition
+	table	ttdpur202 | Linked Requisition Line Data
+	table	ttccom001 | Employees - General
+	table	ttcmcs052 | Projects
+	table	ttdpur400 | Purchase Oreders
+	table	ttdpur402 | Linked Oreder Line Data
+	table	ttdpur401 | Purchase Order Lines
+	table	ttdpur203 | Purchase Requisitions History
+	table	ttdmsl400 | Purchase Order Ion Tracking
+	table	ttdisg100						|#ISGECDV001130.n
+	table	ttdisg210 | Requisition wise approval date
+
+	extern 	domain 	tcemno          nama.f
+	extern 	domain 	tcemno          nama.t
+	extern 	domain 	tccprj          cprj.f,var.cprj,new.cprj,prev.cprj
+	extern 	domain 	tccprj          cprj.t
+	extern 	domain 	tcrqno          rqno.f ,var.rqno,hold.rqno  
+	extern	domain	tcemno		remn.f,remn.t
+	extern 	domain 	tcrqno          rqno.t    
+	extern 	domain 	tcyesno 	v.rejc
+	extern 	domain 	tcdate          date.f
+	extern 	domain 	tcdate          date.t
+	extern	domain	tcdate		var.date
+	extern	domain	tcdate		var.date1
+	extern 	domain 	tcamnt          var.oamt,v.amnt,var.val1,var.val2,var.val3,var.val4 
+	extern	domain	tcpono		var.count,hold.pono
+	extern	domain	tcpono		var.count1,var.count2,var.count3,var.total,v.indent,srno
+	extern	domain	tctime		var.cdf_pddt,var.cdf_rodt
+	extern	domain	tcdsca		req_status
+	extern	domain	tcdsca		supp.nama
+	extern	domain	tcdate		tmp.odat, tmp.rdat			|#ISGEC001126.n
+	extern	domain	tcmcs.str15	indt.prio			|#ISGECDV001130.n
+			long 		ret.val, sql.by.level(99999),sql.x,i
+			long 		file_ptr
+			long		tenure
+			
+			string		kitm(25)
+			string		category(25)
+			string 		file_name(50),rec(1024)
+			string		err(100), error(100), c.file(70), s.file(70)
+			string 		line(1500), err.file(100), file.name(100),line1(2000)
+			long		ret.insert, ret,ret2, line.no, stat.fp, fp, var.long	
+#pragma used dll ottdllbw
+
+| 	extern 	domain	tcyesno		only.emergency
+
+extern domain    tcmcs.str15    prog.name		|#ISGEC.sn
+extern domain    tcdate	 r.date		|#ISGEC015025.sn
+extern domain    tcrqno	 rqno		
+extern domain    tcpono	 pono		|#ISGEC015025.en
+
+
+|****************************** program section ********************************
+before.program:
+	import("prog.name$",prog.name)
+	if strip$(prog.name) = "tdpur2501m000" then
+		import("tdpur200.rqno",rqno.f)
+		import("tdpur200.rqno",rqno.t)
+	endif						|#ISGEC.en		
+
+|****************************** group section **********************************
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+choice.print.data:
+on.choice:
+	generate.file()	
+	
+|****************************** field section *********************************
+field.rqno.f:
+when.field.changes:
+   rqno.t = rqno.f
+   
+field.cprj.f:
+when.field.changes:
+   cprj.t = cprj.f
+
+field.date.f:
+when.field.changes:
+   date.t = date.f
+
+field.nama.f:
+when.field.changes:
+   nama.t = nama.f
+
+field.remn.f:
+when.field.changes:
+   remn.t = remn.f  
+
+|****************************** function section ******************************
+functions:
+function extern generate.file()
+{	
+	err.file = bse.tmp.dir$() & str$(utc.num()) & ".xls"
+	
+	file.name = "C:\temp\" & str$(utc.num())  & ".xls"
+	
+	stat.fp = seq.open(err.file, "w+")
+	if stat.fp >0 then
+ 		seq.seek(0, 0, stat.fp)
+	endif	
+	process.file()
+	
+	seq.close(stat.fp)
+	ret2 = server2client(err.file,file.name,1)
+	ret2 = app_start(file.name,"c:","","","")
+}
+
+function process.file()
+{
+	read.main.table()
+}
+
+function generate.header()
+{
+	line= 	concat$("	",
+		sprintf$("Project No"),						|1
+		sprintf$("Description"),			  		        |2
+		sprintf$("Indent No"),					                |3
+		sprintf$("Pos No"),				                        |4
+		sprintf$("Indent Date"),				                |5
+		sprintf$("Indent Priority"),				                |5.1a		|#ISGECDV001130.n
+													|#ISGEC001144.sn
+		sprintf$("Reference A"),						|5.1
+		sprintf$("Reference B"),						|5.2
+													|#ISGEC001144.en
+		sprintf$("Tenure"),							|6
+		sprintf$("Category"),						        |7
+		sprintf$("Buyer Name"),					        |8
+		sprintf$("Requisition Approval Date"),					|8.1
+		sprintf$("Item"),							|9
+		sprintf$("Description"),						|10
+		sprintf$("Quantity"),							|10.2
+		sprintf$("Unit"),							|10.3
+		sprintf$("PL Order Date"),						|10.4
+		sprintf$("PL Del. Date"),						|10.5
+		sprintf$("Req Order Date"),						|10.6
+		sprintf$("Mat Req Date"),						|10.7
+| 		sprintf$("Amount"),							|11
+		sprintf$("Requisition Amount"),					|11
+		sprintf$("Value In Lacs"),						|12
+| 		sprintf$("PLanned Del Date"),						|13
+| 		sprintf$("Planned Order Date"),						|14
+		sprintf$("PO No"),					        	|15
+		sprintf$("PO Pos. No"),						|16
+		sprintf$("PO Date"),							|17
+		sprintf$("PO Amount"),							|17.1
+		sprintf$("Supplier Name"),						|18
+		sprintf$("DEL. Date"),							|19
+		sprintf$("Element"),							|20											
+		sprintf$("Indent Status"))						|21
+	line = strip$(shiftl$(line))		
+	seq.puts(line, stat.fp)		
+}
+
+function read.main.table()
+{
+	generate.header()
+	
+	var.date = utc.num()
+	srno = 0
+	rqno = ""
+	
+	select 	tdpur201.*,tdpur201.cdf_pddt:var.cdf_pddt,tdpur201.cdf_rodt:var.cdf_rodt,
+		tdpur200.remn,tdpur200.rdat,tdpur200.ccon,tdpur200.rqst,tcmcs052.dsca,
+							|#ISGEC001144.sn
+		tdpur200.refa,
+		tdpur200.refb|,
+							|#ISGEC001144.en
+		|tdisg210.apdt,tdisg210.rqno		|#ISGEC015060.o		
+	from	tdpur201,tdpur200,tcmcs052		|#ISGEC015060.n							|#ISGEC015025.o
+| 	from	tdpur201,tdpur200,tcmcs052,tdisg210	|#ISGEC015060.o						|#ISGEC015025.n					
+	where	tdpur201._index2 inrange {:cprj.f,:rqno.f} and {:cprj.t,:rqno.t}
+	and	tdpur201.rqno	refers to tdpur200
+	|and	tdpur201.rqno	refers to tdisg210			|#ISGEC015060.o				|#ISGEC015025.n
+	and	tdpur201.cprj	refers to tcmcs052
+	and	tdpur200._index6 inrange :nama.f and :nama.t
+	and	tdpur200.remn inrange :remn.f and :remn.t
+| 	and	tdpur200.rdat inrange :date.f and :date.t						|#ISGEC015025.o
+| 	and	tdisg210.apdt inrange {:date.f} and {:date.t}		|#ISGEC015060.o				|#ISGEC015025.n
+| 	order by tdpur201.cprj asc									|#ISGEC015025.o
+| 	and	tdpur200.rqno =  "REQ000021"
+	order by tdpur200.rdat 									|#ISGEC015025.n
+	selectdo
+		if rqno <> tdpur201.rqno or pono <> tdpur201.pono then					|#ISGEC015025.sn
+			select	tdisg210.apdt:r.date
+			from	tdisg210
+| 			where	tdisg210._index1 = {:tdisg210.rqno,:tdisg210.apdt}	|#ISGEC015060.o
+			where	tdisg210._index1 = {:tdpur201.rqno}		|#ISGEC015060.n
+			and	tdisg210.apdt inrange {:date.f} and {:date.t}	|#ISGEC015060.n
+			order by tdisg210.apdt desc
+			as set with 1 rows
+			selectdo									|#ISGEC015025.en
+				initialize.variables()							|#ISGEC001103.n
+				req_status = enum.descr$("tdpur.rqst",tdpur200.rqst)
+				select	tdpur203.trdt
+				from	tdpur203
+				where	tdpur203._index1 = {:tdpur201.rqno}
+				and	tdpur203.rqst = tdpur.rqst.approved
+				selectdo
+				selectempty
+					tdpur203.trdt = 0
+				endselect	
+				
+				srno = srno + 1
+				var.oamt = tdpur201.oamt / 100000
+		| 									|#ISGEC001126.so
+		| 		tenure = (var.date - tdpur200.rdat)/(24*60*60)
+		| 		
+		| 		if (tenure < 15) then
+		| 			category = "< 15  days"
+		| 		else 	if (tenure >=15 and tenure<30) then
+		| 				category = "15 - 30 days"
+		| 			else	if (tenure >=30 and tenure < 45) then		
+		| 					category = "30 - 45 days "
+		| 				else	if (tenure >= 45) then
+		| 						category = " > 45 days"
+		| 					endif
+		| 				endif
+		| 			endif
+		| 		endif
+		| 									|ISGEC001126.eo
+				select	tccom001.nama
+				from	tccom001
+				where	tccom001._index1 = {:tdpur200.ccon}
+				selectdo
+				selectempty
+					tccom001.nama =  " "
+				endselect
+				
+										|#ISGECDV001130.sn
+				tdisg100.prio = empty
+				select	tdisg100.prio
+				from	tdisg100
+				where	tdisg100._index1 = {:tdpur200.rqno}
+				selectdo
+				endselect
+				indt.prio = enum.descr$("tdisg.in.type", tdisg100.prio)
+										|#ISGECDV001163.sn
+				if	tdisg100.prio = empty	then
+					indt.prio = "Normal"
+				endif	
+										|#ISGECDV001163.en
+											|#ISGECDV001130.en
+				
+				select	tdpur202.prno,
+					tdpur202.ppon,
+					tdpur202.qono,
+					tdpur202.qpon,
+					tdpur202.qseq
+				from	tdpur202 
+				where	tdpur202._index1 = {:tdpur201.rqno,:tdpur201.pono}
+				as set with 1 rows
+				selectdo
+					if isspace(tdpur202.prno) then
+						if not isspace(tdpur202.qono) then
+							select	tdpur402.orno,tdpur402.pono
+							from	tdpur402
+							where	tdpur402._index6 = {:tdpur202.qono,:tdpur202.qpon}
+							selectdo
+								get.suppl.nama(tdpur402.orno,tdpur402.pono)
+							selectempty
+								tdpur401.pono = 0
+								tdpur401.ddta = 0
+								tdpur401.odat = 0		|#ISGEC001126.n
+								tdpur400.odat = 0
+								tdpur400.orno = ""
+								supp.nama = ""
+							endselect	
+						endif
+					else
+						get.suppl.nama(tdpur202.prno,tdpur202.ppon)
+					endif	
+				selectempty
+					tdpur202.prno = ""
+					supp.nama = ""
+					tdpur401.orno = ""
+					tdpur401.pono = 0
+					tdpur401.ddta = 0
+					tdpur401.odat = 0
+					tdpur400.odat = 0
+					tdpur401.oamt = 0.0
+				endselect
+				
+											|#ISGEC001126.sn
+				tmp.odat = 0
+				tmp.rdat = 0
+				if	tdpur401.odat = 0	then
+					tmp.odat = var.date
+				else
+					get.po.date(tdpur401.orno)
+					if	tdmsl400.apdt = 0	then
+						tmp.odat = var.date
+					else	
+						tmp.odat = tdmsl400.apdt
+					endif	
+				endif
+				
+				select	tdisg210.apdt                                   |#ISGEC015023.sn
+				from	tdisg210
+				where	tdisg210._index1 = {:tdpur201.rqno}
+				selectdo
+| 					tmp.rdat = tdpur203.trdt		|#ISGEC015060.o
+					tmp.rdat = tdisg210.apdt 		|#ISGEC015060.n
+				selectempty
+					if	tdpur203.trdt = 0	then
+						tmp.rdat = tdpur200.rdat
+					else
+						tmp.rdat = tdpur203.trdt
+					endif
+				endselect						|#ISGEC015023.sn
+				
+		| 		if	tdpur203.trdt = 0	then			|#ISGEC015023.so
+		| 			tmp.rdat = tdpur200.rdat
+		| 		else
+		| 			tmp.rdat = tdpur203.trdt
+		| 		endif
+											|#ISGEC015023.eo
+		| 		tenure = (var.date - tdpur200.rdat)/(24*60*60)	
+				tenure = (tmp.odat - tmp.rdat)/(24*60*60)
+				if tenure = 0 then		|#ISGEC015060.sn
+					tenure =  1
+				endif
+								|#ISGEC015060.en
+				if (tenure < 15) then
+					category = "< 15  days"
+				else 	if (tenure >=15 and tenure<30) then
+						category = "15 - 30 days"
+					else	if (tenure >=30 and tenure < 45) then		
+							category = "30 - 45 days "
+						else	if (tenure >= 45) then
+								category = " > 45 days"
+							endif
+						endif
+					endif
+				endif
+											|ISGEC001126.en
+
+				select	tdisg210.apdt                                   |ISGEC34975.sn
+				from	tdisg210
+				where	tdisg210._index1 = {:tdpur201.rqno}
+				selectdo
+					tdpur203.trdt = tdisg210.apdt
+				selectempty
+				endselect						|ISGEC34975.sn	
+				
+				if v.rejc = tcyesno.yes then
+					select	tdpur402.orno,tdpur402.pono									|#ISGEC015025.sn
+					from	tdpur402
+					where	tdpur402._index9 = {:tdpur201.rqno,:tdpur201.pono}
+					selectdo
+						select tdpur400.hdst
+						from	tdpur400
+						where	tdpur400._index1 = {:tdpur402.orno}
+						selectdo
+						endselect
+					endselect											
+					if tdpur400.hdst = ltoe(5) or (tdpur201.rejc = tcyesno.no and isspace(tdpur401.orno)) then 		|#ISGEC015025.en	
+		| 			if tdpur201.rejc = tcyesno.no and isspace(tdpur401.orno) then 						|#ISGEC015025.o
+						write.data()	
+					endif
+				else
+					get.po.date(tdpur401.orno)
+					write.data()
+				endif
+			endselect							|#ISGEC015025.sn
+			rqno = tdpur201.rqno
+			pono = tdpur201.pono
+		endif									|#ISGEC015025.en
+	selectempty
+		tdpur201.cspa = ""	
+		tdpur201.item = ""
+		tdpur201.pono = 0
+	endselect		
+}
+
+function write.data()
+{	
+	line =	concat$("	",
+		sprintf$("%s",tdpur201.cprj),			|1
+		sprintf$("%s",tcmcs052.dsca),			|2
+		sprintf$("%s",tdpur201.rqno),			|3
+		sprintf$("%s",tdpur201.pono),			|4
+		sprintf$("%u(%02d/%02m/%04Y) ",tdpur200.rdat),	|5
+		sprintf$("%s",indt.prio),			|5.1a			|#ISGECDV001130.n
+											|#ISGEC001144.sn
+		sprintf$("%s",tdpur200.refa),			|5.1
+		sprintf$("%s",tdpur200.refb),			|5.2
+											|#ISGEC001144.en
+		sprintf$("%d",tenure),				|6	
+		sprintf$("%s",category),			|7
+		sprintf$("%s",tccom001.nama),			|8
+| 		sprintf$("%u(%02d/%02m/%04Y) ",tdpur203.trdt),	|8.1			|#ISGEC015025.o
+		sprintf$("%u(%02d/%02m/%04Y)",r.date),		|8.1			|#ISGEC015025.n
+		sprintf$("%s",strip$(tdpur201.item)),		|9
+		sprintf$("%s",tdpur201.nids),			|10
+		sprintf$("%s",tdpur201.qoor),			|10.2
+		sprintf$("%s",tdpur201.cuqp),			|10.3
+		sprintf$("%u(%02d/%02m/%04Y)",var.cdf_pddt),	|10.4
+		sprintf$("%u(%02d/%02m/%04Y)",tdpur201.dldt),	|10.5
+		sprintf$("%u(%02d/%02m/%04Y)",var.cdf_rodt),	|10.6
+		sprintf$("%u(%02d/%02m/%04Y)",tdpur201.dldt),	|10.7
+		sprintf$("%s",tdpur201.oamt),			|11
+		sprintf$("%s",var.oamt),			|12
+| 		sprintf$("%u(%02d-%02m-%04Y)",tdpur201.dldt),	|13
+| 		sprintf$("%s",""),				|14
+| 		sprintf$("%s",tdpur202.prno),			|15
+		sprintf$("%s",tdpur401.orno),			|15
+| 		sprintf$("%d",tdpur202.ppon),			|16
+		sprintf$("%d",tdpur401.pono),			|16
+| 		sprintf$("%u(%02d/%02m/%04Y)",tdpur400.odat),	|17
+		sprintf$("%u(%02d/%02m/%04Y)",tdmsl400.apdt),	|17 - where version = "0"
+		sprintf$("%d",tdpur401.oamt),			|17.1	
+		sprintf$("%s",supp.nama),			|18
+		sprintf$("%u(%02d/%02m/%04Y)",tdpur401.ddta),	|19
+		sprintf$("%s",tdpur201.cspa),		|20
+		sprintf$("%s",req_status))			|21
+		
+		line = strip$(shiftl$(line))
+		seq.puts(line, stat.fp)
+}	
+
+function get.suppl.nama
+		(
+			domain	tcrqno	i.orno,			|Order Number
+			domain	tcpono	i.pono			|Position	
+		)
+{
+	select 	tdpur401.orno,
+	 	tdpur401.pono,
+		tdpur401.ddta,
+		tdpur401.oamt,
+		tdpur401.ddtc,
+		tdpur401.odat,				|#ISGEC001126.n
+		tdpur400.odat,
+		tdpur400.orno,
+		tccom100.nama:supp.nama
+	from	tdpur401,tdpur400,tccom100
+	where	tdpur401._index1 = {:i.orno,:i.pono}
+	and	tdpur401.orno refers to tdpur400
+	and	tdpur400.otbp refers to tccom100
+	as set with 1 rows
+	selectdo
+	selectempty
+		tdpur401.pono = 0
+		tdpur401.ddta = 0
+		tdpur401.odat = 0
+		tdpur400.odat = 0
+		tdpur401.orno = ""
+		supp.nama = ""
+		tdpur401.oamt = 0.0
+	endselect	
+}	
+function get.po.date
+		(
+			domain	tcorno	i.orno			|Purchase Order Number
+		)
+{
+	select	tdmsl400.apdt
+	from	tdmsl400
+	where	tdmsl400._index1 = {:i.orno,0}
+	selectdo
+	selectempty
+		tdmsl400.apdt = 0
+	endselect	
+}
+
+
+function initialize.variables()						|#ISGEC001103.sn
+{
+	
+	tenure = 0	
+	category = ""	
+	tccom001.nama = ""
+	tdpur203.trdt = 0
+	var.cdf_pddt = 0
+	var.cdf_rodt = 0
+	var.oamt = 0
+	tdpur401.orno = ""			
+	tdpur401.pono = 0
+	tdmsl400.apdt = 0
+	tdpur401.oamt = 0	
+	supp.nama = ""
+	tdpur401.ddtc = 0
+	req_status = ""
+	indt.prio = ""					|#ISGECDV001130.n
+}
+										|#ISGEC001103.en

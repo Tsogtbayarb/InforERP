@@ -1,0 +1,519 @@
+
+|******************************************************************************
+|* tdisg8431m101  0  VRC B61U a7 isg 
+|* Print Invoice Register In FC & HC Export project
+|* Installation User             
+|* 2015-02-24
+|******************************************************************************
+|* Main table tdisg831 Billing Advice, Form Type 4
+|******************************************************************************
+|* IDENT ISGEC01084, Mani sharma , IT0376 , Dt. 12-03.2015 VRC B61U a7 isg   
+|* Functional : Mrs. Mamta Bhardwaj
+
+|******************************************************************************
+|* IDENT ISGEC015013,Shilpa Janardanan , IT0289 , Dt. 26-05-2015 VRC B61U a7 isg   
+|* Functional : Mrs. Mamta Bhardwaj
+|* Logic for Country has been changed & new field "Billing advice status" added
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttdisg831 | Billing Advice
+   table  ttdisg832
+   table  ttcmcs052
+   table  ttccom100
+   table  ttccom130
+   table  ttpisg039
+   table  ttdisg865
+   table  ttppdm740
+   table  ttfacr200
+   table  tcisli205
+   table  ttdisg839
+   table  ttdisg860
+   table  ttdisg824
+   table  ttcmcs010
+   table  tcisli235
+   table  ttppdm600
+   table  ttccom130		|#ISGEC015013.n
+   
+	extern  domain  tcyesno  cadr.txt
+	extern  domain  tcorno           edrn.f    fixed
+	extern  domain  tcorno           edrn.t    fixed
+	extern  domain  tccprj           cprj.f,cprj.t
+	extern  domain  tfgld.date       date.f,date.t
+	extern  domain  tfgld.date       cdat.f,cdat.t
+	extern  domain  tcdate           vdat.f, vdat.t
+	extern  domain  tcdate          date.temp,utc.date
+	extern  domain  tcncmp          i.ncmp
+	extern  domain  tcpono           temp
+	
+	long yearno
+	long monthno
+	long month_dayno 
+	long hours , minutes, seconds
+   
+   #pragma used dll ottdllbw 
+|*******************************Excel Variables*********************************
+	long 	stat.fp,ret2,cnt.rec
+	string	line(2000), err.file(100), file.name(100)
+|*******************************print Variables ********************************
+	extern domain  tcorno	project.code
+	extern domain  tcdsca  project.desc
+	extern domain  tcdsca  country
+	extern domain  tcorno  commercial.invoice
+	extern domain  tfgld.date commercial.invoice.date
+	extern domain  tcccur  currency
+	extern domain  tcamnt  billing.value
+	extern domain  tcamnt  advance.adjusted
+	extern domain  tcamnt  retention.amnt
+	extern domain  tcamnt  net.payable
+	extern domain  tcdsca  bill.of.lading.no
+	extern domain  tfgld.date  bill.of.lading.date
+	extern domain  tcorno  customer.code
+	extern domain  tcnama  customer.name
+	extern domain  tcdsca  sales.vr.no
+	extern domain  tcdate  date.sxp
+	extern domain  tcamnt  advance.l
+	extern domain  tcamnt  var.retn
+	extern domain  tcamnt  var.advn
+	extern domain  tcamnt  retention.l
+	extern domain  tcamnt  net.amnt.l
+	extern domain  tcamnt  basic.amount
+	extern domain  tcorno  currency.inr
+	extern domain  tcamnt o.excise,o.vat,	o.service,o.cst,gross.amount,total.invoice
+	extern domain  tcorno prev.var,new.var
+	extern domain  tcamnt  tot.basic,advance.tot,retention.tot
+	extern domain  tctran  prev.var.type,new.var.type,p.type 
+	extern domain  tcgld.docn   prev.var.docn,new.var.docn,p.docn
+	extern domain  tcratc   rate.var
+	extern domain  tcorno   rate.str
+	extern domain  tcpono   pay.code
+	long   pay.descr
+	
+	extern	domain	tcmcs.str20	bill_status		|#ISGEC015013.n
+|****************************** program section ********************************
+before.program:
+	i.ncmp = get.compnr()
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.generate:
+on.choice:
+	generate.file()
+
+|****************************** field section *********************************
+
+field.cprj.f:
+when.field.changes:
+   cprj.t = cprj.f
+
+field.date.f:
+when.field.changes:
+   date.t = date.f
+
+field.cdat.f:
+when.field.changes:
+   cdat.t = cdat.f
+
+field.vdat.f:
+when.field.changes:
+   vdat.t = vdat.f
+
+
+|****************************** function section ******************************
+
+functions:
+
+function  generate.file()
+{
+	err.file = bse.dir$() & str$(utc.num()) & ".xls"
+	
+	file.name = "c:\temp\" & str$(utc.num())  & ".xls"
+	
+	stat.fp = seq.open(err.file, "w+")
+	
+	process.file()
+	
+	message("Please refer to file %s in C:", file.name)
+	
+	seq.close(stat.fp)
+	ret2 = server2client(err.file,file.name,1)
+	ret2 = app_start(file.name,"c:","","","")
+
+}
+
+function process.file()
+{
+	generate.header()
+	read.main.table()
+}
+
+function generate.header()
+{
+	if stat.fp >0 then
+		
+		line =concat$("	", 
+			sprintf$("Project Code"),			|1
+			sprintf$("Project Description"),		|2
+			sprintf$("Country"),				|3
+			sprintf$("Commercial Invoice No"),		|4
+			sprintf$("Commercial Invoice Date"), 		|5
+			sprintf$("Currency(FC)"),			|6
+			sprintf$("Basic Amount"),			|7
+			sprintf$("Advance Adjusted"),			|8
+			sprintf$("Retention"),				|9
+			sprintf$("Net Amount"),			|10
+			sprintf$("Bill of Lading No"),			|11
+			sprintf$("B/L Date"),				|12
+			sprintf$("Customer Code"),			|13
+			sprintf$("Customer Name"),			|14
+			sprintf$("Sales VR No(SXP)"),			|15
+			sprintf$("Date(SXP)"),				|16
+			sprintf$("Currency(HC)"),			|17
+			sprintf$("Currency Rate"),			|18
+			sprintf$("Basic Amount"),			|19	
+			sprintf$("Advance Adjusted"),			|20	
+			sprintf$("Retention"),				|21
+			sprintf$("Net Amount"),			|22
+			sprintf$("Billing Advice Status"))		|23		|#ISGEC015013.n
+			line = strip$(shiftl$(line))
+			seq.puts(line, stat.fp)
+		endif
+	
+}
+
+function read.main.table()
+{
+	bill_status = ""		|#ISGEC015013.n
+	date.temp = utc.to.date(vdat.t,yearno,monthno,month_dayno,hours,minutes,seconds)
+	utc.date  =  date.to.utc( yearno ,monthno ,month_dayno, 23, 59, 59 )
+
+	select tdisg831.cprj,tdisg831.type,tdisg831.stat,tdisg831.ofbp,tdisg831.bold,tdisg831.bodt,
+		tdisg831.cinv,tdisg831.cind,tdisg831.edrn,tdisg831.lcno,tcmcs052.dsca,tccom100.nama
+	from   tdisg831,tcmcs052,tccom100
+	where  tdisg831._index4 inrange {:cprj.f}	and	{:cprj.t}
+	and    tdisg831.bodt	inrange  {:date.f}	and	{:date.t}
+	and    tdisg831.cind	inrange  {:cdat.f}	and	{:cdat.t}
+	and     tdisg831.type = tdisg.type.export
+	and     tdisg831.stat in (2,3)
+	and     tdisg831.cprj refers to tcmcs052
+	and     tdisg831.ofbp refers to tccom100
+	order by tdisg831.cinv
+	selectdo
+		bill_status = enum.descr$("tdisg.stat",tdisg831.stat)
+		new.var = tdisg831.cinv
+		if shiftl$(strip$(tdisg831.cinv)) = prev.var  then
+			continue
+		endif	
+		
+		
+		select	tppdm600.padr,tcmcs010.dsca:country,tccom130.ccty	|#ISGEC015013.sn
+		from	tppdm600, tcmcs010, tccom130
+		where	tppdm600._index1 = {:tdisg831.cprj}
+		and	tppdm600.padr refers to tccom130			
+		and    tccom130.ccty refers to tcmcs010			|#ISGEC015013.en
+		selectdo
+		endselect
+		
+		
+		select tdisg839.biln
+		from    tdisg839
+		where   tdisg839._index1 = {:tdisg831.bold}
+		selectdo
+			bill.of.lading.no = tdisg839.biln
+		endselect
+		
+		project.code = tdisg831.cprj
+		project.desc = tcmcs052.dsca
+		commercial.invoice = tdisg831.cinv
+		commercial.invoice.date = tdisg831.cind
+		
+		bill.of.lading.date = tdisg831.bodt
+		customer.code = tdisg831.ofbp
+		customer.name = tccom100.nama
+		
+		select tdisg860.lcno,tdisg860.ptcd,tdisg860.ptyp
+		from    tdisg860
+		where   tdisg860._index1 = {:tdisg831.lcno}
+		selectdo
+			pay.code = tdisg860.ptcd
+			pay.descr = etol(tdisg860.ptyp)
+			
+			if  not isspace(tdisg831.lcno)		then
+				select tdisg865.amnt,tdisg865.ptcd
+				from    tdisg865
+				where   tdisg865._index1 = {:tdisg831.cinv,:tdisg860.lcno,:tdisg860.ptcd}
+				selectdo
+					
+					
+					if  pay.descr = 1 then
+						advance.adjusted = advance.adjusted + tdisg865.amnt
+					endif	
+					
+	| 				if tdisg865.ptcd = pay.descr  then
+					if pay.descr = 3  then
+						retention.amnt = retention.amnt + tdisg865.amnt
+					endif
+					
+					if pay.descr = 4  then
+						net.payable = net.payable +  tdisg865.amnt
+					endif
+				endselect
+			endif
+		selectempty
+				select  tdisg824.amnt,tdisg824.ptcd,tdisg824.ptyp,tdisg824.cprj
+				from    tdisg824
+				where   tdisg824._index1 = {:tdisg831.cprj}
+				selectdo
+					pay.code = tdisg824.ptcd
+					pay.descr = etol(tdisg824.ptyp)
+					
+					select tdisg865.amnt
+					from    tdisg865
+					where   tdisg865._index1 = {:tdisg831.cinv,:tdisg824.cprj,:tdisg824.ptcd}
+					selectdo
+						
+						if  pay.descr = 1 then
+							advance.adjusted =  advance.adjusted + tdisg865.amnt
+						endif	
+						
+		| 				if tdisg865.ptcd = pay.descr  then
+						if pay.descr = 3  then
+							retention.amnt = retention.amnt + tdisg865.amnt
+						endif
+						
+						if pay.descr = 4  then
+							net.payable =  net.payable + tdisg865.amnt
+						endif
+					endselect	
+				endselect
+		endselect
+		
+		
+		select tppdm740.ccur
+		from    tppdm740
+		where   tppdm740._index1 = {:tdisg831.cprj,:tdisg831.ofbp}
+		selectdo
+			currency = tppdm740.ccur
+		endselect
+		
+		
+		select tccom100.cadr,tccom130.ccty,tcmcs010.dsca
+		from   tccom100,tccom130,tcmcs010
+		where  tccom100._index1 = {:tdisg831.ofbp}
+		and    tccom100.cadr refers to tccom130
+		and    tccom130.ccty refers to tcmcs010
+		selectdo
+| 			country = tccom130.ccty
+| 			country = tcmcs010.dsca		|#ISGEC015013.o
+		endselect
+		
+		billing.value = 0
+		temp = 0
+		select tdisg832.edrn,tdisg832.rcno,tdisg832.rcln,tdisg832.nins
+		from    tdisg832
+| 		where   tdisg832.cinv = {:tdisg831.cinv}
+		where   tdisg832.cinv = {:tdisg831.cinv}
+		selectdo
+			select tpisg039.ityp,tpisg039.idoc,tpisg039.sidt,tpisg039.remb,tpisg039.rval,tpisg039.edcs,tpisg039.sltx,
+				tpisg039.csvt,tpisg039.othr
+			from   tpisg039
+			where  tpisg039._index1 = {:tdisg831.cprj,:tdisg831.ofbp,:tdisg832.nins,:tdisg832.edrn,:tdisg832.rcno,:tdisg832.rcln}
+			selectdo
+				select cisli205.*
+				from   cisli205
+				where  cisli205._index1 = {:i.ncmp,:tpisg039.ityp,:tpisg039.idoc}
+				and    cisli205.idat	inrange {:vdat.f}  and {:utc.date}
+				order by cisli205.ityp,cisli205.idoc
+				selectdo
+					new.var.type  = shiftl$(strip$(cisli205.ityp))
+					new.var.docn  = cisli205.idoc
+					if new.var.type = prev.var.type  and  new.var.docn = prev.var.docn then
+						continue
+					endif	
+					get.advance(cisli205.ityp,cisli205.idoc)
+					get.retention(cisli205.ityp,cisli205.idoc)
+					get.currency(cisli205.ityp,cisli205.idoc)
+					date.sxp = tpisg039.sidt
+					sales.vr.no = cisli205.ityp&str$(cisli205.idoc)
+					if cisli205.ityp <> "" and cisli205.idoc <> 0 then
+						if temp = 0 then
+							get.basic(cisli205.ityp,cisli205.idoc,tdisg831.cprj,tdisg831.ofbp)
+						endif
+					endif	
+				endselect
+			endselect
+			advance.tot = advance.tot + advance.l
+			retention.tot = retention.tot + retention.l
+			initial()
+			prev.var.type = shiftl$(strip$(cisli205.ityp))
+			prev.var.docn = cisli205.idoc
+		endselect
+		net.amnt.l = basic.amount - abs(advance.tot) - abs(retention.tot)
+		select tdisg832.bivl
+		from   tdisg832
+		where  tdisg832.cinv = {:tdisg831.cinv}
+		selectdo
+			billing.value = billing.value + tdisg832.bivl
+		endselect
+		prev.var = tdisg831.cinv
+	print.detail()
+	initialise.var()
+	endselect	
+}
+
+
+function	print.detail()
+{	
+	line =	concat$("	",
+		sprintf$("%s",project.code),				|1
+		sprintf$("%s",project.desc),				|2				
+		sprintf$("%s",country),				|3				
+		sprintf$("%s", commercial.invoice),			|4				
+		sprintf$("%D(%02d/%02m/%04Y)",commercial.invoice.date),|5				
+		sprintf$("%s", currency),				|6
+| 		sprintf$("%d", billing.value),				|7			|#ISGEC015013.so
+| 		sprintf$("%d", advance.adjusted),			|8				
+| 		sprintf$("%d",retention.amnt),				|9			
+| 		sprintf$("%d", net.payable),				|10			|#ISGEC015013.eo
+		sprintf$("%f", billing.value),				|7			|#ISGEC015013.sn
+		sprintf$("%f", advance.adjusted),			|8				
+		sprintf$("%f",retention.amnt),				|9			
+		sprintf$("%f", net.payable),				|10			|#ISGEC015013.en
+		sprintf$("%s",bill.of.lading.no),			|11
+		sprintf$("%D(%02d/%02m/%04Y)",bill.of.lading.date),	|12				
+		sprintf$("%s",customer.code),				|13				
+		sprintf$("%s", customer.name),				|14				
+		sprintf$("%s",sales.vr.no),				|15				
+		sprintf$("%u(%02d/%02m/%04Y)",date.sxp),		|16
+		sprintf$("%s", currency.inr),				|17
+		sprintf$("%f", rate.var),
+		sprintf$("%d", basic.amount),				|18				
+		sprintf$("%d",advance.tot),				|19			
+		sprintf$("%d",retention.tot ),				|20
+		sprintf$("%d",net.amnt.l ),				|21
+		sprintf$("%s", bill_status))				|#ISGEC015013.n
+		line = strip$(shiftl$(line))
+		seq.puts(line, stat.fp)				
+}
+
+
+function get.advance(domain	tfgld.ttyp	i.ttyp,					|Advance Value
+		      domain	tfgld.docn	i.docn)
+{
+	select	tfacr200.trec,tfacr200.amth,tfacr200.docn,tfacr200.ccur,tfacr200.amti,tfacr200.cdam
+	from	tfacr200
+	where	tfacr200._index1 = {:i.ttyp,:i.docn}
+	and	tfacr200.trec = tfacr.trec.assignment
+	and	tfacr200.docn <> 0
+	selectdo
+| 		var.advn = abs(tfacr200.amti)
+		var.advn = abs(tfacr200.amth(1))
+		advance.l = var.advn + tfacr200.cdam(1)
+	endselect	
+}
+
+function get.retention(domain	tfgld.ttyp	i.ttyp,					|Retention Value
+		        domain	tfgld.docn	i.docn)
+{
+	select	tfacr200.trec,tfacr200.amth,tfacr200.docn,tfacr200.ccur,tfacr200.amti
+	from	tfacr200
+	where	tfacr200._index1 = {:i.ttyp,:i.docn}
+	and	tfacr200.trec = tfacr.trec.credit
+	and	tfacr200.docn <> 0
+	selectdo
+| 		var.retn =  abs(tfacr200.amti)
+		var.retn =  abs(tfacr200.amth(1))
+		retention.l = var.retn
+	endselect	
+}
+
+function get.currency(domain tfgld.ttyp	i.ttyp,
+			domain tfgld.docn	i.docn)
+{
+	select tfacr200.ccur,tfacr200.rate
+	from    tfacr200
+	where   tfacr200._index1 = {:i.ttyp,:i.docn}
+	and     tfacr200.docn = 0
+	selectdo
+| 		currency.inr = tfacr200.ccur
+		currency.inr = "INR"
+		rate.var = tfacr200.rate(1)
+		rate.str = "'"&str$(rate.var)&"'"
+	selectempty
+		currency.inr = ""
+		rate.var = 0
+	endselect
+}
+
+function get.basic(domain tfgld.ttyp	i.ttyp,
+		domain tfgld.docn	i.docn,
+		domain tccprj 		in.cprj,
+		domain tccom.bpid 	in.bpid)
+{
+
+	select tppdm600.ncmp		
+	from    tppdm600
+	where   tppdm600._index1 = {:in.cprj}
+
+	selectdo
+		select cisli235.amth
+		from   cisli235
+		where  cisli235._index2 = {:tppdm600.ncmp,:i.ttyp,:i.docn}
+		and    cisli235.cprj = :in.cprj
+		and    cisli235.ofbp = :in.bpid
+		and    cisli235.invt = tcinvt.installment
+		selectdo
+			basic.amount = basic.amount + cisli235.amth(1)
+			temp = 1
+		endselect	
+	endselect
+	p.type = shiftl$(strip$(i.ttyp))
+	p.docn = i.docn
+	
+}
+function initialise.var()
+{
+	project.code = ""			|1
+	project.desc = ""			|2				
+	country		= ""			|3				
+	commercial.invoice = ""			|4				
+	commercial.invoice.date = 0		|5				
+	currency	= ""			|6
+	billing.value  = 0			|7
+	advance.adjusted = 0			|8				
+	retention.amnt = 0			|9			
+	net.payable = 0				|10
+	bill.of.lading.no   = ""		|11
+	bill.of.lading.date  = 0		|12				
+	customer.code = ""			|13				
+	customer.name = ""			|14				
+	sales.vr.no = ""			|15				
+	date.sxp = 0				|16
+	currency.inr = ""			|17
+	basic.amount = 0			|18				
+	advance.tot = 0				|19			
+	retention.tot = 0 			|20
+	net.amnt.l = 0				|21
+	tot.basic = 0
+	o.excise = 0
+	o.vat = 0
+	o.service = 0
+	o.cst = 0
+	gross.amount = 0
+	basic.amount = 0
+	rate.var =  0
+}
+
+function initial()
+{
+	
+	advance.l = 0
+	retention.l = 0
+	total.invoice = 0
+}

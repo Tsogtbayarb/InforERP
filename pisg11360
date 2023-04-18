@@ -1,0 +1,255 @@
+|******************************************************************************
+|* dmisg1136  0  VRC B61U a7 isg 
+|* Evaluate Vendor Document
+|* Installation user             
+|* 2015-02-03
+|******************************************************************************
+|* Main table dmisg136 Evaluate Document, Form Type 1
+|******************************************************************************
+|* ISGEC004004, IT0047, Dharmendra, Dt. 30-01-2015, B61U a7 isg                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+  table   tdmisg136 | Evaluate Document
+  table   tdmisg134
+  table   tdmcom010
+  
+  extern	domain	dmcom.shrtid	target.type
+  extern	domain	dmcom.lnkd	target.object
+  string query.string(300)
+
+
+|****************************** program section ********************************
+before.program:
+	select 	dmisg133.engi
+	from	dmisg133
+	where	dmisg133._index1 = {:logname$}
+	selectdo
+	selectempty
+		message("User not Authorized.")
+		exit()
+	endselect
+
+	query.string = "dmisg136.engi = :dmisg133.engi"
+	query.string = strip$(query.string) & " and dmisg136.rcno in (select dmisg134.rcno from dmisg134 where dmisg134._index4 = {dmisg.receipt.evaluation})"
+	query.extend.where(query.string)
+	
+before.display.object:
+	if dmisg136.subt = tcyesno.yes then
+		disable.fields("dmisg136.cler", actual.occ)
+		disable.fields("dmisg136.subt", actual.occ)
+		disable.fields("dmisg136.remk", actual.occ)
+	else
+		enable.fields("dmisg136.cler", actual.occ)
+		enable.fields("dmisg136.subt", actual.occ)
+		enable.fields("dmisg136.remk", actual.occ)
+	endif
+	
+|****************************** choice section ********************************
+choice.process:
+on.choice:
+	do.selection(false, cleared_by_approver)
+|****************************** group section **********************************
+
+
+|****************************** function section **********************************
+functions:
+
+function cleared_by_approver()
+{
+	select	dmisg136.*
+	from	dmisg136 for update
+	where	dmisg136._index1 = {:dmisg136.rcno, :dmisg136.revn, :dmisg136.engi}
+	selectdo
+		if dmisg136.cler = tcyesno.yes then
+			dmisg136.logn = logname$
+			dmisg136.date = utc.num()
+			update_dmisg134_cleared_yes(dmisg136.engi)
+		else
+			dmisg136.logn = ""
+			dmisg136.date = 0
+			update_dmisg134_cleared_no(dmisg136.engi)	
+		endif
+		
+		if dmisg136.subt = tcyesno.yes then
+			if check_attachment() then
+				update_dmisg134_submit_yes(dmisg136.engi)
+			else
+				message("Document not attached for Receipt %s Revision %s",dmisg136.rcno, dmisg136.revn)
+			endif
+		else
+			update_dmisg134_submit_no(dmisg136.engi)	
+		endif	
+	endselect		
+	commit.transaction()	
+}
+
+
+function update_dmisg134_cleared_yes(domain dmisg.eng engineering)
+{
+	domain tcsern position
+	on case engineering
+	case dmisg.eng.mechanical:
+		position = 1
+		break
+	case dmisg.eng.structure:
+		position = 2
+		break	
+	case dmisg.eng.piping:
+		position = 3
+		break	
+	case dmisg.eng.process:
+		position = 4
+		break		
+	case dmisg.eng.ci:
+		position = 5
+		break		
+	case dmisg.eng.electrical:
+		position = 6
+		break		
+	case dmisg.eng.others:
+		position = 7
+		break		
+	endcase
+
+	select	dmisg134.*
+	from	dmisg134 for update
+	where	dmisg134._index1 = {:dmisg136.rcno, :dmisg136.revn}
+	selectdo
+		dmisg134.rece(position) = tcyesno.yes
+		dmisg134.appr = logname$
+		dmisg134.adat = utc.num()
+		db.update(tdmisg134, db.retry)
+	endselect
+	
+}
+
+function update_dmisg134_cleared_no(domain dmisg.eng engineering)
+{
+	domain tcsern position
+	on case engineering
+	case dmisg.eng.mechanical:
+		position = 1
+		break
+	case dmisg.eng.structure:
+		position = 2
+		break	
+	case dmisg.eng.piping:
+		position = 3
+		break	
+	case dmisg.eng.process:
+		position = 4
+		break		
+	case dmisg.eng.ci:
+		position = 5
+		break		
+	case dmisg.eng.electrical:
+		position = 6
+		break		
+	case dmisg.eng.others:
+		position = 7
+		break		
+	endcase
+
+	select	dmisg134.*
+	from	dmisg134 for update
+	where	dmisg134._index1 = {:dmisg136.rcno, :dmisg136.revn}
+	selectdo
+		dmisg134.rece(position) = tcyesno.no
+		dmisg134.appr = ""
+		dmisg134.adat = 0
+		db.update(tdmisg134, db.retry)
+	endselect
+	
+}
+
+function update_dmisg134_submit_yes(domain dmisg.eng engineering)
+{
+		domain tcsern position
+	on case engineering
+	case dmisg.eng.mechanical:
+		position = 1
+		break
+	case dmisg.eng.structure:
+		position = 2
+		break	
+	case dmisg.eng.piping:
+		position = 3
+		break	
+	case dmisg.eng.process:
+		position = 4
+		break		
+	case dmisg.eng.ci:
+		position = 5
+		break		
+	case dmisg.eng.electrical:
+		position = 6
+		break		
+	case dmisg.eng.others:
+		position = 7
+		break		
+	endcase
+
+	select	dmisg134.*
+	from	dmisg134 for update
+	where	dmisg134._index1 = {:dmisg136.rcno, :dmisg136.revn}
+	selectdo
+		dmisg134.subm(position) = tcyesno.yes
+		db.update(tdmisg134, db.retry)
+	endselect
+
+}
+
+function update_dmisg134_submit_no(domain dmisg.eng engineering)
+{
+		domain tcsern position
+	on case engineering
+	case dmisg.eng.mechanical:
+		position = 1
+		break
+	case dmisg.eng.structure:
+		position = 2
+		break	
+	case dmisg.eng.piping:
+		position = 3
+		break	
+	case dmisg.eng.process:
+		position = 4
+		break		
+	case dmisg.eng.ci:
+		position = 5
+		break		
+	case dmisg.eng.electrical:
+		position = 6
+		break		
+	case dmisg.eng.others:
+		position = 7
+		break		
+	endcase
+
+	select	dmisg134.*
+	from	dmisg134 for update
+	where	dmisg134._index1 = {:dmisg136.rcno, :dmisg136.revn}
+	selectdo
+		dmisg134.subm(position) = tcyesno.no
+		db.update(tdmisg134, db.retry)
+	endselect
+
+}
+
+function boolean check_attachment()
+{
+	target.type = "VENDOR_DOC"
+	target.object = "{" & chr$(34) & dmisg136.rcno & chr$(34) & "," & chr$(34) & dmisg136.revn & chr$(34) & "," 
+	target.object = strip$(target.object) & str$(etol(dmisg136.engi)) & "}"
+	
+	select	dmcom010.*
+	from	dmcom010
+	where	dmcom010._index4 = {:target.type, :target.object}
+	selectdo
+	selectempty
+		return(false)
+	endselect
+	
+	return(true)
+}

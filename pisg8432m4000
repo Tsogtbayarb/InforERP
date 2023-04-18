@@ -1,0 +1,1372 @@
+|******************************************************************************
+|* tdisg8432m400  0  VRC B61U a7 isg 
+|* Purchase to sale Report
+|* Installation user             
+|* 2015-01-30
+|******************************************************************************
+|* Main table tdisg832 Billing Advice Lines, Form Type 4
+|******************************************************************************
+|* IDENT ISGEC01117, Mani sharma ,Dt. 27-03-2015  , VRC B61U a7 isg  
+|* New Report Development
+|*
+|* ID ISGEC01123, Ritu Shrivastava, Dt. 20-07-2015, VRC B61U a7 isg
+|* Modification to print proper values for few fields.
+|*
+|* ID ISGEC01078, Ritu Shrivastava, Dt. 04-08-2015, VRC B61U a7 isg
+|* Modification to print additional fields.
+|*
+|* ID ISGEC001212, Dharmendra, Dt. 24-09-2015, VRC B61U a7 isg
+|* Modification in biiling no, date, shipping no, date.
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttdisg832 | Billing Advice Lines
+  table   tcisli205
+  table   ttccom100
+  table   ttccom130
+  table   ttppdm740
+  table   ttdisg831
+  table   ttdisg825
+  table   ttpisg039
+  table   ttctax400
+  table   tcisli936
+  table   tcisli235
+  table   ttcibd943
+  table   ttfisg001
+  table   ttfisg002
+  table   ttfisg003
+  table   tciisg000
+  table   ttppin020
+  table   ttcmcs143
+  table   ttppdm600
+  table   ttdisg014
+  table	   ttpisg045			|#ISGEC01123.n
+  table	   ttdisg839			|#ISGEC01078.n
+  table		ttdisg842		|# ISGEC001212.sn
+  table		ttcmcs010
+  table		ttfgld106
+  table		ttcemm170		|# ISGEC001212.en
+  
+  
+   extern  domain  tccprj     		cprj.f,cprj.t 
+   extern  domain  tctran      	tran.f,tran.t
+   extern  domain  tcgld.docn 	   	docn.f,docn.t
+   extern  domain  tcdate		invd.f,invd.t,invd.to
+   extern  domain  tccom.bpid		bpid.f,bpid.t
+   extern  domain  tpproj.type		type 
+   extern  domain  tcdsca   		cust.name,state,address.var,customer.name
+   extern  domain  tcmcs.str50m  	invoice.no,invoice.date,project.code,item.desc						|#ISGEC01123.sn
+   extern  domain  tcmcs.str256m  	consignee.address, invoice.address							|#ISGEC01123.en
+|    extern  domain  tcmcs.str50m  	invoice.address,invoice.no,invoice.date,project.code,consignee.address,item.desc	|#ISGEC01123.o
+   extern  domain  tcncmp        	current_company   
+   extern  domain  tcccty        	country.e
+   extern  domain  tfgld.date  	shipping.date
+   extern  domain  tcorno       	commercial.invoice,bl.no,shipping.bill.no,cinv.t,cinv.f,v.rcno
+   extern  domain  tfgld.date   	commercial.date,bl.date
+   extern  domain  tcmcs.str256m   	lc.description
+   extern  domain  tcamnt       	billing.value
+   extern  domain  tcrate       	exchange.rate
+   extern  domain  tcamnt       	amount.inr
+   extern  domain  tcdate       	date.relisation
+   extern  domain  tcqnty      	quantity
+   extern  domain  tfacp.isup   	new.grno,old.grno
+   extern  domain  tcdsca		v.plcf,v.plct
+   extern  domain  tcmcs.str15       	vehicle.no
+   extern  domain  tcmcs.str40  	v.rtyp1,v.rtyp  
+   extern  domain  tcamnt       	billing.value.tot  
+   extern  domain  tchsnc.l     	hsn.code
+   extern  domain  tcamnt 		freight.amount,total,v.nins1,v.nins
+   extern  domain  tcdsca 		tin.no
+   extern  domain  tppdm.aalc 		var.ed.tax,var.cst.tax,sales.tax
+   extern  domain  tcpono  		v.rcln, p
+   
+   long yearno, v.remb1, v.remb, month_dayno , hours,  minutes,  seconds, monthno
+   extern  domain  tppdm.aalc 		sales.rem.tax
+   extern  domain  tcmcs.str15		invc.no						|#ISGEC01078.n
+   extern  domain  tcmcs.str100m	port.no						|#ISGEC01078.n
+   extern  domain  tcdsca		temp.vfln, temp.voyg				|#ISGEC01078.n
+		domain	tcncmp		logistic.company				|#ISGEC001212.sn
+		domain	tcdsca		country.desc					|#ISGEC001212.en
+
+   
+#pragma used dll ottdllbw 
+|*************** File Handling Variables *******************
+   string	 err.file(100), file.name(100), line3(3000), line4(3000)
+   long		 ret2, stat.fp
+|    
+	long				file_pointer		|File Pointer			|#ISGEC01123.sn
+	domain	tcmcs.str100m		temp.file		|Server File Name
+	domain	tcmcs.str100m		error			|Error				|#ISGEC01123.en
+
+|****************************** program section ********************************
+before.program:
+	current_company = get.compnr()
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.print:
+on.choice:
+	on case type
+		case tdisg.type.export:
+			generate.file.export()
+		break
+		
+		case tdisg.type.domestic:
+			generate.file()
+		break
+	endcase
+
+|****************************** field section *********************************
+field.cprj.f:
+when.field.changes:
+	cprj.t = cprj.f
+	
+field.tran.f:
+when.field.changes:
+	tran.t = tran.f
+	
+field.docn.f:
+when.field.changes:
+	docn.t =docn.f
+	
+field.cinv.f:
+when.field.changes:
+	cinv.t = cinv.f
+
+field.bpid.f:
+before.zoom:
+	query.extend.where.in.zoom("tppdm740.cprj = " & quoted.string(cprj.f))
+	
+when.field.changes:
+	bpid.t = bpid.f
+
+
+field.bpid.t:
+before.zoom:
+	query.extend.where.in.zoom("tppdm740.cprj = " & quoted.string(cprj.t))
+	
+field.invd.f:
+when.field.changes:
+	invd.t = invd.f
+
+|****************************** function section ******************************
+functions:
+
+function generate.file()
+{
+	open.file()
+	generate.header()
+	select	tcemm170.comp					|#ISGEC001212.sn
+	from	tcemm170
+	selectdo		
+		select	tcemm030.lcmp:logistic.company
+		from	tcemm030
+		where	tcemm030.fcmp = {:tcemm170.comp}
+		selectdo
+			read.main.table2()
+		selectempty
+			logistic.company = 0
+		endselect					|#ISGEC001212.en
+	endselect	
+	close.file()
+}	
+
+function open.file()
+{
+
+	if not tfisgdll9999.create.file(file_pointer,temp.file,error) then			|#ISGEC01123.sn
+		message("%s",error)
+		choice.again()
+	endif											|#ISGEC01123.en
+}
+
+function close.file()
+{
+	tfisgdll9999.close.file(file_pointer,temp.file)						|#ISGEC01123.n
+}
+
+function	generate.header()
+{
+
+	tfisgdll9999.create.file.header(file_pointer,asc("	"),				|#ISGEC01123.sn
+				"Purchase To Sales Report")
+				
+	tfisgdll9999.create.file.header(file_pointer,asc("	"),
+				"Project" & "	" & sprintf$("%s", cprj.f),
+						    sprintf$("%s", cprj.t))
+						    
+	tfisgdll9999.create.file.header(file_pointer,asc("	"),
+				"Customer" & "	" & sprintf$("%s", bpid.f),
+						    sprintf$("%s", bpid.t))
+	
+	tfisgdll9999.create.file.header(file_pointer,asc("	"),
+				"Invoice no" & "	" & sprintf$("%s", tran.f & "/" & str$(docn.f)),
+							    sprintf$("%s", tran.t & "/" & str$(docn.t)))
+	
+	tfisgdll9999.create.file.header(file_pointer,asc("	"),
+				"Invoice Date" & "	" & sprintf$("%u(%02d-%02m-%4Y)", invd.f),
+						            sprintf$("%u(%02d-%02m-%4Y)", invd.t))
+							    
+	tfisgdll9999.create.file.header(file_pointer,asc("	"),
+				"Type" & "	" & sprintf$("%s", type))
+				
+	tfisgdll9999.create.file.header(file_pointer,asc("	"),
+				"Name of Customer",			|1		
+				"Address",				|2		
+				"State",				|3		
+				"Customer TIN.",			|4		
+				"Invoice No",				|5		
+				"Invoice Date",				|6
+				"Company",
+				"Project Code",				|7		
+				"Consignee Address",			|8		
+				"Name of Commodity",			|9		
+				"Qty/Unit Nos",				|10		
+				"Commodity Code",			|11
+				"Vehicle No",				|12
+				"Dispatch From",			|13
+				"Dispatch To",				|14
+				"Basic Amount",				|15
+				"Excise Duty",				|16
+				"Cess Amount",				|17
+				"Sale Tax Amount",			|18		
+				"Freight Amount",			|19		
+				"Total Amount")				|20			|#ISGEC01123.en
+	
+}
+
+
+
+function read.main.table2()
+{
+	domain	tccprj		tmp.cprj
+	domain	tccom.bpid	tmp.ofbp
+	domain	tfgld.ttyp	tmp.ityp
+	domain	tfgld.docn	tmp.idoc
+	
+	utc.to.date  (invd.t,yearno, monthno, month_dayno,hours, minutes,seconds)
+	invd.to = date.to.utc( yearno, monthno, month_dayno, 23, 59, 59 ) 
+	
+	
+	tmp.cprj = ""
+	tmp.ofbp = "" 
+	tmp.ityp = "" 
+	tmp.idoc = 0
+	project.code= ""
+	
+	select 	cisli235.cprj,
+		cisli235.ofbp,
+		cisli235.ityp,
+		cisli235.idoc,
+		cisli235.nins,
+		cisli235.slcp,
+		cisli235.amth,
+		cisli235.piln,
+		cisli235.invt,
+		tccom100.nama,
+		tppdm600.ncmp
+	from	cisli235,tppdm600,tccom100
+| 	where	cisli235._index1 inrange {:current_company,:cprj.f,:bpid.f} and {:current_company,:cprj.t,:bpid.t} |#ISGEC001212.o
+	where	cisli235._index1 inrange {:logistic.company,:cprj.f,:bpid.f} and {:logistic.company,:cprj.t,:bpid.t}|#ISGEC001212.n
+	and	cisli235.ityp inrange :tran.f and :tran.t
+	and	cisli235.idoc inrange :docn.f and :docn.t
+	and	cisli235.codt inrange :invd.f and :invd.to
+	and     cisli235.cprj refers to tppdm600
+	and     cisli235.ofbp refers to tccom100
+	and	cisli235._compnr = :tcemm170.comp						|#ISGEC001212.n
+| 	and     cisli235._compnr in  ( select tppdm600.ncmp from tppdm600 where tppdm600._index1 = {cisli235.cprj})
+	order by 1,2,3,4
+	selectdo
+		current_company = tppdm600.ncmp
+		cust.name = tccom100.nama
+		if tmp.cprj = cisli235.cprj and tmp.ofbp = cisli235.ofbp and tmp.ityp = cisli235.ityp and tmp.idoc =  cisli235.idoc then
+			continue
+		else
+			tmp.cprj = cisli235.cprj
+			tmp.ofbp = cisli235.ofbp 
+			tmp.ityp = cisli235.ityp 
+			tmp.idoc = cisli235.idoc
+			project.code= cisli235.cprj
+			
+			p = 0
+		endif	
+		
+		invoice.no = ""
+		invoice.date = ""
+		invoice.address = ""
+		consignee.address = ""
+		item.desc = ""
+		total = 0
+		select 	cisli205.ityp,cisli205.idoc,cisli205.idat,cisli205.sfcp,cisli205.ofbp
+		from	cisli205
+		where 	cisli205._index1 = {:current_company,:cisli235.ityp,:cisli235.idoc}
+| 		and     cisli205._compnr = :tppdm600.ncmp
+		and	cisli205._compnr = :tcemm170.comp			|#ISGEC001212.n
+		as set with 1 rows
+		selectdo
+			invoice.no= cisli205.ityp&str$(cisli205.idoc)
+			invoice.date =  sprintf$("%u(%02d/%02m/%04Y)",cisli205.idat) 
+		endselect
+		
+		
+		select tpisg045.cadr, tpisg045.codr, tpisg045.lstr, tpisg045.cprj
+		from	tpisg045
+		where  	tpisg045._index1 = {:cisli235.cprj}
+		and	tpisg045._compnr = :logistic.company		|#ISGEC001212.n
+		as set with 1 rows
+		selectdo
+			get.address(tpisg045.cadr,invoice.address)
+			get.address(tpisg045.codr,consignee.address)
+		endselect
+		
+		p = 0
+		select tctax400.stpv.l,tctax400.catg.l,tctax400.fovn,tctax400.cadr.l,tccom130.nama,
+			tctax400.ccty,tccom130.ln01, tccom130.ln02, tccom130.ln03, tccom130.ln04, tccom130.ln05, tccom130.ln06		|#ISGEC01123.n
+		from   tctax400,tccom130
+		where  tctax400._index1 = {:tppdm740.ofbp}
+		and	tctax400.seqn.l = :tpisg045.lstr
+		and	tctax400._compnr = :tcemm170.comp				|#ISGEC001212.n
+		and    tctax400.cadr.l refers to tccom130
+		selectdo
+			if p = 0 then 
+				select tcmcs143.dsca
+				from	tcmcs143
+				where	tcmcs143._index1 = {:tctax400.ccty,:tctax400.stpv.l}
+				and	tcmcs143._compnr = :tcemm170.comp		|#ISGEC001212.n
+				selectdo
+					state = tcmcs143.dsca
+				selectempty
+					state = ""
+				endselect
+											
+				if tctax400.catg.l = tctax.catg.l.vat then
+					tin.no = tctax400.fovn
+					if tin.no <> "" then
+						p = 1 
+					endif	
+				else if tctax400.catg.l =  tctax.catg.l.lst then
+					tin.no = tctax400.fovn
+					if tin.no <> "" then
+						p = 1 
+					endif	
+				else if  tctax400.catg.l = tctax.catg.l.n.a then
+					tin.no = tctax400.fovn 
+					if tin.no <> "" then
+						p = 1 
+					endif	
+				endif
+				endif
+				endif
+			endif
+		endselect
+
+		
+		billing.value.tot = 0
+		
+		select	tpisg039.edrn,
+			tpisg039.rcno,
+			tpisg039.rcln,
+			tpisg039.rval,
+			tpisg039.nins,
+			tpisg039.remb,
+			tpisg039.rval,
+			tpisg039.edcs,
+			tpisg039.sltx,
+			tpisg039.csvt,
+			tpisg039.othr,
+			tpisg039.rtyp										
+		from	tpisg039
+		where   tpisg039._index3 = {:cisli235.ityp,:cisli235.idoc,:cisli235.cprj,:cisli235.ofbp}|,:cisli235.nins}
+| 		and	tpisg039._compnr = 200					|#ISGEC001212.o
+		and	tpisg039._compnr = :logistic.company			|#ISGEC001212.n
+		selectdo
+			if not isspace(tpisg039.rcno) and tpisg039.remb = tcyesno.yes and tpisg039.nins <> 0 then
+				get.IR.details()
+			endif
+			
+			get.tax.details(tpisg039.rtyp, tpisg039.rval)
+		
+			quantity = 0
+			item.desc = ""
+			select	tdisg832.item,
+				tdisg832.bivl,
+				tdisg832.qnty:quantity,
+				tcibd001.dsca:item.desc
+			from 	tdisg832, tcibd001
+			where	tdisg832._index2 = {:tpisg039.edrn,:tpisg039.rcno,:tpisg039.rcln}
+			and	tdisg832._compnr = :logistic.company			|#ISGEC001212.n
+			and	tdisg832.item refers to tcibd001
+			as set with 1 rows
+			selectdo
+				billing.value.tot = billing.value.tot + tdisg832.bivl
+				select tcibd943.hcod
+				from   tcibd943
+				where  tcibd943._index2 = {1,:tdisg832.item}
+				and	tcibd943._compnr = :logistic.company	|#ISGEC001212.n
+				selectdo
+					hsn.code = tcibd943.hcod
+				selectempty 
+					hsn.code = ""
+				endselect
+			endselect
+		endselect
+		check.reimbursement.status.for.tax(cisli235.cprj,cisli235.ofbp,cisli235.nins,cisli235.slcp,cisli235.amth(1))	|#ISGEC01075.n
+		Get_Service_Sales_Tax(cisli235.slcp, cisli235.cprj, cisli235.ofbp, cisli235.invt, cisli235.piln)		|#ISGEC01075.n
+		
+		total = freight.amount + sales.tax + sales.rem.tax + var.ed.tax + billing.value.tot		
+		if total > 0 then
+			print.detail()
+		endif	
+	endselect
+
+}
+
+function read.main.table()
+{
+	utc.to.date  (invd.t,yearno, monthno, month_dayno,hours, minutes,seconds)
+	invd.to = date.to.utc( yearno, monthno, month_dayno, 23, 59, 59 ) 
+	select cisli205.ityp,cisli205.idoc,cisli205.idat,cisli205.sfcp,cisli205.ofbp
+	from   cisli205
+	where  cisli205._index1 inrange {:current_company,:tran.f,:docn.f} and {:current_company,:tran.t,:docn.t}
+	and    cisli205.idat inrange    {:invd.f}  and  {:invd.to}
+	selectdo
+		invoice.no= cisli205.ityp&str$(cisli205.idoc)
+		invoice.date =  sprintf$("%u(%02d/%02m/%04Y)",cisli205.idat) 
+
+	| 		select tppdm740.cprj,tppdm740.ofbp,tppdm740.cadr,tccom100.nama,tppdm740.ccty,tppdm740.ccur,tccom130.nama,
+	| 			tccom130.ln01, tccom130.ln02, tccom130.ln03, tccom130.ln04, tccom130.ln05, tccom130.ln06		|#ISGEC01123.n
+	| 		from   tppdm740,tccom100,tccom130
+	| 	| 		where  tppdm740._index1 inrange {:cprj.f,:bpid.f} and {:cprj.t,:bpid.t}
+	| 		where  tppdm740._index1 inrange {:cprj.f,:cisli205.ofbp} and {:cprj.t,:cisli205.ofbp}
+	| 		and    tppdm740.ofbp refers to tccom100
+	| 		and    tppdm740.cadr refers to tccom130
+	| 		selectdo
+		| 		invoice.address = tccom130.nama											|#ISGEC01123.o
+																|#ISGEC01123.sn
+		select tpisg045.cadr, tpisg045.codr, tpisg045.lstr, tpisg045.cprj
+		from	tpisg045
+		where  	tpisg045._index1 = {:tppdm740.cprj}
+		selectdo
+			get.address(tpisg045.cadr,invoice.address)
+			get.address(tpisg045.codr,consignee.address)
+		selectempty
+			invoice.address = ""
+			consignee.address = ""
+		endselect
+																|#ISGEC01123.en
+						
+	| 		select cisli205.ityp,cisli205.idoc,cisli205.idat,cisli205.sfcp
+	| 		from   cisli205
+	| 		where  cisli205._index1 inrange {:current_company,:tran.f,:docn.f} and {:current_company,:tran.t,:docn.t}
+	| 		and    cisli205.idat inrange    {:invd.f}  and  {:invd.to}
+	| 		selectdo
+	| 			invoice.no= cisli205.ityp&str$(cisli205.idoc)
+	| 			invoice.date =  sprintf$("%u(%02d/%02m/%04Y)",cisli205.idat) 
+			
+			project.code = tppdm740.cprj
+			cust.name = tccom100.nama
+			
+	| 			invoice.address = tppdm740.cadr										|#ISGEC01123.o
+			
+			p = 0
+			select tctax400.stpv.l,tctax400.catg.l,tctax400.fovn,tctax400.cadr.l,tccom130.nama,
+				tctax400.ccty,tccom130.ln01, tccom130.ln02, tccom130.ln03, tccom130.ln04, tccom130.ln05, tccom130.ln06		|#ISGEC01123.n
+			from   tctax400,tccom130
+			where  tctax400._index1 = {:tppdm740.ofbp}
+			and	tctax400.seqn.l = :tpisg045.lstr				|#ISGEC01123.n
+			and    tctax400.cadr.l refers to tccom130
+			selectdo
+				if p = 0 then 
+	| 					consignee.address = tccom130.nama								|#ISGEC01123.o
+	| 					state = tctax400.stpv.l					|#ISGEC01123.o
+												|#ISGEC01123.sn
+					select tcmcs143.dsca
+					from	tcmcs143
+					where	tcmcs143._index1 = {:tctax400.ccty,:tctax400.stpv.l}
+					selectdo
+						state = tcmcs143.dsca
+					selectempty
+						state = ""
+					endselect
+												|#ISGEC01123.en
+					if tctax400.catg.l = tctax.catg.l.vat then
+						tin.no = tctax400.fovn
+						if shiftl$(strip$(tin.no)) <> "" then
+							p = 1 
+						endif	
+					else if tctax400.catg.l =  tctax.catg.l.lst then
+						tin.no = tctax400.fovn
+						if shiftl$(strip$(tin.no)) <> "" then
+							p = 1 
+						endif	
+					else if  tctax400.catg.l = tctax.catg.l.n.a then
+						tin.no = tctax400.fovn 
+						if shiftl$(strip$(tin.no)) <> "" then
+							p = 1 
+						endif	
+					endif
+					endif
+					endif
+				endif
+			endselect
+			
+			
+			select	cisli235.cprj,cisli235.ofbp,cisli235.nins,cisli235.slcp,cisli235.ityp,cisli235.idoc
+			from	cisli235
+			where	cisli235._index2 = {:cisli205.sfcp,:cisli205.ityp,:cisli205.idoc}
+			and     cisli235.cprj = :tppdm740.cprj
+			and     cisli235.ofbp = :tppdm740.ofbp
+			and	cisli235.invt = tcinvt.installment
+			selectdo
+
+				select	tpisg039.edrn,tpisg039.rcno,tpisg039.rcln,tpisg039.rval,tpisg039.nins,tpisg039.remb,tpisg039.rval,
+					tpisg039.edcs,tpisg039.sltx,tpisg039.csvt,tpisg039.othr,
+					tpisg039.rtyp										|#ISGEC01123.n
+				from	tpisg039
+				where   tpisg039._index3 = {:cisli235.ityp,:cisli235.idoc,:cisli235.cprj,:cisli235.ofbp,:cisli235.nins}
+				selectdo
+					if not isspace(tpisg039.rcno) and tpisg039.remb = tcyesno.yes then
+						get.IR.details()
+					else 
+	| 						continue
+					endif
+	| 					sales.tax = tpisg039.sltx + sales.tax			|#ISGEC01123.so
+	| 					var.ed.tax   = tpisg039.edcs + var.ed.tax
+	| 					var.cst.tax = tpisg039.csvt + var.cst.tax		|#ISGEC01123.eo
+					
+					get.tax.details(tpisg039.rtyp, tpisg039.rval)
+						
+	| 					  (tpisg039.edcs + tpisg039.sltx + tpisg039.csvt + tpisg039.othr )
+	| 						o.excise = tpisg039.edcs
+	| 						o.vat = tpisg039.sltx
+	| 						o.service = tpisg039.csvt
+	| 						o.cst = tpisg039.othr
+					select	tdisg832.item,tdisg832.qnty
+					from 	tdisg832
+					where	tdisg832._index2 = {:tpisg039.edrn,:tpisg039.rcno,:tpisg039.rcln}
+					selectdo
+						quantity = tdisg832.qnty
+						select tcibd001.dsca:item.desc
+						from	tcibd001
+						where	tcibd001._index1 = {:tdisg832.item}
+						selectdo
+						selectempty
+							item.desc = ""
+						endselect
+						
+						select tcibd943.hcod
+						from   tcibd943
+						where  tcibd943._index2 = {1,:tdisg832.item}
+						selectdo
+							hsn.code = tcibd943.hcod
+						selectempty 
+							hsn.code = ""
+						endselect
+						
+					selectempty
+						quantity = 0
+						item.desc = ""
+					endselect
+					
+					select tdisg832.bivl
+					from   tdisg832
+					where  tdisg832._index2 = {:tpisg039.edrn,:tpisg039.rcno,:tpisg039.rcln}
+					selectdo
+						billing.value.tot = billing.value.tot + tdisg832.bivl
+					selectempty 
+						billing.value.tot = 0
+					endselect	
+| 				check.reimbursement.status.for.tax(cisli235.cprj,cisli235.ofbp,cisli235.nins)	
+				
+				endselect
+			endselect
+			total = freight.amount + sales.tax + var.cst.tax + var.ed.tax + billing.value.tot
+			if total > 0 then
+				print.detail()
+			endif	
+			initial()
+	| 		endselect
+	endselect
+    
+    
+}
+function initial()
+{
+	cust.name = ""
+| 	invoice.address = ""				|#ISGEC01123.o
+	state = ""
+	tin.no = ""
+	invoice.no = ""
+	invoice.date = ""
+	project.code = ""
+| 	consignee.address = ""				|#ISGEC01123.o
+	item.desc = ""
+	quantity = 0
+	hsn.code = ""
+	vehicle.no = ""
+	v.plcf = ""
+	v.plct = ""
+	billing.value.tot = 0
+	var.ed.tax = 0
+	var.cst.tax = 0
+	freight.amount = 0
+	sales.tax = 0
+	sales.rem.tax = 0
+	total = 0
+	
+}
+
+function get.IR.details()									|IR Detials
+{
+	select	tfisg001.irno
+	from	tfisg001
+	where	tfisg001.rcno = :tpisg039.rcno
+	and	tfisg001._compnr = :logistic.company				|#ISGEC001212.n
+	as set with 1 rows	
+	selectdo
+		get.gr()
+	endselect	
+}
+
+function get.gr()
+{
+	select	tfisg002.grno
+	from	tfisg002
+	where	tfisg002._index1 = {:tfisg001.irno}
+	selectdo
+		get.GR.details()
+		new.grno = tfisg002.grno
+| 		if new.grno <> old.grno then
+| 			brp.ready(rpt.no1)
+| 		endif
+		old.grno = new.grno
+		new.grno = ""				
+	endselect	
+}
+
+function get.GR.details()									|GR NO & Place from-Place To
+{
+	select	tfisg003.grno,tfisg003.grdt,tfisg003.plcf,tfisg003.plct,
+		tfisg003.cctf,tfisg003.bpid,tfisg003.vhno,tfisg003.frgt
+	from	tfisg003
+	where	tfisg003._index3 = {:tfisg001.irno}
+	selectdo
+		freight.amount = tfisg003.frgt + freight.amount
+| 		v.plcf = get.place.data(tfisg003.cctf,tfisg003.plct)				|#ISGEC01123.o	
+		v.plcf = get.place.data(tfisg003.cctf,tfisg003.plcf)				|#ISGEC01123.n
+		v.plct = get.place.data(tfisg003.cctf,tfisg003.plct)
+		vehicle.no = tfisg003.vhno
+	endselect	
+}
+
+function string	get.place.data( domain	tcccty		i.cctf,				|Place Description
+					domain	tcmcs.cste	i.plct)
+{
+	select	tcmcs143.dsca
+	from	tcmcs143
+	where	tcmcs143._index1 = {:i.cctf,:i.plct}
+	selectdo
+	selectempty
+		tcmcs143.dsca = ""
+	endselect
+	return(tcmcs143.dsca)
+}
+
+function get.receipt.no(domain tccprj		i.cprj,					|Receipt No, Line, Reimbursement Data
+			 domain tccom.bpid	i.ofbp,
+			 domain tppdm.nins	i.nins)
+{
+	select	tpisg039.rcno:v.rcno,tpisg039.rcln:v.rcln,tpisg039.remb:v.remb,tpisg039.remb:v.nins
+	from	tpisg039
+	where	tpisg039._index1 = {:cisli235.cprj,:cisli235.ofbp,:cisli235.nins}
+	selectdo
+	selectempty
+	endselect	
+}
+
+function check.reimbursement.status.for.tax(	domain tccprj		i.cprj,			|Reimbursement value
+						domain tccom.bpid	i.ofbp,
+						domain tppdm.nins	i.nins,			|#ISGEC01075.sn
+						domain tcncmp		i.slcp,
+						domain tcamnt		i.amth)			|#ISGEC01075.en{
+	
+{												|#ISGEC01075.sn
+domain	tcyesno		tmp.remb
+domain	tcccty		tmp.rtyp
+
+		
+	select	tppin020.cdf_remb:tmp.remb,
+		tppin020.cdf_rtyp:tmp.rtyp
+	from	tppin020
+	where	tppin020._index1 = {:i.cprj, :i.ofbp, :i.nins}
+	and	tppin020._compnr = :i.slcp
+	selectdo
+		if	tmp.remb = tcyesno.no	then
+			billing.value.tot = billing.value.tot + i.amth
+		else
+			if	not isspace(tmp.rtyp)	then
+				if	trim$(tmp.rtyp) = trim$(ciisg000.exii)	or
+					trim$(tmp.rtyp) = trim$(ciisg000.hcex)	or
+					trim$(tmp.rtyp) = trim$(ciisg000.scex)	then
+						var.ed.tax = var.ed.tax + i.amth
+				else
+					if	trim$(tmp.rtyp) = trim$(ciisg000.csti)	then
+						sales.rem.tax = sales.rem.tax + cisli235.amth(1)
+					else
+						if	trim$(tmp.rtyp) = trim$(ciisg000.vati)	or
+							trim$(tmp.rtyp) = trim$(ciisg000.srvi)	or
+							trim$(tmp.rtyp) = trim$(ciisg000.hcsv)	or
+							trim$(tmp.rtyp) = trim$(ciisg000.scsv)	then
+							sales.rem.tax = sales.rem.tax + cisli235.amth(1)
+						else
+							if	trim$(tmp.rtyp) = trim$(ciisg000.frgt)	then
+								freight.amount = freight.amount + i.amth
+							endif
+						endif
+					endif	
+				endif
+			endif
+		endif
+	endselect
+		
+}
+
+function	print.detail()
+{	
+| 	line4 =	concat$("	",
+| 		sprintf$("%s", cust.name),				|1
+| 		sprintf$("%s", invoice.address),			|2				
+| 		sprintf$("%s", state),					|3				
+| 		sprintf$("%s", tin.no),				|4				
+| 		sprintf$("%s", invoice.no),				|5				
+| 		sprintf$("%s", invoice.date),				|6				
+| 		sprintf$("%s", project.code),				|7				
+| 		sprintf$("%s", consignee.address),			|8				
+| 		sprintf$("%s", item.desc),				|9				
+| 		sprintf$("%d", quantity),				|10				
+| 		sprintf$("%s", hsn.code),				|11
+| 		sprintf$("%s", vehicle.no),				|12
+| 		sprintf$("%s", v.plcf),				|13
+| 		sprintf$("%s", v.plct),				|14
+| 		sprintf$("%d", billing.value.tot),			|15
+| 		sprintf$("%d", var.ed.tax),				|16
+| 		sprintf$("%d", var.cst.tax),				|17
+| 		sprintf$("%d", sales.tax),			|18
+| 		sprintf$("%d", freight.amount),			|19
+| 		sprintf$("%d", total))			|20
+| 		
+| 		line4 = strip$(shiftl$(line4))
+| 		
+| 		seq.puts(line4, stat.fp)
+
+	tfisgdll9999.create.detail.line(file_pointer,asc("	"),						|#ISGEC01123.sn
+					cust.name,				|1
+					invoice.address,			|2				
+					state,					|3				
+					tin.no,					|4				
+					invoice.no,				|5				
+					invoice.date,				|6
+					current_company,							|#ISGEC01075.n
+					project.code,				|7				
+					consignee.address,			|8				
+					item.desc,				|9				
+					quantity,				|10				
+					hsn.code,				|11
+					vehicle.no,				|12
+					v.plcf,					|13
+					v.plct,					|14
+					billing.value.tot,			|15
+					var.ed.tax,				|16
+| 					var.cst.tax,				|17				|#ISGEC01075.o
+					sales.rem.tax,								|#ISGEC01075.n
+					sales.tax,				|18
+					freight.amount,				|19
+					total)					|20				|#ISGEC01123.en
+	
+	
+}		
+|****************************************************EXPORT REPORT ***********************************
+
+function generate.file.export()
+{
+	open.file()
+	generate.header.export()
+	clear.tdisg014()
+| 	read.main.table1()
+	select	tcemm170.comp					|#ISGEC001212.sn
+	from	tcemm170
+	selectdo		
+		select	tcemm030.lcmp:logistic.company
+		from	tcemm030
+		where	tcemm030.fcmp = {:tcemm170.comp}
+		as set with 1 rows
+		selectdo
+			read.main.table3()
+		selectempty
+			logistic.company = 0
+		endselect					|#ISGEC001212.en
+	endselect	
+	close.file()
+}
+
+function generate.header.export()
+{
+| 	line4 =	concat$("	",
+| 		sprintf$("Name of Customer"),			|1		
+| 		sprintf$("Address"),				|2		
+| 		sprintf$("Country"),				|3		
+| 		sprintf$("Export Invoice No."),		|4		
+| 		sprintf$("Export Invoice Date"),		|5		
+| 		sprintf$("Description"),			|6		
+| 		sprintf$("B\L No"),				|7		
+| 		sprintf$("B\L Date"),				|8		
+| 		sprintf$("Amount in FC"),			|9		
+| 		sprintf$("Conversion Rate"),			|10		
+| 		sprintf$("Amount in INR"),			|11
+| 		sprintf$("Date of Relisation"),		|12
+| 		sprintf$("Shipping Bill No"),			|13
+| 		sprintf$("Shipping Bill Date"))		|14
+| 				
+| 		
+| 	line4 = strip$(shiftl$(line4))		
+| 	seq.puts(line4, stat.fp)	
+	
+	tfisgdll9999.create.file.header(file_pointer,asc("	"),				|#ISGEC01123.sn
+				"Purchase To Sales Report")
+				
+	tfisgdll9999.create.file.header(file_pointer,asc("	"),
+				"Project" & "	" & sprintf$("%s", cprj.f),
+						    sprintf$("%s", cprj.t))
+						    
+	tfisgdll9999.create.file.header(file_pointer,asc("	"),
+				"Customer" & "	" & sprintf$("%s", bpid.f),
+						    sprintf$("%s", bpid.t))
+	
+	tfisgdll9999.create.file.header(file_pointer,asc("	"),
+				"Invoice no" & "	" & sprintf$("%s", tran.f & "/" & str$(docn.f)),
+							    sprintf$("%s", tran.t & "/" & str$(docn.t)))
+	
+	tfisgdll9999.create.file.header(file_pointer,asc("	"),
+				"Invoice Date" & "	" & sprintf$("%u(%02d-%02m-%4Y)", invd.f),
+						            sprintf$("%u(%02d-%02m-%4Y)", invd.t))
+							    
+	tfisgdll9999.create.file.header(file_pointer,asc("	"),
+				"Type" & "	" & sprintf$("%s", type))
+				
+	tfisgdll9999.create.file.header(file_pointer,asc("	"),
+					"Company",				|1			|#ISGEC001212.n
+					"Name of Customer",			|2		
+					"Address",				|3		
+					"Country",				|4
+					"Accounting Voucher No.",		|5			|#ISGEC01078.n
+					"Export Invoice No.",			|6		
+					"Export Invoice Date",			|7		
+					"Description",				|8			
+					"B\L No",				|9		
+					"B\L Date",				|10		
+					"Amount in FC",				|11		
+					"Conversion Rate",			|12		
+					"Amount in INR",			|13
+| 					"Date of Relisation",			|14			|#ISGEC01078.o
+					"Port of loading/Vessel No/VOYG No",	|15			|#ISGEC01078.n
+					"Shipping Bill No",			|16
+					"Shipping Bill Date")			|17			|#ISGEC01123.en
+}
+
+
+function read.main.table3()
+{
+	domain	tccprj		tmp.cprj
+	domain	tccom.bpid	tmp.ofbp
+	domain	tfgld.ttyp	tmp.ityp
+	domain	tfgld.docn	tmp.idoc
+	
+	utc.to.date  (invd.t,yearno, monthno, month_dayno,hours, minutes,seconds)
+	invd.to = date.to.utc( yearno, monthno, month_dayno, 23, 59, 59 ) 
+	
+	tmp.cprj = ""
+	tmp.ofbp = "" 
+	tmp.ityp = "" 
+	tmp.idoc = 0
+	project.code= ""
+
+	select 	cisli235.cprj,
+		cisli235.ofbp,
+		cisli235.ityp,
+		cisli235.idoc,
+| 		cisli235.amth,								|#ISGEC01078.n
+		cisli235.sfcp,
+		cisli235.slcp
+	from	cisli235
+| 	where	cisli235._index1 inrange {:current_company,:cprj.f,:bpid.f} and {:current_company,:cprj.t,:bpid.t}|#ISGEC001212.o
+	where	cisli235._index1 inrange {:logistic.company,:cprj.f,:bpid.f} and {:logistic.company,:cprj.t,:bpid.t}|#ISGEC001212.n
+	and	cisli235.ityp inrange :tran.f and :tran.t
+	and	cisli235.idoc inrange :docn.f and :docn.t
+	and	cisli235.codt inrange :invd.f and :invd.to
+	and	cisli235._compnr = :tcemm170.comp
+	group by cisli235.cprj, cisli235.ofbp, cisli235.ityp, cisli235.idoc, cisli235.sfcp, cisli235.slcp
+	order by 1,2,3,4
+	selectdo
+										|#sujeet20150825.sn
+		select 	cisli205.brid
+		from	cisli205
+		where	cisli205._index1 = {:cisli235.sfcp,:cisli235.ityp,:cisli235.idoc}
+		and	cisli205._compnr = :tcemm170.comp
+		as set with 1 rows
+		selectdo
+		endselect
+										|#sujeet20150825.en
+		
+		invc.no = cisli235.ityp & "/" & str$(cisli235.idoc)		|#ISGEC001212
+		if tmp.cprj = cisli235.cprj and tmp.ofbp = cisli235.ofbp and tmp.ityp = cisli235.ityp and tmp.idoc =  cisli235.idoc then
+			continue
+		else
+			tmp.cprj = cisli235.cprj
+			tmp.ofbp = cisli235.ofbp 
+			tmp.ityp = cisli235.ityp 
+			tmp.idoc = cisli235.idoc
+			project.code= cisli235.cprj
+			p = 0
+		endif	
+		
+		select 	tppdm740.cprj,
+			tppdm740.ofbp,
+			tppdm740.cadr,
+			tccom100.nama,
+			tppdm740.ccty,
+			tppdm740.ccur,
+			tccom100.cadr
+		from   	tppdm740,tccom100
+		where  	tppdm740._index1 = {:cisli235.cprj,:cisli235.ofbp} 
+		and	tppdm740._compnr = :logistic.company			|#ISGEC001212.n
+		and    tppdm740.ofbp refers to tccom100
+		as set with 1 rows
+		selectdo
+			country.desc = ""				|#ISGEC001212.n
+			select tccom130.nama,tccom130.namb,tccom130.namc,tccom130.ccty,
+				tcmcs010.dsca						|#ISGEC001212.n
+			from   tccom130, tcmcs010
+			where  tccom130._index1 = {:tccom100.cadr}
+			and	tccom130.ccty refers to tcmcs010
+			selectdo
+				address.var = shiftl$(strip$(tccom130.nama))&shiftl$(strip$(tccom130.namb))&shiftl$(strip$(tccom130.namc))
+| 				country.e = tccom130.ccty			|#ISGEC001212.o
+				country.desc = tcmcs010.dsca			|#ISGEC001212.n
+			endselect
+		endselect
+		
+		
+		select 	tdisg831.cprj,
+			tdisg831.type,
+			tdisg831.stat,
+			tdisg831.ofbp,
+			tdisg831.bold,
+			tdisg831.bodt,
+			tdisg831.cinv,
+			tdisg831.cind,
+			tdisg831.edrn,
+			tdisg831.lcno,
+			tdisg831.rate,
+			tdisg831.prdt,
+			tdisg831.sbno,
+			tdisg831.shdt,
+			tdisg831.ptld
+		from   tdisg831
+		where  tdisg831._index4 = {:cisli235.cprj,:cisli235.ofbp}
+		and	tdisg831.brid = :cisli205.brid				|#sujeet20150825.n
+		and     tdisg831.type = tdisg.type.export
+		and     tdisg831.stat in (2,3)
+		and	tdisg831.cinv <> ""	
+		and	tdisg831._compnr = :logistic.company			|#ISGEC001212.n	
+		order by tdisg831.cinv
+		selectdo
+									|#ISGEC01078.sn
+			commercial.invoice = ""
+			select	tdisg839.*
+			from	tdisg839
+			where	tdisg839._index1 = {:tdisg831.bold}
+			and	tdisg839._compnr = :logistic.company	|#ISGEC001212.n
+			as set with 1 rows
+			selectdo
+				temp.voyg = tdisg839.voyg
+				temp.vfln = tdisg839.vfln
+| 				port.no = strip$(tdisg831.ptld) & "/" & strip$(temp.vfln) & "/" & strip$(temp.voyg)
+				port.no = strip$(tdisg839.plod) & "/" & strip$(temp.vfln) & "/" & strip$(temp.voyg)
+				bl.no = tdisg839.biln			|# ISGEC001212.sn
+				bl.date = tdisg839.pddt			|# ISGEC001212.en
+			selectempty
+				temp.voyg = ""
+				temp.vfln = ""
+				port.no = ""
+				bl.no = ""				|# ISGEC001212.sn
+				bl.date = 0				|# ISGEC001212.en
+			endselect
+									|#ISGEC01078.en
+									|# ISGEC001212.sn
+			select	tdisg842.scod,
+				tdisg842.sdat
+			from	tdisg842
+			where	tdisg842._index1 = {:tdisg831.sbno}
+			and	tdisg842._compnr = :logistic.company	|#ISGEC001212.n
+			selectdo
+				shipping.bill.no = tdisg842.scod
+				shipping.date = tdisg842.sdat
+			selectempty
+				shipping.bill.no = ""
+				shipping.date = 0
+			endselect
+									|# ISGEC001212.en
+			select 	tdisg832.edrn,
+				tdisg832.rcno,
+				tdisg832.rcln,
+				tdisg832.nins,
+				tdisg832.bivl
+			from    tdisg832
+			where   tdisg832._index3 = {:tdisg831.cinv,:tdisg831.edrn}
+			and	tdisg832._compnr = :logistic.company	|#ISGEC001212.n
+			selectdo
+| 				billing.value = billing.value + tdisg832.bivl			|#ISGEC001212.temp
+				select 	tpisg039.ityp,
+					tpisg039.idoc,
+					tpisg039.sidt,
+					tpisg039.remb,
+					tpisg039.rval,
+					tpisg039.edcs,
+					tpisg039.sltx,
+					tpisg039.csvt,
+					tpisg039.othr
+				from   tpisg039
+				where  tpisg039._index1 = {:tdisg831.cprj,:tdisg831.ofbp,:tdisg832.nins,
+							:tdisg832.edrn,:tdisg832.rcno,:tdisg832.rcln}
+				and	tpisg039._compnr = :logistic.company		|#ISGEC001212.n			
+				selectdo
+					customer.name = tccom100.nama
+| 					invc.no = cisli235.ityp & "/" & str$(cisli235.idoc)|#ISGEC001212.temp
+| 					amount.inr = cisli235.amth(1)			|#sujeet20150825.o
+					commercial.invoice = tdisg831.cinv
+					commercial.date = tdisg831.cind
+| 					bl.no = tdisg831.bold				|# ISGEC001212.so
+| 					bl.date = tdisg831.bodt				|# ISGEC001212.eo
+					exchange.rate = tdisg831.rate			|# ISGEC001212.temp
+					date.relisation = tdisg831.prdt
+| 					shipping.bill.no = tdisg831.sbno
+| 					shipping.date = tdisg831.shdt
+												
+					select tdisg825.des1,tdisg825.des2,tdisg825.des3,tdisg825.des4,tdisg825.des5
+					from   tdisg825
+					where  tdisg825._index1 = {:tdisg831.lcno}
+					and	tdisg825._compnr = :logistic.company			|#ISGEC001212.n
+					as set with  1 rows		|#sujeet20150731.n
+					selectdo
+						lc.description = shiftl$(strip$(tdisg825.des1))&shiftl$(strip$(tdisg825.des2))&shiftl$(strip$(tdisg825.des3))&shiftl$(strip$(tdisg825.des4))
+					endselect
+					
+				endselect
+			endselect
+		endselect
+		amount.inr = 0
+		
+		select	tfgld106.amnt, tfgld106.rate, tfgld106.amth
+		from	tfgld106
+		where	tfgld106._index1 = {:cisli235.ityp, :cisli235.idoc}
+		and	tfgld106.dim1 = :cisli235.cprj
+		selectdo
+			exchange.rate = tfgld106.rate(1)
+			billing.value = tfgld106.amnt
+			amount.inr = tfgld106.amth(1)
+		endselect
+		
+						|#ISGEC001212.temp.comented
+| 		select sum(cisli235.amth(1)):amount.inr 
+| 		from	cisli235
+| 		where	cisli235._index2 = {:cisli235.sfcp,:cisli235.ityp,:cisli235.idoc,:cisli235.slcp,:cisli235.cprj,:cisli235.ofbp}
+| 		and	cisli235._compnr = :tcemm170.comp
+| 		selectdo
+| 		endselect
+						|Till here
+		
+										|# ISGEC001212.so
+| 		select 	tdisg831.sbno,
+| 			tdisg831.shdt
+| 		from   tdisg831
+| 		where  tdisg831._index4 = {:cisli235.cprj,:cisli235.ofbp}
+| 		and	tdisg831.brid = :cisli205.brid				|#sujeet20150825.n
+| 		and     tdisg831.type = tdisg.type.export
+| 		and     tdisg831.stat in (2,3)
+| 		and	tdisg831.cinv =:tdisg831.cinv		
+| 		order by tdisg831.cinv
+| 		as set with 1  rows
+| 		selectdo
+| 			shipping.bill.no = tdisg831.sbno
+| 			shipping.date = tdisg831.shdt
+| 		endselect							|# ISGEC001212.eo
+		
+		if strip$(shiftl$(commercial.invoice)) <> "" then
+			print.detail.export()
+		endif	
+		initialise.variables()	
+	endselect
+}
+
+function read.main.table1()
+{	
+
+	utc.to.date  (invd.t,yearno, monthno, month_dayno,hours, minutes,seconds)
+	invd.to = date.to.utc( yearno, monthno, month_dayno, 23, 59, 59 ) 
+	
+	select cisli205.ityp,cisli205.idoc,cisli205.doct,cisli205.ofbp
+	from   cisli205
+	where  cisli205._index1 inrange {:current_company,:tran.f,:docn.f} and {:current_company,:tran.t,:docn.t}
+	and    cisli205.idat    inrange  :invd.f  and  :invd.to
+	and    cisli205.ofbp    inrange  :bpid.f  and  :bpid.t
+	selectdo 
+		select tppdm740.cprj,tppdm740.ofbp,tppdm740.cadr,tccom100.nama,tppdm740.ccty,tppdm740.ccur,tccom100.cadr
+		from    tppdm740,tccom100
+		where  tppdm740._index1 inrange {:cprj.f,:cisli205.ofbp} and {:cprj.t,:cisli205.ofbp}
+		and    tppdm740.ofbp refers to tccom100
+		selectdo
+			country.desc = ""					|#ISGEC001212.n
+			select tccom130.nama,tccom130.namb,tccom130.namc,tccom130.ccty, tcmcs010.dsca
+			from   tccom130, tcmcs010
+			where  tccom130._index1 = {:tccom100.cadr}
+			and	tccom130.ccty refers to tcmcs010
+			selectdo
+				address.var = shiftl$(strip$(tccom130.nama))&shiftl$(strip$(tccom130.namb))&shiftl$(strip$(tccom130.namc))
+				country.e = tccom130.ccty
+				country.desc = tcmcs010.dsca
+			endselect
+			
+			select tdisg831.cprj,tdisg831.type,tdisg831.stat,tdisg831.ofbp,tdisg831.bold,tdisg831.bodt,
+				tdisg831.cinv,tdisg831.cind,tdisg831.edrn,tdisg831.lcno,tdisg831.rate,tdisg831.prdt,
+				tdisg831.sbno,tdisg831.shdt
+			from   tdisg831
+			where  tdisg831._index4 = {:tppdm740.cprj,:tppdm740.ofbp}
+			and     tdisg831.type = tdisg.type.export
+			and     tdisg831.stat in (2,3)
+			and	tdisg831.cinv <> ""			|#sujeet20150731.n
+			order by tdisg831.cinv
+			selectdo
+				select tdisg832.edrn,tdisg832.rcno,tdisg832.rcln,tdisg832.nins
+				from    tdisg832
+				where   tdisg832._index3 = {:tdisg831.cinv,:tdisg831.edrn}
+				selectdo
+					
+					select tdisg832.bivl
+					from   tdisg832
+					where  tdisg832.cinv = {:tdisg831.cinv}
+					selectdo
+						billing.value = billing.value + tdisg832.bivl
+					endselect
+					
+					amount.inr = billing.value * tdisg831.rate
+					
+					select tpisg039.ityp,tpisg039.idoc,tpisg039.sidt,tpisg039.remb,tpisg039.rval,tpisg039.edcs,tpisg039.sltx,
+						tpisg039.csvt,tpisg039.othr
+					from   tpisg039
+					where  tpisg039._index1 = {:tdisg831.cprj,:tdisg831.ofbp,:tdisg832.nins,:tdisg832.edrn,:tdisg832.rcno,:tdisg832.rcln}
+					selectdo
+						customer.name = tccom100.nama
+						commercial.invoice = tdisg831.cinv
+						commercial.date = tdisg831.cind
+						bl.no = tdisg831.bold
+						bl.date = tdisg831.bodt
+						exchange.rate = tdisg831.rate
+						date.relisation = tdisg831.prdt
+						shipping.bill.no = tdisg831.sbno
+						shipping.date = tdisg831.shdt
+												
+						select tdisg825.des1,tdisg825.des2,tdisg825.des3,tdisg825.des4,tdisg825.des5
+						from   tdisg825
+						where  tdisg825._index1 = {:tdisg831.lcno}
+						as set with  1 rows		|#sujeet20150731.n
+						selectdo
+							lc.description = shiftl$(strip$(tdisg825.des1))&shiftl$(strip$(tdisg825.des2))&shiftl$(strip$(tdisg825.des3))&shiftl$(strip$(tdisg825.des4))
+						endselect
+					endselect
+					
+				if strip$(shiftl$(commercial.invoice)) <> "" then
+					if not insert.detail() then
+						print.detail.export()
+					endif	
+				endif	
+				
+				initialise.variables()
+				endselect
+			endselect
+		endselect
+	endselect	
+}
+
+
+function print.detail.export()
+{	
+| 	line3 =	concat$("	",								|#ISGEC01078.so
+| 		sprintf$("%s", customer.name),				|1
+| 		sprintf$("%s", address.var),				|2				
+| 		sprintf$("%s", country.e),				|3
+| 		sprintf$("%s", commercial.invoice),			|4				
+| 		sprintf$("%D(%02d/%02m/%04Y)", commercial.date),	|5				
+| 		sprintf$("%s", lc.description),			|6				
+| 		sprintf$("%s", bl.no),					|7				
+| 		sprintf$("%D(%02d/%02m/%04Y)", bl.date),		|8				
+| 		sprintf$("%d", billing.value),				|9				
+| 		sprintf$("%f", exchange.rate),				|10				
+| 		sprintf$("%d", amount.inr),				|11			
+| 		sprintf$("%u(%02d/%02m/%04Y)", date.relisation),	|12			
+| 		sprintf$("%s", shipping.bill.no),			|13
+| 		sprintf$("%D(%02d/%02m/%04Y)",shipping.date ))		|14
+| 	line3 = strip$(shiftl$(line3))	
+| 	seq.puts(line3,file_pointer)										|#ISGEC01078.eo
+	
+	tfisgdll9999.create.detail.line(file_pointer,asc("	"),				|#ISGEC01078.sn
+					tcemm170.comp,						|#ISGEC001212.n
+					customer.name,						|1
+					address.var,						|2				
+					country.desc,						|3
+					invc.no,							
+					commercial.invoice,					|4				
+					sprintf$("%D(%02d/%02m/%04Y)",commercial.date),	|5				
+					lc.description,						|6				
+					bl.no,							|7				
+					sprintf$("%D(%02d/%02m/%04Y)", bl.date),		|8				
+					billing.value,						|9				
+					exchange.rate,						|10				
+					amount.inr,						|11
+					port.no,						|12
+					shipping.bill.no,					|13
+					sprintf$("%D(%02d/%02m/%04Y)",shipping.date ) )	|14		|#ISGEC01078.en
+		
+}	
+
+function initialise.variables()
+{
+	customer.name = ""
+| 	address.var = ""
+| 	country.e = ""
+	commercial.invoice = ""
+	commercial.date = 0
+	lc.description = ""
+	bl.no = ""
+	bl.date = 0
+	billing.value = 0
+	exchange.rate = 0.00
+	amount.inr = 0
+	date.relisation = 0
+	shipping.bill.no = ""
+	shipping.date = 0
+}
+
+function boolean insert.detail()
+{
+	select tdisg014.*
+	from    tdisg014 for update
+	where   tdisg014._index1 = {:commercial.invoice,:commercial.date,:bl.no}
+	selectdo
+		return (true)
+	selectempty
+		tdisg014.cinv = commercial.invoice
+		tdisg014.cind = commercial.date
+		tdisg014.blno = bl.no
+		tdisg014.bodt = bl.date
+		db.insert(ttdisg014,db.retry,e)
+		if e then
+			abort.transaction()
+		else
+			commit.transaction()
+		endif
+	endselect	
+return (false)
+}
+
+
+function clear.tdisg014()
+{
+	select tdisg014.*
+	from    tdisg014 for update
+	where  tdisg014._index1  =  {:commercial.invoice}
+	selectdo
+	selectempty
+		if strip$(shiftl$(tdisg014.cinv)) <> "" then
+			db.delete(ttdisg014,db.retry,e)
+			if e then
+				abort.transaction()
+			else
+				commit.transaction()
+			endif
+		endif	
+	endselect
+}
+
+											|#ISGEC01123.sn
+function get.tax.details(domain tcccty		i.rtyp,
+			  domain tcamnt		i.rval)
+{
+	tcmcs.dll0095.read.parm("ciisg000")
+	
+	if   (ciisg000.exii = i.rtyp) then
+		var.ed.tax = var.ed.tax + i.rval
+		
+	else if (ciisg000.hcex = i.rtyp or 
+		ciisg000.scex = i.rtyp ) then
+			var.cst.tax = var.cst.tax + i.rval
+			
+	else if ciisg000.csti = i.rtyp then
+		sales.tax = sales.tax + i.rval
+		
+	else if ciisg000.frgt = i.rtyp then
+		freight.amount = freight.amount + i.rval
+	endif
+	endif
+	endif
+	endif
+
+}
+
+function get.address(domain tccom.cadr		i.addr,
+		  ref domain tcmcs.str256m	o.addr.dsca)
+{
+	o.addr.dsca = ""
+	
+	select tccom130.ln01, tccom130.ln02, tccom130.ln03, tccom130.ln04, tccom130.ln05, tccom130.ln06
+	from	tccom130
+	where	tccom130._index1 = {:i.addr}
+	and	tccom130._compnr = :logistic.company			|#ISGEC001212.n
+	selectdo
+		o.addr.dsca = strip$(tccom130.ln01) & " " & strip$(tccom130.ln02) & " " & strip$(tccom130.ln03)
+			      & " " & strip$(tccom130.ln04) & " " & strip$(tccom130.ln05) & " " & strip$(tccom130.ln06)
+	selectempty
+		o.addr.dsca = ""
+	endselect
+}
+											|#ISGEC01123.en
+
+function Get_Service_Sales_Tax(
+			domain	tcncmp		in.slcp,
+			domain	tccprj		in.cprj,
+			domain	tccom.bpid	in.ofbp,
+			domain	tcinvt		in.invt,
+			domain	cisli.piln	in.piln
+				)
+{
+	select	cisli936.itax, cisli936.txah
+	from	cisli936
+	where	cisli936._index1 = {:in.slcp, :in.cprj, :in.ofbp, :in.invt, :in.piln}
+	and	cisli936._compnr = :logistic.company			|#ISGEC001212.n
+	selectdo
+		on case cisli936.itax
+			case tctax.indt.l.service:		|Service Tax
+			case tctax.indt.l.lst:			|Local Sales Tax
+			case tctax.indt.l.cst:			|Central Sales Tax
+			case tctax.indt.l.vat:			|VAT
+			case tctax.indt.l.n.a:			|Not Applicable
+				sales.tax = sales.tax + cisli936.txah(1)
+			break
+		ENDCASE
+	endselect	
+}

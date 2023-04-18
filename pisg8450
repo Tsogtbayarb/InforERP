@@ -1,0 +1,321 @@
+|******************************************************************************
+|* tdisg845  0  VRC B61U a7 live
+|* DAL2 for tdisg845
+|* tools1
+|* 14-06-11 [11:50]
+|******************************************************************************
+|* Script Type: DAL
+|******************************************************************************
+                                                                                
+#include <bic_dal2>
+	table	ttdisg845
+	table	ttdisg842
+	table	ttdisg831
+	table	ttdisg832
+	table	ttdisg804
+	table	ttdisg805
+	table	ttccom130
+	
+	long	ret_val
+	extern	domain	tcamnt	i.bivl
+
+function extern long before.open.object.set()
+{
+	dal.field.depends.on("tdisg845.cadt",
+				HOOK_UPDATE,"tdisg845.cinv")			
+	return(0)
+}
+
+function extern long before.save.object(long type)
+{
+	invoice.linked.to.shipping.bill(tcyesno.yes)
+	dal.start.business.method("tdisg831","set.variable",ret_val,3)
+	update_shipping_bill_no()
+	return(0)
+}
+
+function extern long after.save.object(long type)
+{
+	
+	update.dbk.benefits()
+	dal.start.business.method("tdisg831","set.variable",ret_val,3)
+	update_shipping_bill_no()
+	
+	return(0)
+}
+
+function extern long before.destroy.object()
+{
+	invoice.linked.to.shipping.bill(tcyesno.no)
+	dal.start.business.method("tdisg831","set.variable",ret_val,3)
+	unlink_shipping_bill_no()
+	return(0)
+}
+
+function extern long after.destroy.object()
+{
+	update.dbk.benefits()
+	
+	return(0)
+}
+
+function extern boolean method.is.allowed(long type)
+{
+	on case type
+	case DAL_DESTROY :
+		select	tdisg831.cinv
+		from	tdisg831
+		where	tdisg831._index2 = {:tdisg845.cinv}
+		and	tdisg831.sbno = :tdisg845.erdn
+		selectdo
+			if not isspace(tdisg831.cinv) then
+				return(false)
+			endif
+		endselect	
+	endcase
+	
+	return(true)
+}
+
+function extern boolean tdisg845.cinv.is.mandatory()
+{
+	if isspace(tdisg845.cinv) then
+		return(true)
+	endif
+	
+	return(false)
+}
+function extern boolean tdisg845.cinv.is.valid()
+{
+	select 	tdisg831.invd
+	from	tdisg831
+	where	tdisg831._index2 = {:tdisg845.cinv}
+	as set with 1 rows
+	selectdo
+	selectempty
+		dal.set.error.message("@ Enter Valid Custom Invoice Number")
+		return(DALHOOKERROR)
+	endselect
+	
+	return(true)
+}
+
+function extern  tdisg845.cadt.update()
+{
+	select 	tdisg831.invd
+	from	tdisg831
+	where	tdisg831._index2 = {:tdisg845.cinv}
+	as set with 1 rows
+	selectdo
+		tdisg845.cadt = tdisg831.invd
+	endselect
+	
+}
+
+function extern boolean tdisg845.cadt.is.derived()
+{
+	return(true)
+}
+
+
+function invoice.linked.to.shipping.bill(domain tcyesno	link.status)
+{
+	select 	tdisg831.ilnk
+	from	tdisg831 for update
+	where	tdisg831._index2 = {:tdisg845.cinv}
+	selectdo
+		tdisg831.ilnk = link.status
+		db.update(ttdisg831,db.retry,e)
+	endselect
+	
+}
+
+
+function update.dbk.benefits()
+{
+	domain	tcamnt		estimated.dbk,estimated.fms,estimated.fps
+	domain	tcorno		o.cinv
+	domain 	tcqiv1		gross.weight,net.weight
+	
+	domain	tcamnt	o.tdisg831.amti
+	domain	tcamnt	o.tdisg831.insu
+	domain	tcamnt	o.tdisg831.frgt
+	domain	tcamnt	o.tdisg831.comm
+	domain	tcamnt	o.tdisg831.disc
+	domain	tcamnt	o.tdisg831.pcki
+	domain	tcamnt	o.tdisg831.othr
+	
+	domain	tfgld.date		curr.date
+	
+	
+	estimated.dbk = 0
+	estimated.fms = 0
+	estimated.fps = 0
+	o.tdisg831.amti = 0
+	o.tdisg831.insu = 0
+	o.tdisg831.frgt = 0
+	o.tdisg831.comm = 0
+	o.tdisg831.disc = 0
+	o.tdisg831.pcki = 0
+	o.tdisg831.othr = 0
+	
+	
+	
+	
+	curr.date = date.num()
+| 	select 	tdisg845.cinv:o.cinv
+| 	from	tdisg845
+| 	where	tdisg845._index1 = {:tdisg845.erdn}
+| 	selectdo
+		select 	tdisg831.edrn,
+			tdisg831.fovv,
+			tdisg831.amti,
+			tdisg831.insu,
+			tdisg831.frgt,
+			tdisg831.comm,
+			tdisg831.disc,
+			tdisg831.pcki,
+			tdisg831.othr,
+			tdisg831.ofbp
+		from	tdisg831
+		where	tdisg831._index2 = {:tdisg845.cinv}
+		as set with 1 rows
+		selectdo	
+			select 	tccom130.ccty
+			from	tccom100,tccom130
+			where	tccom100._index1 = {:tdisg831.ofbp}
+			and	tccom100.cadr refers to tccom130
+			as set with 1 rows
+			selectdo
+				select 	tdisg804.inrt,
+					tdisg804.efdt
+				from	tdisg804
+				where	tdisg804.ccty = :tccom130.ccty
+				and	tdisg804.efdt <=:curr.date 
+				order by tdisg804.efdt desc
+				as set with 1 rows
+				selectdo
+					estimated.fms = estimated.fms + (tdisg831.fovv * tdisg804.inrt)
+				endselect
+			endselect
+			
+			
+			select 	tdisg832.dbkb,
+				tdisg832.gwgt,
+				tdisg832.nwgt,
+				tdisg832.hcod
+			from	tdisg832
+			where	tdisg832._index1 = {:tdisg831.edrn}
+			selectdo
+				select 	tdisg805.inrt,
+					tdisg805.efdt
+				from	tdisg805
+				where	tdisg805._index1 = {:tdisg832.hcod}
+				and	tdisg805.efdt <= :curr.date
+				order by tdisg805.efdt desc
+				as set with 1 rows
+				selectdo
+					estimated.fps = estimated.fps + (tdisg831.fovv * tdisg805.inrt)
+				endselect
+				
+				estimated.dbk = estimated.dbk + tdisg832.dbkb
+				gross.weight =  gross.weight  + tdisg832.gwgt
+				net.weight = net.weight + tdisg832.nwgt
+			endselect
+			
+			o.tdisg831.amti = o.tdisg831.amti + tdisg831.amti
+			o.tdisg831.insu = o.tdisg831.insu + tdisg831.insu
+			o.tdisg831.frgt = o.tdisg831.frgt + tdisg831.frgt
+			o.tdisg831.comm = o.tdisg831.comm + tdisg831.comm
+			o.tdisg831.disc = o.tdisg831.disc + tdisg831.disc
+			o.tdisg831.pcki = o.tdisg831.pcki + tdisg831.pcki
+			o.tdisg831.othr = o.tdisg831.pcki + tdisg831.pcki
+		endselect
+
+| 	endselect
+	
+	select tdisg842.edbk,
+		tdisg842.grwt,
+		tdisg842.ntwt,
+		tdisg842.efps,
+		tdisg842.edbk,
+		tdisg842.grwt,
+		tdisg842.ntwt,
+		tdisg842.efps,
+		tdisg842.invd,
+		tdisg842.insc,
+		tdisg842.seaf,
+		tdisg842.disc,
+		tdisg842.comm,
+		tdisg842.oded,
+		tdisg842.pckc
+	from	tdisg842 for update
+	where	tdisg842._index1 = {:tdisg845.erdn}
+	selectdo
+		dal.change.object("tdisg842")
+		dal.set.field("tdisg842.edbk", estimated.dbk)
+		dal.set.field("tdisg842.efms", estimated.fms)
+		dal.set.field("tdisg842.efps", estimated.fps)
+		
+		dal.set.field("tdisg842.grwt", gross.weight)
+		dal.set.field("tdisg842.ntwt", net.weight)
+		
+		dal.set.field("tdisg842.invd", o.tdisg831.amti)
+		dal.set.field("tdisg842.insc", o.tdisg831.insu)
+		dal.set.field("tdisg842.seaf", o.tdisg831.frgt)
+		dal.set.field("tdisg842.disc",  o.tdisg831.disc)
+		dal.set.field("tdisg842.comm",  o.tdisg831.comm)
+		dal.set.field("tdisg842.oded", o.tdisg831.othr)
+		dal.set.field("tdisg842.pckc", o.tdisg831.pcki)
+| 		db.update(ttdisg842,db.retry,e)
+		dal.save.object("tdisg842")
+	endselect
+	
+}
+
+function update_shipping_bill_no()
+{
+	select	tdisg842.sdat
+	from	tdisg842
+	where	tdisg842._index1 = {:tdisg845.erdn}
+	selectdo
+	selectempty
+		tdisg842.sdat = 0
+	endselect	
+	
+	select	tdisg831.sbno
+	from	tdisg831 for update
+	where	tdisg831._index2 = {:tdisg845.cinv}
+	selectdo
+		dal.change.object("tdisg831")
+		
+		dal.set.field("tdisg831.sbno",tdisg845.erdn)
+		dal.set.field("tdisg831.shdt",tdisg842.sdat)
+		dal.set.field("tdisg831.shmt",tdisg845.shmt)
+		dal.save.object("tdisg831")
+	endselect	
+}
+
+function unlink_shipping_bill_no()
+{
+	select	tdisg842.sdat
+	from	tdisg842
+	where	tdisg842._index1 = {:tdisg845.erdn}
+	selectdo
+	selectempty
+		tdisg842.sdat = 0
+	endselect	
+	
+	select	tdisg831.sbno,tdisg831.shdt,tdisg831.shmt
+	from	tdisg831 for update
+	where	tdisg831._index2 = {:tdisg845.cinv}
+	selectdo
+		dal.change.object("tdisg831")
+		
+		dal.set.field("tdisg831.sbno","")
+		dal.set.field("tdisg831.shdt",0)
+		dal.set.field("tdisg831.shmt",0)
+		dal.save.object("tdisg831")
+		
+	endselect
+}

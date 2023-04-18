@@ -1,0 +1,321 @@
+|******************************************************************************
+|* tdisg822  0  VRC B61U a7 live
+|* ARE Information DAL
+|* tools1
+|* 14-04-29 [10:01]
+|* ID-ISG001016
+|******************************************************************************
+|* Script Type: DAL
+|******************************************************************************
+|* IDENT ISG001016, Yoshita Kundwani, IT0177, 29-04-2014 , VRC B61U a7 live 
+|*
+|* IDENT ISG001047, Arjit Kumar Gupta, IT0205, 07-06-2014 , VRC B61U a7 live 
+|* Update ARE Value to CT1 Value, Bond Credited 
+|*****************************************************************************
+#ident "@(#)ISG001016, Yoshita Kundwani, IT0177, 29-04-2014 , VRC B61U a7 live"
+#ident "@(#)ISG001047, Arjit Kumar Gupta, IT0205, 07-06-2014 , VRC B61U a7 live"
+#include <bic_dal2>
+					|#ISG001047.sn
+	#include "itcmcs2000"			
+					|#ISG001047.en
+	
+table ttdisg822 |ARE Information DAL
+table ttdisg800 |Export Parameter 
+table ttfacp100 |Invoice Master
+	table	twhinh310		|#ISG001047.n
+	
+| extern domain tdstus o.stat		|#ISG001047.o
+	extern domain tdisg.stus o.stat		|#ISG001047.n
+	
+	
+function extern long before.open.object.set()
+{
+	tcmcs.dll0095.read.parm("tdisg800")
+	dal.field.depends.on("tdisg822.indt",HOOK_UPDATE,"tdisg822.invn")
+	return(0)
+}
+
+function extern long before.save.object(long type)
+{	
+| 	if type = DAL_NEW then
+
+	on case type
+	case 	DAL_NEW :	
+		if  tcmcs.dll0050.check.and.generate.order.number(
+			3, tdisg822.arcd, tdisg800.cngr, 9, tdisg822.arcd ) then   
+			return(DALHOOKERROR)
+		endif
+		break
+	case DAL_UPDATE :
+		if o.stat <> tdisg822.stat then
+			|* Insert Record in history table			
+| 			insert.tdisg838()		
+		endif
+		break
+	endcase
+	return(0)
+}
+
+					|#ISG001047.sn
+function extern long after.save.object(long type)
+{
+	on case type
+		case DAL_NEW:
+			RETIFNOK(Update_CT1_Value())
+			RETIFNOK(Update_Bond_Credited_Consumed())
+			break
+		case DAL_UPDATE:
+			RETIFNOK(Update_CT1_Value())
+			RETIFNOK(Update_Bond_Credited_Consumed())
+			break
+	Endcase
+	return(0)	
+}
+
+function extern long before.destroy.object()
+{
+	if	tdisg822.stat = tdisg.stus.open	then
+	else
+		dal.set.error.message("@Cannot Delete Status is not Opened")
+		return(DALHOOKERROR)
+	endif
+	return(0)
+}
+
+function extern long	after.destroy.object()
+{
+	RETIFNOK(Update_CT1_Value())
+	RETIFNOK(Update_Bond_Credited_Consumed())
+	return(0)
+}
+					|#ISG001047.en
+
+function extern long before.new.object()
+{
+	tdisg822.arcd = tdisg800.csri
+	return(0)
+}
+
+
+function extern long before.change.object()
+{
+	o.stat = tdisg822.stat	
+	return(0)
+}
+
+function extern boolean tdisg822.ctcd.is.mandatory(long type)
+{
+	if isspace(tdisg822.ctcd) then
+		dal.set.error.message("")
+		return(DALHOOKERROR)
+	endif
+	return(true)
+}
+
+function extern boolean tdisg822.arcd.is.mandatory(long type)
+{ 
+	if isspace(tdisg822.arcd) then
+		dal.set.error.message("")
+		return(DALHOOKERROR)
+	endif
+	return(true)
+}
+
+function extern boolean tdisg822.ctcd.is.valid(long type)
+{
+	if not isspace(tdisg822.ctcd) then
+		select tdisg821.ctcd 
+		from tdisg821 
+		where tdisg821._index2={:tdisg822.ctcd}
+		selectdo
+		selectempty
+			dal.set.error.message("@ Not a Valid CT1 Code")
+			return(DALHOOKERROR)
+		endselect
+		
+	endif
+		return(true)
+}
+
+| function extern boolean tdisg822.indt.update(long type)	|#ISG001047.o
+function extern long tdisg822.indt.update(long type)		|#ISG001047.n
+{
+	if not isspace(tdisg822.invn) then
+						|#ISG001047.so
+| 		select tfacp100.invd
+| 		from tfacp100
+| 		where tfacp100.isup={:tdisg822.invn}
+| 		selectdo
+| 			tdisg822.indt=tfacp100.invd
+| 		selectempty
+| 			dal.set.error.message("@ Not a Valid Invoice No ")
+| 			return(DALHOOKERROR)
+| 		endselect
+						|#ISG001047.eo
+						
+						|#ISG001047.sn
+		select	whinh310.invd.l
+		from	whinh310
+		where	whinh310.einv.l = {:tdisg822.invn}
+		selectdo
+			tdisg822.indt = whinh310.invd.l
+		selectempty
+			tdisg822.indt = 0
+			dal.set.error.message("@ Not a Valid Invoice No ")
+			return(DALHOOKERROR)
+		endselect
+						|#ISG001047.en
+	endif
+		return(0)
+}
+
+function extern insert.tdisg838()
+{ 	
+long error
+error=0
+	
+	error = dal.new.object("tdisg838")
+	if error<>0 then
+		show.dal.messages(MSG.ALL)
+	endif
+		
+	dal.set.field("tdisg838.arno", tdisg822.arno)
+	dal.set.field("tdisg838.stat", tdisg822.stat)
+	dal.set.field("tdisg838.logn", logname$)
+	dal.set.field("tdisg838.efdt", utc.num())
+	error=dal.save.object("tdisg838")
+	if error<>0 then
+		show.dal.messages(MSG.ALL)
+	else				
+	endif
+	
+}
+							|#ISG001047.sn
+|*********************** Internal function ***********************
+function long Update_CT1_Value()
+{
+	domain	tfgld.amnt	tot.val
+	long	ret
+	tot.val = 0
+	select	sum(tdisg822.valu):tot.val
+	from	tdisg822
+	where	tdisg822._index1 = {:tdisg822.ctcd}
+	and	tdisg822.stat not in (tdisg.stus.open, tdisg.stus.cancel)
+	selectdo
+	selectempty
+		tot.val = 0
+	endselect
+	
+	select	tdisg821.cnsm
+	from	tdisg821 for update
+	where	tdisg821._index2 = {:tdisg822.ctcd}
+	selectdo
+		dal.change.object("tdisg821")
+		dal.set.field("tdisg821.cnsm", tot.val)
+		ret = dal.save.object("tdisg821")
+		if	ret = 0	then
+		else
+			return(DALHOOKERROR)
+		endif
+	endselect
+	return(0)
+}
+
+function long Update_Bond_Credited_Consumed()
+{
+	domain	tfgld.amnt	tot.val, tot.cnsm
+	domain	tdisg.bnd.type	tmp.bdty
+	domain	tdisg.bnd.catg	tmp.bdct
+	domain	tcmcs.str12	tmp.bdno
+	long	ret
+	
+	Get_Bond(tdisg822.ctcd, tmp.bdty, tmp.bdct, tmp.bdno)
+	tot.val = 0
+	tot.cnsm = 0
+	select	tdisg820.vlcr, tdisg820.bdco
+	from	tdisg820 for update
+	where	tdisg820._index1 = {:tmp.bdty, :tmp.bdct, :tmp.bdno}
+	selectdo
+		Get_Total_Credited_BondValue(tmp.bdty, tmp.bdct, tmp.bdno, tot.val)
+		Get_Total_Consumed_BondValue(tmp.bdty, tmp.bdct, tmp.bdno, tot.cnsm)
+		dal.change.object("tdisg820")
+		dal.set.field("tdisg820.vlcr", tot.val)
+		dal.set.field("tdisg820.bdco", tot.cnsm)
+		ret = dal.save.object("tdisg820")
+		if	ret = 0	then
+		else
+			return(DALHOOKERROR)
+		endif
+	endselect
+	return(0)
+}
+
+function Get_Bond(domain 	tcorno g.ctcd,
+		ref domain	tdisg.bnd.type	g.bdty,
+		ref domain	tdisg.bnd.catg	g.bdct,
+		ref domain	tcmcs.str12	g.bdno)
+{
+	select	a_tdisg821.bdty:g.bdty,
+		a_tdisg821.bdct:g.bdct,
+		a_tdisg821.bdno:g.bdno
+	from	tdisg821 a_tdisg821
+	where	a_tdisg821._index2 = {:g.ctcd}
+	selectdo
+	selectempty
+		g.bdty = empty
+		g.bdct = empty
+		g.bdno = ""
+	endselect
+}
+
+function Get_Total_Credited_BondValue(domain	tdisg.bnd.type	t.bdty,
+					domain	tdisg.bnd.catg	t.bdct,
+					domain	tcmcs.str12	t.bdno,
+				ref	domain	tfgld.amnt	t.tamt)
+{
+	domain	tcorno		tmp.ctcd
+	domain	tfgld.amnt	tmp.crdt
+	t.tamt = 0
+	
+	select	a_tdisg821.ctcd:tmp.ctcd
+	from	tdisg821 a_tdisg821
+	where	a_tdisg821._index1 = {:t.bdty, :t.bdct, :t.bdno}
+	selectdo
+		select	sum(tdisg822.valu):tmp.crdt
+		from	tdisg822
+		where	tdisg822._index1 = {:tmp.ctcd}
+		and	tdisg822.stat = tdisg.stus.closed
+		selectdo
+		selectempty
+			tmp.crdt = 0
+		endselect
+		t.tamt = t.tamt + tmp.crdt
+	endselect
+}
+
+function Get_Total_Consumed_BondValue(domain	tdisg.bnd.type	t.bdty,
+					domain	tdisg.bnd.catg	t.bdct,
+					domain	tcmcs.str12	t.bdno,
+				ref	domain	tfgld.amnt	t.cnsm)
+{
+	domain	tcorno		tmp.ctcd
+	domain	tfgld.amnt	tmp.cnsm
+	t.cnsm = 0
+	
+	select	a_tdisg821.ctcd:tmp.ctcd
+	from	tdisg821 a_tdisg821
+	where	a_tdisg821._index1 = {:t.bdty, :t.bdct, :t.bdno}
+	selectdo
+		select	sum(tdisg822.valu):tmp.cnsm
+		from	tdisg822
+		where	tdisg822._index1 = {:tmp.ctcd}
+		and	tdisg822.stat not in (tdisg.stus.open, tdisg.stus.cancel)
+		selectdo
+		selectempty
+			tmp.cnsm = 0
+		endselect
+		t.cnsm = t.cnsm + tmp.cnsm
+	endselect
+}
+				
+							|#ISG001047.en	

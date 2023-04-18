@@ -1,0 +1,550 @@
+|******************************************************************************
+|* tdisg2400  0  VRC B61U a7 live
+|* Indent Report
+|* Tools                         
+|* 2014-05-21
+|******************************************************************************
+|* Main table tdpur200 Purchase Requisitions, Form Type 4
+|******************************************************************************
+|# Kartikeya Rao    Indent Report  B61U a7 live
+|*
+|* ISGECDV001066, IT0205, Arjit Kr Gupta, VRC B61U a7 live, Dt. 30-09-2014
+|* Referential Document, child Item Text, Requisition Line text to be printed.
+|*
+|* ISGEC001088, IT0205, Arjit Gupta, VRC B61U a7 isg, Dt. 11-10-2014
+|* Main & Referential Document to be printed once if it occurs same with each child. 
+|*
+|* ID: ISGEC001105, IT0327, Ritu Shrivastava, VRC B61U a7 isg, Dt. 15-10-2014
+|* Added Approval date
+|*
+|* ISGECDV001165, IT0205, Arjit Gupta, VRC B61U a7 live, Dt. 18-11-2014
+|* If Child Item is Standard then Text will be printed from Item General.
+|*
+|* ISGEC001165, IT0205, Arjit Gupta, VRC B61U a7 isg, Dt. 25-11-2014
+|* Pick Approver from History.
+|*
+|* ID ISGEC01034, Manish Kumar, 31-01-2015, Reason Of Emergency Value 
+|* Changes on report.
+|* ID ISGEC34975, Priya Ranjan , 16-05-2015, Updated Approval Date
+|* changes on Report
+|*
+|* ID ISGEC01114, Ritu Shrivastava, VRC B61U a7 isg, Dt. 24-06-2015
+|* Modification to differentiate between main and reference document.
+|*
+|* ID ISGEC015075, Ankit Sharma, VRC B61U a7 isg, Dt. 19-10-2015
+|* Added Project Description in report
+|****************************** declaration section ***************************
+declaration:
+	
+	table  ttdisg100
+	table	ttdisg101		|#ISGEC01034.n
+	table  ttdpur200
+	table  ttdpur201
+	table  ttcibd001
+	table  ttcmcs023
+	table  ttdpur206
+	table  ttdisg003
+	table  ttcisg004 
+	table	tdmisg002		|#ISGECDV001066.n
+	table	tdmisg003		|#ISGECDV001066.n
+	table  ttdpur203		|#ISGEC001105.n
+	table  ttdisg210		|ISGEC34975.n
+	
+	extern	domain	tcrqno		rqno
+	extern	domain	tcdate		cdf_pddt,utc_add
+	extern	domain	tcpono		ret,p,h,srno
+	extern	domain	tcpono		flag,max.rec,cc
+	extern domain	tccitg		citg
+	extern	domain	tcmcs.str6	var.citg
+	extern domain  tcqiv1          wght.t
+	extern domain  tcqiv1          rep.twgt
+	
+	extern	domain	tcbool		part.1,part.2,a,b,c
+	extern	domain	tppdm.cspa	curr.cspa
+	extern	domain	tccprj		curr.cprj
+	extern	domain	tcitem		curr.item
+	extern	domain	tcdsca		curr.dsca
+	extern	domain	tcmcs.long	sort
+	extern	domain	tcwght		tot.weight
+	extern	domain	tcyesno		technical, mfg_clearance
+	extern	domain	tcnama		buyr.name, prep.name
+	extern	domain	tcorno		pastporef
+	extern	domain	tfgld.date	curr.date
+	extern	domain	tcpono		curr.pono
+	extern domain  tcmcs.str25	docn.type				|#ISGEC01114.n
+
+| 	domain dmdoc.docid	i.docn
+	long	 rt 
+#include <bic_dam>
+#include <bic_text>
+|****************************** program section ********************************
+before.program:
+|		select tdisg003.* from tdisg003 for update
+|		selectdo
+|			ret = dal.destroy.object("tdisg003")
+|		endselect
+|
+|		rt = dal.new.object("tdisg003")
+|	dal.set.field("tdisg003.rqno", "REQ000133")
+|
+|		dal.set.field("tdisg003.pono", 10)
+|		dal.set.field("tdisg003.item", "         CD2001")
+|		ret = dal.save.object("tdisg003")
+|	commit.transaction()
+	import("tdpur200.rqno",rqno)
+	execute(print.data)
+	exit()
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+choice.print.data:
+on.choice:
+	if rprt_open() then
+		read.main.table()
+		rprt_close()
+	else
+		choice.again()
+	endif
+|****************************** field section *********************************
+|****************************** function section ******************************
+functions:
+
+function read.main.table()
+{
+	
+	h=0
+	p=0
+	
+	part.1 = false
+	part.2 = false
+	a = false
+	b = false
+	c = false
+	curr.date = date.num()
+	select tdpur200.*, b_tccom001.nama:buyr.name, p_tccom001.nama:prep.name
+	from	tdpur200, tccom001 b_tccom001, tccom001 p_tccom001
+	where	tdpur200._index1 = {:rqno}
+	and	tdpur200.ccon refers to b_tccom001 Unref Clear
+	and	tdpur200.remn refers to p_tccom001 Unref Clear
+	selectdo
+		flag = 0
+		cc=0
+		no_of_item()
+		ret = utc.add(tdpur200.dldt,0,0,10,0,0,0,utc_add)    | Adding 10 Days in Requested Date
+		
+		select 	tdpur201.cprj,tdpur201.item,tdpur201.cspa,tdpur201.qoor,tdpur201.pono,tdpur201.nids,
+			tdpur201.cuqp,tdpur201.pric,tdpur201.oamt,tdpur201.cdf_rodt:cdf_pddt,tdpur201.rqno,tdpur201.dldt,
+			tdpur201.cdf_tvet:technical,tdpur201.cdf_mfgc:mfg_clearance, tdpur201.cdf_pref:pastporef,
+			tdpur201.txta, 					|#ISGECDV001066.n
+			tdisg100.*,tcibd001.citg,tcmcs023.citg,tcibd001.dsca
+		from	tdpur201,tdisg100,tcibd001,tcmcs023
+		where   tdpur201._index1 = {:rqno}
+		and	tdpur201.rqno	refers to tdisg100
+		and 	tdpur201.item	refers to tcibd001
+		and	tcibd001.citg	refers	to tcmcs023
+		selectdo
+			select	tcmcs052.dsca				|#ISGEC015075.sn
+			from	tcmcs052
+			where	tcmcs052._index1 = {:tdpur201.cprj}
+			selectdo
+			endselect					|#ISGEC015075.en	
+			
+									|#ISGEC01034.sn
+			select	tdisg101.desc
+			from	tdisg101
+			where	tdisg101._index1  = {:tdisg100.reas}
+			selectdo
+			selectempty
+				tdisg101.desc = ""
+			endselect
+									|#ISGEC01034.en
+			
+			var.citg = strip$(tcmcs023.citg)
+			select tdpur206.pdat
+			from	tdpur206
+			where	tdpur206._index1 = {:tdpur201.rqno}
+			selectdo
+			endselect
+			rep.twgt = 0	
+			rep.twgt = get.total.weight(rqno, tdpur201.pono)	
+			cc = cc+1
+			if (cc = max.rec) then
+				flag = 1
+			else
+				flag = 0
+			endif
+			h=0
+			p=0
+			
+			select	tdpur203.trdt,								|#ISGEC001105.sn
+				tdpur203.aemn:tdpur200.aemn			|#ISGEC001165.n
+			from	tdpur203
+			where	tdpur203._index1 = {:tdpur201.rqno}
+			and	tdpur203.rqst = tdpur.rqst.approved
+			selectdo
+			selectempty
+				tdpur203.trdt = 0
+				tdpur200.aemn = ""		|#ISGEC001165.n
+			endselect								|#ISGEC001105.en
+			
+			
+			select	tdisg210.apdt			|ISGEC34975.sn
+			from	tdisg210
+			where 	tdisg210._index1 = {:tdpur201.rqno}
+			selectdo
+				tdpur203.trdt = tdisg210.apdt
+			selectempty
+			endselect				|ISGEC34975.sn	
+			
+			rprt_send()
+		endselect
+	selecteos
+		h=0
+	endselect	
+| 	sec.part()
+	sec.part.new()	
+}
+
+function	no_of_item()
+{
+	select	count(tdpur201.item):max.rec
+	from	tdpur201
+	where   tdpur201._index1 = {:rqno}
+	selectdo
+	endselect
+}
+
+
+function sec.part()
+{
+	domain	tppdm.cspa	f.cspa,v.cspa(1) based
+	long	i,num.cspa
+	
+	srno=0
+	num.cspa = 0
+	sort = 0
+	p = 1
+	
+	select tdpur201.cspa
+	from   tdpur201
+	where  tdpur201._index1={:rqno}
+	group by tdpur201.cspa
+	selectdo
+		num.cspa = num.cspa + 1
+		alloc.mem(v.cspa,8,num.cspa)
+		v.cspa(1,num.cspa) = tdpur201.cspa
+	endselect	
+	
+	for i = 1 to num.cspa
+		f.cspa = v.cspa(1,i)
+		a = false
+		b = false
+		c = false
+		
+		sort = sort + 1
+		part.1 = true
+		part.2 = false
+
+		b = true
+		doc.numbers(f.cspa)
+		b = false
+		c = true
+		rprt_send()
+		c = false
+		
+		part.2 = true
+		part.1 = false
+		a = true
+		rprt_send()
+		a = false
+		b = true
+		child.items(f.cspa)
+		b = false
+		c = true
+		rprt_send()
+		c = false
+	endfor
+	free.mem(v.cspa)
+}
+
+function sec.part.new()
+{
+	domain	tccprj		f.cprj, v.cprj(1) BASED
+	domain	tcitem		f.item, v.item(1) BASED
+	domain	tppdm.cspa	f.cspa, v.cspa(1) based
+	domain	tcpono		f.pono, v.pono(1) BASED
+	long	i,num.cspa
+	
+	srno=0
+	num.cspa = 0
+	sort = 0
+	p = 1
+	
+	select	tdpur201.cprj, tdpur201.cspa, tdpur201.item, tdpur201.pono
+	from	tdpur201
+	where	tdpur201._index1 = {:rqno}
+	|group by tdpur201.cprj, tdpur201.cspa, tdpur201.item
+	selectdo
+		num.cspa = num.cspa + 1
+		alloc.mem(v.item,47,num.cspa)
+		alloc.mem(v.cprj,9,num.cspa)
+		alloc.mem(v.cspa,8,num.cspa)
+		alloc.mem(v.pono,num.cspa)
+		v.item(1,num.cspa) = tdpur201.item
+		v.cprj(1,num.cspa) = tdpur201.cprj
+		v.cspa(1,num.cspa) = tdpur201.cspa
+		v.pono(num.cspa) = tdpur201.pono
+	endselect	
+	
+	for i = 1 to num.cspa
+		f.item = v.item(1,i)
+		f.cprj = v.cprj(1,i)
+		f.cspa = v.cspa(1,i)
+		f.pono = v.pono(i)
+		a = false
+		b = false
+		c = false
+		
+		sort = sort + 1
+		part.1 = true
+		part.2 = false
+
+		b = true
+		doc.numbers.new(f.cprj, f.cspa, f.item, f.pono)
+		b = false
+		c = true
+		rprt_send()
+		c = false
+		
+		part.2 = true
+		part.1 = false
+		a = true
+		rprt_send()
+		a = false
+		b = true
+		child.items.new(f.cprj, f.cspa, f.item, f.pono)
+		b = false
+		c = true
+		rprt_send()
+		c = false
+	endfor
+	free.mem(v.cspa)
+}
+
+function doc.numbers(domain tppdm.cspa ff.cspa)
+{
+	domain	dmdoc.docid	i.docn
+	
+	i.docn = ""
+	srno=0
+	curr.cspa = ff.cspa
+	select tdpur201.*
+	from   tdpur201
+	where  tdpur201._index1={:rqno}
+	and	tdpur201.cspa = :ff.cspa
+	selectdo
+		select tdisg003.*,tcisg004.docn
+		from   tdisg003, tcisg004
+		where  tdisg003._index1={:tdpur201.rqno,:tdpur201.pono}
+		and    tdisg003.slct = tcyesno.yes
+		and    tcisg004._index1={:tdpur201.cprj,:tdpur201.cspa,:tdpur201.item}
+		|and    tcisg004.srno  = tdisg003.sern
+		order by tcisg004.docn
+		selectdo
+			wght.t = tdisg003.qnty * tdisg003.wght
+	| 			select tcisg004.docn
+	| 			from   tcisg004
+	| 			where  tcisg004._index1={:tdpur201.cprj,:tdpur201.cspa,:tdpur201.item}
+	| 			and    tcisg004.srno  = :tdisg003.sern
+	| 			order by tcisg004.docn 
+	| 			selectdo
+					if i.docn <> tcisg004.docn then
+					i.docn = tcisg004.docn
+					srno=srno+1
+					rprt_send()
+				
+				endif
+	| 				p=1
+	| 				rprt_send()
+	| 			endselect
+		endselect
+	endselect
+}
+
+function doc.numbers.new(domain tccprj		ff.cprj,
+			domain	tppdm.cspa	ff.cspa,
+			domain	tcitem		ff.item,
+			domain	tcpono		ff.pono)
+{
+	domain dmdoc.docid	i.docn
+	domain	dmdoc.docid	t.docn		|#ISGECDV001066.n
+	domain	dmdoc.revv	t.revi		|#ISGECDV001066.n
+	
+	i.docn = ""
+	srno=0
+	curr.cprj = ff.cprj
+	curr.cspa = ff.cspa
+	curr.item = ff.item
+	curr.pono = ff.pono
+	select	tdpur201.*, tcibd001.dsca:curr.dsca
+	from	tdpur201, tcibd001
+	where	tdpur201._index1 = {:rqno, :ff.pono}
+	and	tdpur201.cprj = :ff.cprj
+	and	tdpur201.cspa = :ff.cspa
+	and	tdpur201.item = :ff.item
+	and	tdpur201.item refers to tcibd001 Unref Clear
+	selectdo
+		curr.item = tdpur201.item
+		t.docn = ""			|#ISGECDV001066.n
+		t.revi = ""			|#ISGECDV001066.n
+		select	tdisg003.*
+		from	tdisg003
+		where	tdisg003._index1 = {:tdpur201.rqno, :tdpur201.pono}
+		and	tdisg003.slct = tcyesno.yes
+		order by tdisg003.docn
+		selectdo
+			t.docn = tdisg003.docn			|#ISGECDV001066.n
+			t.revi = tdisg003.revi			|#ISGECDV001066.n
+			wght.t = tdisg003.qnty * tdisg003.wght
+			if	i.docn <> tdisg003.docn	then
+				i.docn = tdisg003.docn
+				srno = srno + 1
+				docn.type = "Main Document"					|#ISGEC01114.n
+				rprt_send()
+								|ISGEC001088.sn
+				select	dmisg003.drgn, dmisg003.drev
+				from	dmisg003
+				where	dmisg003._index1 = {:t.docn, :t.revi}
+				group by dmisg003.drgn, dmisg003.drev
+				order by dmisg003.drgn, dmisg003.drev
+				selectdo
+					tdisg003.docn = dmisg003.drgn
+					tdisg003.revi = dmisg003.drev
+					docn.type = "Reference Document"                       |#ISGEC01114.n
+					rprt_send()
+				endselect
+				tdisg003.docn = t.docn
+				tdisg003.revi = t.revi
+								|ISGEC001088.en
+			endif
+								|#ISGECDV001066.sn	|ISGEC001088.so
+| 			select	dmisg003.drgn, dmisg003.drev
+| 			from	dmisg003
+| 			where	dmisg003._index1 = {:t.docn, :t.revi}
+| 			group by dmisg003.drgn, dmisg003.drev
+| 			order by dmisg003.drgn, dmisg003.drev
+| 			selectdo
+| 				tdisg003.docn = dmisg003.drgn
+| 				tdisg003.revi = dmisg003.drev
+| 				rprt_send()
+| 			endselect
+| 			tdisg003.docn = t.docn
+| 			tdisg003.revi = t.revi
+								|#ISGECDV001066.en	|ISGEC001088.eo
+		endselect
+	endselect
+}
+
+function child.items(domain tppdm.cspa ff.cspa)
+{
+	tot.weight = 0
+	curr.cspa = ff.cspa
+	select tdpur201.*
+	from   tdpur201
+	where  tdpur201._index1={:rqno}
+	and	tdpur201.cspa = :ff.cspa
+	selectdo
+		select tdisg003.*
+		from   tdisg003
+		where  tdisg003._index1={:tdpur201.rqno,:tdpur201.pono}
+		and    tdisg003.slct = tcyesno.yes
+		selectdo
+| 			select tcisg004.docn
+| 			from   tcisg004
+| 			where  tcisg004._index1={:tdpur201.cprj,:tdpur201.cspa,:tdpur201.item}
+| 			and    tcisg004.srno  = :tdisg003.sern
+| 			selectdo
+| 			selectempty
+| 			endselect
+| 			p=2
+			tot.weight = tot.weight + tdisg003.wght
+			rprt_send()
+		endselect
+	endselect
+}
+
+function child.items.new(domain tccprj		ff.cprj,
+			domain	tppdm.cspa	ff.cspa,
+			domain	tcitem		ff.item, 
+			domain	tcpono		ff.pono)
+{
+	domain	tccprj		tmp.cprj Fixed	|#ISGECDV001165.n
+	
+	tot.weight = 0
+	curr.cprj = ff.cprj
+	curr.cspa = ff.cspa
+	curr.item = ff.item
+	curr.pono = ff.pono
+	select	tdpur201.*, tcibd001.dsca:curr.dsca
+	from	tdpur201, tcibd001
+	where	tdpur201._index1 = {:rqno, :ff.pono}
+	and	tdpur201.cprj = :ff.cprj
+	and	tdpur201.cspa = :ff.cspa
+	and	tdpur201.item = :ff.item
+	and	tdpur201.item refers to tcibd001 Unref Clear
+	selectdo
+		select	tdisg003.*
+		from	tdisg003
+		where	tdisg003._index1={:tdpur201.rqno, :tdpur201.pono}
+		and	tdisg003.slct = tcyesno.yes
+		selectdo
+			tot.weight = tot.weight + tdisg003.wght
+							|#ISGECDV001066.sn
+			select	dmisg002.txtb,
+				dmisg002.itmt, dmisg002.oitm		|#ISGECDV001165.n
+			from	dmisg002
+			where	dmisg002._index1 = {:tdisg003.docn, :tdisg003.revi}
+			and	dmisg002.item = :tdisg003.item
+			selectdo
+								|#ISGECDV001165.sn
+				tmp.cprj = ""
+				tmp.cprj = string.set$(" ", 9)
+				if	trim$(dmisg002.itmt) = "S"	then
+					select	tcibd001.txta:dmisg002.txtb
+					from	tcibd001
+					where	tcibd001._index1 = {:1}
+					wherebind(1, tmp.cprj & trim$(dmisg002.oitm))
+					selectdo
+					selectempty
+						dmisg002.txtb = 0
+					endselect
+				endif	
+								|#ISGECDV001165.en
+			selectempty
+				dmisg002.txtb = 0
+			endselect
+							|#ISGECDV001066.en
+			rprt_send()
+		endselect
+	endselect
+}
+
+function domain tcqiv1 get.total.weight(domain tcrqno		i.rqno,
+				domain	tcpono		i.pono)
+{
+	domain	tcqiv1	tmp.twgt
+	
+	select	sum(tdisg003.wght):tmp.twgt
+	from	tdisg003
+	where	tdisg003._index1 = {:i.rqno, :i.pono}
+	selectdo
+	selectempty
+		tmp.twgt = 0
+	endselect
+	
+	return(tmp.twgt)
+}

@@ -1,0 +1,145 @@
+|******************************************************************************
+|* tdisg826  0  VRC B61U a7 live
+|* BG Terms Details
+|* tools1
+|* 14-05-01 [15:28]
+|******************************************************************************
+|* Script Type: DAL
+|******************************************************************************
+|* IDEN ISG001018    Somak Mondal	01-05-2014	VRC B61U a7 live
+|******************************************************************************
+#include <bic_dal2>
+
+	table 	ttdisg826 | BG Terms Details
+	table 	ttdisg800 | Export Parameter
+	table	ttfcmg011
+	
+	domain	tfgld.date	curr.date
+|*****************************  Object Hooks *********************************	
+function extern long before.open.object.set()
+{	
+	tcmcs.dll0095.read.parm("tdisg800")
+	dal.field.depends.on("tdisg826.dsc1",
+				HOOK_UPDATE +
+				HOOK_IS_DERIVED,
+					"tdisg826.iscd")
+	curr.date = date.num()
+	return(0)
+}
+
+function extern long before.save.object(long type)
+{
+	if type = DAL_NEW then
+		if  tcmcs.dll0050.check.and.generate.order.number(
+				3, tdisg826.abgn, tdisg800.bgnr, 
+				9, tdisg826.abgn ) then
+			return(DALHOOKERROR)
+		endif
+	endif
+	
+	return(0)
+}
+
+function extern long before.new.object()
+{
+	tdisg826.abgn = tdisg800.bgsr
+	tdisg826.isdt = date.num()
+	return(0)
+}
+function extern boolean method.is.allowed(long method)
+{
+| 	on case method
+| 	case DAL_UPDATE:
+| 		if tdisg826.exdt <> 0 and tdisg826.exdt < curr.date then
+| 			return(false)
+| 		endif
+| 		break
+| 	case DAL_DESTROY:
+| 		if tdisg826.exdt <> 0 and tdisg826.exdt < curr.date then
+| 			return(false)
+| 		endif
+| 		break
+| 	endcase	
+	return(true)
+}
+|*************************** tdisg826.abgn Hooks *****************************
+function extern boolean tdisg826.abgn.is.mandatory()
+{
+	if isspace(tdisg826.abgn) then
+		return(DALHOOKERROR)
+	endif
+	return(false)
+}
+
+|*************************** tdisg826.exdt Hooks *****************************
+function extern boolean tdisg826.exdt.is.mandatory()
+{
+	if tdisg826.exdt = 0 then
+		dal.set.error.message("@ Expiry Date is Mandatory")
+		return(true)
+	endif
+	return(false)
+}
+
+function extern boolean tdisg825.exdt.is.valid()
+{
+	if tdisg826.exdt < tdisg826.isdt then
+		dal.set.error.message("@ Expiry Date should be Greater than Issue Date")
+		return(DALHOOKERROR)
+	endif
+	
+	return(true)
+}
+|*************************** tdisg826.isdt Hooks *****************************
+function extern boolean tdisg826.isdt.is.mandatory()
+{
+	if tdisg826.isdt=0 then
+		dal.set.error.message("@ Issue Date is Mandatory")
+		return(true)
+	endif
+	return(false)
+}
+
+
+
+|******  tdisg826.dsc1   Issuing Bank Description *******************
+function extern tdisg826.dsc1.update()
+{
+	tdisg826.dsc1 = get.bank.description(tdisg826.iscd)
+}
+
+function extern boolean tdisg826.dsc1.is.derived()
+{
+	if not isspace(tdisg826.iscd) then
+		return(true)
+	endif
+	
+	return(false)
+}
+
+
+function extern boolean tdisg826.dsc1.is.mandatory(long type)
+{
+	if isspace(tdisg826.iscd) and isspace(tdisg826.dsc1) then
+		dal.set.error.message("@ Enter Issuing Bank Description")
+		return(true)
+	endif
+	return(false)	
+}
+
+
+|**********************  USER DEFINED FUNCTIONS *****************************
+
+function domain tfgld.desc get.bank.description(domain tcbank	i.bank)
+{
+	select 	tfcmg011.desc
+	from	tfcmg011
+	where	tfcmg011._index1 = {:i.bank}
+	as set with 1 rows
+	selectdo
+	selectempty
+		tfcmg011.desc = ""
+	endselect
+	
+	return(tfcmg011.desc)
+}

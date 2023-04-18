@@ -1,0 +1,192 @@
+|******************************************************************************
+|* tdisg849  0  VRC B61U a7 live
+|* DAL for tdisg849(FIRC Details)
+|* tools1
+|* 14-06-12 [12:45]
+|******************************************************************************
+|* Script Type: DAL
+|******************************************************************************
+|* ID ISG001052, Biswajyoti Panda, 12/06/2014, B61U_a7_live
+|* ID ISG001077, Biswajyoti Panda, 19/06/2014, B61U_a7_live
+|******************************************************************************
+               
+	table	ttdisg849 | FIRC Details
+	table	ttdisg837 | Proforma Invoice Information
+	table	tcisli205 | Invoice Source Relation
+	table	ttfcmg011 | Bank Branches 
+
+#include <bic_dal2>
+
+#ident"@(#) ISG001052, Biswajyoti Panda, 12/06/2014, B61U_a7_live"
+#ident"@(#) ISG001057, Biswajyoti Panda, 19/06/2014, B61U_a7_live"
+
+function extern long before.open.object.set()
+{
+	define.field.dependencies()
+	return(0)
+}
+
+function extern long before.save.object(long type)
+{
+	return(0)
+}
+
+function extern long before.new.object()
+{
+	domain	tcpono	o.line
+	select	tdisg849.ptcd:o.line
+	from	tdisg849
+	where	tdisg849._index1 = {:tdisg849.cprj}
+	as set with 1 rows
+	selectdo
+		tdisg849.ptcd = o.line
+	selectempty
+		tdisg849.ptcd = 0
+	endselect
+	return(0)
+}
+
+function define.field.dependencies()
+{
+| 	dal.field.depends.on(	"tdisg849.balm",
+| 				HOOK_UPDATE,
+| 				"tdisg849.amnt","tdisg849.valu")
+				
+	dal.field.depends.on(	"tdisg849.balm",
+				HOOK_UPDATE,
+				"tdisg849.valu")			
+				
+	dal.field.depends.on(	"tdisg849.indt",
+				HOOK_UPDATE,
+				"tdisg849.invn","tdisg849.cprj")
+				
+	dal.field.depends.on(	"tdisg849.iamt",
+				HOOK_UPDATE,
+				"tdisg849.invn","tdisg849.cprj")
+				
+	dal.field.depends.on(	"tdisg849.idat",
+				HOOK_UPDATE,
+				"tdisg849.ttyp","tdisg849.docn")
+											|#ISG001077.sn
+	
+	dal.field.depends.on(	"tdisg849.dsca", HOOK_UPDATE,"tdisg849.bank")
+	
+	
+	dal.field.depends.on("tdisg849.desc",HOOK_UPDATE,"tdisg849.cprj","tdisg849.ptcd")
+											|#ISG001077.en
+}
+
+function extern boolean tdisg849.ptcd.is.valid(long mode)
+{
+	on case mode 
+	case DAL_NEW :
+	case DAL_UPDATE :
+		select	tdisg824.ptcd
+		from	tdisg824
+		where	tdisg824._index1 = {:tdisg849.cprj,:tdisg849.ptcd}
+		and	tdisg824.ptyp = tdisg.ptyp.advance
+		as set with 1 rows
+		selectdo
+			return(true)
+		endselect
+	endcase
+	return(false)
+}
+
+function extern void tdisg849.desc.update(long mode)
+{
+	select	tdisg824.desc:tdisg849.desc
+	from	tdisg824
+	where	tdisg824._index1 = {:tdisg849.cprj,:tdisg849.ptcd}
+	as set with 1 rows
+	selectdo
+	selectempty
+		tdisg849.desc = ""
+	endselect
+}
+											|#ISG001077.sn
+function extern void tdisg849.dsca.update()
+{
+	select	tfcmg011.desc
+	from	tfcmg011
+	where	tfcmg011._index1 = {:tdisg849.bank}
+	selectdo
+		tdisg849.dsca = tfcmg011.desc
+	selectempty
+		tdisg849.dsca = ""
+	endselect
+}
+
+											|#ISG001077.en
+
+function extern void tdisg849.balm.update()
+{
+	domain	tcamnt	o.balm
+	long	o.seqn
+	o.balm = 0.00
+	
+	select	tdisg849.balm:o.balm,tdisg849.seqn:o.seqn
+	from	tdisg849
+	where	tdisg849._index1 = {:tdisg849.cprj,:tdisg849.ptcd}
+	and	tdisg849.seqn < :tdisg849.seqn
+	order	by tdisg849.seqn desc
+	as set with 1 rows
+	selectdo
+		tdisg849.balm = o.balm - tdisg849.valu
+	selectempty
+		tdisg849.balm = tdisg849.amnt - tdisg849.valu
+	endselect
+| 	tdisg849.balm = tdisg849.amnt - tdisg849.valu
+}
+
+function extern void tdisg849.indt.update()
+{
+	select	tdisg837.indt
+	from	tdisg837
+	where	tdisg837._index1 = {:tdisg849.cprj,:tdisg849.invn}
+	selectdo
+		tdisg849.indt = tdisg837.indt
+	selectempty
+		tdisg849.indt = 0
+	endselect
+}
+
+function extern void tdisg849.iamt.update()
+{
+	select	tdisg837.amnt
+	from	tdisg837
+	where	tdisg837._index1 = {:tdisg849.cprj,:tdisg849.invn}
+	selectdo
+		tdisg849.iamt = tdisg837.amnt
+	selectempty
+		tdisg849.iamt = 0
+	endselect
+}
+
+function extern void tdisg849.idat.update()
+{
+	domain tcncmp	curr.comp
+	
+	curr.comp = get.compnr()
+	
+	select	cisli205.idat
+	from	cisli205
+	where	cisli205._index1 = {:curr.comp,:tdisg849.ttyp,:tdisg849.docn}
+	selectdo
+		tdisg849.idat = cisli205.idat
+	selectempty
+		tdisg849.idat = 0
+	endselect
+}
+
+function extern boolean tdisg849.firc.is.valid(long mode)
+{
+	select	tdisg849.firc
+	from	tdisg849
+	where	tdisg849._index1 = {:tdisg849.cprj,:tdisg849.ptcd}
+	and	tdisg849.firc = :tdisg849.firc
+	selectdo
+		return(false)
+	endselect
+	return(true)
+}

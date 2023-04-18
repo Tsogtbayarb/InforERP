@@ -1,0 +1,156 @@
+|******************************************************************************
+|* dmisg1131  0  VRC B61U a7 isg 
+|* Transmittal Creation and Submission for Approval
+|* Installation user             
+|* 2015-01-23
+|******************************************************************************
+|* Main table dmisg131 Transmittal Creation and Submission for Approval, Form Type 1
+|******************************************************************************
+|* ISGEC004004, IT0047, Dharmendra, Dt. 27-01-2015, B61U a7 isg                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+  table   tdmisg131 | Transmittal Creation and Submission for Approval
+  table   ttpmsl000
+  table   ttcmcs050
+  table	  ttcmcs052	
+  table   tdmisg132
+  table		ttccom001
+	domain	tcmcs.str2	transmittal.type
+  extern	domain	tcdsca	project.main, project.sub	
+		
+
+|****************************** program section ********************************
+before.program:
+	read.parameters()
+
+|****************************** choice section **********************************
+choice.process:
+before.choice:
+	check_all_inputs()
+	
+on.choice:
+	submit.transmittal()
+|****************************** field section **********************************
+field.dmisg131.tran:
+before.zoom:
+	tcmcs050.nrgr = tpmsl000.tran
+	
+field.dmisg131.cadr:	
+before.zoom:
+	query.extend.where.in.zoom("dmisg127.otbp = " & quoted.string(dmisg131.bpid))
+	
+field.dmisg131.vadr:
+before.zoom:
+	query.extend.where.in.zoom("dmisg128.ofbp = " & quoted.string(dmisg131.ofbp))
+	
+field.dmisg131.padr:
+before.zoom:
+	query.extend.where.in.zoom("dmisg126.cprj = " & quoted.string(dmisg131.cprj))
+
+field.project.main:
+before.display:
+	select	tcmcs052.dsca
+	from	tcmcs052
+	where	tcmcs052._index1 = {:dmisg131.cprj}
+	selectdo
+		project.main = tcmcs052.dsca
+	selectempty
+		project.main = ""
+	endselect
+
+field.project.sub:
+before.display:
+	select	tcmcs052.dsca
+	from	tcmcs052
+	where	tcmcs052._index1 = {:dmisg131.dprj}
+	selectdo
+		project.sub = tcmcs052.dsca
+	selectempty
+		project.sub = ""
+	endselect
+
+field.tccom001.nama:
+before.display:
+	select	tccom001.nama
+	from	tccom001
+	where	tccom001._index4 = {:dmisg131.logn}
+	selectdo
+	selectempty
+		tccom001.nama = ""
+	endselect
+	
+|****************************** function section **********************************	
+functions:
+
+function read.parameters()
+{
+	tcmcs.dll0095.read.parm("tpmsl000")
+}
+
+function submit.transmittal()
+{
+	select	dmisg131.*
+	from	dmisg131 for update
+	where	dmisg131._index1 = {:dmisg131.tran}
+	selectdo
+		dmisg131.smdt = utc.num()
+		on case dmisg131.type
+		case ltoe(1):
+			transmittal.type = "TC"
+			break
+		case ltoe(2):
+			transmittal.type = "TI"	
+			break
+		case ltoe(3):
+			transmittal.type = "TS"
+			break
+		case ltoe(4):
+			transmittal.type = "TV"
+			break	
+		endcase	
+		dmisg131.refr = dmisg131.dprj & "\" & transmittal.type & "\" & dmisg131.tran
+		dmisg131.stat = dmisg.doc.rec.underapp
+		dmisg131.rekm = ""
+		dmisg131.rejc = tcyesno.no
+		dmisg131.appr = tcyesno.no
+		dmisg131.retn = tcyesno.no	
+		dmisg131.irmk = ""
+		
+		db.update(tdmisg131, db.retry)
+		commit.transaction()
+	endselect	
+	message("Transmittal Submitted Succesfully.")
+
+}
+
+function check_all_inputs()
+{
+	if isspace(dmisg131.subj) then
+		message("Subject can't be Blank")
+		choice.again()
+	endif
+
+	if isspace(dmisg131.issu) then
+		message("Issued via can't be Blank")
+		choice.again()
+	endif
+
+	select	dmisg132.*
+	from	dmisg132
+	where	dmisg132._index1 = {:dmisg131.tran}
+	selectdo
+		if isspace(dmisg132.stid) then
+			message("Send Status can't be Blank")
+			choice.again()
+		endif
+
+		if dmisg132.pono = 0 then
+			message("No. of copies can't be zero")
+			choice.again()
+		endif	
+		
+	endselect
+	
+}
+

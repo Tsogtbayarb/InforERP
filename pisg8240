@@ -1,0 +1,167 @@
+|******************************************************************************
+|* tdisg824  0  VRC B61U a7 live
+|* Payment Terms Details
+|* tools1
+|* 14-05-01 [12:28]
+|******************************************************************************
+|* Script Type: DAL
+|******************************************************************************
+|* IDENT  ISG001018   Somak Mondal     01-05-2014        VRC B61U a7 live 
+|*
+|* ISGECDV001089, IT0205, Arjit Gupta, Dt. 08-10-2014, VRC B61U a7 live
+|* Validate Value not exceeding 100
+|*
+|* ISGEC001109, IT0327, Ritu Shrivastava, Dt. 16-10-2014  VRC B61U a7 isg
+|* Allow 0 to be saved in amount
+|******************************************************************************
+#include <bic_dal2>
+	table	ttdisg824 | Payment Terms Details
+	table	ttpest100 | Estimate Versions
+	
+		domain	tcpono	ptcd
+		
+|**************************** Object Hooks ********************************
+function extern long before.open.object.set()
+{
+	define.field.dependencies()
+	return(0)
+}	
+function extern long before.save.object(long type)
+{
+	return(0)
+}
+
+function extern long before.new.object()
+{
+	select	max(tdisg824.ptcd):ptcd 
+	from	tdisg824
+	where 	tdisg824._index1 = {:tdisg824.cprj}
+	selectdo
+		tdisg824.ptcd = ptcd + 1 	
+	selectempty
+		tdisg824.ptcd = 1
+	endselect
+	return(0)
+}
+|********************** tdisg824.pval Hooks **********************
+function extern boolean tdisg824.pval.is.derived()
+{
+	if tdisg824.pval = 0 and tdisg824.amnt <> 0 then
+		return(true)
+	endif
+	
+	return(false)
+}
+
+|********************** tdisg824.amnt Hooks **********************
+function extern boolean tdisg824.amnt.is.derived()
+{
+	if tdisg824.pval <> 0 then
+		return(true)
+	endif
+	
+	return(false)
+}
+
+function extern void tdisg824.amnt.update()
+{
+	domain 	tppdm.aalc		o.copr
+	
+	GetProjectValue(tdisg824.cprj,o.copr)
+	
+	tdisg824.amnt = o.copr * tdisg824.pval / 100
+}
+
+function extern boolean tdisg824.amnt.is.valid(long type)
+{
+	domain	tcamnt			o.amnt
+	domain 	tppdm.aalc		o.copr
+	
+	o.copr = 0
+	o.amnt = 0
+	GetProjectValue(tdisg824.cprj,o.copr)
+	with.old.object.values.do(Calculate_Amount,tdisg824.cprj,tdisg824.ptcd,o.amnt) 
+	
+	if (o.amnt + tdisg824.amnt) > o.copr then
+		dal.set.error.message("@ Total Payment Terms Amount is greater than Project Value")
+		return(DALHOOKERROR)
+	endif
+	
+	return(true)
+	
+}
+
+| function extern boolean tdisg824.amnt.is.mandatory(long type)					|#ISGEC001109.so
+| {
+| 	if tdisg824.pval = 0 and tdisg824.amnt = 0 then						
+| 		dal.set.error.message("@ Kindly Enter Payment Terms Amount")
+| 		return(true)
+| 	endif
+| 	
+| 	return(false)										|#ISGEC001109.eo
+| }
+						|#ISGECDV001089.sn
+function extern boolean tdisg824.pval.is.valid(long mode)
+{
+	if	tdisg824.pval > 100.0	then
+		dal.set.error.message("@ Value should not exceed 100")
+		return(DALHOOKERROR)
+	endif
+	
+	return(true)
+}
+						|#ISGECDV001089.en
+|********************** functions ********************************
+function define.field.dependencies()
+{
+	dal.field.depends.on("tdisg824.amnt",
+				HOOK_UPDATE +
+				HOOK_IS_DERIVED +
+				HOOK_IS_MANDATORY,
+					"tdisg824.pval")
+					
+	dal.field.depends.on("tdisg824.pval",
+				HOOK_IS_DERIVED + 
+				HOOK_IS_VALID, 		|#ISGECDV001089.n
+					"tdisg824.amnt")				
+}
+
+
+function GetProjectValue
+			(
+				domain 	tccprj		i.cprj,		|Project Code
+			ref 	domain	tppdm.aalc	o.copr		|Project Value
+			)
+{
+	select 	tppdm600.copr:o.copr
+	from	tppdm600
+	where	tppdm600._index1 = {:i.cprj}
+	as set with 1 rows
+	selectdo
+	selectempty
+		o.copr = 0
+	endselect
+	
+}
+
+
+function Calculate_Amount
+			(
+				domain	tccprj		i.cprj,		|Project Code
+				domain	tcpono		i.ptcd,		|Payment Terms Code
+			ref	domain	tcamnt		o.amnt		|Total Amount
+			)
+{
+	domain	tcamnt		temp.amnt
+	domain	tcpono		temp.ptcd
+	
+	select 	tdisg824.amnt:temp.amnt,
+		tdisg824.ptcd:temp.ptcd
+	from	tdisg824
+	where	tdisg824._index1 = {:i.cprj}
+	selectdo
+		if temp.ptcd <> i.ptcd then
+			o.amnt = o.amnt + temp.amnt
+		endif
+	endselect
+}
