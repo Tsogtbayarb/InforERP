@@ -1,0 +1,966 @@
+|******************************************************************************
+|* dmisgdll0200  0  VRC B61U a7 isg 
+|* PLM for VB
+|* baan
+|* 15-09-02 [14:43]
+|******************************************************************************
+|* Script Type: Library
+
+|*IDENT ISGEC015054, Shilpa Janardanan, 1-Sep-15
+|* Dll to be used for VB
+|******************************************************************************
+                                                                                
+table   tdmisg001 | Incoming Document Master
+table   tdmisg002
+table   tdmisg003
+table   tdmisg004
+table   tdmisg000 | Parameter Table
+table   tdmisg006
+table	tdmdoc520
+table	tdmisg114				|#ISGEC004003.sn
+table	tdmisg115
+table	tdmisg139				|#ISGEC004003.en
+table	tdmdoc430
+table	tdmdoc440
+
+#include <bic_text>
+#pragma used dll        ottdllbw
+long fd
+long xml.id, dir_ptr,text.id 
+string error_string(120)
+string file_name(120)
+string f.path(100)
+
+| tpdisg001
+
+extern		domain	dmdoc.docid	docn.f,docn.t
+domain		dmdoc.docid		xml.data.docn 
+domain		dmdoc.revv		xml.data.revn
+domain		dmdoc.docid		xml.data.dcid
+domain		tcmcs.str100		xml.data.drds
+domain		tcmcs.str100		xml.data.dttl mb
+domain		tppdm.cspa		xml.data.cspa
+domain		tcyesno			xml.data.erec
+domain		tcyesno			xml.data.prod
+domain		tcyesno			xml.data.info
+domain		tcyesno			xml.data.appr
+domain		tcmcs.str50		xml.data.resp
+domain		tcmcs.str20		xml.data.date
+domain		tcmcs.str20		xml.data.appb
+domain		tcmcs.str50		xml.data.chkb
+domain		tcmcs.str50		xml.data.drwb
+domain		tcwght			xml.data.wght
+domain		tcmcs.str20		xml.data.scal
+domain		tcmcs.str50		xml.data.size mb
+domain		tcmcs.str100		xml.data.pdfn
+domain		tccprj			xml.data.cprj
+domain		tcmcs.str20		xml.data.grup
+domain		tcmcs.str100		xml.data.clnt
+domain		tcmcs.str100		xml.data.cnsl
+domain		tcmcs.str4		xml.data.year
+domain		tcmcs.str10		xml.data.iwtn
+domain		tcmcs.str100		xml.data.ser2 mb
+domain		tcmcs.str100		xml.data.ser1 mb
+string	xml.data.vault_db_name(30)
+string	xml.data.vault_user_name(30)
+string	xml.data.vault_client_machine(30)
+string	xml.data.vault_submitted_date(30)
+string	xml.data.isgec_data_source(50)	mb
+	extern	domain	dmdoc.areaid	area
+
+| tpdisg002
+
+domain		tcsrno			xml.data.srno
+| domain		tcmcs.str50		xml.data.item
+domain		tcitem			xml.data.item
+domain		tcmcs.str100		xml.data.dsca mb
+domain		tcmcs.str50		xml.data.citg
+domain		tcqsl1			xml.data.qnty
+domain		tcwght			xml.data.itwt
+domain		tcmcs.str50		xml.data.itmt
+
+| tpdisg003
+
+domain		tcmcs.str100		xml.data.drgt
+domain		tcmcs.str100		xml.data.dcfn
+domain		dmdoc.revv		xml.data.drev
+domain		tcmcs.str50		xml.data.drgn
+domain		tcmcs.str100		xml.data.pdff
+domain		tcmcs.str50		xml.data.stat
+domain		dmcatg			xml.data.type
+
+| tpdisg004
+
+domain		tcfin.sern		xml.data.psrn
+domain		tcmcs.str50		xml.data.pitm
+domain		tcmcs.str2		xml.data.pisn
+domain		tcmcs.str50		xml.data.prtn
+domain		tcmcs.str100		xml.data.prtd mb
+domain		tcwght			xml.data.pwgt
+domain		tcqsl1			xml.data.pqnt
+domain		tcmcs.str100		xml.data.spec mb
+domain		tcmcs.str50		xml.data.prsz
+domain		tcmcs.str100		xml.data.rmrk mb
+
+long ret.val, cmfID, Head1, fd.write, Head3
+string text.file(100)
+string u.path(100)
+string p.pdf.path(150)
+string p.dwg.path(150)
+string p.xml.path(150)
+
+string e.pdf.path(150)
+string e.dwg.path(150)
+string e.xml.path(150)
+
+string lock.path(100)					|#ISGEC004003.sn
+extern	domain	dmdoc.docid	pdf.document	
+extern	domain	dmdoc.docid	draw.document		|#ISGEC004003.en
+
+long hold.succ.flag
+long ret
+long sub.item.id
+long xml.first.node,xml.first.child , xml.sec.child , sub.item.id.items , xml.third.child ,sub.item.id.part.items ,xml.fourth.child , sub.item.id.ref
+string name(500)
+string data(5000)
+long NumAttribute
+long v.pisn,v.seqn
+long succ.flag
+extern domain tclogn 	v.logname
+extern domain tfgld.date	v.date
+extern domain tctime		v.time
+string error.message(200)
+extern	domain	tcbool		file.uploaded
+	domain	tccuni		get.cuni
+
+
+
+function extern string  dmisgdll0200.run_plm()
+{
+	domain	tcmcs.str132m	err.msg
+	
+	err.msg = continue.xmlfile()
+	
+	return(err.msg)
+}	
+
+function string continue.xmlfile()
+{
+	long	ret1
+	
+	v.logname = logname$
+	file.uploaded = false
+	
+	select	dmisg000.*
+	from 	dmisg000
+	where 	dmisg000._index1 = {:v.logname}
+	as set with 1 rows
+	selectdo
+	 	u.path = strip$(dmisg000.inpt)
+			p.pdf.path = strip$(dmisg000.otpt)
+		p.dwg.path = strip$(dmisg000.dtpt)
+		p.xml.path = strip$(dmisg000.xtpt)
+		
+		e.pdf.path = strip$(dmisg000.erpt)
+		e.dwg.path = strip$(dmisg000.drpt)
+		e.xml.path = strip$(dmisg000.xrpt)
+		lock.path = strip$(dmisg000.lock)
+	selectempty
+		return("Path Not Maintained for this User")
+	endselect
+	dir_ptr = dir.open(u.path)
+	if  dir_ptr > 0 then
+		dir.rewind(dir_ptr)
+		file_name = dir.entry( dir_ptr, TFILE , TFILE , 0, STAT_READABLE)
+		while not isspace(file_name) 
+			error.message = ""
+			ret1 = rpos(file_name,".xml")	
+			
+			if ret1 > 0 then
+				
+			else
+				file_name = dir.entry( dir_ptr, TFILE , TFILE , 0, STAT_READABLE)
+				continue
+			endif	
+					
+			read.xml(u.path & "\" & file_name)
+			file_name = dir.entry( dir_ptr, TFILE , TFILE , 0, STAT_READABLE)
+		endwhile
+	endif
+| 	if	file.uploaded	then
+| 		return("File Uploaded")
+| 	endif	
+	
+	return("")
+}
+
+function read.xml(string v.file_name(120))
+{	
+	long hold.succ.flag
+
+  	fd = seq.open (v.file_name, "r" )
+	
+	if fd >= 1 then
+		xml.id = xmlread(fd, error_string)
+		hold.succ.flag = 0 
+		ret.val = read.data() 
+		hold.succ.flag = ret.val
+		
+		seq.close(fd)
+
+		if hold.succ.flag then
+			ret = file.mv(u.path & "\" & file_name  , p.xml.path & "\"  & file_name)
+			
+			if ret < 0 then
+				ret = file.cp(u.path & "\" & file_name  , p.xml.path & "\"  & file_name)
+				if ret >= 0 then
+					file.rm(u.path & "\" & file_name)
+				endif
+				
+			endif
+			
+			ret = file.mv(u.path & "\" & xml.data.drds  , p.dwg.path & "\"  & xml.data.drds)
+			
+			if ret < 0 then
+				ret = file.cp(u.path & "\" & xml.data.drds  , p.dwg.path & "\"  & xml.data.drds)
+				if ret >= 0 then
+					file.rm(u.path & "\" & xml.data.drds)
+				endif
+			endif
+			
+			ret = file.mv(u.path & "\" & xml.data.pdfn  , p.pdf.path & "\"  & xml.data.pdfn)
+			
+			if ret < 0 then
+				ret = file.cp(u.path & "\" & xml.data.pdfn  , p.pdf.path & "\"  & xml.data.pdfn)
+				if ret >= 0 then
+					file.rm(u.path & "\" & xml.data.pdfn)
+				endif
+			endif
+
+		else
+			ret = file.mv(u.path & "\" & xml.data.pdfn  , e.pdf.path & "\"  & xml.data.pdfn)
+			if ret < 0 then
+				ret = file.cp(u.path & "\" & xml.data.pdfn  , e.pdf.path & "\"  & xml.data.pdfn)
+				if ret >= 0 then
+					file.rm(u.path & "\" & xml.data.pdfn)
+				endif
+			endif
+			
+			ret = file.mv(u.path & "\"  & file_name  , e.xml.path  & "\"  & file_name)
+			if ret < 0 then
+				ret = file.cp(u.path & "\"  & file_name  , e.xml.path  & "\"  & file_name)
+				if ret >= 0 then
+					file.rm(u.path & "\" & file_name)
+				endif
+			endif
+			
+			ret = file.mv(u.path & "\" & xml.data.drds  , e.dwg.path & "\"  & xml.data.drds)
+			if ret < 0 then
+				ret = file.cp(u.path & "\" & xml.data.drds  , e.dwg.path & "\"  & xml.data.drds)
+				if ret >= 0 then
+					file.rm(u.path & "\" & xml.data.drds)
+				endif
+			endif
+			
+		endif
+		commit.transaction()
+	else
+		error.message = u.path & "\" & file_name & " : Unable to open file. "
+		write.error.file()	
+	endif
+}
+
+function long read.data()
+{
+	succ.flag = 0
+	|* Gives Current Node name
+	xml.first.node =  xmlGetName(xml.id, name)
+	if xml.first.node > 0 then
+		|* Give Total No of Attributes
+		|* For Document it has 19 Attributes
+		NumAttribute = xmlGetNumAttributes  (xml.first.node)		
+
+		if name = "Document" then
+			if	upload.dmisg001() = 1	then
+				xml.main.document()			|#ISGEC004003.n
+				upload.dmisg002()
+				upload.dmisg003()
+				write.xml.document()			|#ISGEC004003.n
+				commit.transaction()
+				file.uploaded = true
+				succ.flag = 1
+			else
+				error.message = u.path & "\" & file_name & strip$(error.message)
+				abort.transaction()
+			endif		
+		else
+			error.message = u.path & "\" & file_name & " : Invalid Data Structure. "
+		endif	
+	else
+		error.message = u.path & "\" & file_name & " : Invalid XML. "
+	endif
+	
+	if error.message <> "" then
+		write.error.file()
+	endif
+	
+	return(succ.flag)
+}
+
+function long upload.dmisg001()
+{
+	string v.erec(3),v.prod(3),v.info(3) , v.appr(3)
+	
+	xml.data.vault_db_name = xmlAttribute$(xml.first.node,"VaultDBName")
+	xml.data.vault_user_name = xmlAttribute$(xml.first.node,"VaultUserName")
+	xml.data.vault_client_machine = xmlAttribute$(xml.first.node,"VaultClientMachine")
+	xml.data.vault_submitted_date = xmlAttribute$(xml.first.node,"VaultSubmittedDate")
+| 	xml.data.isgec_data_source = xmlAttribute$(xml.first.node,"Isgec_Datasource")		|#ISGECDV001054.o
+	xml.data.isgec_data_source = xmlAttribute$(xml.first.node,"ISGEC_Datasource")		|#ISGECDV001054.n
+	xml.data.docn = xmlAttribute$  (xml.first.node, "number")
+	xml.data.revn = xmlAttribute$  (xml.first.node, "rev")
+	xml.data.dcid = xmlAttribute$  (xml.first.node, "drgid")
+	xml.data.drds = xmlAttribute$  (xml.first.node, "filename")
+	xml.data.dttl = xmlAttribute$  (xml.first.node, "title")
+	xml.data.cspa = xmlAttribute$  (xml.first.node, "el.id.")
+	
+	if  strip$(toupper$(xmlAttribute$  (xml.first.node, "ere"))) = "YES" then
+		xml.data.erec = ltoe(1)
+	else
+		xml.data.erec = ltoe(2)
+	endif
+	if  strip$(toupper$(xmlAttribute$  (xml.first.node, "pro"))) = "YES" then
+		xml.data.prod = ltoe(1)
+	else
+		xml.data.prod = ltoe(2)
+	endif
+	if  strip$(toupper$(xmlAttribute$  (xml.first.node, "inf"))) = "YES" then
+		xml.data.info = ltoe(1)
+	else
+		xml.data.info = ltoe(2)
+	endif
+	if  strip$(toupper$(xmlAttribute$  (xml.first.node, "apr"))) = "YES" then
+		xml.data.appr = ltoe(1)
+	else
+		xml.data.appr = ltoe(2)
+	endif
+	xml.data.resp = xmlAttribute$  (xml.first.node, "resp_dept")
+	xml.data.date = xmlAttribute$  (xml.first.node, "date")
+	xml.data.appb = xmlAttribute$  (xml.first.node, "appd")
+	xml.data.chkb = xmlAttribute$  (xml.first.node, "chqd")
+	xml.data.drwb = xmlAttribute$  (xml.first.node, "drawn")
+	xml.data.wght = val(xmlAttribute$  (xml.first.node, "weight"))
+	xml.data.scal = xmlAttribute$  (xml.first.node, "scale")
+	xml.data.size = xmlAttribute$  (xml.first.node, "sheetsize")
+	xml.data.pdfn = xmlAttribute$  (xml.first.node, "PDF_filename")
+	xml.first.child = xmlGetFirstChild( xml.first.node)
+	xml.data.cprj = xmlAttribute$  (xml.first.child, "contract")
+	xml.data.dsca = xmlAttribute$  (xml.first.child, "client")
+	xml.data.cnsl = xmlAttribute$  (xml.first.child, "consultant")
+	xml.data.grup = xmlAttribute$  (xml.first.child, "group")
+	xml.data.year = xmlAttribute$  (xml.first.child, "year")
+	xml.data.iwtn = xmlAttribute$  (xml.first.child, "iwt")
+	xml.data.ser2= xmlAttribute$  (xml.first.child, "service2")
+	xml.data.ser1 = xmlAttribute$  (xml.first.child, "service1")
+|************** ODM Upload	
+if isspace(xml.data.drds) then
+		error.message = ": filename is blank in xml"
+		return(0)
+	else
+		if not upload.odm.document() then
+			return(0)
+		endif
+	endif	
+|*****************
+	select	dmisg001.*
+	from	dmisg001 for update
+	where	dmisg001._index1 = {:xml.data.docn, :xml.data.revn}
+	and	dmisg001.stat = dmstat.submitted
+	and	dmisg001.wfst = dmisg.wfst.underdesign			|#ISGEC004003.n
+	selectdo
+		delete_existing_document()
+		db.delete(tdmisg001, db.retry, e)
+	endselect
+	
+	select	dmisg001.*
+	from	dmisg001 for update
+	where	dmisg001._index1 = {:xml.data.docn, :xml.data.revn}
+	and	dmisg001.stat = dmstat.submitted
+	and	dmisg001.wfst = dmisg.wfst.underdesign			|#ISGEC004003.n
+	selectdo		
+       Assign_dmisg001()
+		db.update(tdmisg001,db.retry,e)
+	selectempty
+		change.workflow.status.previous()	
+		dmisg001.docn = xml.data.docn
+		dmisg001.revn = xml.data.revn
+		Assign_dmisg001()
+		db.insert(tdmisg001,db.skip.dupl,e)
+	endselect	
+	if	not e	then
+      	insert_dmisg139(xml.data.docn,
+				xml.data.revn,
+				draw.document,
+				dmisg000.draw)
+
+		insert_dmisg139(xml.data.docn,
+				xml.data.revn,
+				pdf.document,
+				dmisg000.type)
+		return(1)
+	else
+		if not isspace(draw.document) then
+			ret = dmisgdll0001.delete.document(dmisg000.draw,
+							draw.document,
+							error.message)
+		endif
+			
+		if not isspace(pdf.document) then
+			ret = dmisgdll0001.delete.document(dmisg000.type,
+							pdf.document,
+							error.message)
+		endif
+						
+		error.message = " : Record Already Exist"
+		return(0)
+	endif
+}
+
+function Assign_dmisg001()
+{
+	dmisg001.dcid = xml.data.dcid
+	dmisg001.dsca = xml.data.drds
+	dmisg001.dttl = xml.data.dttl 
+	dmisg001.cspa = xml.data.cspa
+	dmisg001.erec = xml.data.erec
+	dmisg001.prod = xml.data.prod
+	dmisg001.info = xml.data.info
+	dmisg001.appr = xml.data.appr
+	dmisg001.resp = xml.data.resp
+	dmisg001.date = xml.data.date
+	dmisg001.appb = xml.data.appb
+	dmisg001.chkb = xml.data.chkb
+	dmisg001.drwb = xml.data.drwb
+	dmisg001.wght = xml.data.wght
+	dmisg001.scal = xml.data.scal
+	dmisg001.size = xml.data.size
+	dmisg001.pdfn = xml.data.pdfn
+	dmisg001.cprj = xml.data.cprj
+	dmisg001.grup = xml.data.grup
+	dmisg001.clnt = xml.data.dsca
+	dmisg001.cnsl = xml.data.cnsl
+	dmisg001.year = xml.data.year
+	dmisg001.iwtn = xml.data.iwtn
+	dmisg001.ser2 = xml.data.ser2
+	dmisg001.ser1 = xml.data.ser1
+	dmisg001.stat = dmstat.submitted
+	dmisg001.wfst = dmisg.wfst.submitted			|#ISGEC004003.n
+	dmisg001.name = xml.data.vault_db_name
+	dmisg001.user = xml.data.vault_user_name
+	dmisg001.mach = xml.data.vault_client_machine
+	dmisg001.sdat = convert.date(xml.data.vault_submitted_date)
+	dmisg001.sorc = xml.data.isgec_data_source
+dmisg001.drwd = draw.document				|#ISGEC004003.sn
+	dmisg001.pdfd = pdf.document				|#ISGEC004003.en
+}
+
+
+function domain tcdate	convert.date
+			(
+				string i.date(30)	
+			)
+{
+	string tmp.date(30)
+	tmp.date = i.date
+	long yearno 
+	long monthno 
+	long month_dayno 
+	long hours 
+	long minutes 
+	long seconds
+	long ret_val
+
+	ret_val = pos(tmp.date,"/")
+	if ret_val > 0 then
+		month_dayno = lval(tmp.date(1;(ret_val-1)))
+		tmp.date = tmp.date((ret_val+1);30)
+	endif
+	
+	ret_val = pos(tmp.date,"/")
+	if ret_val > 0 then
+		monthno = lval(tmp.date(1;(ret_val-1)))
+		tmp.date = tmp.date((ret_val+1);30)
+	endif
+	
+	ret_val = pos(tmp.date," ")
+	if ret_val > 0 then
+		yearno = lval(tmp.date(1;(ret_val-1)))
+		tmp.date = tmp.date((ret_val+1);30)
+	endif
+	
+	ret_val = pos(tmp.date,":")
+	if ret_val > 0 then
+		hours = lval(tmp.date(1;(ret_val-1)))
+		tmp.date = tmp.date((ret_val+1);30)
+	endif
+
+	ret_val = pos(tmp.date,":")
+	if ret_val > 0 then
+		minutes = lval(tmp.date(1;(ret_val-1)))
+		tmp.date = tmp.date((ret_val+1);30)
+	endif
+	
+	ret_val = pos(tmp.date," ")
+	if ret_val > 0 then
+		seconds = lval(tmp.date(1;(ret_val-1)))
+		tmp.date = tmp.date((ret_val+1);30)
+	endif
+	
+	ret_val = date.to.utc  ( yearno,  monthno,  month_dayno,  hours,  minutes,  seconds)
+	
+	if ret_val < 0 then
+		return(utc.num())
+	endif
+	
+	return(ret_val)
+}
+
+function upload.dmisg002()
+{
+	sub.item.id.items = xmlFindFirst("Items", xml.first.node)
+	xml.sec.child = xmlGetFirstChild( sub.item.id.items)
+	
+	v.seqn = 0
+	while xml.sec.child <> 0
+		v.seqn = v.seqn + 1
+		xml.data.item = xmlAttribute$  (xml.sec.child, "item_code")
+		xml.data.dsca = xmlAttribute$  (xml.sec.child, "item_descn")
+		xml.data.citg = xmlAttribute$  (xml.sec.child, "item_g")
+		xml.data.qnty = val(xmlAttribute$  (xml.sec.child, "it.qty"))
+		xml.data.wght = val(xmlAttribute$  (xml.sec.child, "it.wt"))
+		xml.data.itmt = xmlAttribute$  (xml.sec.child, "t")
+		xml.data.srno = v.seqn
+		
+		select	dmisg001.stat
+		from	dmisg001
+		where	dmisg001._index1 = {:xml.data.docn, :xml.data.revn}
+		and	dmisg001.stat = dmstat.submitted
+		selectdo
+			select	dmisg002.*
+			from	dmisg002 for update
+			where	dmisg002._index1 = {:xml.data.docn, :xml.data.revn, :xml.data.srno}
+			selectdo
+				Assign_dmisg002()
+				db.update(tdmisg002, db.retry, e)
+			selectempty
+				dmisg002.docn = xml.data.docn
+				dmisg002.revn = xml.data.revn
+				dmisg002.srno = xml.data.srno
+				Assign_dmisg002()
+				db.insert(tdmisg002,db.skip.dupl,e)
+			endselect
+		selectempty
+			dmisg002.docn = xml.data.docn
+			dmisg002.revn = xml.data.revn
+			dmisg002.srno = xml.data.srno
+			Assign_dmisg002()
+			db.insert(tdmisg002,db.skip.dupl,e)
+		endselect
+		upload.dmisg004()
+		xml.sec.child = xmlGetRightSibling(xml.sec.child)
+	endwhile
+
+}
+
+function Assign_dmisg002()
+{
+	domain	tcitem	tmp.item	fixed
+	long hyp.pos,len.docn
+	len.docn = len(dmisg002.docn)
+	hyp.pos = pos(dmisg002.docn,"-")
+	
+	tmp.item = string.set$(" ",9) & trim$(xml.data.item) & dmisg002.docn(hyp.pos;len.docn - hyp.pos)
+	
+	dmisg002.item = tmp.item
+	dmisg002.dsca = xml.data.dsca
+	dmisg002.citg = xml.data.citg
+	dmisg002.qnty = xml.data.qnty
+	dmisg002.wght = xml.data.wght
+	dmisg002.itmt = xml.data.itmt
+	get.cuni = ""
+	get.item.unit(trim$(dmisg002.citg))
+	dmisg002.cuni = get.cuni
+	dmisg002.oitm = string.set$(" ",9) & trim$(xml.data.item)
+	dmisg002.elem = xml.data.cspa
+}
+
+function upload.dmisg003()
+{
+	sub.item.id.ref = xmlFindFirst("ReferenceDocuments", xml.first.node)
+	xml.fourth.child = xmlGetFirstChild( sub.item.id.ref)
+	
+	while xml.fourth.child <> 0
+		xml.data.drgt = xmlAttribute$  (xml.fourth.child, "filename")
+		xml.data.dcfn = xmlAttribute$  (xml.fourth.child, "drg_descn")
+| 		xml.data.drev = xmlAttribute$  (xml.fourth.child, "revison")				|#ISGEC001116.o
+		xml.data.drev = xmlAttribute$  (xml.fourth.child, "rev")				|#ISGEC001116.n
+		xml.data.drgn = xmlAttribute$  (xml.fourth.child, "drgno")
+		xml.data.pdff = xmlAttribute$  (xml.fourth.child, "PDF_filename")
+		xml.data.stat = xmlAttribute$  (xml.fourth.child, "state")
+		xml.data.type = ltoe(1)
+
+		select	dmisg001.stat
+		from	dmisg001
+		where	dmisg001._index1 = {:xml.data.docn, :xml.data.revn}
+		and	dmisg001.stat = dmstat.submitted
+		selectdo
+           xml.sub.document()					|#ISGEC004003.n
+			select	dmisg003.*
+			from	dmisg003 for update
+			where	dmisg003._index1 = {:xml.data.docn, :xml.data.revn, :xml.data.drgt}
+			selectdo
+				Assign_dmisg003()
+				db.update(tdmisg003, db.retry, e)
+			selectempty
+				dmisg003.docn = xml.data.docn
+				dmisg003.revn = xml.data.revn
+				dmisg003.drgt = xml.data.drgt
+				Assign_dmisg003()
+				db.insert(tdmisg003, db.skip.dupl, e)
+			endselect
+		selectempty
+			dmisg003.docn = xml.data.docn
+			dmisg003.revn = xml.data.revn
+			dmisg003.drgt = xml.data.drgt
+			Assign_dmisg003()
+			db.insert(tdmisg003, db.skip.dupl, e)	
+		endselect	
+		xml.fourth.child = xmlGetRightSibling(xml.fourth.child)
+	endwhile		
+}
+
+function Assign_dmisg003()
+{
+	dmisg003.dcfn = xml.data.dcfn
+	dmisg003.drev = xml.data.drev
+	dmisg003.drgn = xml.data.drgn
+	dmisg003.pdff = xml.data.pdff
+	dmisg003.stat = xml.data.stat
+	dmisg003.type = xml.data.type
+}
+
+function upload.dmisg004()
+{
+	domain	tcitem	tmp.item fixed	
+	v.pisn = 0
+			
+	sub.item.id.part.items = xmlFindFirst("PartItems", xml.sec.child)
+	xml.third.child = xmlGetFirstChild( sub.item.id.part.items)
+	
+	while xml.third.child <> 0
+		v.pisn = v.pisn + 1
+		xml.data.pisn = str$(v.pisn)	
+		xml.data.prtn = xmlAttribute$  (xml.third.child, "p.no")
+		xml.data.prtd= xmlAttribute$  (xml.third.child, "p_desc")
+		xml.data.pwgt= val(xmlAttribute$  (xml.third.child, "p_wt"))
+		xml.data.pqnt= val(xmlAttribute$  (xml.third.child, "p_qty"))
+		xml.data.spec= xmlAttribute$  (xml.third.child, "spec")
+		xml.data.prsz= xmlAttribute$  (xml.third.child, "size")
+		xml.data.rmrk= xmlAttribute$  (xml.third.child, "remark")
+		
+		tmp.item = string.set$(" ",9) & trim$(xml.data.item)
+		select	dmisg001.stat
+		from	dmisg001
+		where	dmisg001._index1 = {:xml.data.docn, :xml.data.revn}
+		and	dmisg001.stat = dmstat.submitted
+		selectdo
+			select	dmisg004.*
+			from	dmisg004 for update
+			where	dmisg004._index1 = {:xml.data.docn, :xml.data.revn, :xml.data.srno, :tmp.item, :xml.data.pisn}
+			selectdo
+				Assign_dmisg004()
+				db.update(tdmisg004, db.retry, e)
+			selectempty	
+				dmisg004.docn = xml.data.docn
+				dmisg004.revn = xml.data.revn
+				dmisg004.srno = xml.data.srno
+				dmisg004.item = tmp.item
+				dmisg004.pisn = xml.data.pisn
+				Assign_dmisg004()
+				db.insert(tdmisg004, db.skip.dupl, e)
+			endselect
+		selectempty
+			dmisg004.docn = xml.data.docn
+			dmisg004.revn = xml.data.revn
+			dmisg004.srno = xml.data.srno
+			dmisg004.item = tmp.item
+			dmisg004.pisn = xml.data.pisn
+			Assign_dmisg004()
+			db.insert(tdmisg004, db.skip.dupl, e)	
+		endselect	
+		xml.third.child = xmlGetRightSibling(xml.third.child)
+	endwhile
+}
+
+function Assign_dmisg004()
+{
+	dmisg004.prtn = xml.data.prtn
+	dmisg004.prtd = xml.data.prtd
+	dmisg004.wght = xml.data.pwgt
+	dmisg004.qnty = xml.data.pqnt
+	dmisg004.spec = xml.data.spec
+	dmisg004.size = xml.data.prsz
+	dmisg004.rmrk = xml.data.rmrk
+}
+
+function write.error.file()
+{
+	domain tcdate	v.curr.date.time
+	domain tfgld.date v.curr.date
+	domain	tcthms	v.curr.time
+
+	v.curr.date.time = utc.num()
+	utc.to.local(v.curr.date.time,v.curr.date,v.curr.time)
+
+	dmisg006.udat = v.curr.date
+	dmisg006.logn = v.logname
+	dmisg006.utim = v.curr.time
+	dmisg006.emsg = error.message
+	db.insert(tdmisg006,db.retry,db.return.error)
+	commit.transaction()
+}
+
+function get.item.unit(domain	tccitg	t.citg)
+{
+	select	a_tcibd002.cuni:get.cuni
+	from	tcibd002 a_tcibd002
+	where	a_tcibd002._index1 = {tckitm.purchase, :t.citg}
+	selectdo
+	selectempty
+		get.cuni = ""
+	endselect	
+}
+
+function long upload.odm.document()
+{
+	long ret
+	string error(200)
+	dmdoc.dll0010.get.default.work.area(area)
+	select	dmdoc520.fpth
+	from	dmdoc520
+	where	dmdoc520._index1 = {:area}
+	as set with 1 rows
+	selectdo
+	endselect
+
+	draw.document = ""
+	pdf.document = ""
+	
+| 	ret = server2client(strip$(u.path) & "\" & xml.data.pdfn,strip$(dmdoc520.fpth)&"\"&xml.data.pdfn,1)|#ISGEC004003.o
+	
+| 	ret = server2client(strip$(u.path) & "\" & xml.data.drds,strip$(dmdoc520.fpth)&"\"&xml.data.drds,0)|#ISGEC004003.n
+	
+| 	ret = file.cp(strip$(u.path) & "\" & xml.data.drds,strip$(dmdoc520.fpth)&"\"&xml.data.drds)	|# ISGEC001186.so
+| 	if ret >= 0 then
+| 		ret = dmisgdll0001.upload.file(
+| 				dmisg000.draw,
+| 				dmisg000.libr,
+| 				xml.data.dcid,							
+| 				xml.data.dttl,							
+| 				xml.data.drds,
+| 				error.message,
+| 				draw.document)
+
+| 		if ret then						|#ISGEC004003.sn
+| 			commit.transaction()
+| 			ret = dmisgdll0001.release.document(dmisg000.draw,
+| 							draw.document,
+| 							error.message)
+| 			if ret then
+| 				suspend(15000)		
+| 				if xml.data.drds <> xml.data.pdfn and not isspace(xml.data.pdfn) then	|##ISGEC001186.eo
+					ret = file.cp(strip$(u.path) & "\" & xml.data.pdfn,strip$(dmdoc520.fpth)&"\"&xml.data.pdfn)
+| 					suspend(25000)					|##ISGEC001186.o
+					if ret >=0 then
+						db.set.to.default(tdmdoc430)
+						db.set.to.default(tdmdoc440)
+						ret = dmisgdll0001.upload.file(
+						dmisg000.type,
+						dmisg000.libr,
+						xml.data.dcid,							
+						xml.data.dttl,							
+						xml.data.pdfn,
+						error.message,
+						pdf.document)
+						
+						suspend(15000)
+						
+| 						if not ret then					|#ISGEC001186.so
+| 							ret = dmisgdll0001.delete.document(dmisg000.draw,
+| 											xml.data.drds,
+| 											error)
+| 							return(0)				
+| 						else						|#ISGEC001186.eo
+						if ret then					|#ISGEC001186.n
+							commit.transaction()
+							ret = dmisgdll0001.release.document(dmisg000.type,
+							pdf.document,
+							error.message)
+							if not ret then
+								return(0)
+							endif	
+						endif
+					else
+| 						ret = dmisgdll0001.delete.document(dmisg000.draw,|#ISGEC001186.so
+| 										xml.data.drds,
+| 										error)		|#ISGEC001186.eo
+						error.message = " : Physical PDF File not found"
+						return(0)
+					endif
+| 				endif				|#ISGEC001186.so
+| 			else
+| 				return(0)	
+| 			endif		
+| 		else						
+| 			return(0)
+| 		endif
+| 	else							
+| 		error.message = " : Physical File not found"
+| 		return(0)
+| 	endif							|#ISGEC004003.en, |#ISGEC001186.eo
+	
+	return(ret)
+}
+
+								|#ISGEC004003.sn
+function change.workflow.status.previous()
+{
+	select	dmisg001.revn, dmisg001.wfst
+	from	dmisg001 for update
+	where	dmisg001._index1 = {:xml.data.docn}
+	and	dmisg001.revn < :xml.data.revn
+	and	dmisg001.stat = dmstat.expire
+	order by dmisg001.revn desc
+	as set with 1 rows
+	selectdo
+		dmisg001.wfst = dmisg.wfst.superseded
+		db.update(tdmisg001,db.retry,e)
+	endselect
+
+}
+
+function xml.main.document()
+{
+	long    Head2, retval
+	
+	select	dmisg115.*
+	from	dmisg115
+	where	dmisg115._index2 = {:xml.data.docn, :xml.data.revn}
+	selectdo
+	endselect
+	
+	select	dmisg114.*
+	from	dmisg114
+	where	dmisg114._index1 = {:dmisg115.dcrn}
+	selectdo
+	endselect
+	
+	cmfId = xmlNewNode("InforLN-PLM")
+	Head2 = xmlSetAttribute(cmfID, "Type","Lock")
+	Head1 = xmlNewDataElement("Documents","", cmfId)
+	
+	Head3 = xmlNewDataElement("Document","", Head1)
+	
+	retval = xmlSetAttribute(Head3, "VaultUserName",trim$(xml.data.vault_user_name))
+	retval = xmlSetAttribute(Head3, "VaultDBName",trim$(xml.data.vault_db_name))
+	retval = xmlSetAttribute(Head3, "FileName",trim$(xml.data.drds))
+	retval = xmlSetAttribute(Head3, "IsgecDataSource",trim$(xml.data.isgec_data_source))
+	retval = xmlSetAttribute(Head3, "Main","True")
+	retval = xmlSetAttribute(Head3, "ComponentStatus",dmisg114.comp)
+	retval = xmlSetAttribute(Head3, "ApprovalRequiredBy",dmisg114.apdt)
+	retval = xmlSetAttribute(Head3, "Description",trim$(dmisg114.dsca))
+	retval = xmlSetAttribute(Head3, "RequestPriority",dmisg114.reqs)
+	retval = xmlSetAttribute(Head3, "DCRCategory",dmisg115.catg)
+	retval = xmlSetAttribute(Head3, "DCRDate",dmisg114.apdt)
+	retval = xmlSetAttribute(Head3, "DCRNo",dmisg115.dcrn)
+	retval = xmlSetAttribute(Head3, "UserID",logname$)
+	retval = xmlSetAttribute(Head3, "RevisionNo",trim$(xml.data.revn))
+	retval = xmlSetAttribute(Head3, "DocumentID",trim$(xml.data.docn))
+	retval = xmlSetAttribute(Head3, "Element",trim$(xml.data.cspa))	
+	retval = xmlSetAttribute(Head3, "Project",trim$(xml.data.cprj))
+}
+
+
+function xml.sub.document()
+{
+	long    Head4, retval
+	
+	Head4 = xmlNewDataElement("Document","", Head1)
+	retval = xmlSetAttribute(Head4, "Type",ltoe(1))
+	retval = xmlSetAttribute(Head4, "Status",trim$(xml.data.stat))
+	retval = xmlSetAttribute(Head4, "PDF_filename",trim$(xml.data.pdff))
+	retval = xmlSetAttribute(Head4, "Main","False")
+	retval = xmlSetAttribute(Head4, "DrawingNumber",trim$(xml.data.drgn))
+	retval = xmlSetAttribute(Head4, "DocumentRevision",trim$(xml.data.drev))
+	retval = xmlSetAttribute(Head4, "DrawingTitle",trim$(xml.data.dcfn))
+	retval = xmlSetAttribute(Head4, "DocumentFileName",trim$(xml.data.drgt))
+}
+
+function write.xml.document()
+{
+	fd.write = seq.open(lock.path & "\" & xml.data.docn & ".xml", "w")
+	
+	xmlWritePretty(fd.write, cmfId, 0 )
+	seq.close(fd.write)
+	
+	xmlDelete(cmfId, 0)
+}
+
+
+function insert_dmisg139(domain dmdoc.docid i.docn,
+			domain dmdoc.revv i.revn,
+			domain dmdoc.docid i.dcid,
+			domain dmdoc.typeid	i.type)
+{
+	
+	select	dmisg139.*
+	from	dmisg139
+	where	dmisg139._index1 = {:i.docn, :i.revn, :i.dcid}
+	selectdo
+	selectempty
+		dmisg139.docn = i.docn
+		dmisg139.revn = i.revn
+		dmisg139.dcid = i.dcid
+		dmisg139.type = i.type
+		db.insert(tdmisg139, db.retry)
+	endselect
+}
+
+function delete_existing_document()
+{
+	select 	dmisg002.docn
+	from	dmisg002 for update
+	where	dmisg002._index1 = {:xml.data.docn, :xml.data.revn}
+	selectdo
+		db.delete(tdmisg002,db.retry,e)
+	endselect
+	
+	select	dmisg003.docn
+	from	dmisg003 for update
+	where	dmisg003._index1 = {:xml.data.docn, :xml.data.revn}
+	selectdo
+		db.delete(tdmisg003,db.retry,e)
+	endselect
+	
+	select	dmisg139.*
+	from	dmisg139 for update
+	where	dmisg139._index1 = {:xml.data.docn, :xml.data.revn}
+	selectdo
+		db.delete(tdmisg139,db.retry,e)
+	endselect
+
+}
+
+								|#ISGEC004003.en
+
+

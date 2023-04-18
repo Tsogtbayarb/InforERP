@@ -1,0 +1,97 @@
+|******************************************************************************
+|* tdisgdll0832  0  VRC B61U a7 live
+|* Billing Advice Lines
+|* baan
+|* 14-08-05 [12:27]
+|******************************************************************************
+|* Script Type: Library
+|******************************************************************************
+        table	ttppin020
+	
+function extern domain tppdm.aalc tdisgdll0832.get.installment.amount
+				(
+					domain	tccprj		i.cprj,		|Project
+					domain	tccom.bpid	i.ofbp,		|Sold-to Business Partner
+					domain	tppdm.nins	i.nins		|Installment
+				)
+{
+	domain	tppdm.aalc	o.insa
+	
+	o.insa = 0
+	
+	select 	tppin020.insa:o.insa
+	from	tppin020
+	where	tppin020._index1 = {:i.cprj,:i.ofbp,:i.nins}
+	selectdo
+	endselect
+	
+	return(o.insa)
+}
+
+
+function extern domain tppdm.aalc tdisgdll0832.get.installment.receipt.line
+				(
+					domain	tccprj		i.cprj,		|Project
+					domain	tccom.bpid	i.ofbp,		|Sold-to Business Partner
+					domain	tppdm.nins	i.nins,		|Installment
+					domain	tcorno		i.edrn,		|Billing Advice
+					domain	whinh.shpm	i.rcno,		|Receipt Number
+					domain	tcpono		i.rcln		|Receipt Line 
+				)
+{
+	domain	tppdm.aalc	o.tpisg039.rval
+	domain	tcorno		o.edrn
+	domain	whinh.shpm	o.rcno
+	domain	tcpono		o.rcln
+	domain	tppdm.aalc	o.rval
+	
+	o.tpisg039.rval = 0
+	
+	select 	tpisg039.edrn:o.edrn,
+		tpisg039.rcno:o.rcno,
+		tpisg039.rcln:o.rcln,
+		tpisg039.rval:o.rval
+	from	tpisg039
+	where	tpisg039._index1 = {:i.cprj,:i.ofbp,:i.nins}
+	selectdo
+		if o.edrn = i.edrn and o.rcno = i.rcno and o.rcln = i.rcln then
+			continue
+		else
+			o.tpisg039.rval = o.tpisg039.rval + o.rval
+		endif
+		
+	endselect
+	
+	return(o.tpisg039.rval)
+}
+
+function extern  tdisgdll0832.update.installment.linked.amount
+				(
+					domain	tccprj		i.cprj,		|Project
+					domain	tccom.bpid	i.ofbp,		|Sold-to Business Partner
+					domain	tppdm.nins	i.nins,		|Installment
+					domain	tcorno		i.edrn,		|Billing Advice
+					domain	whinh.shpm	i.rcno,		|Receipt Number
+					domain	tcpono		i.rcln,		|Receipt Lines
+					domain	tppdm.aalc	i.bivl		|Billing Value
+				)
+{
+	domain	tccprj	o.cprj
+	
+	domain	tppdm.aalc	o.tpisg039.rval
+	
+	o.tpisg039.rval = 0
+	
+	o.tpisg039.rval = tdisgdll0832.get.installment.receipt.line(i.cprj,i.ofbp,i.nins,
+							i.edrn,i.rcno,i.rcln)
+	
+	o.tpisg039.rval = o.tpisg039.rval + i.bivl	
+	
+	select 	tppin020.cprj:o.cprj
+	from	tppin020 for update
+	where	tppin020._index1 = {:i.cprj,:i.ofbp,:i.nins}
+	selectdo
+		put.var(pid,"tppin020.cdf_insa",o.tpisg039.rval)
+		db.update(ttppin020,db.retry,e)
+	endselect
+}

@@ -1,0 +1,871 @@
+|******************************************************************************
+|* tdisg1211m000  0  VRC B61U a7 isg 
+|* Generate Indent Tracking Sheet
+|* Adarsh Pal                    
+|* 2019-07-08
+|******************************************************************************
+|* Main table tdisg111 Indent Tracking Sheet, Form Type 1
+|******************************************************************************
+|*
+|* #GH118, Adarsh Pal, 22-08-2019, VRC B61U a7 isg
+|* Logic for Indent Line to be deleted from ITS after deletion from Purchase Requision Line
+|****************************** declaration section ***************************
+declaration:
+
+		table	ttdisg111			|Indent Tracking Sheet
+		table	ttdisg112			
+		table	ttdisg115			
+		table	ttdisg116			
+		table	ttdisg001
+		table	ttdpur200
+		table	ttdpur201
+		table	ttdpur202
+		table	ttdpur203
+		table	ttdisg210
+		table	ttcisg001
+		table	ttdpur400
+		table	ttdpur401
+		table	ttdpur451
+		table	ttdmsl400
+		table	ttpisg208
+		table	ttpisg005
+		table	ttfisg151
+	
+	extern	domain	tccprj		cprj.f
+	extern	domain	tccprj		cprj.t
+	extern	domain	tcrqno		rqno.f
+	extern	domain	tcrqno		rqno.t
+	extern	domain	tfgld.date	radt.f
+	extern	domain	tfgld.date	radt.t
+		domain	tcpono		rfqn
+
+|****************************** program section ********************************
+
+|****************************** choice section *********************************
+choice.generate:	
+on.choice:
+	read.main.table()
+	message("Indent Tracking Sheet generated successfully...")
+
+|****************************** group section **********************************
+
+|****************************** field section **********************************
+field.cprj.f:
+when.field.changes:
+	cprj.t = cprj.f
+
+field.rqno.f:
+when.field.changes:
+	rqno.t = rqno.f
+	
+field.radt.f:
+when.field.changes:
+	radt.t = radt.f
+	
+|***************************** function section ********************************
+functions:
+function read.main.table()
+{	
+	rfqn = 0
+	
+	select	tdpur201.*,tdpur201.cdf_rfqn:rfqn,
+		tdpur200.remn,tdpur200.rdat,tdpur200.ccon,tdpur200.rqst,tdpur200.refa
+	from	tdpur200,tdpur201
+	where	tdpur201._index2 inrange {:cprj.f,:rqno.f} and {:cprj.t,:rqno.t}
+	and	tdpur201.rqno(1;1) = "R"
+	and	tdpur201.oamt <> 0.0
+	and	tdpur201.rqno refers to tdpur200
+	and	tdpur200.rdat inrange :radt.f and :radt.t
+	and	tdpur200.rqst in (3,7,8)
+	and	tdpur200.ccon in (select tdisg116.buyr from tdisg116)
+	selectdo
+		select	tdpur202.prno,tdpur202.ppon
+		from	tdpur202
+		where	tdpur202._index1 = {:tdpur201.rqno,:tdpur201.pono}
+		as set with 1 rows
+		selectdo
+			select	tdpur401.orno,tdpur401.pono,tdpur401.sqnb,tdpur401.otbp,tdpur401.odat,tdpur401.oamt
+			from	tdpur401
+			where	tdpur401._index1 = {:tdpur202.prno,:tdpur202.ppon}
+			as set with 1 rows
+			selectdo
+				insert.or.update.indent.tracking.sheet()
+			endselect
+		selectempty
+			initialize.variables()
+			insert.or.update.indent.tracking.sheet()
+		endselect
+	endselect
+	
+	delete.changed.requisitions()
+}
+
+function domain	tcmcs.str10 get.tenure(	domain	tcrqno	i.rqno,
+					domain	tcorno	i.orno,
+					domain	tcdate	i.rdat,
+					domain	tcdate	i.odat
+								)
+{
+	domain	tfgld.date	tmp.odat,tmp.rdat,poad
+	domain	tcmcs.str10	tenure
+						
+	tmp.odat = 0
+	tmp.rdat = 0
+	poad = 0
+	tenure = ""
+	
+	if i.odat = 0 then
+		tmp.odat = utc.num()
+	else
+		poad = get.po.approval.date.utc(i.orno)
+		
+		if poad = 0 then
+			tmp.odat = utc.num()
+		else
+			tmp.odat = poad
+		endif
+	endif
+	
+	select	tdpur203.trdt
+	from	tdpur203
+	where	tdpur203._index1 = {:i.rqno}
+	and	tdpur203.rqst = tdpur.rqst.approved
+	selectdo
+	selectempty
+		tdpur203.trdt = 0
+	endselect
+
+	select	tdisg210.apdt                           
+	from	tdisg210
+	where	tdisg210._index1 = {:i.rqno}
+	selectdo
+		tmp.rdat = tdisg210.apdt
+	selectempty
+		if tdpur203.trdt = 0 then
+			if i.rdat <> 0 then
+				tmp.rdat = i.rdat
+			endif
+		else
+			tmp.rdat = tdpur203.trdt
+		endif
+	endselect	
+	
+	tenure = str$((tmp.odat - tmp.rdat)/(24*60*60))
+	
+	if tenure = "" then		
+		tenure = "1"
+	endif
+	
+	return(tenure)
+}
+
+function domain tfgld.date get.requisition.approval.date(domain tcrqno i.rqno)
+{
+	select	tdisg210.apdt
+	from	tdisg210
+	where	tdisg210._index1 = {:i.rqno}
+	order by	tdisg210.apdt
+	as set with 1 rows
+	selectdo
+		if tdisg210.apdt <> 0 then
+			tdisg210.apdt = get.date(tdisg210.apdt)
+		endif
+	selectempty
+		tdisg210.apdt = 0
+	endselect
+	
+	return(tdisg210.apdt)
+}
+
+function domain tfgld.date get.po.creation.date(domain tcorno i.orno)
+{
+	select	tdpur400.odat
+	from	tdpur400
+	where	tdpur400._index1 = {:i.orno}
+	selectdo
+		if tdpur400.odat <> 0 then
+			tdpur400.odat = get.date(tdpur400.odat)
+		endif
+	selectempty
+		tdpur400.odat = 0
+	endselect
+	
+	return(tdpur400.odat)
+}
+
+function domain tfgld.date get.po.sent.for.approval.date(domain tcorno i.orno)
+{
+	select	tdpur451.trdt
+	from	tdpur451
+	where	tdpur451._index1 = {:i.orno}					
+	and	tdpur451.appr = tcyesno.yes
+	as set with 1 rows
+	selectdo
+		if tdpur451.trdt <> 0 then
+			tdpur451.trdt = get.date(tdpur451.trdt)
+		endif
+	selectempty
+		tdpur451.trdt = 0
+	endselect
+
+	return(tdpur451.trdt)
+}
+
+function domain tfgld.date get.po.approval.date(domain tcorno i.orno)
+{
+	select	tdmsl400.apdt
+	from	tdmsl400
+	where	tdmsl400._index1 = {:i.orno,0}
+	and	tdmsl400.stat = tcyesno.yes			
+	and	tdmsl400.work = tdmsl.work.completed		
+	selectdo
+		if tdmsl400.apdt <> 0 then
+			tdmsl400.apdt = get.date(tdmsl400.apdt)
+		endif
+	selectempty
+		tdmsl400.apdt = 0
+	endselect
+	
+	return(tdmsl400.apdt)
+}
+
+function domain tfgld.date get.po.approval.date.utc(domain tcorno i.orno)
+{
+	select	tdmsl400.apdt
+	from	tdmsl400
+	where	tdmsl400._index1 = {:i.orno,0}
+	and	tdmsl400.stat = tcyesno.yes			
+	and	tdmsl400.work = tdmsl.work.completed		
+	selectdo
+	selectempty
+		tdmsl400.apdt = 0
+	endselect
+	
+	return(tdmsl400.apdt)
+}
+
+function domain tfgld.date get.date(domain tcdate i.date)
+{
+	long	yearno,monthno,month_dayno,hours,minutes,seconds,no.of.days
+	
+	yearno = 0
+	monthno = 0
+	month_dayno = 0
+	hours = 0
+	minutes = 0
+	seconds = 0
+	no.of.days = 0
+	
+	utc.to.date(i.date,yearno,monthno,month_dayno,hours,minutes,seconds)
+	no.of.days = date.to.num(yearno,monthno,month_dayno)
+	
+	return(no.of.days)
+}
+
+function domain tfgld.date get.po.issuance.date(domain tcorno i.orno)
+{
+	domain	tcdate	min.issd
+	
+	min.issd = 0
+	
+	select	min(tpisg208.issd):min.issd
+	from	tpisg208
+	where	tpisg208.pono = :i.orno
+	and	tpisg208.issu = 1
+	as set with 1 rows
+	selectdo
+		if min.issd <> 0 then
+			min.issd = get.date(min.issd)
+		endif
+	selectempty
+		min.issd = 0
+	endselect
+	
+	return(min.issd)
+}
+
+function domain tfgld.date get.po.acceptance.date(domain tcorno i.orno)
+{
+	domain	tcdate	min.accd
+	
+	min.accd = 0
+	
+	select	min(tpisg208.accd):min.accd
+	from	tpisg208
+	where	tpisg208.pono = :i.orno
+	and	tpisg208.accp = 1
+	as set with 1 rows
+	selectdo
+		if min.accd <> 0 then
+			min.accd = get.date(min.accd)
+		endif
+	selectempty
+		min.accd = 0
+	endselect
+	
+	return(min.accd)
+}
+
+function domain tcyesno get.advance.applicable(domain tcorno i.orno)
+{
+	domain	tcsern		max.vrsn
+	domain	tcbool		adv.appl
+	domain	tcisg.catg	catg
+	
+	max.vrsn = 0
+	adv.appl = false
+	catg = empty
+	
+	select	max(tdmsl400.vrsn):max.vrsn
+	from	tdmsl400
+	where	tdmsl400._index1 = {:i.orno}
+	and	tdmsl400.work = 3
+	as set with 1 rows
+	selectdo
+	selectempty
+		max.vrsn = 0
+	endselect
+	
+	select	tcisg001.catg:catg
+	from	tcisg001
+	where	tcisg001._index1 = {:i.orno,:max.vrsn}
+	selectdo
+		if catg = tcisg.catg.advance then
+			return(tcyesno.yes)
+		endif
+	selectempty
+		catg = empty
+	endselect
+	
+	return(tcyesno.no)	
+}
+
+function domain tcmcs.str132 get.advance.documents.required(domain tcorno i.orno)
+{
+	domain	tcsern		max.vrsn
+	domain	tcmcs.str132	adrd
+		long		i
+	
+	max.vrsn = 0
+	adrd = ""
+	i = 1
+
+	select	max(tdmsl400.vrsn):max.vrsn
+	from	tdmsl400
+	where	tdmsl400._index1 = {:i.orno}
+	and	tdmsl400.work = 3
+	as set with 1 rows
+	selectdo
+	selectempty
+		max.vrsn = 0
+	endselect
+	
+	select	tcisg001.orno,tcisg001.vrsn,tcisg001.srno
+	from	tcisg001
+	where	tcisg001._index1 = {:i.orno,:max.vrsn}
+	and	tcisg001.catg = 1
+	selectdo
+		select	tdisg001.docn
+		from	tdisg001
+		where	tdisg001._index1 = {:tcisg001.orno,:tcisg001.vrsn}
+		and	tdisg001.pmtl = :tcisg001.srno
+		selectdo
+			select	tpisg005.desc
+			from	tpisg005
+			where	tpisg005._index1 = {:tdisg001.docn}
+			selectdo
+				if i = 1 then
+					adrd = trim$(tpisg005.desc)
+				else
+					adrd = trim$(adrd) & ", " & trim$(tpisg005.desc)
+				endif
+				i = 2
+			endselect
+		endselect
+	endselect
+	
+	return(trim$(adrd))
+}
+
+function domain tfgld.date get.abg.received.date(domain tcorno i.orno)
+{
+	select	tfisg151.abdt
+	from	tfisg151
+	where	tfisg151.orno = :i.orno
+	and	tfisg151.type = "ADV"
+	and	tfisg151.orno <> ""
+	selectdo
+		if tfisg151.abdt <> 0 then
+			tfisg151.abdt = get.date(tfisg151.abdt)
+		endif
+	selectempty
+		tfisg151.abdt = 0
+	endselect
+	
+	return(tfisg151.abdt)
+}
+
+function domain tfgld.date get.1st.advance.request.date(domain tcorno i.orno)
+{
+	domain	tcdate	rqdt
+	
+	rqdt = 0
+
+	select	min(tfmsl020.rqdt):rqdt
+	from	tfmsl020
+	where	tfmsl020._index2 = {:i.orno}
+	and	tfmsl020.orno <> ""
+	selectdo
+		if rqdt <> 0 then
+			rqdt = get.date(rqdt)
+		endif
+	selectempty
+		rqdt = 0
+	endselect
+	
+	return(rqdt)
+}
+
+function domain tfgld.date get.1st.advance.release.date(domain tcorno i.orno)
+{
+	domain	tcdate	prdt
+	
+	prdt = 0
+
+	select	min(tfmsl020.prdt):prdt
+	from	tfmsl020
+	where	tfmsl020._index2 = {:i.orno}
+	and	tfmsl020.stat = 30
+	and	tfmsl020.orno <> ""
+	selectdo
+		if prdt <> 0 then
+			prdt = get.date(prdt)
+		endif
+	selectempty
+		prdt = 0
+	endselect
+	
+	return(prdt)
+}
+
+function domain	tfgld.date get.1st.enquiry.sent.on.date(domain tcpono i.rfqn)
+{
+	domain	tcdate	min.date
+	
+	min.date = 0
+	
+| 	select	min(dmisg169.date):min.date
+| 	from	dmisg169
+| 	where	dmisg169.pwfd = :i.rfqn
+| 	and	dmisg169.stat = "Enquiry Raised"
+| 	selectdo
+| 		if min.date <> 0 then
+| 			min.date = get.date(min.date)
+| 		endif
+| 	selectempty
+| 		min.date = 0
+| 	endselect
+	
+	select min(dmisg140.rfqd):min.date
+	from dmisg140,dmisg167
+	where dmisg167._index1 = {:i.rfqn}
+	and dmisg167.docn = dmisg140.docn
+	selectdo
+		if min.date <> 0 then
+			min.date = get.date(min.date)
+		endif
+	selectempty
+		min.date = 0
+	endselect
+	
+	return(min.date)
+}
+
+function domain	tcpono get.enquiry.sent.to.no.of.suppliers(domain tcpono i.rfqn)
+{
+	domain	tcpono	count.no
+	
+	count.no = 0
+	
+| 	select	count(*):count.no
+| 	from	dmisg169
+| 	where	dmisg169.pwfd = :i.rfqn
+| 	and	dmisg169.stat = "Enquiry Raised"
+| 	selectdo
+| 	selectempty
+| 		count.no = 0
+| 	endselect
+
+	select	count(*):count.no
+	from	dmisg168
+	where	dmisg168.pwfd = :i.rfqn
+	selectdo
+	selectempty
+		count.no = 0
+	endselect
+	
+	return(count.no)
+}
+
+function domain tfgld.date get.1st.offer.received.date(domain tcpono i.rfqn)
+{
+	domain	tcdate	min.date
+	
+	min.date = 0
+	
+	select	min(dmisg134.date):min.date
+	from	dmisg134
+	where	dmisg134.pwfd = :i.rfqn
+	selectdo
+		if min.date <> 0 then
+			min.date = get.date(min.date)
+		endif
+	selectempty
+		min.date = 0
+	endselect
+	
+	return(min.date)
+}
+
+function domain tfgld.date get.last.offer.received.date(domain tcpono i.rfqn)
+{
+	domain	tcdate	max.date
+	
+	max.date = 0
+	
+	select	max(dmisg134.date):max.date
+	from	dmisg134
+	where	dmisg134.pwfd = :i.rfqn
+	selectdo
+		if max.date <> 0 then
+			max.date = get.date(max.date)
+		endif
+	selectempty
+		max.date = 0
+	endselect
+	
+	return(max.date)
+}
+
+function domain tfgld.date get.total.offers.received(domain tcpono i.rfqn)
+{
+	domain	tcpono	count.no
+	
+	count.no = 0
+
+	select	count(*):count.no
+	from	dmisg134
+	where	dmisg134.pwfd = :i.rfqn
+	and	dmisg134.revn = "00"
+	selectdo
+	selectempty
+		count.no = 0
+	endselect
+	
+	return(count.no)
+}
+
+function domain tfgld.date get.1st.offer.tech.vetting(domain tcpono i.rfqn)
+{
+	domain	tcdate	min.adat
+	
+	min.adat = 0
+	
+	select	min(dmisg134.adat):min.adat
+	from	dmisg134
+	where	dmisg134.pwfd = :i.rfqn
+	and	dmisg134.stat = 5
+	selectdo
+		if min.adat <> 0 then
+			min.adat = get.date(min.adat)
+		endif
+	selectempty
+		min.adat = 0
+	endselect
+	
+	return(min.adat)
+}
+
+function domain tfgld.date get.last.offer.tech.vetting(domain tcpono i.rfqn)
+{
+	domain	tcdate	max.adat
+	
+	max.adat = 0
+	
+	select	max(dmisg134.adat):max.adat
+	from	dmisg134
+	where	dmisg134.pwfd = :i.rfqn
+	and	dmisg134.stat = 5
+	selectdo
+		if max.adat <> 0 then
+			max.adat = get.date(max.adat)
+		endif
+	selectempty
+		max.adat = 0
+	endselect
+	
+	return(max.adat)
+}
+
+function domain tfgld.date get.total.offers.tech.vetting(domain tcpono i.rfqn)
+{
+	domain	tcpono	count.no
+	
+	count.no = 0
+	
+	select	count(*):count.no
+	from	dmisg134
+	where	dmisg134.pwfd = :i.rfqn
+	and	dmisg134.stat = 5
+	selectdo
+	selectempty
+		count.no = 0
+	endselect
+	
+	return(count.no)
+}
+
+function domain tcmcs.str20m get.item.category(domain tcemno i.emno)
+{
+	select	tdisg112.icat
+	from	tdisg112
+	where	tdisg112._index1 = {:i.emno}
+	selectdo
+	selectempty
+		tdisg112.icat = ""
+	endselect
+	
+	return(tdisg112.icat)
+}
+
+function domain tcemno get.project.head(domain tccprj i.cprj)
+{
+	select	tdisg115.prjh
+	from	tdisg115
+	where	tdisg115._index1 = {:i.cprj}
+	selectdo
+	selectempty
+		tdisg115.prjh = ""
+	endselect
+	
+	return(tdisg115.prjh)
+}
+
+function domain tcemno get.lead.buyer(domain tcemno i.emno)
+{
+	select	tdisg116.lbyr
+	from	tdisg116
+	where	tdisg116._index1 = {:i.emno}
+	selectdo
+	selectempty
+		tdisg116.lbyr = ""
+	endselect
+	
+	return(tdisg116.lbyr)
+}
+
+function delete.changed.requisitions()
+{
+	db.retry.point()
+	select	tdisg111.cprj,tdisg111.rqno,tdisg111.pono,tdisg111.rsta
+	from	tdisg111 for update
+	selectdo
+		select	tdpur201.rqno,tdpur201.pono
+		from	tdpur201
+		where	tdpur201._index1 = {:tdisg111.rqno,:tdisg111.pono}
+		and	tdpur201.cprj = :tdisg111.cprj
+		and	tdpur201.rejc = tcyesno.yes
+		selectdo
+			db.delete(ttdisg111,DB.RETRY,db.skip.norec)
+		endselect
+		
+		select	tdpur200.rqno,tdpur200.rqst
+		from	tdpur200
+		where	tdpur200._index1 = {:tdisg111.rqno}
+		and	tdpur200.rqst in (3,7,8) 
+		selectdo
+| 			if tdpur200.rqst = tdpur.rqst.converted then				|#GH118.o
+				select	tdpur201.rqno,tdpur201.pono
+				from	tdpur201
+| 				where	tdpur201._index1 = {:tdpur200.rqno}			|#GH118.o
+				where	tdpur201._index1 = {:tdisg111.rqno,:tdisg111.pono}	|#GH118.n
+				selectdo
+					select	tdpur202.prno,tdpur202.ppon
+					from	tdpur202
+					where	tdpur202._index1 = {:tdpur201.rqno,:tdpur201.pono}
+					selectdo
+						select	tdpur401.orno,tdpur401.otbp
+						from	tdpur401
+						where	tdpur401._index1 = {:tdpur202.prno,:tdpur202.ppon}
+						and	(tdpur401.orno(1;4) in ("P998","DUMY") or tdpur401.otbp = "SUPZ01036")
+						selectdo
+							db.delete(ttdisg111,DB.RETRY,db.skip.norec)
+						endselect
+					endselect
+				selectempty
+					db.delete(ttdisg111,DB.RETRY,db.skip.norec)
+				endselect
+| 			endif									|#GH118.o
+		selectempty
+			db.delete(ttdisg111,DB.RETRY,db.skip.norec)
+		endselect
+	endselect
+	commit.transaction()
+}
+
+function insert.or.update.indent.tracking.sheet()
+{
+	db.retry.point()
+	select	tdisg111.*
+	from	tdisg111 for update
+	where	tdisg111._index1 = {:tdpur201.cprj,:tdpur201.rqno,:tdpur201.pono}
+	selectdo
+		tdisg111.prjh = get.project.head(tdisg111.cprj)
+		tdisg111.refa = tdpur200.refa
+		tdisg111.tenu = get.tenure(tdpur201.rqno,tdpur401.orno,tdpur200.rdat,tdpur401.odat)
+		tdisg111.buco = tdpur200.ccon
+		tdisg111.lbco = get.lead.buyer(tdisg111.buco)
+		tdisg111.radt = get.requisition.approval.date(tdpur201.rqno)
+		tdisg111.item = "         " & tdpur201.item
+		tdisg111.nids = tdpur201.nids
+		tdisg111.quan = tdpur201.qoor
+		tdisg111.unit = tdpur201.cuqp
+		
+		if tdpur201.oamt <> 0 then
+			tdisg111.rqvl = tdpur201.oamt/100000
+		else
+			tdisg111.rqvl = 0
+		endif
+		
+		tdisg111.orno = tdpur401.orno
+		tdisg111.pocd = get.po.creation.date(tdpur401.orno)
+		tdisg111.psad = get.po.sent.for.approval.date(tdpur401.orno)
+		tdisg111.poad = get.po.approval.date(tdpur401.orno)
+		
+		if tdpur401.oamt <> 0 then
+			tdisg111.poam = tdpur401.oamt/100000
+		else
+			tdisg111.poam = 0
+		endif
+		
+		tdisg111.suco = tdpur401.otbp
+		tdisg111.rsta = tdpur200.rqst
+		tdisg111.icat = get.item.category(tdisg111.buco)
+		
+		if rfqn <> 0 then
+			tdisg111.eson = get.1st.enquiry.sent.on.date(rfqn)
+			tdisg111.ests = get.enquiry.sent.to.no.of.suppliers(rfqn)
+			tdisg111.ordt = get.1st.offer.received.date(rfqn)
+			tdisg111.lord = get.last.offer.received.date(rfqn)
+			tdisg111.tord = get.total.offers.received(rfqn)
+			tdisg111.otvd = get.1st.offer.tech.vetting(rfqn)
+			tdisg111.lovd = get.last.offer.tech.vetting(rfqn)
+			tdisg111.totv = get.total.offers.tech.vetting(rfqn)
+		else
+			tdisg111.eson = 0
+			tdisg111.ests = 0
+			tdisg111.ordt = 0
+			tdisg111.lord = 0
+			tdisg111.tord = 0
+			tdisg111.otvd = 0
+			tdisg111.lovd = 0
+			tdisg111.totv = 0
+		endif
+		
+		tdisg111.poid = get.po.issuance.date(tdpur401.orno)
+		tdisg111.poar = get.po.acceptance.date(tdpur401.orno)
+		tdisg111.advn = get.advance.applicable(tdpur401.orno)
+		tdisg111.adrd = get.advance.documents.required(tdpur401.orno)
+		tdisg111.abgr = get.abg.received.date(tdpur401.orno)
+		tdisg111.ardt = get.1st.advance.request.date(tdpur401.orno)
+		tdisg111.ared = get.1st.advance.release.date(tdpur401.orno)
+		db.update(ttdisg111,DB.RETRY)
+		commit.transaction()
+	selectempty
+		tdisg111.cprj = tdpur201.cprj
+		tdisg111.rqno = tdpur201.rqno
+		tdisg111.pono = tdpur201.pono
+		tdisg111.prjh = get.project.head(tdisg111.cprj)
+		tdisg111.refa = tdpur200.refa
+		tdisg111.tenu = get.tenure(tdpur201.rqno,tdpur401.orno,tdpur200.rdat,tdpur401.odat)
+		tdisg111.buco = tdpur200.ccon
+		tdisg111.lbco = get.lead.buyer(tdisg111.buco)
+		tdisg111.radt = get.requisition.approval.date(tdpur201.rqno)
+		tdisg111.item = "         " & tdpur201.item
+		tdisg111.nids = tdpur201.nids
+		tdisg111.quan = tdpur201.qoor
+		tdisg111.unit = tdpur201.cuqp
+		
+		if tdpur201.oamt <> 0 then
+			tdisg111.rqvl = tdpur201.oamt/100000
+		else
+			tdisg111.rqvl = 0
+		endif
+		
+		tdisg111.orno = tdpur401.orno
+		tdisg111.pocd = get.po.creation.date(tdpur401.orno)
+		tdisg111.psad = get.po.sent.for.approval.date(tdpur401.orno)
+		tdisg111.poad = get.po.approval.date(tdpur401.orno)
+		
+		if tdpur401.oamt <> 0 then
+			tdisg111.poam = tdpur401.oamt/100000
+		else
+			tdisg111.poam = 0
+		endif
+		
+		tdisg111.suco = tdpur401.otbp
+		tdisg111.rsta = tdpur200.rqst
+		tdisg111.icat = get.item.category(tdisg111.buco)
+		
+		if rfqn <> 0 then
+			tdisg111.eson = get.1st.enquiry.sent.on.date(rfqn)
+			tdisg111.ests = get.enquiry.sent.to.no.of.suppliers(rfqn)
+			tdisg111.ordt = get.1st.offer.received.date(rfqn)
+			tdisg111.lord = get.last.offer.received.date(rfqn)
+			tdisg111.tord = get.total.offers.received(rfqn)
+			tdisg111.otvd = get.1st.offer.tech.vetting(rfqn)
+			tdisg111.lovd = get.last.offer.tech.vetting(rfqn)
+			tdisg111.totv = get.total.offers.tech.vetting(rfqn)
+		else
+			tdisg111.eson = 0
+			tdisg111.ests = 0
+			tdisg111.ordt = 0
+			tdisg111.lord = 0
+			tdisg111.tord = 0
+			tdisg111.otvd = 0
+			tdisg111.lovd = 0
+			tdisg111.totv = 0
+		endif
+		
+		tdisg111.ista = ""
+		tdisg111.rmrk = ""
+		tdisg111.drn1 = ""
+		tdisg111.drd1 = 0
+		tdisg111.drn2 = ""
+		tdisg111.drd2 = 0
+		tdisg111.drn3 = ""
+		tdisg111.drd3 = 0
+		tdisg111.istd = 0
+		tdisg111.poid = get.po.issuance.date(tdpur401.orno)
+		tdisg111.poar = get.po.acceptance.date(tdpur401.orno)
+		tdisg111.advn = get.advance.applicable(tdpur401.orno)
+		tdisg111.adrd = get.advance.documents.required(tdpur401.orno)
+		tdisg111.abgr = get.abg.received.date(tdpur401.orno)
+		tdisg111.ardt = get.1st.advance.request.date(tdpur401.orno)
+		tdisg111.ared = get.1st.advance.release.date(tdpur401.orno)
+		tdisg111.code = ""
+		db.insert(ttdisg111,DB.RETRY)
+		commit.transaction()
+	endselect
+}
+
+function initialize.variables()
+{
+	tdpur401.orno = ""
+	tdpur401.pono = 0
+	tdpur401.sqnb = 0
+	tdpur401.otbp = ""
+	tdpur401.odat = 0
+	tdpur401.oamt = 0
+}
+

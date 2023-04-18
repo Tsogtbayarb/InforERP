@@ -1,0 +1,333 @@
+|******************************************************************************
+|* tfglddllacpfun  0  VRC B40O c4 SIS 
+|* DLL for ACP Functions
+|* 0330
+|* 23-04-04 [14:47]
+|******************************************************************************
+|* Script Type: Library
+|******************************************************************************
+
+	table	ttfacp200
+	table	ttfacp251
+	
+| function extern domain	tfgld.amnt	get.ord.suppinv.basicval
+| (domain tcorno vorno, domain tfgld.ttyp vttyp, domain tfgld.docn vinvn)
+| {
+|this function calculates basic PO value of a supplier invoice(IRN) for specified PO and PTR voucher
+| 	domain	tfgld.amnt		basic.amt
+| 	domain	tfgld.amnt		tot.basic.amt
+| 	domain  tcpric  iPri.m    | Line Item Price
+| 	domain  tcqrd1  iQty.m    | Line Item Qty                
+| 	domain  tcqrd1  vqana
+| 	domain	tcpono vpono
+| 	domain	tcsrnb vsrnb
+| 	
+| 	domain  tcqrd1  voqua
+| 	domain  tccuni	vcuqp
+| 	domain  tccuni	vcupp
+| 	domain  tcconv	vcvqp
+| 	domain  tcconv	vcvpp
+| 	domain  tcamnt	vamta
+| 	domain  tcorno	vrvno
+| 		
+| 	domain  tcpric	vtdis
+| 	domain  tcpric	vpric
+| 	
+| 	domain  tcqrd1	v944oqua
+| 	domain  tcamnt	v944bval
+| 	
+| 	basic.amt = 0
+| 	tdpur046.qana = 0
+| 	iPri.m = 0
+| 	tot.basic.amt = 0
+| 	
+| 	select tdpur046.pono:vpono,tdpur046.srnb:vsrnb,tdpur046.qana :vqana
+| 	from tdpur046
+| 	where 	tdpur046.orno = :vorno
+| 	and		tdpur046.ttyp = :vttyp
+| 	and		tdpur046.invn = :vinvn
+| 	selectdo
+| 		select tdpur971.oqua:voqua, tdpur971.cuqp:vcuqp, tdpur971.cupp:vcupp,
+| 		tdpur971.cvqp:vcvqp, tdpur971.cvpp:vcvpp, tdpur971.amta:vamta, tdpur971.rvno:vrvno
+| 		from tdpur971 
+| 		where tdpur971.orno = :vorno 
+| 		and tdpur971.pono = :vpono 
+| 		and tdpur971.rvno = (select max(tdpur971.rvno) from tdpur971 
+| 							where tdpur971.orno = :vorno 
+| 							and tdpur971.pono = :vpono )
+|         selectdo
+| 	          if voqua <> 0 then
+| 	           	iQty.m = voqua
+| 	          	if vcuqp <> vcupp then
+| 	            	iQty.m = (voqua * vcvqp)/ vcvpp
+| 	          	endif
+| 	          endif
+| 	          | Localisation Data
+| 	          iPri.m = vamta / iQty.m
+| 	          select tdind973.tdis:vtdis, tdind973.pric:vpric from tdind973 
+| 	          where tdind973.rvno=:vrvno 
+| 	          and tdind973.orno=:vorno 
+| 	          and tdind973.pono=:vpono
+| 	          selectdo
+| 	           	iPri.m = vpric - ((vtdis/voqua) * vcvpp)
+| 	          endselect
+| 	    selectempty
+| 	    	select tdpur944.oqua:v944oqua, tdpur944.bval:v944bval
+| 	    	where tdpur944.orno = :vorno
+| 	    	and	tdpur944.pono = :vpono
+| 	    	selectdo
+| 	    		iPri.m = v944bval/v944oqua		    		
+| 	    	endselect				
+| 		endselect
+| 		basic.amt = 0
+| 		basic.amt = vqana * iPri.m
+| 		basic.amt = round(basic.amt,2,0)
+| 		tot.basic.amt = tot.basic.amt + basic.amt
+| 	endselect
+| 	return(tot.basic.amt)
+| }
+
+function extern domain tfgld.amnt get.advadj(domain tcorno orno.a)
+{
+	domain tfgld.amnt adjadv.f
+	domain tfgld.amnt tot.adjadv.f
+	domain tfgld.amnt poadv.f
+	domain tfgld.ttyp crttyp.f
+	domain tfgld.docn crninv.f
+	domain tfgld.ttyp pmttdoc.f
+	domain tfgld.docn pmtdoc.f
+	domain tfgld.lino lino.f
+	domain tfgld.amnt amth.f
+	domain tfgld.ttyp ttyp.f
+	domain tfgld.docn ninv.f
+	domain tfgld.lino line.f
+	domain tcmcs.int cnt.f
+	domain	tcmcs.long	comp.f
+
+	comp.f = get.compnr()
+
+	tot.adjadv.f = 0
+	
+	select	sum(tfacp200.amth(1)):poadv.f 
+	from	tfacp200 
+	where 	tfacp200.cdf_prno = :orno.a 
+	and 	tfacp200.tpay = tfacp.tpay.advance 
+| 	and	tfacp200.comp = :comp.f 
+	selectdo 
+	endselect
+
+| 	select	tdpur046.ttyp:crttyp.f, tdpur046.invn:crninv.f 
+| 	from 	tdpur046
+| 	where 	tdpur046.orno = :orno.a
+| 	group by tdpur046.ttyp, tdpur046.invn
+| 	order by tdpur046.ttyp, tdpur046.invn
+| 	selectdo
+	select	tfacp251.ityp:crttyp.f,tfacp251.idoc:crninv.f 
+	from	tfacp251
+	where	tfacp251.orno = :orno.a
+	selectdo
+		select	tfacp200.tdoc:pmttdoc.f, tfacp200.docn:pmtdoc.f, tfacp200.lino:lino.f, tfacp200.amth(1):amth.f 
+		from 	tfacp200 
+		where	tfacp200.ttyp = :crttyp.f
+		and 	tfacp200.ninv = :crninv.f
+		and 	tfacp200.tpay = tfacp.tpay.assignment
+		selectdo			
+			select	tfacp200.ttyp:ttyp.f, tfacp200.ninv:ninv.f, tfacp200.line:line.f 
+			from 	tfacp200 
+			where	tfacp200.tdoc = :pmttdoc.f 
+			and 	tfacp200.docn = :pmtdoc.f 
+			and	tfacp200.lino = :lino.f
+			and 	tfacp200.amth(1) > 0  | if amount is Positive
+			selectdo
+				cnt.f = 0
+				select	count(tfacp200.tpay):cnt.f 
+				from 	tfacp200 
+				where	tfacp200.ttyp=:ttyp.f 
+				and 	tfacp200.ninv=:ninv.f 
+				and 	tfacp200.line=:line.f
+				and	tfacp200.docn = 0 
+				and 	tfacp200.tpay = tfacp.tpay.advance
+				selectdo 
+				endselect
+				
+				if cnt.f > 0 then
+					adjadv.f = abs(amth.f)
+					tot.adjadv.f = tot.adjadv.f + adjadv.f
+				endif
+			endselect
+		endselect
+	endselect
+	|return(poadv.f - tot.adjadv.f)
+	return(tot.adjadv.f)
+}
+
+function extern domain tfgld.amnt get.unalladj(domain tcorno orno.a)
+{
+	domain tfgld.amnt adjunall.f
+	domain tfgld.amnt tot.adjunall.f
+	domain tfgld.amnt pounall.f
+	domain tfgld.ttyp crttyp.f
+	domain tfgld.docn crninv.f
+	domain tfgld.ttyp pmttdoc.f
+	domain tfgld.docn pmtdoc.f
+	domain tfgld.lino lino.f
+	domain tfgld.amnt amth.f
+	domain tfgld.ttyp ttyp.f
+	domain tfgld.docn ninv.f
+	domain tfgld.lino line.f
+	domain tcmcs.int cnt.f
+	domain	tcmcs.long	comp.f
+
+	comp.f = get.compnr()
+	tot.adjunall.f = 0
+	
+| 	select	sum(tdind940.amt):pounall.f 
+| 	from 	tdind940 
+| 	where 	tdind940.orno = :orno.a 
+| 	and 	tdind940._compnr = "200,300,400" 
+| 	and 	tdind940.tadv = tfcmg.tadv.unallocated 
+| 	and 	tdind940.comp = :comp.f 
+| 	selectdo 
+| 	endselect
+	
+	select	sum(tfacp200.amth(1)):pounall.f  
+	from	tfacp200 
+	where 	tfacp200.cdf_prno = :orno.a 
+	and 	tfacp200.tpay = tfacp.tpay.unallocated 
+| 	and	tfacp200.comp = :comp.f 
+	selectdo 
+	endselect	
+
+| 	select tdpur046.ttyp:crttyp.f, tdpur046.invn:crninv.f from tdpur046
+| 	where tdpur046.orno = :orno.a
+| 	group by tdpur046.ttyp, tdpur046.invn
+| 	order by tdpur046.ttyp, tdpur046.invn
+| 	selectdo
+	select	tfacp251.ityp:crttyp.f,tfacp251.idoc:crninv.f 
+	from	tfacp251
+	where	tfacp251.orno = :orno.a
+	selectdo	
+| 		select tfacp200.tdoc:pmttdoc.f, tfacp200.docn:pmtdoc.f, tfacp200.lino:lino.f, tfacp200.amth:amth.f from tfacp200 
+| 		where tfacp200.ttyp = :crttyp.f
+| 		and tfacp200.ninv = :crninv.f
+| 		and tfacp200.tpay = tfacp.tpay.assignment
+| 		selectdo
+		select	tfacp200.tdoc:pmttdoc.f, tfacp200.docn:pmtdoc.f, tfacp200.lino:lino.f, tfacp200.amth(1):amth.f 
+		from 	tfacp200 
+		where	tfacp200.ttyp = :crttyp.f
+		and 	tfacp200.ninv = :crninv.f
+		and 	tfacp200.tpay = tfacp.tpay.assignment
+		selectdo
+| 			select	tfacp200.ttyp:ttyp.f, tfacp200.ninv:ninv.f, tfacp200.line:line.f 
+| 			from 	tfacp200 
+| 			where	tfacp200.tdoc = :pmttdoc.f 
+| 			and 	tfacp200.docn = :pmtdoc.f 
+| 			and 	tfacp200.lino = :lino.f
+| 			and	tfacp200.amth > 0  | if amount is Positive
+| 			selectdo
+			select	tfacp200.ttyp:ttyp.f, tfacp200.ninv:ninv.f, tfacp200.line:line.f 
+			from 	tfacp200 
+			where	tfacp200.tdoc = :pmttdoc.f 
+			and 	tfacp200.docn = :pmtdoc.f 
+			and	tfacp200.lino = :lino.f
+			and 	tfacp200.amth(1) > 0  | if amount is Positive
+			selectdo
+				cnt.f = 0
+| 				select	count(tfacp200.tpay):cnt.f 
+| 				from 	tfacp200 
+| 				where	tfacp200.ttyp=:ttyp.f 
+| 				and 	tfacp200.ninv=:ninv.f 
+| 				and 	tfacp200.line=:line.f
+| 				and	tfacp200.docn = 0 
+| 				and 	tfacp200.tpay = tfacp.tpay.unallocated
+| 				selectdo 
+| 				endselect
+				select	count(tfacp200.tpay):cnt.f 
+				from 	tfacp200 
+				where	tfacp200.ttyp=:ttyp.f 
+				and 	tfacp200.ninv=:ninv.f 
+				and 	tfacp200.line=:line.f
+				and	tfacp200.docn = 0 
+				and 	tfacp200.tpay = tfacp.tpay.unallocated
+				selectdo 
+				endselect
+				if cnt.f > 0 then
+					adjunall.f = abs(amth.f)
+					tot.adjunall.f = tot.adjunall.f + adjunall.f
+				endif
+			endselect
+		endselect
+	endselect
+	| return(pounall.f - tot.adjunall.f)
+	return(tot.adjunall.f)
+}
+
+function extern domain tfgld.amnt get.doc.adjusted.amt(domain tfgld.ttyp ttyp.a , domain tfgld.ninv ninv.a)
+{
+	domain tfgld.amnt adv.adj.f
+	domain tfgld.amnt tot.adv.adj.f
+	domain tfgld.ttyp rtyp.f
+	domain tfgld.docn rdoc.f
+	domain tfgld.lino rlin.f
+	tot.adv.adj.f = 0
+	adv.adj.f = 0
+	
+	|reconciled document
+	select	tfacp200.tdoc:rtyp.f, tfacp200.docn:rdoc.f, tfacp200.lino:rlin.f 
+	from 	tfacp200
+	where 	tfacp200.ttyp = :ttyp.a 
+	and 	tfacp200.ninv = :ninv.a 
+	and 	tfacp200.amth(1) > 0
+	selectdo
+		|Amount of AAP voucher
+		select	tfacp200.amth:adv.adj.f 
+		from 	tfacp200
+		where	tfacp200.ttyp = :rtyp.f 
+		and 	tfacp200.ninv = :rdoc.f 
+		and 	tfacp200.line = :rlin.f 
+		and 	tfacp200.amth(1) > 0
+		selectdo
+			tot.adv.adj.f = tot.adv.adj.f + adv.adj.f
+			adv.adj.f = 0
+		endselect
+	endselect
+	return(tot.adv.adj.f)
+}
+
+function extern domain tfgld.amnt get.dnoteadj(domain tcorno orno.a)
+{
+	domain tfgld.amnt adjdnote.f
+	domain tfgld.amnt tot.adjdnote.f
+	domain tfgld.ttyp crttyp.f
+	domain tfgld.docn crninv.f
+	domain tfgld.ttyp tdoc.f
+	domain tfgld.docn docn.f
+	domain tfgld.amnt amth.f
+	domain	tcmcs.long	comp.f
+	domain	tfgld.lino	lino.f
+	tot.adjdnote.f = 0
+
+| 	select	tdpur046.ttyp:crttyp.f, tdpur046.invn:crninv.f 
+| 	from 	tdpur046
+| 	where 	tdpur046.orno = :orno.a
+| 	group by tdpur046.ttyp, tdpur046.invn
+| 	order by tdpur046.ttyp, tdpur046.invn
+| 	selectdo
+	select	tfacp251.ityp:crttyp.f,tfacp251.idoc:crninv.f 
+	from	tfacp251
+	where	tfacp251.orno = :orno.a
+	group	by tfacp251.ityp, tfacp251.idoc
+	order	by tfacp251.ityp, tfacp251.idoc	
+	selectdo		
+		select	tfacp200.tdoc:tdoc.f, tfacp200.docn:docn.f, tfacp200.amth:amth.f 
+		from 	tfacp200
+		where	tfacp200.ttyp = :crttyp.f
+		and	tfacp200.ninv = :crninv.f
+		and	tfacp200.tpay = tfacp.tpay.credit
+		selectdo
+			adjdnote.f = abs(amth.f)
+			tot.adjdnote.f = tot.adjdnote.f + adjdnote.f
+		endselect
+	endselect
+	return(tot.adjdnote.f)
+}

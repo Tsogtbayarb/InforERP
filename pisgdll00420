@@ -1,0 +1,808 @@
+|******************************************************************************
+|* tdisgdll0042  0  VRC B61U a7 live
+|* General Function for PO wise Child Item/ Document
+|* baan
+|* 14-09-23 [11:20]
+|******************************************************************************
+|* Script Type: Library
+|******************************************************************************
+|* ISGECDV001075, IT0205, Arjit Gupta, VRC B61U a7 live, DT. 04-10-2014
+|* Overwrite suffix of Existing child Item as suggested by Mr. lalit Gupta
+|******************************************************************************
+
+	table	ttdisg042 | PO wise Child Item / Document Details
+	table	ttcisg005
+	table	ttcisg004
+	table	ttdisg002
+	table	ttdisg003
+	table	ttdisg004
+	table	ttdisg005
+	table	ttdisg007
+	table	ttdpur202
+	table	ttcibd001
+	table	tdmisg002
+
+	
+	|******************** Script Variables ****************
+	extern	domain	tcitem		child.item
+		
+		long	d.pos, len.docn
+		
+|****************** Include ****
+#include "itdisgdll0003"
+#include <bic_dam>
+
+|**************************** External Function*****************************
+
+function extern tdisg.dll0042.Update_Project_Element_wise_Child_Item
+				(
+				domain	tccprj		i.cprj,
+				domain	tppdm.cspa	i.cspa
+				)
+{
+	long	pos.child
+	domain	tcqiv1		t.qnty, t.wght
+	domain	tccuni		t.cuni
+	domain	tcitem		temp.item		|#ISGECDV001075.n
+	long	t.pos					|#ISGECDV001075.n
+	
+	db.retry.point()
+	select	tdisg042.*
+	from	tdisg042
+	where	tdisg042._index3 = {:i.cprj, :i.cspa}
+	and	tdisg042.sele = tcyesno.yes
+	selectdo
+		pos.child = 0
+		len.docn = 0
+		d.pos = 0
+		t.pos = 0				|#ISGECDV001075.n
+		child.item = ""
+		temp.item = ""				|#ISGECDV001075.n
+		pos.child = pos(tdisg042.item, "-")
+		if	pos.child > 0	then
+| 			child.item = tdisg042.item		|#ISGECDV001075.o
+								|#ISGECDV001075.sn
+			t.pos = pos(tdisg042.item, "-")
+			temp.item = tdisg042.item(1;t.pos-1)
+			len.docn = len(tdisg042.docn)
+			d.pos = pos(tdisg042.docn, "-")
+			child.item = string.set$(" ", 9) & trim$(temp.item) & tdisg042.docn(d.pos;len.docn-d.pos)
+								|#ISGECDV001075.en
+		else
+			len.docn = len(tdisg042.docn)
+			d.pos = pos(tdisg042.docn, "-")
+			child.item = string.set$(" ", 9) & trim$(tdisg042.item) & tdisg042.docn(d.pos;len.docn-d.pos)
+		endif	
+		if	isspace(tdisg042.ddsc)	then
+			select	dmisg001.dttl:tdisg042.ddsc
+			from	dmisg001
+			where	dmisg001._index1 = {:tdisg042.docn, :tdisg042.revi}
+			selectdo
+			selectempty
+				tdisg042.ddsc = ""
+			endselect
+		endif	
+		
+		select	pb_tdisg002.qnty:t.qnty,
+			pb_tdisg002.wght:t.wght,
+			pb_tdisg002.quom:t.cuni
+		from	tdisg002 pb_tdisg002
+		where	pb_tdisg002._index1 = {:tdisg042.orno, :tdisg042.pono, :tdisg042.item}
+		selectdo
+		selectempty
+			t.qnty = 0
+			t.wght = 0
+		endselect
+		
+		tdisg.dll0042.Update_Item_Release(tdisg042.cprj, tdisg042.cspa, tdisg042.loti, tdisg042.item,
+				tdisg042.docn, tdisg042.revi, tdisg042.dsca, tdisg042.orno, tdisg042.pono, child.item,
+				t.qnty, t.wght, t.cuni)
+		tdisg.dll0042.Update_lot_Creation(tdisg042.cprj, tdisg042.cspa, tdisg042.loti, tdisg042.item,
+				tdisg042.docn, tdisg042.revi, tdisg042.dsca, child.item, tdisg042.qnty, tdisg042.wght, 
+				tdisg042.ddsc)		
+		commit.transaction()		
+	endselect
+}
+
+function tdisg.dll0042.Update_Item_Release
+				(
+			domain	tccprj		in.cprj,
+			domain	tppdm.cspa	in.cspa,
+			domain	tcitem		in.loti,
+			domain	tcitem		in.item,
+			domain	dmdoc.docid	in.docn,
+			domain	dmdoc.revv	in.revi,
+			domain	tcdsca		in.dsca,
+			domain	tcorno		in.orno,
+			domain	tcpono		in.pono,
+			domain	tcitem		in.uitm,
+			domain	tcqiv1		in.qnty,
+			domain	tcqiv1		in.wght,
+			domain	tccuni		in.cuni
+				)
+{
+	long	ret 
+	
+	ret = 0
+	select	tcisg004.*
+	from	tcisg004 for update
+	where	tcisg004._index1 = {:in.cprj, :in.cspa, :in.loti, :in.item}
+	selectdo
+		
+		tdisg.dll0042.Update.tdisg003(in.cprj, in.cspa, in.loti, in.item, in.docn, in.revi, in.uitm, in.dsca, in.orno, in.pono, in.qnty, in.wght, in.cuni)
+			
+		if	tcisg004.refq = tcyesno.yes	then
+			tdisg.dll0042.Update.tdisg004(in.cprj, in.cspa, in.loti, in.item, in.docn, in.revi, in.uitm, in.dsca)
+		endif
+		
+		tdisg.dll0042.Update.tdisg002(in.cprj, in.cspa, in.loti, in.item, in.docn, in.revi, in.uitm, in.dsca, in.orno, in.pono)
+		
+		if	tcisg004.rcpt = tcyesno.yes	then
+			tdisg.dll0042.Update.tdisg005(in.cprj, in.cspa, in.loti, in.item, in.docn, in.revi, in.uitm, in.dsca, in.orno, in.pono)
+		endif	
+		
+		ret = dal.copy.object("tcisg004")
+		dal.set.field("tcisg004.item", in.uitm)
+		dal.set.field("tcisg004.desc", in.dsca)
+		dal.set.field("tcisg004.docn", in.docn)
+		dal.set.field("tcisg004.rvid", in.revi)
+		dal.set.field("tcisg004.indt", tcyesno.yes)
+		if	tcisg004.refq = tcyesno.yes	then
+			dal.set.field("tcisg004.refq", tcyesno.yes)
+		endif
+		
+		dal.set.field("tcisg004.orno", tcyesno.yes)
+		if	tcisg004.rcpt = tcyesno.yes	then
+			dal.set.field("tcisg004.rcpt", tcyesno.yes)
+		endif
+		ret = dal.save.object("tcisg004", db.skip.dupl)
+		
+		if	ret = 0	then
+			ret = dal.destroy.object("tcisg004")
+		endif	
+	endselect	
+}				
+				
+|* Indent Child Items
+function tdisg.dll0042.Update.tdisg003
+			(
+			domain	tccprj		i3.cprj,
+			domain	tppdm.cspa	i3.cspa,
+			domain	tcitem		i3.loti,
+			domain	tcitem		i3.item,
+			domain	dmdoc.docid	i3.docn,
+			domain	dmdoc.revv	i3.revi,
+			domain	tcitem		i3.uitm,
+			domain	tcdsca		i3.dsca,
+			domain	tcorno		i3.orno,
+			domain	tcpono		i3.pono,
+			domain	tcqiv1		i3.qnty,
+			domain	tcqiv1		i3.wght,
+			domain	tccuni		i3.cuni
+			)
+{
+	long	i3.ret
+	
+	i3.ret = 0
+	select	tcisg005.*
+	from	tcisg005 for update
+	where	tcisg005._index1 = {:i3.cprj, :i3.cspa, :i3.loti, :i3.item, tdisg.item.indent}
+	selectdo
+		select	tdisg003.*
+		from	tdisg003 for update
+		where	tdisg003._index1 = {:tcisg005.orno, :tcisg005.pono, :i3.item}
+		selectdo
+			i3.ret = dal.copy.object("tdisg003")
+			dal.set.field("tdisg003.item", i3.uitm)
+			dal.set.field("tdisg003.desc", i3.dsca)
+			dal.set.field("tdisg003.docn", i3.docn)
+			dal.set.field("tdisg003.revi", i3.revi)
+			i3.ret = dal.save.object("tdisg003", db.skip.dupl)
+			if	i3.ret = 0	then
+				i3.ret = dal.destroy.object("tdisg003")
+			endif	
+		endselect
+		i3.ret = dal.copy.object("tcisg005")
+		dal.set.field("tcisg005.citm", i3.uitm)
+		i3.ret = dal.save.object("tcisg005", db.skip.dupl)
+		if	i3.ret = 0	then
+			i3.ret = dal.destroy.object("tcisg005")
+		endif	
+	selectempty
+		tdisg.dll0042.Update.indent.linkage(i3.cprj, i3.cspa, i3.loti, i3.item, i3.docn, i3.revi, i3.uitm, i3.dsca, i3.orno, i3.pono, i3.qnty, i3.wght, i3.cuni)
+	endselect
+}
+
+|* Update Indent Linkage
+function tdisg.dll0042.Update.indent.linkage
+				(
+			domain	tccprj		id3.cprj,
+			domain	tppdm.cspa	id3.cspa,
+			domain	tcitem		id3.loti,
+			domain	tcitem		id3.item,
+			domain	dmdoc.docid	id3.docn,
+			domain	dmdoc.revv	id3.revi,
+			domain	tcitem		id3.uitm,
+			domain	tcdsca		id3.dsca,
+			domain	tcorno		id3.orno,
+			domain	tcpono		id3.pono,
+			domain	tcqiv1		id3.qnty,
+			domain	tcqiv1		id3.wght,
+			domain	tccuni		id3.cuni
+				)
+{
+	long	id3.ret
+	domain	tcqiv1	t.qnty, t.wght
+	
+	id3.ret = 0
+	select	tdpur202.rqno, tdpur202.pono
+	from	tdpur202
+	where	tdpur202._index2 = {:id3.orno, :id3.pono} 
+	group by tdpur202.rqno, tdpur202.pono
+	order by tdpur202.rqno, tdpur202.pono
+	selectdo
+		select	tdisg003.*
+		from	tdisg003 for update
+		where	tdisg003._index1 = {:tdpur202.rqno, :tdpur202.pono, :id3.item}
+		selectdo
+			dal.copy.object("tdisg003")
+			dal.set.field("tdisg003.item", id3.item)
+			dal.set.field("tdisg003.desc", id3.dsca)
+			dal.set.field("tdisg003.docn", id3.docn)
+			dal.set.field("tdisg003.revi", id3.revi)
+			id3.ret = dal.save.object("tdisg003", db.skip.dupl)
+			
+			if	id3.ret = 0	then
+				id3.ret = dal.destroy.object("tdisg003")
+			endif	
+| 			tdisg003.item = id3.uitm
+| 			tdisg003.desc = id3.dsca
+| 			tdisg003.docn = id3.docn
+| 			tdisg003.revi = id3.revi
+| 			db.update(ttdisg003, db.retry)
+		selectempty
+			tdisg003.rqno = tdpur202.rqno
+			tdisg003.pono = tdpur202.pono
+			tdisg003.item = id3.uitm
+			tdisg003.desc = id3.dsca
+			tdisg003.docn = id3.docn
+			tdisg003.revi = id3.revi
+			tdisg003.slct = tcyesno.yes
+			tdisg003.stat = tcyesno.yes
+			tdisg003.qnty = id3.qnty
+			tdisg003.quom = id3.cuni
+			tdisg003.wght = id3.wght
+			db.insert(ttdisg003, db.skip.dupl)
+			|UPDATE_STATUS1(id3.cprj, id3.cspa, id3.loti, tdisg003.item, indt)
+			tdisg.dll0042.Insert_Tcisg005(id3.cprj, id3.cspa, id3.loti, id3.uitm, tdisg.item.indent, tdpur202.rqno, tdpur202.pono)
+		endselect
+	endselect
+}
+
+|* RFQ Child Items
+function tdisg.dll0042.Update.tdisg004(
+			domain	tccprj		i4.cprj,
+			domain	tppdm.cspa	i4.cspa,
+			domain	tcitem		i4.loti,
+			domain	tcitem		i4.item,
+			domain	dmdoc.docid	i4.docn,
+			domain	dmdoc.revv	i4.revi,
+			domain	tcitem		i4.uitm,
+			domain	tcdsca		i4.dsca
+			)
+{
+	long	i4.ret
+	
+	i4.ret = 0
+	select	tcisg005.*
+	from	tcisg005 for update
+	where	tcisg005._index1 = {:i4.cprj, :i4.cspa, :i4.loti, :i4.item, tdisg.item.rfq}
+	selectdo
+		select	tdisg004.*
+		from	tdisg004 for update
+		where	tdisg004._index1 = {:tcisg005.orno, :tcisg005.pono, :i4.item}
+		selectdo
+			i4.ret = dal.copy.object("tdisg004")
+			dal.set.field("tdisg004.item", i4.uitm)
+			dal.set.field("tdisg004.desc", i4.dsca)
+			dal.set.field("tdisg004.docn", i4.docn)
+			dal.set.field("tdisg004.revi", i4.revi)
+			i4.ret = dal.save.object("tdisg004")
+			
+			if	i4.ret = 0	then
+				i4.ret = dal.destroy.object("tdisg004", db.skip.dupl)
+			endif	
+| 			if	isspace(tdisg004.docn)	then
+| 				tdisg004.item = i4.uitm
+| 				tdisg004.desc = i4.dsca
+| 				tdisg004.docn = i4.docn
+| 				tdisg004.revi = i4.revi
+| 				db.update(ttdisg004, db.retry)
+| 			endif
+		endselect
+		i4.ret = dal.copy.object("tcisg005")
+		dal.set.field("tcisg005.citm", i4.uitm)
+		i4.ret = dal.save.object("tcisg005", db.skip.dupl)
+		
+		if	i4.ret = 0	then
+			i4.ret = dal.destroy.object("tcisg005")
+		endif	
+| 		tcisg005.citm = i4.uitm
+| 		db.update(ttcisg005, db.retry)
+	endselect
+}
+
+|* PO Child Items
+function tdisg.dll0042.Update.tdisg002
+			(
+			domain	tccprj		i2.cprj,
+			domain	tppdm.cspa	i2.cspa,
+			domain	tcitem		i2.loti,
+			domain	tcitem		i2.item,
+			domain	dmdoc.docid	i2.docn,
+			domain	dmdoc.revv	i2.revi,
+			domain	tcitem		i2.uitm,
+			domain	tcdsca		i2.dsca,
+			domain	tcorno		i2.orno,
+			domain	tcpono		i2.pono
+			)
+{
+	long	i2.ret
+	
+	i2.ret = 0
+	select	tcisg005.*
+	from	tcisg005 for update
+	where	tcisg005._index1 = {:i2.cprj, :i2.cspa, :i2.loti, :i2.item, tdisg.item.order, :i2.orno, :i2.pono}
+	selectdo
+		select	tdisg002.*
+		from	tdisg002 for update
+		where	tdisg002._index1 = {:tcisg005.orno, :tcisg005.pono, :i2.item}
+		selectdo
+			i2.ret = dal.copy.object("tdisg002")
+			dal.set.field("tdisg002.item", i2.uitm)
+			dal.set.field("tdisg002.desc", i2.dsca)
+			dal.set.field("tdisg002.docn", i2.docn)
+			dal.set.field("tdisg002.revi", i2.revi)
+			i2.ret = dal.save.object("tdisg002", db.skip.dupl)
+			
+			if	i2.ret = 0	then
+				i2.ret = dal.destroy.object("tdisg002")
+			endif	
+| 			if	isspace(tdisg002.docn)	then
+| 				tdisg002.item = i2.uitm
+| 				tdisg002.desc = i2.dsca
+| 				tdisg002.docn = i2.docn
+| 				tdisg002.revi = i2.revi
+| 				db.update(ttdisg002, db.retry)
+| 			endif
+		endselect
+		i2.ret = dal.copy.object("tcisg005")
+		dal.set.field("tcisg005.citm", i2.uitm)
+		i2.ret = dal.save.object("tcisg005", db.skip.dupl)
+		
+		
+		if	i2.ret = 0	then
+			i2.ret = dal.destroy.object("tcisg005")
+		else
+			show.dal.messages  (MSG.ALL)
+		endif	
+| 		tcisg005.citm = i2.uitm
+| 		db.update(ttcisg005, db.retry)
+	selectempty
+		tdisg.dll0042.Update.po.linkage(i2.cprj, i2.cspa, i2.loti, i2.item, i2.docn, i2.revi, i2.uitm, i2.dsca, i2.orno, i2.pono)	
+	endselect
+}
+
+|* Update PO Linkage
+function tdisg.dll0042.Update.po.linkage
+			(
+			domain	tccprj		pl2.cprj,
+			domain	tppdm.cspa	pl2.cspa,
+			domain	tcitem		pl2.loti,
+			domain	tcitem		pl2.item,
+			domain	dmdoc.docid	pl2.docn,
+			domain	dmdoc.revv	pl2.revi,
+			domain	tcitem		pl2.uitm,
+			domain	tcdsca		pl2.dsca,
+			domain	tcorno		pl2.orno,
+			domain	tcpono		pl2.pono
+			)
+{
+	long	pl2.ret
+	
+	pl2.ret = 0
+	select	tdisg002.*
+	from	tdisg002 for update
+	where	tdisg002._index1 = {:pl2.orno, :pl2.pono, :pl2.item}
+	selectdo
+		pl2.ret = dal.copy.object("tdisg002")
+		dal.set.field("tdisg002.item", pl2.uitm)
+		dal.set.field("tdisg002.desc", pl2.dsca)
+		dal.set.field("tdisg002.docn", pl2.docn)
+		dal.set.field("tdisg002.revi", pl2.revi)
+		pl2.ret = dal.save.object("tdisg002", db.skip.dupl)
+		
+		if	pl2.ret = 0	then
+			pl2.ret = dal.destroy.object("tdisg002")
+		endif	
+| 		tdisg002.item = pl2.uitm
+| 		tdisg002.desc = pl2.dsca
+| 		tdisg002.docn = pl2.docn
+| 		tdisg002.revi = pl2.revi
+| 		db.update(ttdisg002, db.retry)
+		tdisg.dll0042.Insert_Tcisg005(pl2.cprj, pl2.cspa, pl2.loti, pl2.uitm, tdisg.item.order, pl2.orno, pl2.pono)
+	selectempty
+		tdisg002.orno = pl2.orno
+		tdisg002.pono = pl2.pono
+		tdisg002.item = pl2.uitm
+		tdisg002.desc = pl2.dsca
+		tdisg002.docn = pl2.docn
+		tdisg002.revi = pl2.revi
+		tdisg002.stat = tcyesno.yes
+		tdisg002.slct = tcyesno.yes
+		db.insert(ttdisg002, db.skip.dupl)
+		|UPDATE_STATUS1(pl2.cprj, pl2.cspa, pl2.loti, tdisg002.item, orno)
+		tdisg.dll0042.Insert_Tcisg005(pl2.cprj, pl2.cspa, pl2.loti, pl2.uitm, tdisg.item.order, pl2.orno, pl2.pono)
+	endselect
+}
+
+|* Receipt Child Items
+function tdisg.dll0042.Update.tdisg005
+			(
+			domain	tccprj		i5.cprj,
+			domain	tppdm.cspa	i5.cspa,
+			domain	tcitem		i5.loti,
+			domain	tcitem		i5.item,
+			domain	dmdoc.docid	i5.docn,
+			domain	dmdoc.revv	i5.revi,
+			domain	tcitem		i5.uitm,
+			domain	tcdsca		i5.dsca,
+			domain	tcorno		i5.orno,
+			domain	tcpono		i5.pono
+			)
+{
+	long	i5.ret
+	
+	i5.ret = 0
+	select	tcisg005.orno, tcisg005.pono, tcisg005.citm
+	from	tcisg005 for update
+	where	tcisg005._index1 = {:i5.cprj, :i5.cspa, :i5.loti, :i5.item, tdisg.item.receipt}
+	selectdo
+		select	tdisg005.item, tdisg005.desc, tdisg005.docn, tdisg005.revi
+		from	tdisg005 for update
+		where	tdisg005._index1 = {:tcisg005.orno, :tcisg005.pono, :i5.item}
+		selectdo
+			i5.ret = dal.copy.object("tdisg005")
+			dal.set.field("tdisg005.item", i5.uitm)
+			dal.set.field("tdisg005.desc", i5.dsca)
+			dal.set.field("tdisg005.docn", i5.docn)
+			dal.set.field("tdisg005.revi", i5.revi)
+			i5.ret = dal.save.object("tdisg005", db.skip.dupl)
+			
+			if	i5.ret = 0	then
+				i5.ret = dal.destroy.object("tdisg005")
+			endif	
+| 			if	isspace(tdisg005.docn)	then
+| 				tdisg005.item = i5.uitm
+| 				tdisg005.desc = i5.dsca
+| 				tdisg005.docn = i5.docn
+| 				tdisg005.revi = i5.revi
+| 				db.update(ttdisg005, db.retry)
+				tdisg.dll0042.Update.tdisg006(i5.orno, i5.pono, tcisg005.orno, tcisg005.pono, i5.item, i5.uitm, i5.docn, i5.revi)
+				tdisg.dll0042.Update.tdisg007(tcisg005.orno, tcisg005.pono, i5.item, i5.uitm, i5.docn, i5.revi, i5.dsca)
+| 			endif
+		endselect
+		i5.ret = dal.copy.object("tcisg005")
+		dal.set.field("tcisg005.citm", i5.uitm)
+		i5.ret = dal.save.object("tcisg005", db.skip.dupl)
+		
+		if	i5.ret = 0	then
+			i5.ret = dal.destroy.object("tcisg005")
+		endif	
+| 		tcisg005.citm = i5.uitm
+| 		db.update(ttcisg005, db.retry)
+	endselect
+}
+
+|* PO wise Linked Receipt
+function tdisg.dll0042.Update.tdisg006
+			(
+			domain	tcorno		i6.orno,
+			domain	tcpono		i6.pono,
+			domain	whinh.shpm	i6.rcno,
+			domain	tcpono		i6.rcln,
+			domain	tcitem		i6.item,
+			domain	tcitem		i6.uitm,
+			domain	dmdoc.docid	i6.docn,
+			domain	dmdoc.revv	i6.revi
+			)
+{
+	long	i6.ret
+	
+	i6.ret = 0
+	select	tdisg006.*
+	from	tdisg006 for update
+	where	tdisg006._index1 = {:i6.orno, :i6.pono, :i6.rcno, :i6.rcln, :i6.item}
+	selectdo
+		i6.ret = dal.copy.object("tdisg006")
+		dal.set.field("tdisg006.item", i6.uitm)
+		dal.set.field("tdisg006.docn", i6.docn)
+		dal.set.field("tdisg006.revi", i6.revi)
+		i6.ret = dal.save.object("tdisg006")
+		
+		if	i6.ret = 0	then
+			i6.ret = dal.destroy.object("tdisg006")
+		endif
+	endselect	
+}
+
+|* Billing Advice Child Items
+function tdisg.dll0042.Update.tdisg007
+			(
+			domain	whinh.shpm	i7.rcno,
+			domain	tcpono		i7.rcln,
+			domain	tcitem		i7.item,
+			domain	tcitem		i7.uitm,
+			domain	dmdoc.docid	i7.docn,
+			domain	dmdoc.revv	i7.revi,
+			domain	tcdsca		i7.dsca
+			)
+{
+	long	i7.ret
+	
+	i7.ret = 0
+	select	tdisg007.item, tdisg007.desc, tdisg007.docn, tdisg007.revi
+	from	tdisg007 for update
+	where	tdisg007._index1 = {:i7.rcno, :i7.rcln, :i7.item}
+	selectdo
+		i7.ret = dal.copy.object("tdisg007")
+		dal.set.field("tdisg007.item", i7.uitm)
+		dal.set.field("tdisg007.desc", i7.dsca)
+		dal.set.field("tdisg007.docn", i7.docn)
+		dal.set.field("tdisg007.revi", i7.revi)
+		i7.ret = dal.save.object("tdisg007", db.skip.dupl)
+		if	i7.ret = 0	then
+			i7.ret = dal.destroy.object("tdisg007")
+		endif	
+| 		if	isspace(tdisg007.docn)	then
+| 			tdisg007.item = i7.uitm
+| 			tdisg007.desc = i7.dsca
+| 			tdisg007.docn = i7.docn
+| 			tdisg007.revi = i7.revi
+| 			db.update(ttdisg007, db.retry)
+| 		endif
+	endselect
+}
+
+function tdisg.dll0042.Insert_Tcisg005
+			(
+			domain	tccprj		l5.cprj,
+			domain	tppdm.cspa	l5.cspa,
+			domain	tcitem		l5.loti,
+			domain	tcitem		l5.uitm,
+			domain	tdisg.item	l5.type,
+			domain	tcorno		l5.orno,
+			domain	tcpono		l5.pono
+			)
+{
+	select	tcisg005.orno
+	from	tcisg005 
+	where	tcisg005._index1 = {:l5.cprj, :l5.cspa, :l5.loti, :l5.uitm, :l5.type, :l5.orno, :l5.pono}
+	selectdo
+	selectempty
+		tcisg005.proj = l5.cprj
+		tcisg005.elmt = l5.cspa
+		tcisg005.item = l5.loti
+		tcisg005.citm = l5.uitm
+		tcisg005.type = l5.type
+		tcisg005.orno = l5.orno
+		tcisg005.pono = l5.pono
+		db.insert(ttcisg005, db.retry)
+	endselect
+}
+
+|****************** Update Lot Creation **********************
+function tdisg.dll0042.Update_lot_Creation
+			(
+			domain	tccprj		il.cprj,
+			domain	tppdm.cspa	il.cspa,
+			domain	tcitem		il.loti,
+			domain	tcitem		il.item,
+			domain	dmdoc.docid	il.docn,
+			domain	dmdoc.revv	il.revi,
+			domain	tcdsca		il.dsca,
+			domain	tcitem		il.uitm,
+			domain	tcqiv1		il.qnty,
+			domain	tcqiv1		il.wght,
+			domain	tcmcs.str100m	il.ddsc
+			)
+{
+	long	dm2.ret 
+	domain	tcitem		tmp.item	fixed
+	
+	dm2.ret = 0
+	select	dmisg001.*
+	from	dmisg001 for update
+	where	dmisg001._index1 = {:il.docn, :il.revi}
+	selectdo
+		select	dmisg002.*
+		from	dmisg002 for update
+		where	dmisg002._index1 = {:il.docn, :il.revi}
+		and	dmisg002.item = :il.item
+		and	dmisg002.item <> :il.uitm
+		selectdo
+			dm2.ret = dal.change.object("dmisg002")
+			dal.set.field("dmisg002.item", il.uitm)
+			dal.set.field("dmisg002.dsca", il.dsca)
+			dal.set.field("dmisg002.qnty", il.qnty)
+			dal.set.field("dmisg002.wght", il.wght)
+			select	tcibd001.dsca, tcibd001.citg, tcibd001.cuni
+			from	tcibd001
+			where	tcibd001._index1 = {:il.item}		
+			selectdo
+				|dal.set.field("dmisg002.dsca", tcibd001.dsca)
+				dal.set.field("dmisg002.citg", tcibd001.citg)
+				dal.set.field("dmisg002.cuni", tcibd001.cuni)
+			selectempty
+				tmp.item = ""
+				tmp.item = il.cprj & trim$(il.item)
+				select	tcibd001.dsca, tcibd001.citg, tcibd001.cuni
+				from	tcibd001
+				where	tcibd001._index1 = {:tmp.item}		
+				selectdo
+					|dal.set.field("dmisg002.dsca", tcibd001.dsca)
+					dal.set.field("dmisg002.citg", tcibd001.citg)
+					dal.set.field("dmisg002.cuni", tcibd001.cuni)
+				endselect
+			endselect	
+			dm2.ret = dal.save.object("dmisg002", db.retry)
+			tdisg.dll0042.Update_Lot_Item_Master(il.docn, il.revi, il.cprj, il.cspa, il.loti, il.item,
+							il.uitm, il.dsca, il.qnty, il.wght, dmisg002.srno, dmisg002.cuni)
+		selectempty
+			tdisg.dll0042.Create_Document_Child(il.docn, il.revi, il.cprj, il.cspa, il.loti, il.item, il.uitm, il.dsca, il.qnty, il.wght)
+		endselect
+		dm2.ret = dal.change.object("dmisg001")
+		dal.set.field("dmisg001.stat", dmstat.released)
+		dm2.ret = dal.save.object("dmisg001", db.retry)
+	selectempty
+		tdisg.dll0042.Create_Document(il.docn, il.revi, il.cprj, il.cspa, il.uitm, il.dsca, il.qnty, il.wght, il.ddsc)
+		tdisg.dll0042.Create_Document_Child(il.docn, il.revi, il.cprj, il.cspa, il.loti, il.item, il.uitm, il.dsca, il.qnty, il.wght)
+	endselect
+}
+
+function tdisg.dll0042.Create_Document
+			(
+			domain	dmdoc.docid	dc.docn,
+			domain	dmdoc.revv	dc.revi,
+			domain	tccprj		dc.cprj,
+			domain	tppdm.cspa	dc.cspa,
+			domain	tcitem		dc.uitm,
+			domain	tcdsca		dc.dsca,
+			domain	tcqiv1		dc.qnty,
+			domain	tcqiv1		dc.wght,
+			domain	tcmcs.str100m	dc.ddsc
+			)
+{
+	long	dc.ret
+	
+	dc.ret = dal.new.object("dmisg001")
+	dal.set.field("dmisg001.docn", dc.docn)
+	dal.set.field("dmisg001.revn", dc.revi)
+	dal.set.field("dmisg001.dttl", dc.ddsc)
+	dal.set.field("dmisg001.cspa", dc.cspa)
+	dal.set.field("dmisg001.cprj", dc.cprj)
+	dal.set.field("dmisg001.stat", dmstat.released)
+	dal.set.field("dmisg001.crtp", tcyesno.yes)
+	dc.ret = dal.save.object("dmisg001", db.skip.dupl)
+}
+
+function tdisg.dll0042.Create_Document_Child
+			(
+			domain	dmdoc.docid	ch.docn,
+			domain	dmdoc.revv	ch.revi,
+			domain	tccprj		ch.cprj,
+			domain	tppdm.cspa	ch.cspa,
+			domain	tcitem		ch.loti,
+			domain	tcitem		ch.item,
+			domain	tcitem		ch.uitm,
+			domain	tcdsca		ch.dsca,
+			domain	tcqiv1		ch.qnty,
+			domain	tcqiv1		ch.wght
+			)
+{
+	long	ch.ret, ch.srno
+	domain	tcitem		tmp.chitem	fixed	
+	
+	ch.srno = 0
+	select	max(ch_dmisg002.srno):ch.srno
+	from	dmisg002 ch_dmisg002
+	where	ch_dmisg002._index1 = {:ch.docn, :ch.revi}
+	selectdo
+	endselect
+	
+	ch.srno = ch.srno + 1
+	ch.ret = dal.new.object("dmisg002")
+	dal.set.field("dmisg002.docn", ch.docn)
+	dal.set.field("dmisg002.revn", ch.revi)
+	dal.set.field("dmisg002.srno", ch.srno)
+	dal.set.field("dmisg002.item", ch.uitm)
+	dal.set.field("dmisg002.dsca", ch.dsca)
+	dal.set.field("dmisg002.qnty", ch.qnty)
+	dal.set.field("dmisg002.wght", ch.wght)
+	dal.set.field("dmisg002.elem", ch.cspa)
+	select	tcibd001.dsca, tcibd001.citg, tcibd001.cuni
+	from	tcibd001
+	where	tcibd001._index1 = {:ch.item}		
+	selectdo
+		|dal.set.field("dmisg002.dsca", tcibd001.dsca)
+		dal.set.field("dmisg002.citg", tcibd001.citg)
+		dal.set.field("dmisg002.cuni", tcibd001.cuni)
+	selectempty
+		tmp.chitem = ""
+		tmp.chitem = ch.cprj & trim$(ch.item)
+		select	tcibd001.dsca, tcibd001.citg, tcibd001.cuni
+		from	tcibd001
+		where	tcibd001._index1 = {:tmp.chitem}		
+		selectdo
+			|dal.set.field("dmisg002.dsca", tcibd001.dsca)
+			dal.set.field("dmisg002.citg", tcibd001.citg)
+			dal.set.field("dmisg002.cuni", tcibd001.cuni)
+		endselect	
+	endselect
+	ch.ret = dal.save.object("dmisg002", db.skip.dupl)
+	tdisg.dll0042.Update_Lot_Item_Master(ch.docn, ch.revi, ch.cprj, ch.cspa, ch.loti, ch.item,
+							ch.uitm, ch.dsca, ch.qnty, ch.wght, dmisg002.srno, dmisg002.cuni)
+}
+
+function tdisg.dll0042.Update_Lot_Item_Master
+				(
+				domain	dmdoc.docid	lm.docn,
+				domain	dmdoc.revv	lm.revi,
+				domain	tccprj		lm.cprj,
+				domain	tppdm.cspa	lm.cspa,
+				domain	tcitem		lm.loti,
+				domain	tcitem		lm.item,
+				domain	tcitem		lm.uitm,
+				domain	tcdsca		lm.dsca,
+				domain	tcqiv1		lm.qnty,
+				domain	tcqiv1		lm.wght,
+				domain	tcpono		lm.srno,
+				domain	tccuni		lm.cuni
+				)
+{
+	long	lm.ret
+	
+	select	dmisg005.*
+	from	dmisg005 for update
+	where	dmisg005._index2 = {:lm.cprj, :lm.cspa, :lm.loti}
+	and	dmisg005.item = :lm.item
+	selectdo
+		lm.ret = dal.copy.object("dmisg005")
+		dal.set.field("dmisg005.item", lm.uitm)
+		dal.set.field("dmisg005.dsca", lm.dsca)
+		dal.set.field("dmisg005.qnty", lm.qnty)
+		dal.set.field("dmisg005.wght", lm.wght)
+		dal.set.field("dmisg005.docn", lm.docn)
+		dal.set.field("dmisg005.revn", lm.revi)
+		lm.ret = dal.save.object("dmisg005", db.skip.dupl)
+		if	lm.ret = 0	then
+			lm.ret  = dal.destroy.object("dmisg005")
+		endif	
+	selectempty
+		lm.ret = dal.new.object("dmisg005")
+		dal.set.field("dmisg005.cprj", lm.cprj)
+		dal.set.field("dmisg005.cspa", lm.cspa)
+		dal.set.field("dmisg005.docn", lm.docn)
+		dal.set.field("dmisg005.revn", lm.revi)
+		dal.set.field("dmisg005.srno", lm.srno)
+		dal.set.field("dmisg005.item", lm.uitm)
+		dal.set.field("dmisg005.dsca", lm.dsca)
+		dal.set.field("dmisg005.loti", lm.loti)
+		dal.set.field("dmisg005.qnty", lm.qnty)
+		dal.set.field("dmisg005.wght", lm.wght)
+		dal.set.field("dmisg005.cuni", lm.cuni)
+		dal.set.field("dmisg005.stat", dmstat.released)
+		lm.ret = dal.save.object("dmisg005", db.skip.dupl)
+	endselect
+}
+

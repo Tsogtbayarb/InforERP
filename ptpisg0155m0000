@@ -1,0 +1,405 @@
+|******************************************************************************
+|* tpisg0155m000  0  VRC B61U a7 isg 
+|* Maintain Cost Sheet
+|* merino1                       
+|* 2019-03-13
+|******************************************************************************
+|* Main table tpisg055 Cost Sheet Header., Form Type 1
+|******************************************************************************
+|* ISGEC01171, Prasanna Bhuyan, 14/3/2019, VRC B61U a7 isg
+|* New Development     
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttpisg055	|Cost Sheet Header
+	table	ttpisg056	|Cost Sheet Detail
+	table	ttpisg057	|Cost Sheet Header History
+	table	ttpisg058	|Cost Sheet Details History
+	table	ttpisg011	|Santion Control
+	table	ttpisg066
+	table	ttpisg067
+	table	ttpisg093
+	table	ttpisg094
+	table	ttpisg095
+	table	ttpisg096
+	table	ttpisg046
+	table	ttpisg047
+	table	ttccom001
+
+|****************************** program section ********************************
+before.program:
+	
+	domain	tcemno	log.name
+		string	qry.str(500)
+	
+	log.name = logname$
+	qry.str = ""
+	
+	select	tccom001.emno
+	from	tccom001
+	where	tccom001._index4 = {:log.name}
+	selectdo
+	selectempty
+		tccom001.emno = ""
+	endselect
+	
+	qry.str =	"tpisg055.cprj in(select tpisg046.cprj from tpisg046 where tpisg046.user = " & quoted.string(tccom001.emno) &  ")"  & 
+			" or tpisg055.cprj in(select tpisg047.cprj from tpisg047 where tpisg047.user = " & quoted.string(tccom001.emno) & ")"
+	
+	query.extend.where(qry.str)
+
+before.display.object:
+| 	if tpisg055.stat = tpstat.open then
+| 		disable.commands("approve")
+| 		disable.commands("reject")
+| 	else
+| 		enable.commands("approve")
+| 		enable.commands("reject")
+| 	endif
+| 		
+| 	if tpisg055.stat = tpstat.sent then
+| 		disable.commands("refresh")
+| 		disable.commands("send.for.appr")
+| 	else
+| 		enable.commands("refresh")
+| 		enable.commands("send.for.appr")
+| 	endif
+	
+	domain	tcemno	log.name
+	
+	log.name = logname$
+	
+	select	tccom001.emno
+	from	tccom001
+	where	tccom001._index4 = {:log.name}
+	selectdo
+	selectempty
+		tccom001.emno = ""
+	endselect
+	
+	select	tpisg046.user
+	from	tpisg046
+	where	tpisg046._index1 = {:tpisg055.cprj}
+	and	tpisg046.user = :tccom001.emno
+	selectdo
+		if tpisg055.stat = tpstat.open then
+			enable.commands("refresh")
+			enable.commands("send.for.appr")
+		else
+			disable.commands("refresh")
+			disable.commands("send.for.appr")
+		endif
+	selectempty
+		disable.commands("refresh")
+		disable.commands("send.for.appr")
+	endselect
+	
+	select	tpisg047.user
+	from	tpisg047
+	where	tpisg047._index1 = {:tpisg055.cprj}
+	and	tpisg047.user = :tccom001.emno
+	selectdo
+		if tpisg055.stat = tpstat.sent then
+			enable.commands("approve")
+			enable.commands("reject")
+		else
+			disable.commands("approve")
+			disable.commands("reject")
+		endif
+	selectempty
+		disable.commands("approve")
+		disable.commands("reject")
+	endselect
+|****************************** group section **********************************
+|****************************** choice section *********************************
+choice.refresh:
+before.choice:
+	select	tpisg011.act1
+	from	tpisg011
+	where	tpisg011._index1 = {:tpisg055.cprj}
+	and	tpisg011.act1 = tpisg.sanction.approved
+	selectdo
+	selectempty
+		message("Sanction Control is not Approved for Project %s",tpisg055.cprj)
+		choice.again()
+	endselect
+	
+on.choice:
+	if	tpisg055.stat = tpstat.clos	then
+		message("%s Project Cost Sheet is already Closed",tpisg055.cprj)
+		choice.again()
+	else	
+		tpisgdll000015.capture.tfgld106.data.in.tpisg069(tpisg055.cprj)	
+		tpisgdll000015.Update_Cost_Sheet( 
+						tpisg055.cprj,
+						tpisg055.revn
+							)
+		tpisgdll000015.capture.elementwise.consumption.detail(tpisg055.cprj)
+	endif
+	message("Data updated successfully...")
+			
+choice.approve:
+on.choice:
+	if	tpisg055.stat = tpstat.clos	then
+			message("%s Project Cost Sheet is already Closed",tpisg055.cprj)
+			choice.again()
+	else	
+		if ask.enum("tpisg0155m0003", tcyesno.no, tpisg055.cprj) = tcyesno.yes then
+			select	tpisg057.*
+			from	tpisg057
+			where	tpisg057._index1 = {:tpisg055.cprj, :tpisg055.revn}
+			selectdo
+			selectempty
+				tpisg057.cprj = tpisg055.cprj   
+				tpisg057.revn = tpisg055.revn  
+				tpisg057.rvdt = tpisg055.rvdt
+				tpisg057.rdat = tpisg055.rdat
+				tpisg057.pdsc = tpisg055.pdsc  
+				tpisg057.cnfc = tpisg055.cnfc  
+				tpisg057.cnrt = tpisg055.cnrt
+				tpisg057.cnhc = tpisg055.cnhc  
+				tpisg057.cinc = tpisg055.cinc 
+				tpisg057.ctcm = tpisg055.ctcm   
+				tpisg057.tcst = tpisg055.tcst   
+				tpisg057.ctoh = tpisg055.ctoh 
+				tpisg057.bcth = tpisg055.bcth   
+				tpisg057.bcnt = tpisg055.bcnt
+				tpisg057.bwar = tpisg055.bwar
+				tpisg057.acys = tpisg055.acys   
+				tpisg057.acnt = tpisg055.acnt
+				tpisg057.awar = tpisg055.awar 
+				tpisg057.eitl = tpisg055.eitl
+				tpisg057.cssh = tpisg055.cssh
+				tpisg057.ctsh = tpisg055.ctsh
+				tpisg057.wtsh = tpisg055.wtsh 
+				tpisg057.stat = tpisg055.stat
+				tpisg057.ttch = tpisg055.ttch
+				tpisg057.ardc = tpisg055.ardc
+				tpisg057.ardi = tpisg055.ardi
+				tpisg057.icah = tpisg055.icah
+				tpisg057.user = logname$ 
+				db.insert(ttpisg057, db.skip.dupl,e)
+				if not e then
+					commit.transaction()
+				else
+					abort.transaction()
+				endif
+			endselect
+			
+			select	tpisg056.*
+			from	tpisg056
+			where	tpisg056._index1 = {:tpisg055.cprj, :tpisg055.revn}
+			selectdo
+				select	tpisg058.*
+				from	tpisg058
+				where	tpisg058._index1 = {:tpisg056.cprj, :tpisg056.revn, :tpisg056.elem}
+				selectdo
+				selectempty
+					tpisg058.cprj = tpisg056.cprj
+					tpisg058.revn = tpisg056.revn
+					tpisg058.elem = tpisg056.elem
+					tpisg058.levl = tpisg056.levl
+					tpisg058.ibud = tpisg056.ibud
+					tpisg058.tbud = tpisg056.tbud
+					tpisg058.exhd = tpisg056.exhd
+					tpisg058.ctcm = tpisg056.ctcm
+					tpisg058.tcst = tpisg056.tcst 
+					tpisg058.varc = tpisg056.varc  
+					tpisg058.cbac = tpisg056.cbac
+					tpisg058.upov = tpisg056.upov 
+					tpisg058.cont = tpisg056.cont
+					tpisg058.cons = tpisg056.cons
+					tpisg058.warr = tpisg056.warr
+					tpisg058.tsht = tpisg056.tsht 
+					tpisg058.stcs = tpisg056.stcs
+					tpisg058.rovr = tpisg056.rovr
+					tpisg058.rrmk = tpisg056.rrmk
+					tpisg058.ests = tpisg056.ests
+					tpisg058.sfal = tpisg056.sfal
+					tpisg058.stmc = tpisg056.stmc
+					tpisg058.stat = tpisg056.stat
+					tpisg058.ttch = tpisg056.ttch
+					tpisg058.user = logname$
+					tpisg058.niba = tpisg056.niba
+					tpisg058.cbas = tpisg056.cbas
+					tpisg058.ardc = tpisg056.ardc
+					tpisg058.ardi = tpisg056.ardi
+					tpisg058.ritb = tpisg056.ritb
+					db.insert(ttpisg058, db.skip.dupl,e)
+					if not e then
+						commit.transaction()
+					else
+						abort.transaction()
+					endif
+				endselect
+			endselect
+			
+			insert.tables.094.095.and.096()
+			
+			select	tpisg056.revn
+			from	tpisg056	for update
+			where	tpisg056._index1 = {:tpisg055.cprj,:tpisg055.revn}
+			selectdo
+				tpisg056.revn = str$(lval(tpisg055.revn) + 1)
+				tpisg056.stat = tpstat.open
+				db.update(ttpisg056,db.retry,e)
+				commit.transaction()
+			endselect
+			
+			select	tpisg055.revn
+			from	tpisg055	for update
+			where	tpisg055._index1 = {:tpisg055.cprj,:tpisg055.revn}
+			selectdo
+				tpisg055.revn = str$(lval(tpisg055.revn) + 1)
+				tpisg055.rvdt = utc.num()
+				tpisg055.stat = tpstat.open
+				db.update(ttpisg055,db.retry,e)
+				commit.transaction()
+			endselect
+			
+			message("Current Revision of Cost sheet has been Approved!")
+		endif
+	endif
+	
+choice.close_costsheet:
+on.choice:
+	if	tpisg055.stat = tpstat.clos	then
+		message("%s Project Cost Sheet is already Closed",tpisg055.cprj)
+		choice.again()
+	else
+		if ask.enum("tpisg0155m0002", tcyesno.no, tpisg055.cprj) = tcyesno.yes then
+			select	tpisg056.stat
+			from	tpisg056 for update
+			where	tpisg056._index1 = {:tpisg055.cprj,:tpisg055.revn}
+			selectdo
+				tpisg056.stat = tpstat.clos
+				db.update(ttpisg056,db.retry,e)
+				commit.transaction()
+			endselect
+			select	tpisg055.stat
+			from	tpisg055 for update
+			where	tpisg055._index1 = {:tpisg055.cprj,:tpisg055.revn}
+			selectdo
+				tpisg055.stat = tpstat.clos
+				db.update(ttpisg055,db.retry,e)
+				commit.transaction()
+			endselect
+		endif
+	endif
+
+choice.send.for.appr:
+on.choice:
+	if tpisg055.stat = tpstat.open then
+		if ask.enum("tpisg0155m0005", tcyesno.no, tpisg055.cprj) = tcyesno.yes then
+			db.retry.point()
+			select	tpisg056.stat
+			from	tpisg056 for update
+			where	tpisg056._index1 = {:tpisg055.cprj,:tpisg055.revn}
+			selectdo
+				tpisg056.stat = tpstat.sent
+				db.update(ttpisg056,db.retry,e)
+				commit.transaction()
+			endselect
+			
+			db.retry.point()
+			select	tpisg055.stat
+			from	tpisg055 for update
+			where	tpisg055._index1 = {:tpisg055.cprj,:tpisg055.revn}
+			selectdo
+				tpisg055.stat = tpstat.sent
+				db.update(ttpisg055,db.retry,e)
+				commit.transaction()
+			endselect
+		endif
+	endif
+	
+choice.reject:
+on.choice:
+	if tpisg055.stat = tpstat.sent then
+		if ask.enum("tpisg0155m0004", tcyesno.no, tpisg055.cprj) = tcyesno.yes then
+			db.retry.point()
+			select	tpisg056.stat
+			from	tpisg056 for update
+			where	tpisg056._index1 = {:tpisg055.cprj,:tpisg055.revn}
+			selectdo
+				tpisg056.stat = tpstat.open
+				db.update(ttpisg056,db.retry,e)
+				commit.transaction()
+			endselect
+			
+			db.retry.point()
+			select	tpisg055.stat
+			from	tpisg055 for update
+			where	tpisg055._index1 = {:tpisg055.cprj,:tpisg055.revn}
+			selectdo
+				tpisg055.stat = tpstat.open
+				db.update(ttpisg055,db.retry,e)
+				commit.transaction()
+			endselect
+		endif
+	endif
+|**************************** function section *********************************
+functions:
+function insert.tables.094.095.and.096()
+{	
+	select	tpisg066.*
+	from	tpisg066
+	where	tpisg066._index1 = {:tpisg055.cprj}
+	selectdo
+		db.retry.point()
+		select	tpisg094.*
+		from	tpisg094
+		where	tpisg094._index1 = {:tpisg066.cprj,:tpisg055.revn,:tpisg066.chco}
+		selectdo
+		selectempty
+			tpisg094.cprj = tpisg066.cprj
+			tpisg094.revn = tpisg055.revn
+			tpisg094.chco = tpisg066.chco
+			tpisg094.iamt = tpisg066.iamt
+			tpisg094.namt = tpisg066.namt
+			tpisg094.pseq = tpisg066.pseq
+			db.insert(ttpisg094,DB.RETRY)
+			commit.transaction()
+		endselect
+	endselect
+	
+	select	tpisg067.*
+	from	tpisg067
+	where	tpisg067._index1 = {:tpisg055.cprj}
+	selectdo
+		db.retry.point()
+		select	tpisg095.*
+		from	tpisg095
+		where	tpisg095._index1 = {:tpisg067.cprj,:tpisg055.revn,:tpisg067.chco}
+		selectdo
+		selectempty
+			tpisg095.cprj = tpisg067.cprj
+			tpisg095.revn = tpisg055.revn
+			tpisg095.chco = tpisg067.chco
+			tpisg095.pamt = tpisg067.pamt
+			tpisg095.pseq = tpisg067.pseq
+			db.insert(ttpisg095,DB.RETRY)
+			commit.transaction()
+		endselect
+	endselect
+	
+	select	tpisg093.*
+	from	tpisg093
+	where	tpisg093._index1 = {:tpisg055.cprj}
+	selectdo
+		db.retry.point()
+		select	tpisg096.*
+		from	tpisg096
+		where	tpisg096._index1 = {:tpisg093.cprj,:tpisg055.revn,:tpisg093.slsh}
+		selectdo
+		selectempty
+			tpisg096.cprj = tpisg093.cprj
+			tpisg096.revn = tpisg055.revn
+			tpisg096.slsh = tpisg093.slsh
+			tpisg096.samt = tpisg093.samt
+			tpisg096.pseq = tpisg093.pseq
+			db.insert(ttpisg096,DB.RETRY)
+			commit.transaction()
+		endselect
+	endselect
+}

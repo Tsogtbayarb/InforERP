@@ -1,0 +1,157 @@
+|******************************************************************************
+|* tpisg0211m200  0  VRC B61U a7 live
+|* Sanction Control Status Update
+|* Installation user             
+|* 2014-11-03
+|******************************************************************************
+|* Form Type 4
+|******************************************************************************
+|* ID ISGECDV001135,	Sujeet Kumar		2014-11-03
+|* Sanction Status Modification from Partial Revise or Complete Revise To L4 Revise
+|* Functional: Mr. Vikas Yadav
+|*
+|* #GH174, Adarsh Pal, 11-12-2019, VRC B61U a7 isg
+|* Sanction Status Revert Changes
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttpisg011
+	table	ttpisg012
+	table	ttpisg311
+	table	ttpisg312
+	table	ttpisg317 
+	table	ttpisg318
+	
+	extern	domain	tccprj		cprj.f
+|****************************** program section ********************************
+
+|****************************** group section **********************************
+group.1:
+init.group:
+   get.screen.defaults()
+
+
+|****************************** choice section **********************************
+choice.cont.update:
+on.choice:
+	change.sanction.status(cprj.f)
+after.choice:
+	execute(end.program)
+	
+|****************************** Functions section **********************************
+functions:
+function change.sanction.status(domain	tccprj	i.cprj)
+{
+	select 	tpisg011.cprj,
+		tpisg011.vers,
+		tpisg011.reas,
+		tpisg011.acti					|#GH174.n
+	from	tpisg011 for update
+	where	tpisg011._index1 = {:i.cprj}
+	and	tpisg011.acti in (20,90,100,110,120)
+	and	tpisg011.act1 = tpisg.sanction.free
+	as set with 1 rows
+	selectdo
+		if check.transafer.from.element(tpisg011.cprj,tpisg011.vers) then
+			tpisg011.acti = tpisg.sanction.l4revise
+			tpisg011.act1 = tpisg.sanction.free
+			tpisgdll0012.Sanction_Approval_Matrix(tpisg.sanction.l4revise,tpisg011.reas)
+			
+			db.update(ttpisg011,db.retry,e)
+			commit.transaction()
+			
+			delete.data.from.tpisg311.312.317.318(tpisg011.cprj,tpisg011.vers)
+			
+			message("Status Changed To L4 Revise")
+		else
+			message("Please Ensure No Changes Done In Sanction Lines After Revise") 
+		endif
+	selectempty
+		message("Revision Type Cannot Be Changed To L4 Revise")
+	endselect
+	
+}
+function boolean check.transafer.from.element(	domain	tccprj		i.cprj,
+						domain	tcorno		i.vers	)
+{
+									|#GH174.sn
+	if tpisg011.acti = tpisg.sanction.add.red.client then
+		select 	tpisg012.ardc,tpisg012.rfpr
+		from	tpisg012 for update
+		where	tpisg012._index1 = {:i.cprj,:i.vers}
+		selectdo
+			tpisg012.rfpr = ""
+			tpisg012.ardc = 0.0
+			db.update(ttpisg012,DB.RETRY)
+		endselect
+	else if tpisg011.acti = tpisg.sanction.add.red.inter then
+		select 	tpisg012.ardi,tpisg012.rfpr
+		from	tpisg012 for update
+		where	tpisg012._index1 = {:i.cprj,:i.vers}
+		selectdo
+			tpisg012.rfpr = ""
+			tpisg012.ardi = 0.0
+			db.update(ttpisg012,DB.RETRY)
+		endselect
+	endif
+	endif
+									|#GH174.en
+	select 	tpisg012.*
+	from	tpisg012
+	where	tpisg012._index1 = {:i.cprj,:i.vers}
+| 	and	(tpisg012.stbt = tcyesno.yes 				|#GH174.o
+	and	(tpisg012.stbt = tcyesno.yes and			|#GH174.n
+| 		or	tpisg012.sbta <> 0.00				|#GH174.o
+		(	tpisg012.sbta <> 0.00				|#GH174.n			
+		or	tpisg012.ttbt <> 0.00
+		or	tpisg012.tfcy <> 0.00
+		or	tpisg012.tfcs <> 0.00
+		or	tpisg012.tfwy <> 0.00
+		or	tpisg012.tfch <> 0.00
+		or	tpisg012.rfpr <> ""
+		or	tpisg012.ardc <> 0.00
+		or	tpisg012.ardi <> 0.00
+| 		or	tpisg012.ttch <> 0.00)				|#GH174.o
+		or	tpisg012.ttch <> 0.00))				|#GH174.n
+	selectdo
+		return(false)		
+	endselect
+	return(true)
+}
+
+function delete.data.from.tpisg311.312.317.318(	domain	tccprj	i.cprj,
+						domain	tcorno	i.vers	)
+{
+	select	tpisg311.*
+	from	tpisg311 for update
+	where	tpisg311._index1 = {:i.cprj,:i.vers}
+	selectdo
+		db.delete(ttpisg311,DB.RETRY)
+		commit.transaction()
+	endselect
+	
+	select	tpisg312.*
+	from	tpisg312 for update
+	where	tpisg312._index1 = {:i.cprj,:i.vers}
+	selectdo
+		db.delete(ttpisg312,DB.RETRY)
+		commit.transaction()
+	endselect
+	
+	select	tpisg317.*
+	from	tpisg317 for update
+	where	tpisg317._index1 = {:i.cprj,:i.vers}
+	selectdo
+		db.delete(ttpisg317,DB.RETRY)
+		commit.transaction()
+	endselect
+	
+	select	tpisg318.*
+	from	tpisg318 for update
+	where	tpisg318._index1 = {:i.cprj,:i.vers}
+	selectdo
+		db.delete(ttpisg318,DB.RETRY)
+		commit.transaction()
+	endselect
+}	
+

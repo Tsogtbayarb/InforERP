@@ -1,0 +1,228 @@
+|******************************************************************************
+|* tpisg056  0  VRC B61U a7 isg 
+|* tpisg056 - DAL2
+|* merino1
+|* 19-03-13 [15:49]
+|******************************************************************************
+|* Script Type: DAL
+|******************************************************************************
+|* ISGEC01171, Prasanna Bhuyan, 13/3/2019, VRC B61U a7 isg
+|* New Development  
+|******************************************************************************
+#include <bic_dal2>
+
+	table	ttpisg055	|Cost Sheet Header
+	table	ttpisg056	|Cost Sheet Detail
+	
+		domain	tcamnt		exhd, ctcm, stcs, cons
+		domain	tcamnt		tot.ctcm,tot.tcst,tot.varc
+
+
+function extern long before.open.object.set()
+{
+	handle.field.dependencies()
+	return(0)
+}
+
+function extern long before.save.object(long type)
+{	
+	return(0)
+}
+
+function extern long after.save.object(long type)
+{
+	on case type
+	case DAL_UPDATE :
+			update.parent.element()
+			update_costsheet_header_data()
+| 			total.cost.commit()
+		break
+	endcase
+	
+	return(0)
+}
+
+function handle.field.dependencies()
+{
+	dal.field.depends.on("tpisg056.tcst", HOOK_UPDATE, "tpisg056.ctcm")
+	dal.field.depends.on("tpisg056.varc", HOOK_UPDATE,"tpisg056.tcst")
+	dal.field.depends.on("tpisg056.ctcm", HOOK_IS_READONLY,"tpisg056.stat", 
+									"tpisg056.levl")
+	dal.field.depends.on("tpisg056.rovr", HOOK_IS_READONLY,"tpisg056.stat", 
+									"tpisg056.levl")
+	dal.field.depends.on("tpisg056.rrmk", HOOK_IS_READONLY,"tpisg056.stat", 
+									"tpisg056.levl")
+	dal.field.depends.on("tpisg056.rrmk", HOOK_IS_MANDATORY,"tpisg056.rovr")
+	dal.field.depends.on("tpisg056.stmc", HOOK_IS_READONLY,"tpisg056.stat", 
+									"tpisg056.levl")
+}
+
+function extern void tpisg056.tcst.update()
+{
+	tpisg056.tcst = tpisg056.exhd + tpisg056.ctcm + tpisg056.niba
+}
+
+function extern void tpisg056.varc.update()
+{
+	tpisg056.varc = tpisg056.ritb - tpisg056.tcst
+}
+
+function extern boolean tpisg056.ctcm.is.valid(long mode)
+{
+	if tpisg056.ctcm < 0	then
+		dal.set.error.message("@ Negative value is not allowed")
+		return(DALHOOKERROR)
+	endif
+	
+	return(true)
+}
+
+function extern boolean tpisg056.ctcm.is.readonly()
+{
+	if tpisg056.levl = 2 and tpisg056.stat  <> tpstat.sent	then
+		return(false)
+	endif
+	
+	return(true)
+}
+
+function extern boolean tpisg056.rovr.is.readonly()
+{
+	if tpisg056.levl = 2 and tpisg056.stat  <> tpstat.sent	then
+		return(false)
+	endif
+	
+	return(true)
+}
+
+function extern boolean tpisg056.rrmk.is.readonly()
+{
+	if tpisg056.levl = 2 and tpisg056.stat  <> tpstat.sent	then
+		return(false)
+	endif
+	
+	return(true)
+}
+
+function extern boolean tpisg056.rrmk.is.mandatory()
+{
+	if tpisg056.rovr = "OTH" then
+		return(true)
+	endif
+	
+	return(false)
+}
+
+function extern boolean tpisg056.stmc.is.readonly()
+{
+	if tpisg056.levl = 2 and tpisg056.stat  <> tpstat.sent	then
+		return(false)
+	endif
+	
+	return(true)
+}
+
+function update_costsheet_header_data()
+{
+	select	tpisg055.*
+	from	tpisg055 for update
+	where	tpisg055._index1 = {:tpisg056.cprj, :tpisg056.revn}
+	selectdo
+		select	sum(tpisg056.exhd):exhd,
+			sum(tpisg056.ctcm):ctcm,
+			sum(tpisg056.stcs):stcs,
+			sum(tpisg056.cons):cons
+		from	tpisg056	
+		where	tpisg056._index1 = {:tpisg055.cprj, :tpisg055.revn}
+		and	tpisg056.elem not in ("C004","C018","C023","C025","C027")
+		and	tpisg056.levl = 2
+		selectdo
+		endselect
+		
+		select	tpisg056.ctcm
+		from	tpisg056
+		where	tpisg056._index1 = {:tpisg055.cprj,:tpisg055.revn,"1"}
+		selectdo
+		endselect
+		
+		
+| 		tpisg055.cinc = exhd
+		tpisg055.ctcm = tpisg056.ctcm
+| 		tpisg055.tcst = exhd + ctcm
+		tpisg055.tcst = tpisg055.cinc + tpisg055.ctcm
+| 		tpisg055.ctoh = tpisg055.ctoh - tpisg055.ctcm	
+		tpisg055.ctoh = tpisg055.cnhc - tpisg055.tcst
+| 		tpisg055.cssh = stcs - cons - tpisg055.acys
+		db.update(ttpisg055,db.retry,e)
+		commit.transaction()
+	endselect
+}
+
+
+| 	extern	domain	tcamnt		tot.ctcm,tot.tcst,tot.varc
+	
+| function total.cost.commit()
+| {
+| 	tot.ctcm = 0.00
+| 	tot.tcst = 0.00
+| 	tot.varc = 0.00
+| 	
+| 	select	sum(tpisg056.ctcm):tot.ctcm,
+| 		sum(tpisg056.tcst):tot.tcst,
+| 		sum(tpisg056.varc):tot.varc
+| 	from	tpisg056 
+| 	where	tpisg056._index1 = {:tpisg056.cprj,:tpisg056.revn}
+| 	and	tpisg056.levl = 2
+| 	selectdo
+| 		select	tpisg056.ctcm,
+| 			tpisg056.tcst,
+| 			tpisg056.varc
+| 		from	tpisg056 for update
+| 		where	tpisg056._index1 = {:tpisg056.cprj,:tpisg056.revn}
+| 		and	tpisg056.levl = 0
+| 		as set with 1 rows
+| 		selectdo
+| 			tpisg056.ctcm = tot.ctcm
+| 			tpisg056.tcst = tot.tcst 
+| 			tpisg056.varc = tot.varc
+| 			db.update(ttpisg056,db.retry,e)
+| 		endselect
+| 	selectempty
+| 		tot.ctcm = 0
+| 		tot.tcst = 0
+| 		tot.varc = 0
+| 	endselect
+| }
+
+function update.parent.element()
+{
+	domain	tcamnt	ctcm.1,tcst.1,varc.1
+	
+	ctcm.1 = 0.00
+	tcst.1 = 0.00
+	varc.1 = 0.00
+	
+	select	sum(tpisg056.ctcm):ctcm.1,
+		sum(tpisg056.tcst):tcst.1,
+		sum(tpisg056.varc):varc.1
+	from	tpisg056
+	where	tpisg056._index1 = {:tpisg056.cprj,:tpisg056.revn}
+	and	tpisg056.elem not in ("C004","C018","C023","C025","C027")
+	and	tpisg056.levl = 2
+	selectdo
+| 		db.retry.point()
+		select	tpisg056.ctcm,
+			tpisg056.tcst,
+			tpisg056.varc
+		from	tpisg056 for update
+		where	tpisg056._index1 = {:tpisg056.cprj,:tpisg056.revn}
+		and	tpisg056.elem = "1"
+		selectdo
+			tpisg056.ctcm = ctcm.1
+			tpisg056.tcst = tcst.1
+			tpisg056.varc = varc.1
+			db.update(ttpisg056,DB.RETRY)
+			commit.transaction()
+		endselect
+	endselect		
+}

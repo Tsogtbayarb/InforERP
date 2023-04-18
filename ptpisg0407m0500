@@ -1,0 +1,381 @@
+|******************************************************************************
+|* tpisg0407m050  0  VRC B61U a7 isg 
+|* Print Contingency, Contingency-S, Warranty, CTOH Details
+|* merino1                       
+|* 2019-04-23
+|******************************************************************************
+|* Main table tpisg007 Sanction Control History, Form Type 4
+|******************************************************************************
+|* ID: ISGEC002025, Arun Chauhan, Date - 23-04-2019,
+|* Onsite New Development
+|*
+|* #Adarsh.16.07.2019, Adarsh Pal, 16-07-2019, VRC B61U a7 isg
+|* New logic for Contingency-S Generated
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttpisg007			|Sanction Control History
+	table	ttpisg008 			|Sanction Control History Lines
+	table	ttppdm740
+	table	ttppdm600
+	table	ttccom100
+	table	ttcemm030
+	table	ttcmcs052
+	table	ttpisg012
+	table	ttpisg011
+	table	ttpisg082
+
+	extern	domain	tccprj		cprj.f    
+	extern	domain	tccprj		cprj.t    
+	extern	domain	tcdate		apdt.f   	
+	extern	domain	tcdate		apdt.t
+
+		domain	tcamnt		o.s.sbta, o.sbta,
+					o.s.tfcy, o.s.tfcs,
+					o.s.tfwy, o.s.tfch,
+					o.tfcy, o.tfcs, 
+					o.tfwy, o.tfch
+					
+	extern  domain	tcamnt		tfcy,tfcs,tfwy,tfch,
+					sbta,sum.tfcs,sum.tfwy,
+					sum.tfcy,sum.tfch,
+					sum.sbta,contingency,s.contingency,
+| 					warranty,v.ctoh,t.tpisg012.totl						|#Adarsh.16.07.2019.o		
+					warranty,v.ctoh,t.tpisg012.totl,cont.amnt				|#Adarsh.16.07.2019.n		
+
+	extern 	domain	tccprj		v.cprj 
+	extern 	domain	tccom.bpid	v.ofbp
+	extern 	domain	tcnama		v.nama
+	extern 	domain	tcncmp		v.ncmp
+	extern 	domain	tcdsca		proj.dsca,comp.dsca
+		domain	tcpono		flag
+
+|****************************** program section ********************************
+
+|****************************** group section **********************************
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+choice.cont.process:
+on.choice:
+   execute(print.data)
+
+choice.print.data:
+on.choice:
+   if rprt_open() then
+       read.main.table()
+       rprt_close()
+   else
+       choice.again()
+   endif
+
+|****************************** field section *********************************
+field.cprj.f:
+when.field.changes:
+   cprj.t = cprj.f
+
+field.apdt.f:
+when.field.changes:
+   apdt.t = apdt.f
+
+|****************************** function section ******************************
+functions:
+function read.main.table()
+{
+	domain	tccprj		old.cprj
+	domain	tcorno		old.vers
+	
+	flag  = 0
+	old.cprj = ""
+	old.vers = ""
+	cont.amnt = 0								|#Adarsh.16.07.2019.n
+	
+	select	tpisg007.*,
+		tppdm600.ncmp,
+		tcemm030.dsca,
+		tcmcs052.dsca
+	from	tpisg007,tcmcs052,tppdm600,tcemm030
+	where	tpisg007._index1 inrange {:cprj.f} and {:cprj.t}
+	and 	tpisg007.apdt inrange {:apdt.f} and {:apdt.t} 
+	and	tpisg007.cprj refers to tcmcs052
+	and 	tppdm600._index1 = {tpisg007.cprj}
+	and 	tppdm600.ncmp = tcemm030.fcmp
+	order by tpisg007._index1
+	selectdo
+										|#Adarsh.16.07.2019.sn
+		if old.cprj <> tpisg007.cprj then
+			
+			if flag  = 1 then
+				rprt_send()
+				initialize_var.after.rprt_send()
+			endif
+										
+			flag  = 1				
+			old.cprj = tpisg007.cprj
+			old.vers = tpisg007.vers
+										|#Adarsh.16.07.2019.en
+			select	tpisg008.*
+			from	tpisg008
+			where	tpisg008._index1 = {:old.cprj,:old.vers}
+			as set with 1 rows
+			selectdo
+				sum.sbta = 0
+				sum.tfcy = 0
+				sum.tfcs = 0
+				sum.tfwy = 0
+				sum.tfch = 0
+				
+				get_transferred_from_amount(	tpisg008.cprj,
+								tpisg008.vers,
+								sum.sbta,
+								sum.tfcy,
+								sum.tfcs,
+								sum.tfwy,
+								sum.tfch	)
+				sbta = sbta + sum.sbta
+				tfcy = tfcy + sum.tfcy
+				tfcs = tfcs + sum.tfcs
+				tfwy = tfwy + sum.tfwy
+				tfch = tfch + sum.tfch
+			endselect
+										|#Adarsh.16.07.2019.so
+| 		if old.cprj <> tpisg007.cprj  then
+| 			old.cprj = tpisg007.cprj
+										|#Adarsh.16.07.2019.eo
+										|#Adarsh.16.07.2019.sn
+			select	sum(tpisg112.amnt):cont.amnt
+			from	tpisg112
+			where	tpisg112._index1 = {:old.cprj}
+			and	tpisg112.date inrange {:apdt.f} and {:apdt.t}
+			selectdo
+			selectempty
+				cont.amnt = 0
+			endselect
+
+			select	sum(aa_tpisg012.sbta):o.s.sbta,
+				sum(aa_tpisg012.tfcy):o.s.tfcy,
+				sum(aa_tpisg012.tfcs):o.s.tfcs,
+				sum(aa_tpisg012.tfwy):o.s.tfwy,
+				sum(aa_tpisg012.tfch):o.s.tfch
+			from	tpisg012	aa_tpisg012  
+			where	aa_tpisg012._index1 = {:old.cprj}
+			selectdo
+			selectempty
+				o.s.sbta = 0
+				o.s.tfcy = 0
+				o.s.tfcs = 0
+				o.s.tfwy = 0
+				o.s.tfch = 0
+			endselect
+			
+			sbta = sbta + o.s.sbta
+			tfcy = tfcy + o.s.tfcy
+			tfcs = tfcs + o.s.tfcs
+			tfwy = tfwy + o.s.tfwy
+			tfch = tfch + o.s.tfch		
+										|#Adarsh.16.07.2019.en
+			get.balance(old.cprj)
+										|#Adarsh.16.07.2019.so			
+| 			if flag  = 1 then
+| 				rprt_send()
+| 				initialize_var.after.rprt_send()
+| 			endif
+| 										
+| 			flag  = 1	
+										|#Adarsh.16.07.2019.eo
+			v.ofbp = tppdm740.ofbp
+			v.nama = tccom100.nama
+			v.cprj = tpisg007.cprj
+			proj.dsca = tcmcs052.dsca
+			v.ncmp = tppdm600.ncmp
+			comp.dsca = tcemm030.dsca
+			
+		else
+			old.cprj = tpisg007.cprj
+										|#Adarsh.16.07.2019.sn
+			old.vers = tpisg007.vers
+			
+			select	tpisg008.*
+			from	tpisg008
+			where	tpisg008._index1 = {:old.cprj,:old.vers}
+			as set with 1 rows
+			selectdo
+				sum.sbta = 0
+				sum.tfcy = 0
+				sum.tfcs = 0
+				sum.tfwy = 0
+				sum.tfch = 0
+				
+				get_transferred_from_amount(	tpisg008.cprj,
+								tpisg008.vers,
+								sum.sbta,
+								sum.tfcy,
+								sum.tfcs,
+								sum.tfwy,
+								sum.tfch	)
+				sbta = sbta + sum.sbta
+				tfcy = tfcy + sum.tfcy
+				tfcs = tfcs + sum.tfcs
+				tfwy = tfwy + sum.tfwy
+				tfch = tfch + sum.tfch
+			endselect
+										|#Adarsh.16.07.2019.en
+		endif
+	selecteos
+| 		get.balance(tpisg007.cprj)					|#Adarsh.16.07.2019.o
+		rprt_send()
+		initialize_var.after.rprt_send()
+	selectempty
+		tppdm600.ncmp = 0
+		tcemm030.dsca = ""
+		tcmcs052.dsca = ""
+	endselect
+}
+
+function get_transferred_from_amount(
+						domain	tccprj		i.cprj,
+						domain	tcorno		i.vres,			
+					ref 	domain	tcamnt		o.sbta,
+					ref	domain	tcamnt		o.tfcy,
+					ref	domain	tcamnt		o.tfcs,
+					ref	domain	tcamnt		o.tfwy,
+					ref	domain	tcamnt		o.tfch
+										)
+{
+	initialize_var()
+
+	select	sum(aa_tpisg008.sbta):o.sbta,
+		sum(aa_tpisg008.tfcy):o.tfcy,
+	 	sum(aa_tpisg008.tfcs):o.tfcs,
+	 	sum(aa_tpisg008.tfwy):o.tfwy,
+	 	sum(aa_tpisg008.tfch):o.tfch
+	from	tpisg008	aa_tpisg008
+	where	aa_tpisg008._index1 = {:i.cprj,:i.vres}									
+	selectdo
+	selectempty
+		o.sbta = 0
+		o.tfcy = 0
+		o.tfcs = 0
+		o.tfwy = 0
+		o.tfch = 0
+	endselect
+}
+
+function get.balance(domain tccprj i.cprj)
+{
+	contingency = 0
+	s.contingency = 0
+	warranty = 0
+	v.ctoh = 0
+	
+	select	tpisg012.avai,
+		tpisg012.elem
+	from	tpisg012
+	where	tpisg012._index1 = {:i.cprj}
+	and 	tpisg012.elem in ("99100000","99180000","99110000")
+	selectdo
+		on case	(tpisg012.elem)
+		case "99100000":
+			contingency = contingency + tpisg012.avai
+			break
+		case "99180000":
+			s.contingency = s.contingency + tpisg012.avai
+			break
+		case "99110000":
+			warranty = warranty + tpisg012.avai 
+			break
+		endcase
+	endselect
+	
+	select	tppdm740.ofbp,
+		tccom100.nama,
+		tppdm740.copr,
+		tppdm740.rate
+	from	tppdm740,tccom100
+	where	tppdm740._index1 = {:i.cprj}
+	and 	tppdm740.ofbp refers to tccom100 UNREF CLEAR
+	as set with 1 rows
+	selectdo
+	selectempty
+		tppdm740.ofbp = ""
+		tccom100.nama = ""
+	endselect
+	
+	select 	bb_tpisg012.totl:t.tpisg012.totl
+	from	tpisg012	bb_tpisg012
+	where	bb_tpisg012._index1 = {:tpisg007.cprj}
+	and	bb_tpisg012.levl = 0
+	as set with 1 rows
+	selectdo
+	selectempty
+		t.tpisg012.totl = 0
+	endselect
+							
+	select	tpisg082.totl
+	from	tpisg082
+	where	tpisg082._index1 = {:tpisg007.cprj}
+	and	tpisg082.parn = ""
+	as set with 1 rows
+	selectdo
+	selectempty
+		tpisg082.totl = 0
+	endselect
+
+	v.ctoh = (tppdm740.rate(1) * tppdm740.copr) + tpisg082.totl - t.tpisg012.totl
+	
+| 	if flag  = 1 then								|#Adarsh.16.07.2019.so
+| 		select	sum(aa_tpisg012.sbta):o.s.sbta,
+| 			sum(aa_tpisg012.tfcy):o.s.tfcy,
+| 			sum(aa_tpisg012.tfcs):o.s.tfcs,
+| 			sum(aa_tpisg012.tfwy):o.s.tfwy,
+| 			sum(aa_tpisg012.tfch):o.s.tfch
+| 		from	tpisg012	aa_tpisg012  
+| 		where	aa_tpisg012._index1 = {:i.cprj}
+| 		selectdo
+| 		selectempty
+| 			o.s.sbta = 0
+| 			o.s.tfcy = 0
+| 			o.s.tfcs = 0
+| 			o.s.tfwy = 0
+| 			o.s.tfch = 0
+| 		endselect
+| 		
+| 		sbta = sbta + o.s.sbta
+| 		tfcy = tfcy + o.s.tfcy
+| 		tfcs = tfcs + o.s.tfcs
+| 		tfwy = tfwy + o.s.tfwy
+| 		tfch = tfch + o.s.tfch
+| 	endif										#Adarsh.16.07.2019.eo
+}
+
+function initialize_var()
+{
+	o.sbta = 0
+	o.tfcy = 0
+	o.tfcs = 0
+	o.tfwy = 0
+	o.tfch = 0
+}
+
+function initialize_var.after.rprt_send()
+{
+	sbta = 0
+	tfcy = 0
+	tfcs = 0
+	tfwy = 0
+	tfch = 0
+	v.cprj = ""
+	v.ofbp = ""
+	v.nama = ""
+	v.ncmp = 0
+	proj.dsca = ""
+	comp.dsca = ""
+	o.s.sbta = 0
+	o.s.tfcy = 0
+	o.s.tfcs = 0
+	o.s.tfwy = 0
+	o.s.tfch = 0
+	cont.amnt = 0									|#Adarsh.16.07.2019.n
+}

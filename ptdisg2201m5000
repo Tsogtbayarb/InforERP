@@ -1,0 +1,391 @@
+|******************************************************************************
+|* tdisg2201m500  0  VRC B61U a7 isg 
+|* Update Requisition Lines
+|* merino1                       
+|* 2017-11-28
+|******************************************************************************
+|* Main table tdpur201 Purchase Requisition Lines, Form Type 4
+|******************************************************************************
+|*
+|* #Adarsh.25.07.19, Adarsh Pal, 25-07-2019, VRC B61U a7 isg
+|* Additional Logic for Log Update     
+|*
+|* #Adarsh.29.07.19, Adarsh Pal, 29-07-2019, VRC B61U a7 isg
+|* Additional Mail Content logic   
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttdpur201			|Purchase Requisition Lines
+	table	ttdpur200
+	table	ttdpur202
+	table	ttdpur402
+	table	ttdisg003
+	table	ttcisg004
+	table	ttcisg005
+	table	ttdisg118			|#Adarsh.25.07.19.n
+
+	extern	domain	tcpono		pono.f, pono.t
+	extern	domain	tcrqno		rqno.f, rqno.t
+	
+	string	tmp.file(100)
+	long	fp,ret
+	
+#include<bic_cmf>
+#pragma used dll otdpurdll2001
+
+|****************************** program section ********************************
+
+|****************************** group section **********************************
+group.1:
+init.group:
+	get.screen.defaults()
+
+|****************************** field section **********************************
+field.rqno.f:
+when.field.changes:
+	rqno.t = rqno.f
+	
+field.pono.f:
+when.field.changes:
+	pono.t = pono.f	
+	
+|****************************** choice section *********************************
+choice.update.rqno:
+before.choice:
+	if isspace(rqno.f) then
+		message("Please Enter Requisition No.")
+		choice.again()
+	endif
+	
+	if requisition.line.converted() then
+		message("Line Already Converted....")
+		choice.again()
+	endif
+	
+	select	tdpur402.orno
+	from	tdpur402
+	where	tdpur402._index9 = {:rqno.f, :pono.f}
+	as set with 1 rows
+	selectdo
+		message("PO %s is Linked With Indent...", tdpur402.orno)
+		choice.again()
+	endselect
+	
+	select	tdpur201.*
+	from	tdpur201 
+	where	tdpur201._index1 = {:rqno.f, :pono.f}
+	selectdo
+	selectempty
+		db.set.to.default(ttdpur201)
+		message("Invalid Requisition/Line....")
+		choice.again()
+	endselect
+
+on.choice:
+	select	tdisg003.item, tdisg003.slct, tdisg003.stat 
+	from	tdisg003 for update
+	where	tdisg003._index1 = {:tdpur201.rqno, :tdpur201.pono}
+	and	tdisg003.stat = tcyesno.yes
+	selectdo
+		select	tcisg004.indt
+		from	tcisg004 for update
+		where	tcisg004._index1 = {
+					:tdpur201.cprj,
+					:tdpur201.cspa,
+					:tdpur201.item,
+					:tdisg003.item
+					}
+		selectdo
+			tcisg004.indt = tcyesno.no
+			db.update(ttcisg004, db.retry, e)
+		endselect
+		
+		select	tcisg005.*
+		from	tcisg005 for update
+		where	tcisg005._index1 = {
+					:tdpur201.cprj,
+					:tdpur201.cspa,
+					:tdpur201.item,
+					:tdisg003.item
+					}
+		selectdo
+			db.delete(ttcisg005, db.retry, e)
+		endselect
+		
+		tdisg003.slct = tcyesno.no
+		tdisg003.stat = tcyesno.no
+		db.update(ttdisg003, db.retry, e)
+		commit.transaction()
+	endselect	
+	
+	select	tdpur201.*
+	from	tdpur201 for update
+	where	tdpur201._index1 = {:tdpur201.rqno, :tdpur201.pono}
+	selectdo
+		tdpur201.rejc = tcyesno.yes
+		tdpur201.pric = 0.00
+		tdpur201.oamt = 0.00
+		
+		db.update(ttdpur201, db.retry, e)
+		if e = 0 then
+			commit.transaction()
+		else
+			abort.transaction()
+		endif
+	endselect
+	send.email.alert()
+									|#Adarsh.25.07.19.sn
+	update.log(tdpur201.rqno,tdpur201.pono,tdpur201.cprj,tdpur201.cspa)								
+									|#Adarsh.25.07.19.en
+|****************************** function section *******************************
+
+functions:
+
+function boolean requisition.line.converted()			
+{
+	tdpur.dll2001.read.requisition.line.linked.data(rqno.f, pono.f)
+	
+	if	not isspace(tdpur202.prno) or
+		not isspace(tdpur202.qono) then
+		
+		return(true)
+	endif
+	return(false)
+}	
+	
+function send.email.alert()
+{
+	domain	tcmail		remn.mail
+	domain	tcmail		ccon.mail
+	domain	tcmcs.str132	division_email
+	
+	remn.mail = ""
+	ccon.mail = ""
+	tmp.file = ""
+	fp = 0
+	ret = 0
+		
+	select	tdpur200.remn,tdpur200.ccon, tdpur200.cofc
+	from	tdpur200
+	where	tdpur200._index1 = {:rqno.f}
+	selectdo
+		select	bpmdm001.mail:remn.mail
+		from	bpmdm001
+		where	bpmdm001._index1 = {:tdpur200.remn}
+		selectdo
+		endselect
+		
+		select	bpmdm001.mail:ccon.mail
+		from	bpmdm001
+		where	bpmdm001._index1 = {:tdpur200.ccon}
+		selectdo
+		endselect
+	endselect
+	
+	create.temp.file()
+	
+	on case tdpur200.cofc 							|veena.sn 22-0602019
+	case "PUR200": division_email = "Indentreturn.boiler@isgec.co.in"
+		break
+	case "PUR230": division_email = "Indentreturn.smd@isgec.co.in"
+		break
+	case "PUR210": division_email = "Indentreturn.epc@isgec.co.in"
+		break
+	case "PUR240": division_email = "Indentreturn.apce@isgec.co.in"
+		break
+	case "PUR220": division_email = "Indentreturn.pc@isgec.co.in"
+		break
+	case "PUR700": division_email = "Indentreturn.redecam@isgec.co.in"
+		break
+	case "PUR250": division_email = "Indentreturn.fgd@isgec.co.in"
+		break
+	endcase									|veena.en 22-0602019
+
+| 	send.email("baansupport@isgec.co.in",trim$(remn.mail),trim$(ccon.mail),"Indent " & rqno.f & " Line " & str$(pono.f) & " is rejected",tmp.file, division_email)
+	send.email("baansupport@isgec.co.in","adarsh.pal@isgec.co.in","","Indent " & rqno.f & " Line " & str$(pono.f) & " is rejected",tmp.file,division_email)
+}		
+
+function create.temp.file()
+{
+														|#Adarsh.29.07.19.sn
+	domain	tcdsca		cprj.dsca
+	domain	tppdm.dscl 	cspa.desc
+	
+	cprj.dsca = ""
+	cspa.desc = ""
+														|#Adarsh.29.07.19.en
+	tmp.file = creat.tmp.file$( bse.tmp.dir$())
+	tmp.file = trim$(tmp.file) & ".html"									|#Adarsh.29.07.19.n
+	
+	fp = seq.open(tmp.file,"w")
+	
+	if fp >= 1 then
+														|#Adarsh.29.07.19.sn
+		ret = seq.puts("<html>",fp)												
+		ret = seq.puts("<body>",fp)
+														|#Adarsh.29.07.19.en
+| 		ret = seq.puts("Indent " & rqno.f & " Line " & str$(pono.f) & " is rejected",fp)		|#Adarsh.29.07.19.o
+		ret = seq.puts("<p>Indent " & rqno.f & " Line " & str$(pono.f) & " is rejected</p>",fp)		|#Adarsh.29.07.19.n
+| 		ret = seq.puts("",fp)										|#Adarsh.29.07.19.o
+		ret = seq.puts("<p></p>",fp)									|#Adarsh.29.07.19.n
+| 		ret = seq.puts("",fp)										|#Adarsh.29.07.19.o
+		ret = seq.puts("<p></p>",fp)									|#Adarsh.29.07.19.n
+														|#Adarsh.29.07.19.sn
+		ret = seq.puts("<style>table, th, td {border: 1px solid black;border-collapse: collapse;}</style>",fp)												
+		ret = seq.puts("<table style= ""width:300%"">",fp)												
+| 		ret = seq.puts("<tr>",fp)												
+| 		ret = seq.puts("<td colspan = ""3"" nowrap style = ""font-size:16"" ""border-collapse:collapse"">",fp)												
+| 		ret = seq.puts("</tr>",fp)												
+| 		ret = seq.puts("</table>",fp)												
+| 		ret = seq.puts("<table>",fp)												
+		ret = seq.puts("<tr>",fp)
+			
+		ret = seq.puts("<th align = ""center"" bgcolor = ""yellow"" style = ""border:3px solid black""> <b>Line</b>",fp)		|1
+		ret = seq.puts("<th align = ""center"" bgcolor = ""yellow"" style = ""border:3px solid black""> <b>Project</b>",fp)		|2
+		ret = seq.puts("<th align = ""center"" bgcolor = ""yellow"" style = ""border:3px solid black""> <b>Project Description</b>",fp)	|3
+		ret = seq.puts("<th align = ""center"" bgcolor = ""yellow"" style = ""border:3px solid black""> <b>Element</b>",fp)		|4
+		ret = seq.puts("<th align = ""center"" bgcolor = ""yellow"" style = ""border:3px solid black""> <b>Element Description</b>",fp)	|5
+		ret = seq.puts("<th align = ""center"" bgcolor = ""yellow"" style = ""border:3px solid black""> <b>Item</b>",fp)		|6	
+		ret = seq.puts("<th align = ""center"" bgcolor = ""yellow"" style = ""border:3px solid black""> <b>Item Description</b>",fp)	|7	
+		ret = seq.puts("<th align = ""center"" bgcolor = ""yellow"" style = ""border:3px solid black""> <b>Quantity</b>",fp)		|8	
+		ret = seq.puts("<th align = ""center"" bgcolor = ""yellow"" style = ""border:3px solid black""> <b>Unit</b>",fp)		|9	
+		ret = seq.puts("<th align = ""center"" bgcolor = ""yellow"" style = ""border:3px solid black""> <b>Amount</b>",fp)		|10
+		
+		ret = seq.puts("<tr>",fp)
+		
+		select	tcmcs052.dsca:cprj.dsca
+		from	tcmcs052
+		where	tcmcs052._index1 = {:tdpur201.cprj}
+		selectdo
+		selectempty
+			cprj.dsca = ""
+		endselect
+		
+		select	tppdm090.desc:cspa.desc
+		from	tppdm090
+		where	tppdm090._index1 = {:tdpur201.cspa}
+		selectdo
+		selectempty
+			cspa.desc = ""
+		endselect
+		
+		ret = seq.puts("<td align = ""center"" color = ""red"" style = ""border:2px solid black"">" & str$(tdpur201.pono),fp)					|1
+		ret = seq.puts("<td align = ""center"" color = ""red"" style = ""border:2px solid black"">" & trim$(tdpur201.cprj),fp)					|2
+		ret = seq.puts("<td align = ""center"" color = ""red"" style = ""border:2px solid black"">" & trim$(cprj.dsca),fp)					|2
+		ret = seq.puts("<td align = ""center"" color = ""red"" style = ""border:2px solid black"">" & trim$(tdpur201.cspa),fp)					|4
+		ret = seq.puts("<td align = ""center"" color = ""red"" style = ""border:2px solid black"">" & trim$(cspa.desc),fp)					|5
+		ret = seq.puts("<td align = ""center"" color = ""red"" style = ""border:2px solid black"">" & trim$(tdpur201.item),fp)					|6
+		ret = seq.puts("<td align = ""center"" color = ""red"" style = ""border:2px solid black"">" & trim$(tdpur201.nids),fp)					|7
+		ret = seq.puts("<td align = ""center"" color = ""red"" style = ""border:2px solid black"">" & str$(tdpur201.qoor),fp)					|8
+		ret = seq.puts("<td align = ""center"" color = ""red"" style = ""border:2px solid black"">" & trim$(tdpur201.cuqp),fp)					|9
+		ret = seq.puts("<td align = ""center"" color = ""red"" style = ""border:2px solid black"">" & str$(tdpur201.oamt),fp)					|10
+			
+		ret = seq.puts("</tr>",fp)
+		ret = seq.puts("</table>",fp)
+														|#Adarsh.29.07.19.en
+		ret = seq.puts("<p>This is an auto-generated mail from ERP LN, please do not reply!</p>",fp)
+														|#Adarsh.29.07.19.sn
+		ret = seq.puts("</body>",fp)
+		ret = seq.puts("</html>",fp)												
+														|#Adarsh.29.07.19.en
+	endif
+	ret = seq.close(fp)
+}
+
+function extern send.email(	
+				domain tcmcs.str132	email.from,
+				domain tcmcs.str132	email.to,
+				domain tcmcs.str132	email.cc,
+				domain tcmcs.str132	email.subj,
+				domain tcmcs.str100	email.body,
+				domain tcmcs.str132	division_emailid
+									)
+{
+	domain	ttcmf.prov	service
+	
+	long ret,stat
+	long message.id,from.id,to.id,cc.id,body.id
+	
+	service = "SMTP"
+	ret = 0
+	stat = 0
+	message.id = 0
+	from.id = 0
+	to.id = 0
+	cc.id = 0
+	body.id = 0
+	
+	message.id = cmf.create()
+	ret = cmf.setclass(message.id, "CMF.NOTE.EMAIL")
+	if not isspace(email.subj) then	
+		ret = cmf.setsubject(message.id,email.subj)
+	endif
+	if not isspace(email.from) then							
+	from.Id = cmf.createrecipient(message.id,ttcmf.role.from)
+| 	ret = cmf.setrecipientname(from.id,"Baan Support Alert")
+	ret = cmf.setrecipientaddress(from.id,email.from)
+	ret = cmf.setrecipienttype(from.id,"SMTP")
+	endif	
+	if not isspace(email.to) then						
+	to.Id = cmf.createrecipient(message.id,ttcmf.role.to)
+| 	ret = cmf.setrecipientname(to.id,"Requester")
+	ret = cmf.setrecipientaddress(to.id,email.to)
+	ret = cmf.setrecipienttype(to.id,"SMTP")
+	ret = cmf.setrecipientresponsibility(to.id,"TRUE")
+	endif	
+	if not isspace(email.cc) then						
+	cc.Id = cmf.createrecipient(message.id,ttcmf.role.cc)
+| 	ret = cmf.setrecipientname(cc.id,"Buyer")
+	ret = cmf.setrecipientaddress(cc.id,email.cc)
+	ret = cmf.setrecipienttype(cc.id,"SMTP")
+	ret = cmf.setrecipientresponsibility(cc.id,"TRUE")
+	endif	
+	cc.Id = cmf.createrecipient(message.id,ttcmf.role.cc)
+| 	ret = cmf.setrecipientname(cc.id,"Buyer")
+	ret = cmf.setrecipientaddress(cc.id,"baansupport@isgec.co.in")
+	ret = cmf.setrecipienttype(cc.id,"SMTP")
+	ret = cmf.setrecipientresponsibility(cc.id,"TRUE")
+	
+	
+	cc.Id = cmf.createrecipient(message.id,ttcmf.role.cc)		|veena.sn 22-0602019
+	ret = cmf.setrecipientaddress(cc.id,division_emailid)
+	ret = cmf.setrecipienttype(cc.id,"SMTP")
+	ret = cmf.setrecipientresponsibility(cc.id,"TRUE")		|veena.en 22-0602019
+	
+	body.id = cmf.createattachment(message.id)
+	ret = cmf.setattachmentbody(body.id,ttyeno.yes)
+| 	ret = cmf.setattachmentmime(body.id,"text/plain")		|#Adarsh.29.07.19.o		
+	ret = cmf.setattachmentmime(body.id,"text/html")		|#Adarsh.29.07.19.n		
+	ret = cmf.setattachmentfilename(body.id,email.body)
+	
+	stat = cmf.startservice(service,2)
+	stat = cmf.send(message.id,service)
+	stat = cmf.stopservice(service,2)				 		
+}
+									|#Adarsh.25.07.19.sn
+function update.log(	domain	tcrqno	i.rqno,
+			domain	tcpono	i.pono,
+			domain	tccprj	i.cprj,
+			domain	tccspa	i.cspa	)
+{
+	domain	tcdate	curr.date
+	
+	curr.date = utc.num()
+	
+	select	tdisg118.*
+	from	tdisg118
+	where	tdisg118._index1 = {:i.rqno,:i.pono,:curr.date}
+	selectdo
+	selectempty
+		tdisg118.rqno = i.rqno
+		tdisg118.pono = i.pono
+		tdisg118.rejo = curr.date
+		tdisg118.rejb = logname$
+		tdisg118.cprj = i.cprj
+		tdisg118.cspa = i.cspa
+		tdisg118.sess = prog.name$
+		db.insert(ttdisg118,DB.RETRY)
+		commit.transaction()
+	endselect
+}			
+									|#Adarsh.25.07.19.en

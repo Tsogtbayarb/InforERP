@@ -1,0 +1,2299 @@
+|******************************************************************************
+|* tpisg0111  0  VRC B61U a7 live
+|* Sanction Control
+|* Tools                         
+|* 2014-02-25
+|******************************************************************************
+|* Main table tpisg011 Sanction Control, Form Type 1
+|******************************************************************************
+|* ESSP INCIDENT - 3823,	Sujeet Kumar,	2014-06-05                                                                                
+|*
+|* ID ISGEC001131,	Sujeet Kumar		2014-11-24
+|* Server: .139
+|* Contract Amount field is added, when the Sanction is Launched.
+|* Initial Contribution Amount is Added.
+|* Functional: Mr. Vikas Yadav
+|*
+|* |* ISGEC004001, Dharmendra, 08-01-2-15,B61U a7 isg
+
+|* ISGEC01069, Gokul Chaurasia, 26/02/2015, VRC B61U a7 isg
+|* This tpisg061 duplicated to tpisg091
+|*
+|* PATCH001002, Dharmendra, 11-03-2015
+|*
+|* ISGEC004018, Dharmendra, 10-04-2015
+|
+|* ISGEC015063, Shilpa Janardanan, 23-09-2015
+|* 
+| ****************************************************************************
+| ISEGC01142, GAURAV GUPTA, IT0304, 23-11-2015
+| MODIFICATION FOR AUTO TRANSFER IN CONTIGENCY ELEMENT
+|*
+| ISEGC002019, Abhishek Singh, IT0352, 06-01-2016
+| MODIFICATION IN SAVING TRANSFER
+| ADD FORM COMMAND ADD CONTINGENCY
+|
+|* ID ISGEC016002, Ankit Sharma, 23-06-2016, VRC B61U a7 live
+|* Added checks for new field added in table tpisg011
+|*
+|* ID ISGEC016025, Manish Manchanda, 2016-10-04
+|* Modificatons - check of child element added before send to approval process
+|*
+|* GSTLIVE01013, IT0386, Saurabh Dubey, 18 October 2017, VRC B61U a7 isg
+|* Modifications for Sanction History
+|*
+|* ID: ISGEC01183, Prasanna Bhuyan, 30/3/2019, VRC B61U a7 isg
+|* Removed Form Command "Complete Revise" and Commented Code Related to it
+|* Added a New Form Command "Contingency-S Revise" and Logics Related to it
+|*
+|* ISGEC002025, Arun Chauhan, 09/04/2019,VRC B61U a7 isg
+|* Onsite Modification - Add A logic Oteration Management 
+|* Added a new form command 'Addition/Reduction due to Client' and a new field also
+|* Added a new form command 'Addition/Reduction due to Internal Reasons' and a new field also
+|* 
+|* Adarsh Pal, 25-05-19 , VRC B61U a7 isg
+|* Logic addition for Addition/Reduction due to Client and Addition/Reduction due to Internal Reasons
+|*
+|* ISGEC019008, Manish Manchanda, 2019-07-22
+|* Modifications - new form command added in specific
+|* 
+|* GH214CR000, RAvi Kumar, 22-11-2019
+|*  IR-133320- "Transfer to Supply Element from Freight", role matrix not working
+|****************************** declaration section ***************************
+declaration:
+
+table   ttpisg011 | Sanction Control
+table	ttpisg012
+
+table	ttpisg007
+table	ttpisg008
+table	ttppdm740
+
+table	ttpisg100		|#ISGEC001131.n
+| table	ttpisg061		|#ISGEC004001.n - old
+
+| table	ttpisg091		|#ISGEC01069.n - new
+table	ttpisg082		|# ISGEC004018.n
+								|ISEGC01142.SN
+table	ttpisg063
+table	ttpisg012
+table	ttcisg004
+table	ttdisg002
+table	ttpisg112
+table	ttpptc100
+table	ttpptc101						|#ISGEC016025.n
+								|ISEGC01142.EN
+table	ttpisg317
+table	ttpisg318
+table	ttpisg311
+table	ttpisg312
+
+string record.buff(1) MB BASED
+
+extern	 domain tcpric old.ver,version
+long ret,po.found
+
+extern	domain	tppdm.aalc	contract.amnt,contract.hc.amnt,contingency.amnt
+extern	domain	tcccur		contract.ccur,com.ccur
+domain	tcncmp			curr.comp
+#include<bic_dam>
+#include<bic_desktop>
+
+
+								|#3823.sn
+	domain	tpisg.sanction		next_act1	
+	domain	tcccty			o.reas
+	extern	domain	tccdis		sanction.reas
+	extern	domain	tfgld.date	current.date		|# PATCH001002.n	
+	extern	domain	tcratc		exrt.f
+	
+	
+	extern	domain	tppdm.aalc	ini.contingency		|#ISGEC001131.n
+									|ISEGC01142.SN
+	extern	domain	tccprj	cprj.v
+	extern	domain	tcorno	vers.v
+									|ISEGC01142.EN
+									
+	string	err.messg.catg(1000)
+	long i								|#ISGEC016002.sn
+	domain	tcmcs.st150m		str				|#ISGEC016002.en
+	domain	tppdm.cspa	v.elem					|#ISGEC016025.n
+	domain	tcamnt	sum.h.tfch, sum.c.tfch				|#ISGEC01183.n
+	
+	extern domain	tcamnt		client.ctoh,internal.ctoh
+	extern domain	tcccur		aaaa,bbbb,cccc,dddd
+	extern domain	tcamnt		icam,icaf,totl.bug
+	
+	
+
+|****************************** program section ********************************
+
+before.display.object:
+	set.enum.values.for.field("tpisg011.act1",	tpisg.sanction.free,
+							tpisg.sanction.approval,
+							tpisg.sanction.approved)
+
+								|#3823.en
+								|ISEGC01142.SN
+								
+	if not check.for.s.contigency(tpisg011.cprj,tpisg011.vers) then		|ISEGC002019.sn
+		enable.commands("add.contingency")
+	else
+		disable.commands("add.contingency")
+	endif										|ISEGC002019.en
+| before.program:
+| 	import("tpisg011.cprj", cprj.v)
+| 	import("tpisg011.vers", vers.v)
+| 	
+| 	if not isspace(cprj.v) then
+| 		contigency.element.transfer(cprj.v,
+| 					vers.v)
+| 	endif
+								|ISEGC01142.EN
+|****************************** group section **********************************
+group.2:
+init.group:
+ret = create.extra.toolbar(
+		"sanction.attachment",	"tcgen:activate")
+|****************************** field section **********************************
+field.tpisg011.reas:
+after.field:
+	select	tppdm740.copr:contract.amnt,
+		tppdm740.ccur:com.ccur,
+		tppdm740.rate
+	from	tppdm740
+	where	tppdm740._index1 = {:tpisg011.cprj}
+	as set with 1 rows
+	selectdo
+	endselect
+	
+	curr.comp = get.compnr()
+	
+	select 	tcemm170.fcua:contract.ccur
+	from	tcemm170
+	where	tcemm170._index1 = {:curr.comp}
+	as set with 1 rows
+	selectdo
+	endselect
+	
+	contract.hc.amnt =  tppdm740.rate(1) * contract.amnt
+	
+	select 	tpisg012.totl
+	from	tpisg012
+	where	tpisg012._index1 = {:tpisg011.cprj,:tpisg011.vers}
+	and	tpisg012.levl = 0
+	as set with 1 rows
+	selectdo
+	selectempty
+		tpisg012.totl = 0
+	endselect
+							|# ISGEC004018.sn
+	select	tpisg082.totl
+	from	tpisg082
+	where	tpisg082._index1 = {:tpisg011.cprj}
+	and	tpisg082.parn = ""
+	selectdo
+	selectempty
+		tpisg082.totl = 0
+	endselect
+
+	select	tpisg082.budg
+	from	tpisg082
+	where	tpisg082._index1 = {:tpisg011.cprj}
+	and	tpisg082.parn = ""
+	selectdo
+	selectempty
+		tpisg082.budg = 0
+	endselect
+							|# ISGEC004018.en
+| 	contingency.amnt = contract.hc.amnt - tpisg012.totl		|# ISGEC004018.o
+	contingency.amnt = contract.hc.amnt + tpisg082.totl - tpisg012.totl	|# ISGEC004018.n
+	
+| 	contingency.amnt = contract.hc.amnt - tpisg012.totl		|#ISGEC015063.o
+| 	ini.contingency =  (tppdm740.rate(1) * tpisg011.copr) - tpisg012.totl		|#ISGEC001131.n	|# ISGEC004018.o
+|	ini.contingency =  (tppdm740.rate(1) * tpisg011.copr) - tpisg012.totl + tpisg082.budg	|# ISGEC004018.n|commented by veena on 03-05-2019 for correction in logic so that Total Budget of version1.0 is used instead of current version
+		|#GSTLIVE01013.sn
+	select	tpisg007.rate,
+		tpisg007.apdt
+	from	tpisg007
+	where	tpisg007._index1 = {:tpisg011.cprj}
+	order by tpisg007.apdt asc
+	as set with 1 rows
+	selectdo
+		if tpisg007.rate > 0 then
+			
+			select 	tpisg008.totl									|veena 03-05-2019.sn
+			from	tpisg008
+			where	tpisg008._index1 = {:tpisg011.cprj,"1.0"}
+			and	tpisg008.levl = 0
+			as set with 1 rows
+			selectdo
+				ini.contingency =  (tpisg007.rate * tpisg011.copr) - tpisg008.totl + tpisg082.budg	|veena 03-05-2019.en
+			selectempty
+				tpisg008.totl = 0
+				totl.bug = 0.00
+				select 	aa_tpisg012.totl:totl.bug
+				from	tpisg012	aa_tpisg012
+				where	aa_tpisg012._index1 = {:tpisg011.cprj}
+				and 	aa_tpisg012.levl = 0
+				as set with 1 rows
+				selectdo
+					ini.contingency =  (tpisg007.rate * tpisg011.copr) - totl.bug + tpisg082.budg
+				selectempty
+					ini.contingency = 0.00
+				endselect
+			endselect
+		else
+			select	tppdm740.rate
+			from	tppdm740
+			where	tppdm740._index1 = {:tpisg011.cprj}
+			as set with 1 rows
+			selectdo
+				select 	tpisg008.totl									|veena 03-05-2019.sn
+				from	tpisg008
+				where	tpisg008._index1 = {:tpisg011.cprj,"1.0"}
+				and	tpisg008.levl = 0
+				as set with 1 rows
+				selectdo
+					ini.contingency =  (tppdm740.rate(1) * tpisg011.copr) - tpisg008.totl + tpisg082.budg	|veena 03-05-2019.en
+				selectempty
+					tpisg008.totl = 0
+					totl.bug = 0.00
+					select 	aa_tpisg012.totl:totl.bug
+					from	tpisg012	aa_tpisg012
+					where	aa_tpisg012._index1 = {:tpisg011.cprj}
+					and 	aa_tpisg012.levl = 0
+					as set with 1 rows
+					selectdo
+						ini.contingency =  (tppdm740.rate(1) * tpisg011.copr) - totl.bug + tpisg082.budg
+					selectempty
+						ini.contingency = 0.00
+					endselect
+				endselect
+			endselect
+			
+		endif
+	selectempty
+		select	tppdm740.rate
+		from	tppdm740
+		where	tppdm740._index1 = {:tpisg011.cprj}
+		as set with 1 rows
+		selectdo
+			tpisg008.totl = 0
+			totl.bug = 0.00
+			select 	aa_tpisg012.totl:totl.bug
+			from	tpisg012	aa_tpisg012
+			where	aa_tpisg012._index1 = {:tpisg011.cprj}
+			and 	aa_tpisg012.levl = 0
+			as set with 1 rows
+			selectdo
+				ini.contingency =  (tppdm740.rate(1) * tpisg011.copr) - totl.bug + tpisg082.budg
+			selectempty
+				ini.contingency = 0.00
+			endselect
+		endselect
+	endselect
+
+| field.contingency.amnt:						|#ISGEC01183.sn  |ISGEC002025.so
+| before.display:
+| 	if tpisg011.acti = tpisg.sanction.partial then						
+| 	select	sum(tpisg008.tfch):sum.h.tfch,
+| 		tpisg008.cprj
+| 	from	tpisg008	 
+| 	where	tpisg008._index1 = {:tpisg011.cprj}
+| 	group by tpisg008.cprj
+| 	selectdo
+| 	selectempty
+| 		sum.h.tfch = 0
+| 	endselect
+| 	
+| 	
+| 	select	sum(atpisg012.tfch):sum.c.tfch
+| 	from	tpisg012	atpisg012
+| 	where	atpisg012._index1 = {:tpisg011.cprj, :tpisg011.vers}
+| 	and	atpisg012.levl = 2
+| 	selectdo
+| 	selectempty
+| 		sum.c.tfch = 0
+| 	endselect
+| 	contingency.amnt = contingency.amnt - sum.c.tfch - sum.h.tfch
+| 	endif											
+	
+									|#ISGEC01183.en |ISGEC002025.eo	
+field.exrt.f:
+before.display:
+	select	tppdm740.rate(1):exrt.f
+	from	tppdm740
+	where	tppdm740._index1 = {:tpisg011.cprj}
+	as set with 1 rows
+	selectdo
+	selectempty
+		exrt.f = 1.00
+	endselect
+		|#GSTLIVE01013.en
+
+field.client.ctoh:
+before.display:
+	total.client.ctoh()
+
+field.internal.ctoh:
+before.display:
+	total.internal.ctoh()
+field.icam:
+before.display:
+	select	tpisg007.rate,
+		tpisg007.apdt
+	from	tpisg007
+	where	tpisg007._index1 = {:tpisg011.cprj}
+	order by tpisg007.apdt asc
+	as set with 1 rows
+	selectdo
+		if tpisg007.rate > 0 then
+			icam = tpisg011.copr * tpisg007.rate
+		else
+			select	tppdm740.rate
+			from	tppdm740
+			where	tppdm740._index1 = {:tpisg011.cprj}
+			as set with 1 rows
+			selectdo
+				icam = tpisg011.copr * tppdm740.rate(1)
+			selectempty
+				icam = 0.00
+			endselect
+		endif
+	selectempty
+		select	tppdm740.rate
+		from	tppdm740
+		where	tppdm740._index1 = {:tpisg011.cprj}
+		as set with 1 rows
+		selectdo
+			icam = tpisg011.copr * tppdm740.rate(1)
+		selectempty
+			icam = 0.00
+		endselect
+	endselect
+	
+field.icaf:
+before.display:
+	icaf = tpisg011.copr
+	
+	
+	
+|****************************** choice section *********************************
+choice.sanction.attachment:
+on.choice:
+	Get_Attachment ()
+
+choice.client.history:
+on.choice:
+	start.synchronized.child("tpisg3511m100", 
+					"tpisg011.cprj", "tpisg311.cprj")
+choice.internal.history:
+on.choice:
+	start.synchronized.child("tpisg3517m100", 
+					"tpisg011.cprj", "tpisg317.cprj")
+choice.print.available.amount:
+on.choice:
+	tpisgdll0011.print_available_transfer_amount(tpisg011.cprj,tpisg011.vers)
+	
+choice.print.transfer.to.ctoh:
+on.choice:
+	tpisgdll0011.print_transfer_to_ctoh(tpisg011.cprj)
+
+choice.cont.contribution:
+on.choice:
+	if tpisg011.acti = tpisg.sanction.complete then
+		current.date = date.num()			|# PATCH001002.n
+		
+		select 	tpisg100.totl
+		from	tpisg100
+		where	tpisg100._index1 = {:tpisg011.cprj,:tpisg011.vers}	|# PATCH001002.o
+| 		where	tpisg100._index1 = {:tpisg011.cprj,:current.date}
+		and	tpisg100.levl = 0
+		as set with 1 rows
+		selectdo
+		selectempty							|# PATCH001002.sn
+			select 	tpisg100.totl
+			from	tpisg100
+			where	tpisg100._index1 = {:tpisg011.cprj}
+| 			and	tpisg100.date < :current.date
+			and	tpisg100.levl = 0
+| 			order by tpisg100.date desc
+			as set with 1 rows
+			selectdo
+			endselect						|# PATCH001002.en
+		endselect
+
+			select	tpisg082.totl
+			from	tpisg082
+			where	tpisg082._index1 = {:tpisg011.cprj}
+			and	tpisg082.parn = ""
+			selectdo
+			selectempty
+				tpisg082.totl = 0
+			endselect
+
+| 		message("New Contribution Amount Will be %f",(contract.hc.amnt - tpisg100.totl))	|# ISGEC004018.o
+		message("New Contribution Amount Will be %f",(contract.hc.amnt + tpisg082.totl - tpisg100.totl))|# ISGEC004018.n
+	endif
+
+choice.cont.send.for.approval:
+before.choice:										|#ISGEC016002.sn
+											|ISGEC002025.sn
+	if tpisg011.acti = tpisg.sanction.add.red.client and tpisg011.act1 = tpisg.sanction.free then	
+		select	tpisg311.pros
+		from	tpisg311 
+		where	tpisg311._index1 = {:tpisg011.cprj,:tpisg011.vers}
+		and 	tpisg311.pros = tcyesno.no
+		and 	tpisg311.ciov <> tpisg311.cict
+		selectdo 
+			message("Please Update in Sanction Control From Session Maintain Sanction Amendment Due to Client")
+			choice.again()
+		selectempty
+			before.send.for.approval()
+		endselect
+		else if tpisg011.acti = tpisg.sanction.add.red.inter and tpisg011.act1 = tpisg.sanction.free then
+			select	tpisg317.pros
+			from	tpisg317 
+			where	tpisg317._index1 = {:tpisg011.cprj,:tpisg011.vers}
+			and 	tpisg317.pros = tcyesno.yes
+			selectdo 
+				before.send.for.approval()
+			selectempty
+				message("Please Update in Sanction Control From Session Maintain Sanction Amendment Due to Internal Reasons")
+				choice.again()
+			endselect
+		else
+			before.send.for.approval()
+		endif
+	endif
+										|ISGEC002025.en
+			
+on.choice:
+	
+|** 
+|* Once the Send For Approval Button Clicked
+|* Status Will Change From Launch To Send For Approval
+	
+	next_act1 =  tpisgdll0011.Determine_Next_Approval_Activity(tpisg011.acti,
+						tpisg011.acti,tpisg011.act1)
+	if next_act1 <> empty then					
+		if tpisgdll0011.Update_Sanction_Submit_Status(tpisg011.cprj,tpisg011.vers,
+			tpisg011.acti,tpisg011.acti,tpisg011.act1,next_act1) then
+			show.dal.messages(MSG.ALL)
+			abort.transaction()
+		endif
+		commit.transaction()
+	endif	
+
+| 	if tpisg011.acti = tpisg.sanction.l4revise or tpisg011.acti = tpisg.sanction.add.conti.s then		|#ISGEC01183.o
+	if tpisg011.acti = tpisg.sanction.l4revise then							|#ISGEC01183.sn
+		approve_form_command()
+	endif
+	
+							|#ISGEC001131.sn
+							
+	long row.len,ret,no_keys,no_columns,int_length,real_length
+	ret = rdi.table( "tpisg012", no_keys,no_columns, int_length, real_length )
+	alloc.mem(record.buff,int_length)
+	
+	if tpisg011.acti = tpisg.sanction.complete then	
+		
+		select 	tpisg100.cprj
+		from	tpisg100 for update
+		where	tpisg100._index1 = {:tpisg011.cprj}
+		selectdo
+			db.delete(ttpisg100,db.retry,e)
+		endselect
+		commit.transaction()
+		
+		select tpisg012.*
+		from	tpisg012
+		where	tpisg012._index1 = {:tpisg011.cprj,:tpisg011.vers}
+		selectdo
+			copy.mem(record.buff,rcd.ttpisg012 )
+			rcd.ttpisg100 = record.buff
+			db.insert(ttpisg100,db.retry,e)
+		endselect
+			commit.transaction()
+		
+		tpisgdll050_11.update_transfer_amount(tpisg011.cprj,tpisg011.vers)
+		commit.transaction()
+		
+		select 	tpisg100.totl
+		from	tpisg100
+		where	tpisg100._index1 = {:tpisg011.cprj,:tpisg011.vers}
+		and	tpisg100.levl = 0
+		as set with 1 rows
+		selectdo
+		endselect
+		
+		message("New Contribution Amount Will be %f",(contract.hc.amnt - tpisg100.totl))
+		
+
+	endif
+	commit.transaction()			
+	change_incentive_status(tpisg.sanction.approval)	|# ISGEC004018.sn
+	
+							|#ISGEC001131.en
+		
+choice.approve:
+before.choice:
+	if contingency.amnt < 0 then
+		message("Contribution Amount is Less than Contract Amount")
+| 		choice.again()
+	endif	
+	
+	if ask.enum("tpisg0111.0010",tcyesno.yes) = tcyesno.no then
+		choice.again()
+	endif
+	
+	if isspace(tpisg011.armk) and tpisg011.acti <> tpisg.sanction.l4revise then	|# ISGEC016002.sn   
+		message("field Approval Remarks is Blank,Approval Not Allowed")
+		choice.again()
+	endif 										|# ISGEC016002.en   
+	
+on.choice:
+	tpisgdll0011.parant.element.update(tpisg011.cprj,tpisg011.vers)						|ISGEC002025.n
+	approve_form_command()
+	change_incentive_status(tpisg.sanction.approved)		|# ISGEC001018.n
+	update.tpisg012.totl.amnt.ritb(tpisg011.cprj,tpisg011.vers)					
+	
+	
+| choice.revise:												|#ISGEC01183.so
+| before.choice:
+| 	initialize.fields()	|# ISGEC016002.n
+	
+| 	if not check.for.s.contigency(tpisg011.cprj,tpisg011.vers) then
+| 		message("Please Maintain the S-Contigency Element for This Project")
+| 		choice.again()
+| 	endif
+| 	if ask.enum("tpisg012.0010",tcyesno.yes) = tcyesno.no then
+| 		choice.again()
+| 	endif
+| 	
+| 	if tpisgdll0012.Sanction_Approval_Matrix(tpisg.sanction.complete,o.reas) then		
+| 		if not tpisgdll0012.Employee_Responsible_By_Project(tpisg011.cprj,tpisg.sanction.complete) then
+| 			message("Sanction Approval Role Matrix Not Defined!!!")
+| 			choice.again()
+| 		endif
+| 		
+| 	else
+| 		message("Approval Matrix is Not Defined !!!")
+| 		choice.again()
+| 	endif	
+| 	
+| on.choice:
+| 	tpisgdll0011.Sanction_History(tpisg011.cprj,tpisg011.vers)
+| 	commit.transaction()
+| 	tpisgdll0011.Revise_Sanction_Control(tpisg011.cprj,tpisg011.vers,
+| 				tpisg.sanction.complete,tpisg.sanction.free,o.reas,1.0)
+| 				
+| 	commit.transaction()			
+| 	change_incentive_status(tpisg.sanction.free)			|# ISGEC004018.n
+| 	initialize.fields()	|# ISGEC016002.n								|#ISGEC01183.eo
+
+choice.part:
+before.choice:
+| 	initialize.fields()		|# ISGEC016002.n
+	
+	if not check.for.s.contigency(tpisg011.cprj,tpisg011.vers) then
+		message("Please Maintain the S-Contigency Element for This Project")
+		choice.again()
+	endif
+	if ask.enum("tpisg012.0010",tcyesno.yes) = tcyesno.no then
+		choice.again()
+	endif
+	
+	if tpisgdll0012.Sanction_Approval_Matrix(tpisg.sanction.partial,o.reas) then		
+		if not tpisgdll0012.Employee_Responsible_By_Project(tpisg011.cprj,tpisg.sanction.partial) then
+			message("Sanction Approval Role Matrix Not Defined!!!")
+			choice.again()
+		endif
+		
+	else
+		message("Approval Matrix is Not Defined !!!")
+		choice.again()
+	endif
+
+on.choice:
+	tpisgdll0011.Sanction_History(tpisg011.cprj,tpisg011.vers)
+	tpisgdll0011.Revise_Sanction_Control(tpisg011.cprj,tpisg011.vers,
+				tpisg.sanction.partial,tpisg.sanction.free,o.reas,0.1)
+	commit.transaction()
+	change_incentive_status(tpisg.sanction.free)				|# ISGEC004018.n
+	initialize.fields()	|# ISGEC016002.n
+	
+	
+				|ISGEC002025.so
+| 	if tpisg011.acti = tpisg.sanction.partial and tpisg011.act1 = tpisg.sanction.free then		|#ISGEC01183.sn
+| 		select 	tpisg012.ttbt, tpisg012.tfcy, tpisg012.tfcs,
+| 			tpisg012.tfwy, tpisg012.tfch, tpisg012.rfpr
+| 		from	tpisg012 for update
+| 		where	tpisg012._index1 = {:tpisg011.cprj,:tpisg011.vers}
+| 		and	tpisg012.levl = 2
+| 		selectdo
+| 			tpisg012.ttbt = 0
+| 			tpisg012.tfcy = 0
+| 			tpisg012.tfcs = 0
+| 			tpisg012.tfwy = 0
+| 			tpisg012.tfch = 0
+| 			tpisg012.rfpr = ""
+| 			db.update(ttpisg012,db.retry,e)
+| 			if not e then 
+| 				commit.transaction()
+| 			else
+| 				abort.transaction()
+| 			endif
+| 		endselect	
+| 	endif		
+				|ISGEC002025.eo
+choice.conti:													 
+before.choice:
+	
+	if not check.for.s.contigency(tpisg011.cprj,tpisg011.vers) then
+		message("Please Maintain the S-Contigency Element for This Project")
+		choice.again()
+	endif
+	if ask.enum("tpisg012.0010",tcyesno.yes) = tcyesno.no then
+		choice.again()
+	endif
+	
+	if tpisgdll0012.Sanction_Approval_Matrix(tpisg.sanction.csrevise,o.reas) then		
+		if not tpisgdll0012.Employee_Responsible_By_Project(tpisg011.cprj,tpisg.sanction.csrevise) then
+			message("Sanction Approval Role Matrix Not Defined!!!")
+			choice.again()
+		endif
+		
+	else
+		message("Approval Matrix is Not Defined !!!")
+		choice.again()
+	endif
+on.choice:
+	tpisgdll0011.Sanction_History(tpisg011.cprj,tpisg011.vers)
+	tpisgdll0011.Revise_Sanction_Control(tpisg011.cprj,tpisg011.vers,
+				tpisg.sanction.csrevise,tpisg.sanction.free,o.reas,0.1)
+				
+	commit.transaction()
+							 			
+	initialize.fields()											|#ISGEC01183.en
+	
+choice.add.red.due.client:											|ISGEC002025.sn
+before.choice:
+	if tpisg011.act1 <> tpisg.sanction.free then
+		if not check.for.s.contigency(tpisg011.cprj,tpisg011.vers) then
+			message("Please Maintain the S-Contigency Element for This Project")
+			choice.again()
+		endif
+		if ask.enum("tpisg012.0010",tcyesno.yes) = tcyesno.no then
+			choice.again()
+		endif
+		
+		if tpisgdll0012.Sanction_Approval_Matrix(tpisg.sanction.add.red.client,o.reas) then		
+			if not tpisgdll0012.Employee_Responsible_By_Project(tpisg011.cprj,tpisg.sanction.add.red.client) then
+				message("Sanction Approval Role Matrix Not Defined!!!")
+				choice.again()
+			endif
+			
+		else
+			message("Approval Matrix is Not Defined !!!")
+			choice.again()
+		endif
+	endif
+	
+on.choice:
+	if tpisg011.act1 <> tpisg.sanction.free then
+		tpisgdll0011.Sanction_History(tpisg011.cprj,tpisg011.vers)
+		tpisgdll0011.Revise_Sanction_Control(tpisg011.cprj,tpisg011.vers,
+					tpisg.sanction.add.red.client,tpisg.sanction.free,o.reas,1.0)
+					
+		commit.transaction()
+		initialize.fields()
+
+		start.session(MODAL + MODAL_OVERVIEW,"tpisg3111m100","","")
+	else
+		start.session(MODAL + MODAL_OVERVIEW,"tpisg3111m100","","")
+
+	endif	
+														
+														
+choice.add.red.due.internal:											
+before.choice:
+	if tpisg011.act1 <> tpisg.sanction.free then
+		if not check.for.s.contigency(tpisg011.cprj,tpisg011.vers) then
+			message("Please Maintain the S-Contigency Element for This Project")
+			choice.again()
+		endif
+		if ask.enum("tpisg012.0010",tcyesno.yes) = tcyesno.no then
+			choice.again()
+		endif
+		
+		if tpisgdll0012.Sanction_Approval_Matrix(tpisg.sanction.add.red.client,o.reas) then		
+			if not tpisgdll0012.Employee_Responsible_By_Project(tpisg011.cprj,tpisg.sanction.add.red.client) then
+				message("Sanction Approval Role Matrix Not Defined!!!")
+				choice.again()
+			endif
+			
+		else
+			message("Approval Matrix is Not Defined !!!")
+			choice.again()
+		endif
+	endif
+	
+on.choice:
+	if tpisg011.act1 <> tpisg.sanction.free then
+		tpisgdll0011.Sanction_History(tpisg011.cprj,tpisg011.vers)
+		tpisgdll0011.Revise_Sanction_Control(tpisg011.cprj,tpisg011.vers,
+					tpisg.sanction.add.red.inter,tpisg.sanction.free,o.reas,1.0)
+					
+		commit.transaction()
+		initialize.fields()
+
+		start.session(MODAL ,"tpisg3117m100","","")
+
+	else
+		start.session(MODAL ,"tpisg3117m100","","")
+
+	endif	
+													
+													
+choice.transfer.to.ctoh:											|ISGEC002025.sn
+before.choice:
+	if tpisg011.act1 <> tpisg.sanction.free then
+		if not check.for.s.contigency(tpisg011.cprj,tpisg011.vers) then
+			message("Please Maintain the S-Contigency Element for This Project")
+			choice.again()
+		endif
+		if ask.enum("tpisg012.0010",tcyesno.yes) = tcyesno.no then
+			choice.again()
+		endif
+		
+		if tpisgdll0012.Sanction_Approval_Matrix(tpisg.sanction.csrevise,o.reas) then		
+			if not tpisgdll0012.Employee_Responsible_By_Project(tpisg011.cprj,tpisg.sanction.csrevise) then
+				message("Sanction Approval Role Matrix Not Defined!!!")
+				choice.again()
+			endif
+		
+		else
+			message("Approval Matrix is Not Defined !!!")
+			choice.again()
+		endif	
+	endif
+	
+on.choice:
+	if tpisg011.act1 <> tpisg.sanction.free then
+		tpisgdll0011.Sanction_History(tpisg011.cprj,tpisg011.vers)
+		tpisgdll0011.Revise_Sanction_Control(tpisg011.cprj,tpisg011.vers,
+					tpisg.sanction.trans.to.ctoh,tpisg.sanction.free,o.reas,0.1)
+					
+		commit.transaction()
+		initialize.fields()
+	endif
+												|ISGEC002025.en
+choice.cont.l4revise:
+before.choice:
+| 	initialize.fields()			|# ISGEC016002.n
+	
+	if not check.for.s.contigency(tpisg011.cprj,tpisg011.vers) then
+		message("Please Maintain the S-Contigency Element for This Project")
+		choice.again()
+	endif
+	if ask.enum("tpisg012.0010",tcyesno.yes) = tcyesno.no then
+		choice.again()
+	endif
+	
+	if tpisgdll0012.Sanction_Approval_Matrix(tpisg.sanction.l4revise,o.reas) then		
+		if not tpisgdll0012.Employee_Responsible_By_Project(tpisg011.cprj,tpisg.sanction.l4revise) then
+			message("Sanction Approval Role Matrix Not Defined!!!")
+			choice.again()
+		endif
+		
+	else
+		message("Approval Matrix is Not Defined !!!")
+		choice.again()
+	endif	
+	
+	
+on.choice:
+	
+	tpisgdll0011.Sanction_History(tpisg011.cprj,tpisg011.vers)
+	tpisgdll0011.Revise_Sanction_Control(tpisg011.cprj,tpisg011.vers,
+				tpisg.sanction.l4revise,tpisg.sanction.free,o.reas,0.1)
+		
+	commit.transaction()
+| 	if logname$ = "tools1" then
+		Parent_Child_Relation_for_Sanction(tpisg011.cprj,tpisg011.aver,tpisg011.vers)
+		commit.transaction()
+| 	endif
+	
+| 	tpisgdll0011.delete.l4.revise.relations(tpisg011.cprj,tpisg011.vers)
+| 	tpisgdll0011.populate.L4Revise.Elements(tpisg011.cprj,tpisg011.vers)
+| 	commit.transaction()
+
+	initialize.fields()	|# ISGEC016002.n
+	
+choice.cont.cancel:
+before.choice:
+	if tpisg011.acti = tpisg.sanction.trans.to.supp then						|RAvi.a.GH214CR000
+		approve_form_command()
+	endif
+	
+	start.session(MODAL,"tpisg0211m100","","")
+
+	select 	tcmcs005.cdis
+	from	tcmcs005
+	where	tcmcs005._index1 = {:tpisg011.cdis}
+	as set with 1 rows
+	selectdo
+	selectempty
+		message("Please Enter Rejection Reason")
+		choice.again()
+	endselect
+	
+	sanction.reas = tpisg011.cdis
+on.choice:
+	select 	tpisg011.cdis
+	from	tpisg011 for update
+	where	tpisg011._index1 = {:tpisg011.cprj}
+	selectdo
+		tpisg011.cdis = sanction.reas
+		db.update(ttpisg011,db.retry,e)
+	endselect
+	
+	if tpisgdll0011.Update_Sanction_Status(tpisg011.cprj,tpisg011.vers,
+					tpisg011.acti,tpisg011.acti,tpisg011.act1,tpisg.sanction.free) then
+					show.dal.messages(MSG.ALL)
+					abort.transaction()
+	endif
+	commit.transaction()
+
+choice.cont.tree.view:
+on.choice:
+	wait.and.activate("otpisg7500")
+	|#3823.en
+										|ISEGC01142.sn
+choice.saving.transfer:
+before.choice:
+	if not check.for.s.contigency(tpisg011.cprj,tpisg011.vers) then
+		message("Please Maintain the Contigency-S Element for This Project")
+		choice.again()
+	endif
+on.choice:
+	if not isspace(tpisg011.cprj) then
+		contigency.element.transfer(tpisg011.cprj,
+					tpisg011.vers)
+	endif
+										|ISEGC01142.en
+										
+choice.add.contingency:									|ISEGC002019.sn
+before.choice:
+	select	tpptc100.cspa
+	from	tpptc100
+	where	tpptc100._index1 = {:tpisg011.cprj,"99180000"}
+	selectdo
+	selectempty
+		message("Contingency-S element not present against project %s",tpisg011.cprj)
+		choice.again()
+	endselect
+	
+	if tpisg011.acti = tpisg.sanction.launch then
+		if tpisg011.act1 <> tpisg.sanction.approved then
+			message("Status is Launched. Cannot Continue...")
+			choice.again()
+		endif	
+	endif
+	
+on.choice:
+	tpisgdll0011.Sanction_History(tpisg011.cprj,tpisg011.vers)
+	tpisgdll0011.Revise_Sanction_Control(tpisg011.cprj,tpisg011.vers,
+| 				tpisg.sanction.add.contingency,tpisg.sanction.free,o.reas,1.0)
+				tpisg.sanction.l4revise,tpisg.sanction.free,o.reas,0.1)
+				
+	select	tpisg012.elem
+	from	tpisg012
+	where	tpisg012._index1 = {:tpisg011.cprj,:tpisg011.vers,"99180000"}
+	selectdo
+	selectempty		
+		tpisg012.cprj = tpisg011.cprj	
+		tpisg012.vers = tpisg011.vers	
+		tpisg012.elem = "99180000"
+		tpisg012.levl = 2
+		tpisg012.totl = 0.00
+		tpisg012.avai = 0.00
+		tpisg012.exha = 0.00
+		tpisg012.smnt = 0.00
+		tpisg012.tran = ""
+		tpisg012.reas = ""
+		tpisg012.trfm = 0.00
+		tpisg012.diff = 0.00
+		tpisg012.tfrd = tcyesno.no
+		tpisg012.head = ""
+		tpisg012.aamt = 0.00
+		tpisg012.amnt = 0.00
+		tpisg012.cspa = "99000000"
+		db.insert(ttpisg012,db.retry)
+	endselect	
+	commit.transaction()
+	change_incentive_status(tpisg.sanction.free)						|ISEGC002019.en		
+|******************************* function section ***************************
+functions:
+												|# ISGEC016002.sn
+function	initialize.fields()
+{
+	db.retry.point()
+	select	tpisg011.aref,
+		tpisg011.adte,
+		tpisg011.armk,
+		tpisg011.aapr
+	from	tpisg011	for	update
+	where	tpisg011._index1	=	{:tpisg011.cprj,:tpisg011.vers}
+	selectdo
+		tpisg011.aref = ""								
+		tpisg011.adte = 0
+		tpisg011.armk = ""
+		tpisg011.aapr = ""
+		
+		db.update(ttpisg011, db.retry, e)
+		if	not	e	then
+			commit.transaction()
+		else
+			abort.transaction()
+		endif
+	endselect
+}
+									|# ISGEC016002.en
+
+function approve_form_command()
+{
+	on case tpisg011.acti
+		case tpisg.sanction.launch:
+			if not tpisgdll0012.Employee_Approval_By_Project(tpisg011.cprj,tpisg.sanction.launch) then
+				message("Sanction Approval Role Matrix Not Defined!!!")
+				choice.again()	
+			endif
+			break
+		case tpisg.sanction.complete: 
+			if not tpisgdll0012.Employee_Approval_By_Project(tpisg011.cprj,tpisg.sanction.complete) then
+				message("Sanction Approval Role Matrix Not Defined!!!")
+				choice.again()	
+			endif
+			break
+		case tpisg.sanction.partial:
+			if not tpisgdll0012.Employee_Approval_By_Project(tpisg011.cprj,tpisg.sanction.partial) then
+				message("Sanction Approval Role Matrix Not Defined!!!")
+				choice.again()	
+			endif
+			break
+		case tpisg.sanction.l4revise:
+			if not tpisgdll0012.Employee_Approval_By_Project(tpisg011.cprj,tpisg.sanction.l4revise) then
+				message("Sanction Approval Role Matrix Not Defined!!!")
+				choice.again()	
+			endif
+			break
+		case tpisg.sanction.csrevise:										|#ISGEC01183.sn
+			if not tpisgdll0012.Employee_Approval_By_Project(tpisg011.cprj,tpisg.sanction.csrevise) then
+				message("Sanction Approval Role Matrix Not Defined!!!")
+				choice.again()	
+			endif
+			break	
+		case tpisg.sanction.trans.to.ctoh:									|#ISGEC01183.sn
+			if not tpisgdll0012.Employee_Approval_By_Project(tpisg011.cprj,tpisg.sanction.csrevise) then
+				message("Sanction Approval Role Matrix Not Defined!!!")
+				choice.again()	
+			endif
+			break	
+															|#ISGEC01183.en	
+															|25.05.19.Adarsh.sn
+		case tpisg.sanction.add.red.client:									
+			if not tpisgdll0012.Employee_Approval_By_Project(tpisg011.cprj,tpisg.sanction.add.red.client) then
+				message("Sanction Approval Role Matrix Not Defined!!!")
+				choice.again()	
+			endif
+			break	
+		case tpisg.sanction.add.red.inter:									
+			if not tpisgdll0012.Employee_Approval_By_Project(tpisg011.cprj,tpisg.sanction.add.red.client) then
+				message("Sanction Approval Role Matrix Not Defined!!!")
+				choice.again()	
+			endif
+			break	
+															|25.05.19.Adarsh.en
+														|#ISGEC019008.sn
+		case	tpisg.sanction.trans.to.supp:
+			if	not	tpisgdll0012.Employee_Approval_By_Project(tpisg011.cprj,tpisg.sanction.trans.to.supp)	then
+				message("Sanction Approval Role Matrix Not Defined!!!")
+				choice.again()	
+			endif	
+			break				
+														|#ISGEC019008.en
+	endcase
+	
+	
+	
+
+	on case tpisg011.acti
+		case tpisg.sanction.launch:
+		case tpisg.sanction.complete:
+				
+			tpisgdll0011.update_transfer_amount(tpisg011.cprj,tpisg011.vers)
+			commit.transaction()
+
+			
+			break
+		case tpisg.sanction.partial:
+| 		case tpisg.sanction.add.conti.s:								|#anadi.n
+			tpisgdll0011.Transfer_Credit(tpisg011.cprj,tpisg011.vers)
+			commit.transaction()
+			break
+		case tpisg.sanction.l4revise:
+| 		case tpisg.sanction.add.conti.s:								|#anadi.n
+			tpisgdll0011.L4Revise(tpisg011.cprj,tpisg011.vers)
+			commit.transaction()
+			break
+		case tpisg.sanction.csrevise:									|#ISGEC01183.sn						 
+			tpisgdll0011.CSRevise(tpisg011.cprj,tpisg011.vers)
+			break	
+		case tpisg.sanction.trans.to.ctoh:								|ISGEC002025.sn						 
+			tpisgdll0011.transfer_to_ctoh(tpisg011.cprj,tpisg011.vers)
+			break											|ISGEC002025.en
+														|#ISGEC019008.sn
+		case	tpisg.sanction.trans.to.supp:
+			tpisgdll0011.transfer.to.supp(
+							tpisg011.cprj,
+							tpisg011.vers
+							)		
+			break				
+														|#ISGEC019008.en		
+	endcase
+		
+	next_act1 =  tpisgdll0011.Determine_Next_Approval_Activity(tpisg011.acti,
+								tpisg011.acti,tpisg011.act1)
+			if next_act1 <> empty then					
+				if tpisgdll0011.Update_Sanction_Status(tpisg011.cprj,tpisg011.vers,
+					tpisg011.acti,tpisg011.acti,tpisg011.act1,next_act1) then
+					show.dal.messages(MSG.ALL)
+					abort.transaction()
+				endif
+				commit.transaction()
+			endif	
+
+	tpisgdll0011.isgec_dream_for_distribution_amount(tpisg011.cprj,tpisg011.vers)
+| 	tpisgdll0011.sanction_control_lines_for_distribution(tpisg011.cprj,tpisg011.vers)	
+| 	tpisgdll0011.isgec_dream_for_sanction_control(tpisg011.cprj,tpisg011.vers)
+	
+	commit.transaction()
+	
+}
+
+						|# ISGEC001018.sn
+function change_incentive_status(domain tpisg.sanction status)
+{
+	select	tpisg082.stat
+	from	tpisg082 for update
+	where	tpisg082._index1 = {:tpisg011.cprj}
+	selectdo
+		tpisg082.stat = status
+		db.update(ttpisg082, db.retry)
+	endselect
+	commit.transaction()
+}
+ 
+
+						|# ISGEC001018.en	
+								|ISEGC01142.SN
+function contigency.element.transfer(domain	tccprj	i.cprj,
+				domain	tcorno		i.vers)
+{
+	domain	tccprj		cprj.l4, cprj.l5
+	domain	tppdm.cspa	elem.l4, elem.l5, elem.l3
+	domain	tcamnt		avai.amnt, undis.amnt, aval.amnt.l5, aval.amnt.l4
+	domain	tcpono		cdf.val
+	domain	tpisg.catg	catg.v
+	
+	cprj.l4 = ""
+	cprj.l5 = ""
+	elem.l3 = ""
+	elem.l4 = ""
+	elem.l5 = ""
+	avai.amnt = 0
+	err.messg.catg = ""
+	undis.amnt = 0
+	aval.amnt.l5 = 0
+	aval.amnt.l4 = 0
+	
+	select	tpisg012.elem:elem.l3, tpisg012.avai:avai.amnt,
+			tpisg012.amnt:undis.amnt,tppdm090.cdf_catg:cdf.val
+	from	tpisg012, tppdm090
+	where	tpisg012._index1 = {:i.cprj,:i.vers}
+	and	tpisg012.levl = 2
+	and	tpisg012.elem refers to tppdm090 UNREF CLEAR
+	selectdo
+		catg.v = ltoe(cdf.val)
+		
+		if check.for.close.status(i.cprj,
+						elem.l3) then
+			continue
+		endif
+		po.found = 0
+		select	tpisg012.cprj:cprj.l4, tpisg012.elem:elem.l4
+		from	tpisg012
+		where	tpisg012._index1 = {:i.cprj,:i.vers}
+		and	tpisg012.cspa = {:elem.l3}
+		selectdo
+			if  not check.for.complete.status(cprj.l4,
+							elem.l4) then
+				if not check.po.for.all.l4.l5.element(cprj.l4,
+								elem.l4) then
+					po.found = 1			
+					break
+| 				else
+| 					if update.status.complete.for.l4.l5(cprj.l4,
+| 									elem.l4) then
+| 						commit.transaction()
+| 					else
+
+| 						abort.transaction()
+| 					endif
+				endif
+			else
+				po.found = 1		
+				break
+			endif
+		
+			if po.found = 0 then
+			select	tpisg012.cprj:cprj.l5, tpisg012.elem:elem.l5
+			from	tpisg012
+			where	tpisg012._index1 = {:i.cprj,:i.vers}
+			and	tpisg012.cspa = {:elem.l4}
+			selectdo
+				if not check.for.complete.status(cprj.l5,   |return false if complete
+							elem.l5) then
+					if not check.po.for.all.l4.l5.element(cprj.l5,
+								elem.l5) then
+						po.found = 1		
+						break
+| 					else
+| 						if update.status.complete.for.l4.l5(cprj.l5,
+| 										elem.l5) then
+| 							commit.transaction()
+| 						else
+
+| 							abort.transaction()
+| 						endif
+					endif
+				else
+					po.found = 1	
+					break
+				endif
+			endselect
+			endif
+		endselect
+		
+		if po.found = 1 then
+			continue
+		else	
+			if not check.for.category.maintain(
+						catg.v,
+						elem.l3) then   |check to maintain the category of L3 Element
+				continue
+			endif
+		endif	
+		elem.l4 = ""
+		aval.amnt.l4 = 0
+		elem.l5 = ""
+		aval.amnt.l5 = 0
+		
+		if check.all.complete.l4.l5.for.l3.element(
+						i.cprj,
+						i.vers,
+						elem.l3) then
+			select	tpisg012.elem:elem.l4,
+				tpisg012.avai:aval.amnt.l4
+			from	tpisg012
+			where	tpisg012._index1 = {:i.cprj,:i.vers}
+			and	tpisg012.cspa = {:elem.l3}
+			selectdo
+				if aval.amnt.l4 > 0 then
+					calculate.amout.to.be.sanction(catg.v,
+								aval.amnt.l4
+								) 
+				
+					if not deduct.amount.from.element(
+							i.cprj,
+							i.vers,
+							elem.l4,
+							aval.amnt.l4) then
+						message("Not update the element %s", elem.l4)
+					else
+						commit.transaction()
+					endif
+				endif
+				select	tpisg012.elem:elem.l5, 
+					tpisg012.avai:aval.amnt.l5
+				from	tpisg012
+				where	tpisg012._index1 = {:i.cprj,:i.vers}
+				and	tpisg012.cspa = {:elem.l4}
+				selectdo
+					if aval.amnt.l5 > 0 then
+						calculate.amout.to.be.sanction(catg.v,
+									aval.amnt.l5
+									)
+						
+						if not deduct.amount.from.element(
+								i.cprj,
+								i.vers,
+								elem.l5,
+								aval.amnt.l5) then
+							message("Not update the element %s", elem.l4)
+						else
+							commit.transaction()
+						endif
+					endif
+				endselect
+			endselect
+			
+			if update.values.for.l3.elements(
+					catg.v,
+					i.cprj,
+					elem.l3,
+					i.vers,
+					avai.amnt,
+					undis.amnt) then
+				commit.transaction()
+			else
+				abort.transaction()
+			endif
+		endif
+	endselect	
+	
+	if not isspace(err.messg.catg) then
+		message("Please maintain the category for elements: %s",err.messg.catg)
+	endif
+}
+
+function  boolean update.values.for.l3.elements(
+			domain	tpisg.catg 	i.catg,	
+			domain	tccprj		i.cprj,
+			domain	tppdm.cspa	i.elem,
+			domain	tcorno		i.vers,
+			domain	tcamnt		i.aval.amnt,
+			domain	tcamnt		i.undis.amnt)
+{
+	domain	tcamnt	tot.amnt.totransfer
+	tot.amnt.totransfer = 0
+	
+	if i.undis.amnt > 0 then
+		i.aval.amnt = i.aval.amnt - i.undis.amnt
+	endif
+	
+	calculate.amout.to.be.sanction(i.catg,
+				i.aval.amnt)
+	if i.undis.amnt > 0 then
+		calculate.amout.to.be.sanction(i.catg,
+					i.undis.amnt)	
+	endif
+				
+	tot.amnt.totransfer = i.aval.amnt + i.undis.amnt
+	
+	if transfer.l3.to.contigency.element(i.cprj,
+					i.vers,
+					i.elem,
+					tot.amnt.totransfer,
+					i.aval.amnt,
+					i.undis.amnt) then
+		if update.status.complete.for.l4.l5(i.cprj,
+						i.elem) then
+			if not update.log.table(i.cprj,
+					i.vers,
+					i.elem,
+					tot.amnt.totransfer)	then		
+				return(false)
+			endif
+		endif		
+	endif	
+	return(true)	
+}
+
+function boolean check.for.category.maintain(domain	tpisg.catg 	i.catg,
+						domain	tppdm.cspa	i.elem)
+{
+	if i.catg = empty then
+		err.messg.catg = strip$(err.messg.catg) & i.elem & ","
+		return(false)
+	endif
+	return(true)
+}
+function  calculate.amout.to.be.sanction(
+					domain	tpisg.catg 	i.catg,
+					ref domain tcamnt 	o.avai.amnt)
+{
+	if i.catg = tpisg.catg.bought then
+		o.avai.amnt = (o.avai.amnt * 90)/100
+		else if i.catg = tpisg.catg.fabric then
+			o.avai.amnt = (o.avai.amnt * 80)/100
+			else if i.catg = tpisg.catg.general then
+				o.avai.amnt = 0
+			endif	
+		endif
+	endif
+}	
+
+function boolean transfer.l3.to.contigency.element(
+						domain	tccprj		i.cprj,
+						domain	tcorno		i.vers,
+						domain	tppdm.cspa	i.elem,
+						domain	tcamnt		i.tot.amnt,
+						domain	tcamnt		i.aval.amnt,
+						domain	tcamnt		i.undis.amnt)
+{	
+	domain	tppdm.cspa	i.elem.l2
+	if i.tot.amnt > 0 then
+		select	tpisg012.avai, tpisg012.totl,tpisg012.amnt
+		from	tpisg012 for update
+		where	tpisg012._index1 = {:i.cprj,:i.vers,"99180000"}
+		selectdo
+			tpisg012.avai = tpisg012.avai + i.tot.amnt
+			tpisg012.totl = tpisg012.totl + i.tot.amnt
+			tpisg012.amnt = tpisg012.amnt + i.tot.amnt
+			ret = db.update(ttpisg012, db.retry)
+			if ret <> 0 then
+				return(false)
+				abort.transaction()
+			endif
+		endselect
+		
+		select	tpisg012.avai, tpisg012.totl,tpisg012.amnt,tpisg012.aamt
+		from	tpisg012 for update
+		where	tpisg012._index1 = {:i.cprj,:i.vers,:i.elem}
+		selectdo
+| 			tpisg012.avai = tpisg012.avai - i.aval.amnt
+			tpisg012.avai = tpisg012.avai - i.tot.amnt
+| 			tpisg012.totl = tpisg012.totl - i.aval.amnt
+			tpisg012.totl = tpisg012.totl - i.tot.amnt
+			tpisg012.amnt = tpisg012.amnt - i.undis.amnt
+			tpisg012.aamt = tpisg012.aamt - i.aval.amnt
+			ret = db.update(ttpisg012, db.retry)
+			if ret <> 0 then
+				return(false)
+				abort.transaction()
+			endif
+		endselect
+		
+		i.elem.l2 = ""
+		if  check.for.l2.in.contigency.element(i.cprj,i.vers,i.elem,i.elem.l2) then	
+| 			if not deduct.amount.from.element(					|ISEGC002019.sn
+| 						i.cprj,
+| 						i.vers,
+| 						i.elem.l2,
+| 						i.aval.amnt) then
+| 				message("Not update the element %s", i.elem.l2)
+| 				return(false)
+| 			endif									
+			
+			select	tpisg012.avai, tpisg012.totl					
+			from	tpisg012 for update
+			where	tpisg012._index1 = {:i.cprj,:i.vers,:i.elem.l2}
+			selectdo
+				tpisg012.avai = tpisg012.avai + i.tot.amnt
+				tpisg012.totl = tpisg012.totl + i.tot.amnt
+				tpisg012.aamt = tpisg012.aamt + i.tot.amnt
+				ret = db.update(ttpisg012, db.retry)
+				if ret <> 0 then
+					return(false)
+					abort.transaction()
+				endif
+			endselect								|ISEGC002019.en
+			
+			i.elem.l2 = ""
+			select	tpisg012.cspa:i.elem.l2							|ISEGC002019.sn
+			from	tpisg012
+			where	tpisg012._index1 = {:i.cprj,:i.vers,:i.elem}
+			selectdo
+				select	tpisg012.avai, tpisg012.totl,tpisg012.amnt,tpisg012.aamt
+				from	tpisg012 for update
+				where	tpisg012._index1 = {:i.cprj,:i.vers,:i.elem.l2}
+				selectdo
+					tpisg012.avai = tpisg012.avai - i.tot.amnt
+					tpisg012.totl = tpisg012.totl - i.tot.amnt
+					if tpisg012.amnt > 0 then
+						tpisg012.amnt = tpisg012.amnt - i.undis.amnt
+					endif
+					if tpisg012.aamt > 0 then	
+						tpisg012.aamt = tpisg012.aamt - i.tot.amnt
+					endif	
+					ret = db.update(ttpisg012, db.retry)
+					if ret <> 0 then
+						return(false)
+						abort.transaction()
+					endif
+				endselect
+			endselect								|ISEGC002019.en
+		endif
+	endif
+	return(true)
+}
+
+function boolean deduct.amount.from.element(
+					domain	tccprj		i.cprj,
+					domain	tcorno		i.vers,
+					domain	tppdm.cspa	i.elem,
+					domain	tcamnt		i.amnt)
+{
+	select	tpisg012.avai, tpisg012.totl
+	from	tpisg012 for update
+	where	tpisg012._index1 = {:i.cprj,:i.vers,:i.elem}
+	selectdo
+		tpisg012.avai = tpisg012.avai - i.amnt
+		tpisg012.totl = tpisg012.totl - i.amnt
+		ret = db.update(ttpisg012, db.retry)
+		if ret <> 0 then
+			return(false)
+			abort.transaction()
+		endif
+	endselect
+	return(true)
+}
+function boolean check.all.complete.l4.l5.for.l3.element(
+						domain tccprj		i.cprj,
+						domain	tcorno		i.vers,
+						domain	tppdm.cspa	i.elem)
+{
+	domain	tcorno	l5.elem, l4.elem
+	l5.elem = ""
+	l4.elem = ""
+	
+	select	tpisg012.elem:l4.elem
+	from	tpisg012
+	where	tpisg012._index1 = {:i.cprj,:i.vers}
+	and	tpisg012.cspa = {:i.elem}
+	selectdo
+		select	tpisg063.engs
+		from	tpisg063 
+		where	tpisg063._index1 = {:i.cprj, :l4.elem}
+		and	tpisg063.engs = tpengs.complete
+		selectdo
+		selectempty
+			return(false)
+		endselect
+		
+		select	tpisg012.elem:l5.elem
+		from	tpisg012
+		where	tpisg012._index1 = {:i.cprj,:i.vers}
+		and	tpisg012.cspa = {:l4.elem}
+		selectdo
+			select	tpisg063.engs
+			from	tpisg063 
+			where	tpisg063._index1 = {:i.cprj, :l5.elem}
+			and	tpisg063.engs = tpengs.complete
+			selectdo
+			selectempty
+				return(false)
+			endselect
+		endselect
+	endselect
+	return(true)
+}
+function boolean update.status.complete.for.l4.l5(
+				domain	tccprj		i.cprj,
+				domain	tppdm.cspa	i.elem)
+{
+	select	tpisg063.appl, tpisg063.engs
+	from	tpisg063 for update
+	where	tpisg063._index1 = {:i.cprj, :i.elem}
+	and	tpisg063.engs <> tpengs.complete
+	selectdo
+| 		dal.change.object("tpisg063")				|Abhi.o
+| 		dal.set.field("tpisg063.appl", tcyesno.yes)
+| 		dal.set.field("tpisg063.engs", tpengs.complete)
+| 		dal.set.field("tpisg063.clos", tcyesno.yes)
+| 		ret = dal.save.object("tpisg063")
+| 		if ret <> 0 then
+| 			show.dal.messages()
+| 			return(false)
+| 		endif							|Abhi.o
+		tpisg063.appl = tcyesno.yes
+		tpisg063.engs = tpengs.complete
+		tpisg063.clos = tcyesno.yes
+		db.update(ttpisg063,db.retry)
+	endselect
+	return(true)
+}
+function boolean check.for.complete.status(domain	tccprj		i.cprj,
+					domain	tppdm.cspa	i.elem)
+{
+	select	tpisg063.engs
+	from	tpisg063
+	where	tpisg063._index1 = {:i.cprj, :i.elem}
+	selectdo
+		if tpisg063.engs <> tpengs.complete then 
+			return(true)
+		endif
+	endselect
+	return(false)
+}
+
+function boolean check.for.close.status(domain	tccprj		i.cprj,
+					domain	tppdm.cspa	i.elem)
+{
+	select	tpisg063.engs,tpisg063.clos
+	from	tpisg063
+	where	tpisg063._index1 = {:i.cprj, :i.elem}
+	selectdo
+		if tpisg063.clos = tcyesno.yes then 
+			return(true)
+		endif
+	endselect
+	return(false)
+}
+function boolean check.po.for.all.l4.l5.element(
+						domain	tccprj		i.cprj,
+						domain	tppdm.cspa	i.elem)
+{
+	select	tcisg004.item, tcisg004.orno
+	from	tcisg004
+	where	tcisg004._index1 = {:i.cprj,:i.elem}
+	selectdo
+		if tcisg004.orno = tcyesno.no then 
+			return(false)
+		else
+			select	tdisg002.orno, tdpur400.hdst
+			from	tdisg002, tdpur400
+			where	tdisg002.item = {:tcisg004.item}
+			and	tdisg002.orno refers to tdpur400 UNREF CLEAR
+			and	(tdpur400.hdst = tdpur.hdst.approved or tdpur400.hdst = tdpur.hdst.in.process)
+			selectdo
+			selectempty
+				return(false)
+			endselect
+		endif
+	endselect
+	return(true)	
+}
+
+
+function boolean update.log.table(
+			domain	tccprj		i.cprj,
+			domain	tcorno		i.vers,
+			domain	tppdm.cspa	i.elem,
+			domain	tcamnt		i.amnt)
+{
+	select	tpisg112.*
+	from	tpisg112
+	where	tpisg112._index1 = {:i.cprj,:i.vers, :i.elem}
+	selectdo
+	selectempty
+| 		db.retry.point()
+		tpisg112.cprj = i.cprj
+		tpisg112.vers = i.vers
+		tpisg112.elem = i.elem
+		tpisg112.amnt = i.amnt
+		tpisg112.user = logname$
+		tpisg112.date = utc.num()
+		db.insert(ttpisg112, db.skip.dupl,e)
+		if e then
+			return(false)
+		endif
+	endselect
+	return(true)
+}
+
+function boolean check.for.l2.in.contigency.element(
+					domain	tccprj		i.cprj,
+					domain	tcorno		i.vers,
+					domain	tppdm.cspa	i.elem,
+				ref	domain	tppdm.cspa	o.elem.l2)
+{
+	domain  tppdm.cspa	p.elem.l2
+	
+| 	select	tpisg012.elem:o.elem.l2						|ISEGC002019.o
+| 	from	tpisg012
+| 	where	tpisg012._index1 = {:i.cprj,:i.vers}
+| 	and	tpisg012.cspa = :i.elem
+| 	selectdo
+| 		select	tpisg012.*
+| 		from	tpisg012
+| 		where	tpisg012._index1 = {:i.cprj,:i.vers,"99180000"}
+| 		and	tpisg012.cspa = :o.elem.l2
+| 		selectdo
+| 			return(true)
+| 		endselect
+| 	endselect
+| 	return(false)
+										|ISEGC002019.sn
+	select	tpisg012.cspa:p.elem.l2
+	from	tpisg012
+	where	tpisg012._index1 = {:i.cprj,:i.vers,:i.elem}
+	selectdo	
+		select	tpisg012.cspa:o.elem.l2
+		from	tpisg012
+		where	tpisg012._index1 = {:i.cprj,:i.vers,"99180000"}
+		and	tpisg012.cspa <> :p.elem.l2
+		selectdo
+			return(true)
+		endselect
+	endselect								|ISEGC002019.en
+	return(false)
+}
+
+function boolean check.for.s.contigency(
+				domain	tccprj	i.cprj,
+				domain	tcorno	i.vers)
+{
+	select	tpisg012.cprj
+	from	tpisg012
+	where	tpisg012._index1 = {:i.cprj,:i.vers,"99180000"}
+	selectdo
+	selectempty
+		return(false)
+	endselect
+	return(true)
+	
+}
+										|ISEGC01142.EN
+										
+function before.send.for.approval()	
+{											|#ISGEC016025.sn
+	select	a_tpisg012.elem:v.elem,
+		a_tpisg012.levl
+	from	tpisg012	a_tpisg012
+	where	a_tpisg012._index1	=	{:tpisg011.cprj,:tpisg011.vers}
+	and	a_tpisg012.levl		>=	1
+	order	by a_tpisg012.levl	desc
+	selectdo
+		select	tpptc101.cspp
+		from	tpptc101, tpisg012	
+		where	tpptc101._index1	=	{:tpisg011.cprj}
+		and	tpptc101.cspc		=	:v.elem
+		and	tpisg012._index1	=	{:tpisg011.cprj,:tpisg011.vers,tpptc101.cspp}
+		as	set with 1 rows
+		selectdo
+		selectempty
+			message("Element "&v.elem&" not linked with parent.")
+			choice.again()
+		endselect
+	endselect			
+											|#ISGEC016025.en
+											 
+	str = ""
+	if tpisg011.acti <> tpisg.sanction.l4revise  then					|ISGEC002025.n
+		for i = 1 to 3
+			on case i 
+			case 1 :
+				if isspace(tpisg011.aref) then
+					str = "Field Agenda Reference No. ,"
+				endif
+				break
+			case 2 :
+				if tpisg011.adte = 0 then
+					str = strip$ (str) & "Agenda Date ,"
+				endif
+				break
+			case 3 :
+				if isspace(tpisg011.aapr) then
+					str = strip$ (str) & "Agenda Approved By"
+				endif
+				if not isspace(str) then
+					str = strip$(str) & " is Blank,Send for approval Not Allowed"
+					message(str)
+					choice.again()
+				endif	
+			break
+			endcase
+		endfor
+	endif										|#ISGEC016002.en
+}	
+
+function total.client.ctoh()
+{
+	domain	tcamnt		incr.valu,decr.valu
+	client.ctoh = 0
+	incr.valu = 0
+	decr.valu = 0
+
+
+	increase_decrease_tot_value.for.client.ctoh(
+					tpisg011.cprj,
+					incr.valu,
+					decr.valu
+					)
+					
+	client.ctoh = incr.valu - decr.valu
+
+}
+
+function increase_decrease_tot_value.for.client.ctoh(
+			domain	tccprj		i.cprj,
+		ref	domain	tcamnt		inc.valu,	
+		ref	domain	tcamnt		dec.valu	
+			)
+{
+	select	sum(a_tpisg311.cict):inc.valu
+	from	tpisg311 	a_tpisg311
+	where	a_tpisg311._index1= {:i.cprj}
+	and	a_tpisg311.ctyp = tpchng.type.increase	
+	selectdo
+	selectempty
+		inc.valu = 0.00
+	endselect
+	
+	select	sum(b_tpisg311.cict):dec.valu
+	from	tpisg311 	b_tpisg311
+	where	b_tpisg311._index1= {:i.cprj}
+	and	b_tpisg311.ctyp = tpchng.type.decrease	
+	selectdo
+	selectempty
+		dec.valu = 0.00
+	endselect
+	
+}
+
+function total.internal.ctoh()
+{
+	domain	tcamnt		incr.valu,decr.valu
+
+	internal.ctoh = 0
+	incr.valu = 0
+	decr.valu = 0
+	
+	increase_decrease_tot_value.for.internal.ctoh(
+					tpisg011.cprj,
+					incr.valu,
+					decr.valu
+					)
+					
+	internal.ctoh = incr.valu - decr.valu
+
+}
+
+
+
+function increase_decrease_tot_value.for.internal.ctoh(
+			domain	tccprj		i.cprj,
+		ref	domain	tcamnt		inc.valu,	
+		ref	domain	tcamnt		dec.valu	
+			)
+{
+	select	sum(a_tpisg317.cict):inc.valu
+	from	tpisg317 	a_tpisg317
+	where	a_tpisg317._index1= {:i.cprj}
+	and	a_tpisg317.ctyp = tpchng.type.increase	
+	selectdo
+	selectempty
+		inc.valu = 0.00
+	endselect
+	
+	select	sum(b_tpisg317.cict):dec.valu
+	from	tpisg317 	b_tpisg317
+	where	b_tpisg317._index1= {:i.cprj}
+	and	b_tpisg317.ctyp = tpchng.type.decrease	
+	selectdo
+	selectempty
+		dec.valu = 0.00
+	endselect
+	
+}
+
+function Get_Attachment ()
+{
+
+	domain	tcncmp			curr.comp
+	domain	tcmcs.str1		p.char, c.char
+	domain	tcmcs.str30		i.host	
+	domain	tclogn			o.user
+	domain	tcmcs.str50		pass.string, handle.string
+		string			open.link(200),sess.code(30)
+	
+	pass.string = trim$(tpisg011.cprj) 
+	
+	o.user = logname$
+	
+	i.host = hostname$()
+	i.host =  toupper$(i.host)
+	i.host = trim$(i.host)
+	
+	curr.comp = get.compnr()
+	p.char = ""
+	c.char = ""
+	handle.string = ""
+	handle.string =  "SANCTION_CONTROL_" & str$(curr.comp)
+	
+	p.char = (tpisg011.act1  = tpisg.sanction.free) ? "y":"n"
+		
+	on case i.host
+	case "VISHNU":	
+		open.link = 	"chrome.exe --app=http://192.9.200.146/Attachment/Attachment.aspx?AthHandle=" & trim$(handle.string) &
+				"&Index=" & trim$(pass.string) & "&AttachedBy=" & trim$(o.user) & "&ed=" & p.char	
+		break
+		
+	case "VISHNU10GST":	
+		open.link = 	"chrome.exe --app=http://192.9.200.146/ATHERPTEST/Attachment.aspx?AthHandle=" & trim$(handle.string) &
+				"&Index=" & trim$(pass.string) & "&AttachedBy=" & trim$(o.user) & "&ed=" & p.char
+		break
+	endcase
+		
+
+	open.link = trim$(open.link)
+	
+	app_start(open.link, "", "", "", "")
+
+}
+
+
+										|ISGEC002025.en	
+										|#ISGEC019008.sn
+function	extern	transfer.to.supply()
+{
+	if tpisg011.act1 <> tpisg.sanction.free then
+		if	not	check.for.s.contigency(tpisg011.cprj,tpisg011.vers)	then
+			message("Please Maintain the S-Contigency Element for This Project")
+			choice.again()
+		endif
+		
+		if	ask.enum("tpisg012.0010",tcyesno.yes)	=	tcyesno.no	then
+			choice.again()
+		endif
+		
+		if	tpisgdll0012.Sanction_Approval_Matrix(tpisg.sanction.trans.to.supp,o.reas) then		
+			if	not tpisgdll0012.Employee_Responsible_By_Project(tpisg011.cprj,tpisg.sanction.trans.to.supp) then
+				message("Sanction Approval Role Matrix Not Defined!!!")
+				choice.again()
+			endif
+		
+		else
+			message("Approval Matrix is Not Defined !!!")
+			choice.again()
+		endif	
+	
+		tpisgdll0011.Sanction_History(
+						tpisg011.cprj,
+						tpisg011.vers
+						)
+		tpisgdll0011.Revise_Sanction_Control(
+							tpisg011.cprj,
+							tpisg011.vers,
+							tpisg.sanction.trans.to.supp,
+							tpisg.sanction.free,
+							o.reas,
+							0.1
+							)
+		commit.transaction()
+		initialize.fields()
+	endif
+}
+										|#ISGEC019008.en										
+
+function update.tpisg012.totl.amnt.ritb(	domain	tccprj		i.cprj,		
+						domain	tcorno		i.vers	)
+{
+	domain	tcorno	v.max.vers
+		double	max.vers
+	
+	if tpisg011.acti = tpisg.sanction.add.red.client and tpisg011.act1 = tpisg.sanction.approved then
+		max.vers = 0.00
+		v.max.vers = ""	
+		get.max.version.from.history(tpisg011.cprj,max.vers)
+		v.max.vers = str$(max.vers)
+		
+		select	tpisg312.*
+		from	tpisg312
+		where	tpisg312._index1 = {:tpisg011.cprj,:i.vers}
+		selectdo
+			select	g_tpisg012.totl,
+	 			g_tpisg012.amnt,
+	 			g_tpisg012.ritb
+			from	tpisg012 g_tpisg012 for update
+			where	g_tpisg012._index1 = {:tpisg312.cprj,:tpisg312.vers,:tpisg312.elem}
+			and	g_tpisg012.levl = 2
+			and	g_tpisg012.ardc = 0.00 
+			selectdo
+				if etol(tpisg312.ctyp) = 2 then
+	 				tpisg012.totl = tpisg012.totl + tpisg312.valu
+	 				tpisg012.amnt = tpisg012.amnt + tpisg312.valu
+					tpisg012.ritb = tpisg012.ritb + tpisg312.valu
+				else if etol(tpisg312.ctyp) = 3 then
+					tpisg012.totl = tpisg012.totl - tpisg312.valu
+					tpisg012.amnt = tpisg012.amnt - tpisg312.valu
+					tpisg012.ritb = tpisg012.ritb - tpisg312.valu
+				endif
+				endif
+			
+				db.update(ttpisg012,DB.RETRY)
+				commit.transaction()
+			selectempty
+				addition.reduction.old.line.update.on.level2(	tpisg312.cprj,
+										tpisg312.vers,
+										tpisg312.elem,
+										v.max.vers	) 
+			endselect
+		endselect
+		
+		addition.reduction.on.level1(tpisg312.cprj,tpisg312.vers,v.max.vers) 
+		addition.reduction.on.level0(tpisg312.cprj,tpisg312.vers,v.max.vers)
+		
+	else if tpisg011.acti = tpisg.sanction.add.red.inter and tpisg011.act1 = tpisg.sanction.approved then
+		max.vers = 0.00
+		v.max.vers = ""	
+		get.max.version.from.history(tpisg011.cprj,max.vers)
+		v.max.vers = str$(max.vers)
+		
+		select	tpisg318.*
+		from	tpisg318
+		where	tpisg318._index1 = {:tpisg011.cprj,:i.vers}
+		selectdo
+			select	g_tpisg012.totl,
+	 			g_tpisg012.amnt,
+	 			g_tpisg012.ritb
+			from	tpisg012 g_tpisg012 for update
+			where	g_tpisg012._index1 = {:tpisg318.cprj,:tpisg318.vers,:tpisg318.elem}
+			and	g_tpisg012.levl = 2
+			and	g_tpisg012.ardc = 0.00 
+			selectdo
+				if etol(tpisg318.ctyp) = 2 then
+	 				tpisg012.totl = tpisg012.totl + tpisg318.valu
+	 				tpisg012.amnt = tpisg012.amnt + tpisg318.valu
+					tpisg012.ritb = tpisg012.ritb + tpisg318.valu
+				else if etol(tpisg318.ctyp) = 3 then
+					tpisg012.totl = tpisg012.totl - tpisg318.valu
+					tpisg012.amnt = tpisg012.amnt - tpisg318.valu
+					tpisg012.ritb = tpisg012.ritb - tpisg318.valu
+				endif
+				endif
+			
+				db.update(ttpisg012,DB.RETRY)
+				commit.transaction()
+			selectempty
+				addition.reduction.old.line.update.on.level2.it(tpisg318.cprj,
+										tpisg318.vers,
+										tpisg318.elem,
+										v.max.vers) 
+			endselect
+		endselect
+		
+		addition.reduction.on.level1.it(tpisg318.cprj,tpisg318.vers,v.max.vers) 
+		addition.reduction.on.level0.it(tpisg318.cprj,tpisg318.vers,v.max.vers)
+	endif	
+	endif
+}												
+
+
+function addition.reduction.old.line.update.on.level2(	domain	tccprj		i.cprj,		
+							domain	tcorno		i.vers,		
+							domain	tppdm.cspa	i.elem,		
+							domain	tcorno		i.max.vers	)
+{
+	select	a_tpisg008.totl,
+		a_tpisg008.amnt,
+ 		a_tpisg008.ritb
+	from	tpisg008 a_tpisg008 
+	where	a_tpisg008._index1 = {:i.cprj,:i.max.vers,:i.elem}
+	and	a_tpisg008.levl = 2
+	selectdo
+		select	l_tpisg012.totl,
+			l_tpisg012.amnt,
+			l_tpisg012.ritb
+		from	tpisg012 l_tpisg012 for update
+		where	l_tpisg012._index1 = {:i.cprj,:i.vers,:i.elem}
+		and	l_tpisg012.levl = 2
+		and	l_tpisg012.ardc <> 0.00 
+		selectdo
+			if etol(tpisg312.ctyp) = 1 then
+				tpisg012.totl = tpisg008.totl 
+				tpisg012.amnt = tpisg008.amnt
+				tpisg012.ritb = tpisg008.ritb
+			else if etol(tpisg312.ctyp) = 2 then
+				tpisg012.totl = tpisg008.totl + tpisg312.valu
+				tpisg012.amnt = tpisg008.amnt + tpisg312.valu
+				tpisg012.ritb = tpisg008.ritb + tpisg312.valu
+			else if etol(tpisg312.ctyp) = 3 then
+				tpisg012.totl = tpisg008.totl - tpisg312.valu
+				tpisg012.amnt = tpisg008.amnt - tpisg312.valu
+				tpisg012.ritb = tpisg008.ritb - tpisg312.valu
+			endif
+			endif
+			endif
+		
+			db.update(ttpisg012, db.retry)
+			commit.transaction()
+		endselect
+	endselect
+}
+
+function addition.reduction.on.level1(	domain	tccprj		i.cprj,
+					domain	tcorno		i.vers,		
+					domain	tcorno		i.max.vers	)
+{
+	domain	tcamnt		child.tot.valu
+	domain	tcamnt		child.inc.valu
+	domain	tcamnt		child.dec.valu
+	domain	tppdm.cspa	par.cspa
+	
+	par.cspa = ""
+	
+	select	e_tpisg312.cspa:par.cspa
+	from	tpisg312 e_tpisg312
+	where	e_tpisg312._index1 = {:i.cprj,:i.vers}
+	group by e_tpisg312.cspa
+	selectdo
+		child.tot.valu = 0.00
+		child.inc.valu = 0.00
+		child.dec.valu = 0.00
+		
+		select	f_tpisg312.valu,
+			f_tpisg312.ctyp
+		from	tpisg312 f_tpisg312
+		where	f_tpisg312._index1 = {:i.cprj,:i.vers}
+		and 	f_tpisg312.cspa = :par.cspa
+		selectdo
+			if etol(tpisg312.ctyp) = 2 then
+				child.inc.valu = child.inc.valu + tpisg312.valu 
+			else if etol(tpisg312.ctyp) = 3 then
+				child.dec.valu = child.dec.valu + tpisg312.valu  
+			endif
+			endif
+		endselect
+		
+		child.tot.valu = child.inc.valu - child.dec.valu
+		
+		select	b_tpisg008.cspa,
+			b_tpisg008.avai,
+			b_tpisg008.totl,
+			b_tpisg008.aamt,
+			b_tpisg008.ritb,
+			b_tpisg008.vers,
+			b_tpisg008.cprj
+		from	tpisg008	 b_tpisg008 
+		where	b_tpisg008._index1 = {:i.cprj,:i.max.vers,:par.cspa}
+		and	b_tpisg008.levl = 1
+		as set with 1 rows
+		selectdo
+			select	m_tpisg012.totl,
+				m_tpisg012.aamt,
+				m_tpisg012.ritb
+			from	tpisg012 m_tpisg012 for update
+			where	m_tpisg012._index1 = {:i.cprj,:i.vers,:par.cspa}
+			and	m_tpisg012.levl = 1
+			as set with 1 rows
+			selectdo
+				tpisg012.totl = tpisg008.totl + child.tot.valu
+				tpisg012.aamt = tpisg008.aamt + child.tot.valu
+				tpisg012.ritb = tpisg008.ritb + child.tot.valu
+				
+				db.update(ttpisg012, db.retry)
+				commit.transaction()
+			endselect
+		endselect
+	endselect
+}
+
+
+function addition.reduction.on.level0(	domain	tccprj		i.cprj,		
+					domain	tcorno		i.vers,		
+					domain	tcorno		i.max.vers	)
+{
+	select	c_tpisg008.totl,
+		c_tpisg008.aamt,
+		c_tpisg008.ritb
+	from	tpisg008 c_tpisg008 
+	where	c_tpisg008._index1 = {:i.cprj,:i.max.vers}
+	and	c_tpisg008.levl = 0
+	as set with 1 rows	
+	selectdo
+		select	k_tpisg012.totl,
+			k_tpisg012.aamt,
+			k_tpisg012.ritb
+		from	tpisg012 k_tpisg012 for update
+		where	k_tpisg012._index1 = {:i.cprj,:i.vers}
+		and	k_tpisg012.levl = 0
+		as set with 1 rows
+		selectdo
+			select	tpisg311.netc
+			from	tpisg311
+			where	tpisg311._index1 = {:i.cprj,:i.vers}
+			selectdo
+				tpisg012.totl = tpisg008.totl + tpisg311.netc
+				tpisg012.aamt = tpisg008.aamt + tpisg311.netc
+				tpisg012.ritb = tpisg008.ritb + tpisg311.netc
+				db.update(ttpisg012, db.retry)
+				commit.transaction()
+			endselect
+		endselect
+	endselect
+}
+
+function addition.reduction.old.line.update.on.level2.it(	domain	tccprj		i.cprj,		
+								domain	tcorno		i.vers,		
+								domain	tppdm.cspa	i.elem,		
+								domain	tcorno		i.max.vers	)
+{
+	select	a_tpisg008.totl,
+		a_tpisg008.amnt,
+ 		a_tpisg008.ritb
+	from	tpisg008 a_tpisg008 
+	where	a_tpisg008._index1 = {:i.cprj,:i.max.vers,:i.elem}
+	and	a_tpisg008.levl = 2
+	selectdo
+		select	l_tpisg012.totl,
+			l_tpisg012.amnt,
+			l_tpisg012.ritb
+		from	tpisg012 l_tpisg012 for update
+		where	l_tpisg012._index1 = {:i.cprj,:i.vers,:i.elem}
+		and	l_tpisg012.levl = 2
+		and	l_tpisg012.ardc <> 0.00 
+		selectdo
+			if etol(tpisg318.ctyp) = 1 then
+				tpisg012.totl = tpisg008.totl 
+				tpisg012.amnt = tpisg008.amnt
+				tpisg012.ritb = tpisg008.ritb
+			else if etol(tpisg318.ctyp) = 2 then
+				tpisg012.totl = tpisg008.totl + tpisg318.valu
+				tpisg012.amnt = tpisg008.amnt + tpisg318.valu
+				tpisg012.ritb = tpisg008.ritb + tpisg318.valu
+			else if etol(tpisg318.ctyp) = 3 then
+				tpisg012.totl = tpisg008.totl - tpisg318.valu
+				tpisg012.amnt = tpisg008.amnt - tpisg318.valu
+				tpisg012.ritb = tpisg008.ritb - tpisg318.valu
+			endif
+			endif
+			endif
+		
+			db.update(ttpisg012, db.retry)
+			commit.transaction()
+		endselect
+	endselect
+}
+
+function addition.reduction.on.level1.it(	domain	tccprj		i.cprj,
+						domain	tcorno		i.vers,		
+						domain	tcorno		i.max.vers	)
+{
+	domain	tcamnt		child.tot.valu
+	domain	tcamnt		child.inc.valu
+	domain	tcamnt		child.dec.valu
+	domain	tppdm.cspa	par.cspa
+	
+	par.cspa = ""
+	
+	select	e_tpisg318.cspa:par.cspa
+	from	tpisg318 e_tpisg318
+	where	e_tpisg318._index1 = {:i.cprj,:i.vers}
+	group by e_tpisg318.cspa
+	selectdo
+		child.tot.valu = 0.00
+		child.inc.valu = 0.00
+		child.dec.valu = 0.00
+		
+		select	f_tpisg318.valu,
+			f_tpisg318.ctyp
+		from	tpisg318 f_tpisg318
+		where	f_tpisg318._index1 = {:i.cprj,:i.vers}
+		and 	f_tpisg318.cspa = :par.cspa
+		selectdo
+			if etol(tpisg318.ctyp) = 2 then
+				child.inc.valu = child.inc.valu + tpisg318.valu 
+			else if etol(tpisg318.ctyp) = 3 then
+				child.dec.valu = child.dec.valu + tpisg318.valu  
+			endif
+			endif
+		endselect
+		
+		child.tot.valu = child.inc.valu - child.dec.valu
+		
+		select	b_tpisg008.cspa,
+			b_tpisg008.avai,
+			b_tpisg008.totl,
+			b_tpisg008.aamt,
+			b_tpisg008.ritb,
+			b_tpisg008.vers,
+			b_tpisg008.cprj
+		from	tpisg008	 b_tpisg008 
+		where	b_tpisg008._index1 = {:i.cprj,:i.max.vers,:par.cspa}
+		and	b_tpisg008.levl = 1
+		as set with 1 rows
+		selectdo
+			select	m_tpisg012.totl,
+				m_tpisg012.aamt,
+				m_tpisg012.ritb
+			from	tpisg012 m_tpisg012 for update
+			where	m_tpisg012._index1 = {:i.cprj,:i.vers,:par.cspa}
+			and	m_tpisg012.levl = 1
+			as set with 1 rows
+			selectdo
+				tpisg012.totl = tpisg008.totl + child.tot.valu
+				tpisg012.aamt = tpisg008.aamt + child.tot.valu
+				tpisg012.ritb = tpisg008.ritb + child.tot.valu
+				
+				db.update(ttpisg012, db.retry)
+				commit.transaction()
+			endselect
+		endselect
+	endselect
+}
+
+
+function addition.reduction.on.level0.it(	domain	tccprj		i.cprj,		
+						domain	tcorno		i.vers,		
+						domain	tcorno		i.max.vers	)
+{
+	select	c_tpisg008.totl,
+		c_tpisg008.aamt,
+		c_tpisg008.ritb
+	from	tpisg008 c_tpisg008 
+	where	c_tpisg008._index1 = {:i.cprj,:i.max.vers}
+	and	c_tpisg008.levl = 0
+	as set with 1 rows	
+	selectdo
+		select	k_tpisg012.totl,
+			k_tpisg012.aamt,
+			k_tpisg012.ritb
+		from	tpisg012 k_tpisg012 for update
+		where	k_tpisg012._index1 = {:i.cprj,:i.vers}
+		and	k_tpisg012.levl = 0
+		as set with 1 rows
+		selectdo
+			select	tpisg317.netc
+			from	tpisg317
+			where	tpisg317._index1 = {:i.cprj,:i.vers}
+			selectdo
+				tpisg012.totl = tpisg008.totl + tpisg317.netc
+				tpisg012.aamt = tpisg008.aamt + tpisg317.netc
+				tpisg012.ritb = tpisg008.ritb + tpisg317.netc
+				db.update(ttpisg012, db.retry)
+				commit.transaction()
+			endselect
+		endselect
+	endselect
+}
+
+function get.max.version.from.history(		domain	tccprj	i.cprj,
+					ref	domain	tcamnt	max.vrs	)
+{	
+	long	j,i
+	double	array(10000)
+	i = 0
+	j = 0
+	
+	select	tpisg007.vers
+	from	tpisg007
+	where	tpisg007._index1 = {:i.cprj}
+	group by tpisg007.vers
+	selectdo
+		i = i + 1
+		array(i) = val(tpisg007.vers)
+	endselect
+
+	max.vrs = array(1)
+
+	for j = 2 to i
+		if array(j) > max.vrs then
+			max.vrs = array(j)
+		endif
+	endfor
+	
+	for j = 1 to i
+		array(j) = 0.00
+		array(i) = 0.00
+	endfor
+}
+
+
+
+|*************************************** End of Code ***********************************************

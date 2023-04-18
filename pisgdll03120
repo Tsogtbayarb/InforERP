@@ -1,0 +1,762 @@
+|******************************************************************************
+|* whisgdll0312  0  VRC B61U a7 live
+|* Receipt DLL
+|* baan
+|* 14-10-04 [11:09]
+|******************************************************************************
+|* Script Type: Library
+|*
+|* ISGECDV001073,	Sujeet Kumar,		2014-10-04
+|* Tollerance Amount Field is Added on Finance Parameter
+|* If the Receipt Total Amount is Greater Than IR Amount then
+|* We have to Check is any Tollerance Amount is specified or not
+|* If Tollerance Amount is specified and (Receipt Value + Tollerance Amount) is 
+|* Greater than IR Amount, Receipt Will not be Confirmed
+|* Service and Support Case ID : 30289
+|* Functional: Mr. Deepak Rawat
+|*
+|******************************************************************************
+
+
+function extern whisgdll0312.purchase.receipt.line
+					(
+						domain	whinh.shpm	i.rcno,		|Warehouse Receipt
+					ref 	domain	tcamnt		o.amnt
+					)
+{
+	domain	tcamnt		total.taxable.amount
+	domain	whinh.shpm	o.rcno
+	domain	tcpono		o.rseq
+	domain	tcqiv1		o.qiap
+	domain	tcdate		o.ddte
+	
+	domain	tcorno		o.orno
+	domain	tcpono		o.pono
+	domain	tcpono		o.sqnb
+	
+	
+	|*** Reference Variable
+	domain	tcamnt		o.lcam		|Total Landed Cost Amount Receipt Line Wise
+	domain	tcccty		o.ccty		|Country
+	domain	tccvat		o.cvat		|Tax Code
+	domain	tcqiv1		o.qoor
+	domain	tcpric		o.pric
+	domain	tcpric		o.tasv.l
+	domain	tcpric		o.tase.l
+	domain	tcpric		o.tass.l
+	
+	domain	tcamnt		o.exc.amnt
+	domain	tcamnt		o.cst.amnt
+	domain	tcamnt		o.ser.amnt
+	
+	
+	domain	tcpvat	o.eces.per	|Eces Percentage
+	domain	tcpvat	o.cess.per	|Cess Percentage
+	domain	tcpvat	o.vat.per	|VAT Percentage
+	domain	tcpvat	o.serv.per	|Service Tax Percentage
+	domain	tcpvat	o.sces.per	|Sces Percentage
+	
+	domain	tcpvat	r.eces.per
+	domain	tcpvat	r.cess.per
+	domain	tcpvat	r.cst.per
+	domain	tcpvat	r.ser.per
+	domain	tcpvat	r.sces.per
+	
+	total.taxable.amount = 0
+	
+	select 	tdpur406.rcno:o.rcno,
+		tdpur406.rseq:o.rseq,
+		tdpur406.qiap:o.qiap,
+		tdpur406.ddte:o.ddte,
+		tdpur406.orno:o.orno,
+		tdpur406.pono:o.pono,
+		tdpur406.sqnb:o.sqnb
+	from	tdpur406
+	where	tdpur406._index2 = {:i.rcno}
+	selectdo
+		|*********************
+		|* Purchase Order Line Data
+		|*********************
+		
+		whisgdll0312.get.purchase.order.data.against.purchase.receipt(o.orno,o.pono,o.sqnb,o.ccty,o.cvat,o.pric,
+						o.qoor,o.tasv.l,o.tase.l,o.tass.l)
+		total.taxable.amount = total.taxable.amount + (o.pric * o.qiap)	
+
+		|*********************
+		|* Calculate Other Charges
+		|*********************
+		o.lcam = 0
+		whisgdll0312.Calculate.LandedCost.Amount(o.rcno,o.rseq,(o.pric * o.qiap),o.lcam)
+		total.taxable.amount = total.taxable.amount + o.lcam
+		
+		o.exc.amnt = 0
+		o.cst.amnt = 0
+		o.ser.amnt = 0
+		
+		whisgdll0312.get.tax.rate(o.ccty,o.cvat,o.ddte,
+					r.eces.per, r.cess.per, r.cst.per, r.ser.per, r.sces.per)
+					
+		|Excise 
+		if	o.qoor <> 0	then
+			o.tase.l = (o.tase.l/o.qoor) * o.qiap
+			o.tass.l = (o.tass.l/o.qoor) * o.qiap
+			o.tasv.l = (o.tasv.l/o.qoor) * o.qiap
+		else
+			o.tase.l = 0
+			o.tass.l = 0
+		endif	
+		
+		o.exc.amnt =  ((o.tase.l * r.eces.per) / 100 )			
+		o.exc.amnt = o.exc.amnt +  ((o.exc.amnt * r.cess.per) / 100) 
+		
+		|Service
+		
+		o.ser.amnt = ((o.tass.l * r.ser.per) / 100)		
+		o.ser.amnt =  o.ser.amnt + ((o.ser.amnt * r.sces.per) / 100)
+		
+		|CST / VAT
+		
+		o.cst.amnt = ((o.tasv.l + o.exc.amnt) * r.cst.per) / 100
+		
+		total.taxable.amount = total.taxable.amount + (o.exc.amnt + o.cst.amnt + o.ser.amnt)			
+		
+	endselect
+	
+	o.amnt = total.taxable.amount
+	
+}
+
+function extern whisgdll0312.warehouse.receipt.line
+					(
+						domain	whinh.shpm	i.rcno,		|Warehouse Receipt 
+					ref 	domain	tcamnt		o.amnt		|Tax Amount	
+					)
+{
+	domain	whinh.shpm	o.rcno
+	domain	tcpono		o.rcln
+	domain	tcitem		o.item
+	domain	tcyesno		o.exca
+	domain	tcdate		o.ardt
+	domain	tcqst1		o.qrcr
+	domain	tcorno		o.orno
+	domain	tcpono		o.pono
+	domain	tcpono		o.sqnb
+	
+	domain	tcamnt		total.taxable.amount
+	
+	|*** Reference Variable
+	domain	tcamnt		o.lcam		|Total Landed Cost Amount Receipt Line Wise
+	domain	tcccty		o.ccty		|Country
+	domain	tccvat		o.cvat		|Tax Code
+	domain	tcqiv1		o.qoor
+	domain	tcpric		o.pric
+	domain	tcpric		o.tasv.l
+	domain	tcpric		o.tase.l
+	domain	tcpric		o.tass.l
+	
+	domain	tcamnt		o.exc.amnt
+	domain	tcamnt		o.cst.amnt
+	domain	tcamnt		o.ser.amnt
+	
+	
+	domain	tcpvat	o.eces.per	|Eces Percentage
+	domain	tcpvat	o.cess.per	|Cess Percentage
+	domain	tcpvat	o.vat.per	|VAT Percentage
+	domain	tcpvat	o.serv.per	|Service Tax Percentage
+	domain	tcpvat	o.sces.per	|Sces Percentage
+	
+	domain	tcpvat	r.eces.per
+	domain	tcpvat	r.cess.per
+	domain	tcpvat	r.cst.per
+	domain	tcpvat	r.ser.per
+	domain	tcpvat	r.sces.per
+	
+	boolean		tax.record.found
+	boolean		o.found
+	
+	
+	total.taxable.amount = 0
+	
+	select 	whinh312.rcno:o.rcno,
+		whinh312.rcln:o.rcln,
+		whinh312.item:o.item,
+		whinh312.ardt:o.ardt,
+		whinh312.qrcr:o.qrcr,
+		whinh312.orno:o.orno,
+		whinh312.pono:o.pono,
+		whinh312.seqn:o.sqnb
+	from	whinh312
+	where	whinh312._index1 = {:i.rcno}
+	selectdo
+		tax.record.found = false
+		select 	tcibd937.exca:o.exca
+		from	tcibd937
+		where	tcibd937._index1 = {:o.item}
+		and	tcibd937.exca = tcyesno.yes
+		as set with 1 rows
+		selectdo
+		selectempty
+			o.exca = tcyesno.no
+		endselect
+		
+		
+		|*********************
+		|* Purchase Order Line Data
+		|*********************
+		
+| 		whisgdll0312.get.purchase.order.data(o.rcno,o.rcln,o.ccty,o.cvat,o.pric,
+| 						o.qoor,o.tasv.l,o.tase.l,o.tass.l)
+| 		
+		whisgdll0312.get.purchase.order.data.against.purchase.receipt(o.orno,o.pono,o.sqnb,o.ccty,o.cvat,o.pric,
+						o.qoor,o.tasv.l,o.tase.l,o.tass.l)
+
+		total.taxable.amount = total.taxable.amount + (o.pric * o.qrcr)	
+		
+		
+		|*********************
+		|* Calculate Other Charges
+		|*********************
+		o.lcam = 0
+		whisgdll0312.Calculate.LandedCost.Amount(o.rcno,o.rcln,(o.pric * o.qrcr),o.lcam)
+		total.taxable.amount = total.taxable.amount + o.lcam
+					
+		
+		|********************
+		|* Tax Data From whinh936
+		|* If Item is Exciseable
+		|********************
+		
+| 		if o.exca = tcyesno.yes then
+		if not tax.record.found then
+			o.exc.amnt = 0
+			o.cst.amnt = 0
+			o.ser.amnt = 0
+			
+			whisgdll0312.get.tax.from.whinh936(o.rcno,o.rcln,o.ccty,o.exc.amnt,o.cst.amnt,o.ser.amnt,o.found)
+			if o.found then
+				tax.record.found = true
+			endif
+			
+			total.taxable.amount = total.taxable.amount + (o.exc.amnt + o.cst.amnt + o.ser.amnt)
+		endif
+		
+		|*********************
+		|* Calculate Tax For Those Item
+		|* Which is not Excisable
+		|*********************
+		
+| 		if o.exca = tcyesno.no then
+
+		if not tax.record.found then
+			
+			o.exc.amnt = 0
+			o.cst.amnt = 0
+			o.ser.amnt = 0
+			
+			whisgdll0312.get.tax.rate(o.ccty,o.cvat,o.ardt,
+						r.eces.per, r.cess.per, r.cst.per, r.ser.per, r.sces.per)
+						
+			|Excise 
+			if	o.qoor <> 0	then
+				o.tase.l = (o.tase.l/o.qoor) * o.qrcr
+				o.tass.l = (o.tass.l/o.qoor) * o.qrcr
+				o.tasv.l = (o.tasv.l/o.qoor) * o.qrcr
+			else
+				o.tase.l = 0
+				o.tass.l = 0
+			endif	
+			
+			o.exc.amnt =  ((o.tase.l * r.eces.per) / 100 )			
+			o.exc.amnt = o.exc.amnt +  ((o.exc.amnt * r.cess.per) / 100) 
+			
+			|Service
+			
+			o.ser.amnt = ((o.tass.l * r.ser.per) / 100)		
+			o.ser.amnt =  o.ser.amnt + ((o.ser.amnt * r.sces.per) / 100)
+			
+			|CST / VAT
+			
+			o.cst.amnt = ((o.tasv.l + o.exc.amnt) * r.cst.per) / 100
+			
+			total.taxable.amount = total.taxable.amount + (o.exc.amnt + o.cst.amnt + o.ser.amnt)
+		endif
+		
+		
+	endselect
+	o.amnt = total.taxable.amount
+}
+
+
+
+function extern whisgdll0312.Calculate.LandedCost.Amount
+			(
+				domain	tcorno	i.rcno,		|Warehouse Receipt
+				domain	tcpono	i.rcln,		|Receipt Line
+				domain	tcamnt	i.amnt,		|Receipt Value
+			ref	domain	tcamnt	o.lcam		|Total Landed Cost Amount
+			)
+{
+	domain	tcamnt		o.tclct200.lcam
+	domain	tcperc		o.tclct200.perc
+	domain	tclct.calm	o.tclct200.calm
+	
+| 	select 	tclct200.lcam:o.tclct200.lcam,
+| 		tclct200.perc:o.tclct200.perc,
+| 		tclct200.calm:o.tclct200.calm
+| 	from	tclct200
+| 	where	tclct200._index1 = {21, 100, :i.rcno, :1}
+| 	wherebind(1, str$(i.rcln))
+| 	selectdo
+| 		on case o.tclct200.calm
+| 			case	tclct.calm.perc.value:
+| 				o.lcam = o.lcam + (o.lcam * o.tclct200.perc)/ 100
+| 				break
+| 			case	tclct.calm.fixed.amount:
+| 				o.lcam = o.lcam + o.tclct200.lcam
+| 				break
+| 		endcase
+| 	endselect
+	
+	
+	
+	select 	sum(tclct200.lcam):o.lcam
+| 		tclct200.perc:o.tclct200.perc,
+| 		tclct200.calm:o.tclct200.calm
+	from	tclct200
+	where	tclct200._index1 = {21, 100, :i.rcno, :1}
+	wherebind(1, str$(i.rcln))
+	selectdo
+| 		on case o.tclct200.calm
+| 			case	tclct.calm.perc.value:
+| 				o.lcam = o.lcam + (o.lcam * o.tclct200.perc)/ 100
+| 				break
+| 			case	tclct.calm.fixed.amount:
+| 				o.lcam = o.lcam + o.tclct200.lcam
+| 				break
+| 		endcase
+	endselect
+}
+
+function extern whisgdll0312.get.purchase.order.data
+			(
+				domain	whinh.shpm	i.rcno,	|Receipt Number
+				domain	tcpono		i.rcln,	|Line Number
+			ref 	domain	tcccty		o.ccty,	|Country
+			ref 	domain	tccvat		o.cvat,	|Tax Code
+			ref 	domain	tcpric		o.pric,	|Price
+			ref 	domain	tcqiv1		o.qoor,	|Quantity
+			ref 	domain	tcpric		o.tasv.l,
+			ref 	domain	tcpric		o.tase.l,
+			ref 	domain	tcpric		o.tass.l
+			)
+{
+	select 	tdpur401.ccty:o.ccty,
+		tdpur401.cvat:o.cvat,
+		tdpur401.pric:o.pric,
+		tdpur401.qoor:o.qoor,
+		tdpur401.tasv.l:o.tasv.l,
+		tdpur401.tase.l:o.tase.l,
+		tdpur401.tass.l:o.tass.l
+	from	tdpur401
+	where	tdpur401._index7 = {:i.rcno}
+	and	tdpur401.rseq = :i.rcln
+	as set with 1 rows
+	selectdo
+	selectempty
+		o.ccty = ""
+		o.cvat = ""
+	endselect
+	
+}
+
+function extern whisgdll0312.get.purchase.order.data.against.purchase.receipt
+			(
+				domain	tcorno		i.orno,	|Purchase Order
+				domain	tcpono		i.pono,	|Position
+				domain	tcpono		i.sqnb,	|Sequence
+| 				domain	whinh.shpm	i.rcno,	|Receipt Number
+| 				domain	tcpono		i.rcln,	|Line Number
+			ref 	domain	tcccty		o.ccty,	|Country
+			ref 	domain	tccvat		o.cvat,	|Tax Code
+			ref 	domain	tcpric		o.pric,	|Price
+			ref 	domain	tcqiv1		o.qoor,	|Quantity
+			ref 	domain	tcpric		o.tasv.l,
+			ref 	domain	tcpric		o.tase.l,
+			ref 	domain	tcpric		o.tass.l
+			)
+{
+	select 	tdpur401.ccty:o.ccty,
+		tdpur401.cvat:o.cvat,
+		tdpur401.pric:o.pric,
+		tdpur401.qoor:o.qoor,
+		tdpur401.tasv.l:o.tasv.l,
+		tdpur401.tase.l:o.tase.l,
+		tdpur401.tass.l:o.tass.l
+	from	tdpur401
+	where	tdpur401._index1 = {:i.orno,:i.pono,:i.sqnb}
+| 	and	tdpur401.rseq = :i.rcln
+	as set with 1 rows
+	selectdo
+	selectempty
+		o.ccty = ""
+		o.cvat = ""
+	endselect
+	
+}
+
+
+function extern whisgdll0312.get.tax.from.whinh936
+			(
+				domain	tcorno	i.rcno,		|Receipt Number
+				domain	tcpono	i.rcln,		|Receipt Line Number
+				domain	tcccty	i.ccty,		|Country
+			ref	domain	tcamnt	o.exc.amnt,	|Excise Amount
+			ref	domain	tcamnt	o.cst.amnt,	|CST Amount
+			ref	domain	tcamnt	o.ser.amnt,	|Service Tax Amount
+			ref 	boolean		o.found
+			)
+{
+	domain	tcamnt		o.whinh936.aamt
+	domain	whinh.shpm	o.whinh936.rcno
+	domain	tccvat		o.whinh936.taxc
+	domain	tcpvat		o.whinh936.pvat
+	domain	tctax.indt.l	o.tcmcs036.indt.l
+	
+	o.exc.amnt = 0
+	o.cst.amnt = 0
+	o.ser.amnt = 0
+	
+	select	sum(whinh936.aamt):o.whinh936.aamt, 
+		whinh936.rcno:o.whinh936.rcno,
+		whinh936.taxc:o.whinh936.taxc,
+		whinh936.pvat:o.whinh936.pvat
+	from	whinh936
+	where	whinh936._index1 = {:i.rcno,:i.rcln}
+	group by whinh936.rcno,whinh936.taxc,whinh936.pvat
+	selectdo
+		o.found = true
+		select	tcmcs036.indt.l:o.tcmcs036.indt.l
+		from	tcmcs036
+		where	tcmcs036._index1 = {:i.ccty, :o.whinh936.taxc}
+		selectdo
+			on case etol(o.tcmcs036.indt.l)
+				case 4:				|Basic Excise Duty
+				case 9:				|Basic Custom Duty	
+				case 10:			|Countervailing Duty
+				case 14:			|ECess CVD
+				case 15:			|ECess on Custom
+				case 17:			|Ecess on Excise
+				case 19:			|SHE Cess on CVD
+				case 20:			|SHE Cess on Excise
+				case 22:			|SHE Cess on Custom
+					o.exc.amnt = o.exc.amnt + o.whinh936.aamt
+					break
+				case 1:				|Service
+				case 16:			|Ecess on Service
+				case 21:			|SHE Cess on Service	
+					o.ser.amnt = o.ser.amnt + o.whinh936.aamt
+					break	
+				case 2:				|Local Sales Tax	
+				case 3:				|Central Sales Tax
+				case 26:			|VAT
+				case 30:			|Not Applicable
+					o.cst.amnt = o.cst.amnt + o.whinh936.aamt
+					break
+			endcase
+		endselect
+	selectempty
+		o.found = false
+	endselect
+}
+
+
+function whisgdll0312.get.tax.rate
+			(
+				domain	tcccty	i.ccty, 	|Country
+				domain	tccvat	i.cvat,		|Tax Code
+				domain	tcdate	i.ddte,		|Effective Date
+			ref	domain	tcpvat	o.eces.per,	|Eces Percentage
+			ref	domain	tcpvat	o.cess.per,	|Cess Percentage
+			ref	domain	tcpvat	o.vat.per,	|VAT Percentage
+			ref	domain	tcpvat	o.serv.per,	|Service Tax Percentage
+			ref	domain	tcpvat	o.sces.per	|Sces Percentage
+			)
+{
+
+	domain	tcccty		o.tctax941.ccty
+	domain	tccvat		o.tctax941.cvat
+	domain	tcccty		o.tcmcs036.ccty
+	domain	tccvat		o.tcmcs036.cvat
+	domain	tctax.indt.l	o.tcmcs036.indt.l
+	
+	o.eces.per = 0 
+	o.cess.per = 0
+	o.vat.per = 0
+	o.serv.per = 0
+	o.sces.per = 0
+	
+	select 	tctax941.ccty:o.tctax941.ccty, 
+		tctax941.cvat:o.tctax941.cvat
+	from 	tctax941
+	where	tctax941._index1={:i.ccty, :i.cvat}
+	and	tctax941.type = 20
+	selectdo
+		select 	tcmcs036.ccty:o.tcmcs036.ccty, 
+			tcmcs036.cvat:o.tcmcs036.cvat, 
+			tcmcs036.indt.l:o.tcmcs036.indt.l
+		from 	tcmcs036
+		where	tcmcs036._index1 = {:o.tctax941.ccty, :o.tctax941.cvat}
+		selectdo
+			on case	o.tcmcs036.indt.l
+				case tctax.indt.l.bed:
+					o.eces.per = whisgdll0312.get.rate.from.tcmcs032(o.tcmcs036.ccty, o.tcmcs036.cvat, i.ddte)
+					break
+				case tctax.indt.l.service:
+					o.serv.per = whisgdll0312.get.rate.from.tcmcs032(o.tcmcs036.ccty, o.tcmcs036.cvat, i.ddte)
+					break	
+				case tctax.indt.l.e.cess.excise:	
+				case tctax.indt.l.hse.cess.excise:	
+					o.cess.per = o.cess.per + whisgdll0312.get.rate.from.tcmcs032(o.tcmcs036.ccty, o.tcmcs036.cvat, i.ddte)
+					break
+				case tctax.indt.l.e.cess.service:	
+				case tctax.indt.l.hse.cess.servic:
+					o.sces.per = o.sces.per + whisgdll0312.get.rate.from.tcmcs032(o.tcmcs036.ccty, o.tcmcs036.cvat, i.ddte)
+					break	
+				case tctax.indt.l.vat:	
+				case tctax.indt.l.cst:	
+				case tctax.indt.l.lst:	
+				case tctax.indt.l.n.a:	
+					o.vat.per = o.vat.per + whisgdll0312.get.rate.from.tcmcs032(o.tcmcs036.ccty, o.tcmcs036.cvat, i.ddte)
+					break
+			endcase		
+		endselect
+	endselect	
+}
+
+function extern domain tcpvat whisgdll0312.get.rate.from.tcmcs032
+			(
+				domain	tcccty	i.ccty,		|Country
+				domain	tccvat	i.cvat,		|Tax Code
+				domain	tcdate	i.ddte		|Effective Date
+			)
+{
+
+	domain	tcccty		o.tcmcs032.ccty
+	domain	tccvat		o.tcmcs032.cvat
+	domain	tcdate		o.tcmcs032.edat
+	domain	tcpvat		o.tcmcs032.pvat
+	
+	o.tcmcs032.pvat = 0
+	
+	select 	tcmcs032.ccty:o.tcmcs032.ccty, 
+		tcmcs032.cvat:o.tcmcs032.cvat, 
+		tcmcs032.edat:o.tcmcs032.edat, 
+		tcmcs032.pvat:o.tcmcs032.pvat
+	from 	tcmcs032
+	where	tcmcs032._index1 = {:i.ccty, :i.cvat}
+	and	tcmcs032.edat <= :i.ddte
+	order by tcmcs032._index1 desc
+	as set with 1 rows
+	selectdo
+	selectempty
+	endselect
+	
+	return(o.tcmcs032.pvat)
+}
+
+|********* Check Receipt Type
+
+function extern domain tcmcs.str8 whisgdll0312.receipt.source
+			(
+				domain	whinh.shpm	i.rcno,		|Receipt 
+				domain	tcpono		i.rcln		|Receipt Line
+			)
+{
+	domain	tccwar		o.cwar
+	
+	select 	whisg312.cwar:o.cwar
+	from	whisg312 
+	where 	whisg312._index1 = {:i.rcno,:i.rcln}
+	as set with 1 rows
+	selectdo
+		if isspace(o.cwar) then
+			return("TDPUR406")
+		else
+			return("WHINH312")
+		endif
+	endselect
+	
+	return("")
+}
+
+
+function extern domain tcamnt	whisgdll0312.receipt.amount
+			(
+				domain	whinh.shpm	i.rcno,		|Receipt Number
+				domain	tcpono		i.rcln		|Line
+			)
+{
+	domain	tcamnt	o.whisg312.amnt 
+	o.whisg312.amnt = 0
+	
+	select 	whisg312.amnt:o.whisg312.amnt
+	from	whisg312
+	where 	whisg312._index1 = {:i.rcno,:i.rcln}
+	as set with 1 rows
+	selectdo
+	endselect
+	
+	return(o.whisg312.amnt)
+}
+
+
+
+function extern boolean whisgdll0312.get.tax.from.whinh936.1
+			(
+				domain	tcorno		i.rcno,		|Receipt Number
+				domain	tcpono		i.rcln,		|Receipt Line Number
+				domain	tcccty		i.ccty,		|Country
+				domain	tcmcs.cste	i.cste,
+			ref	domain	tcamnt		o.exc.amnt,	|Excise Amount
+			ref	domain	tcamnt		o.cst.amnt,	|CST Amount
+			ref	domain	tcamnt		o.ser.amnt,	|Service Tax Amount
+			ref 	domain	tcamnt		o.vat.amnt	|VAT Amount
+			)
+{
+	domain	tcamnt		o.whinh936.aamt
+	domain	whinh.shpm	o.whinh936.rcno
+	domain	tccvat		o.whinh936.taxc
+	domain	tcpvat		o.whinh936.pvat
+	domain	tctax.indt.l	o.tcmcs036.indt.l
+	domain	tcmcs.cste	o.cste
+	
+	boolean	o.found
+	
+	o.exc.amnt = 0
+	o.cst.amnt = 0
+	o.ser.amnt = 0
+	o.vat.amnt = 0
+	
+	o.found = false
+	
+	select	sum(whinh936.aamt):o.whinh936.aamt, 
+		whinh936.rcno:o.whinh936.rcno,
+		whinh936.taxc:o.whinh936.taxc,
+		whinh936.pvat:o.whinh936.pvat
+	from	whinh936
+	where	whinh936._index1 = {:i.rcno,:i.rcln}
+	group by whinh936.rcno,whinh936.taxc,whinh936.pvat
+	selectdo
+		select	tcmcs036.indt.l:o.tcmcs036.indt.l
+		from	tcmcs036
+		where	tcmcs036._index1 = {:i.ccty, :o.whinh936.taxc}
+		selectdo
+			on case etol(o.tcmcs036.indt.l)
+				case 4:				|Basic Excise Duty
+				case 9:				|Basic Custom Duty	
+				case 10:			|Countervailing Duty
+				case 14:			|ECess CVD
+				case 15:			|ECess on Custom
+				case 17:			|Ecess on Excise
+				case 19:			|SHE Cess on CVD
+				case 20:			|SHE Cess on Excise
+				case 22:			|SHE Cess on Custom
+					o.exc.amnt = o.exc.amnt + o.whinh936.aamt
+					break
+				case 1:				|Service
+				case 16:			|Ecess on Service
+				case 21:			|SHE Cess on Service	
+					o.ser.amnt = o.ser.amnt + o.whinh936.aamt
+					break	
+				case 3:				|Central Sales Tax
+					o.cst.amnt = o.cst.amnt + o.whinh936.aamt
+					break
+				case 2:				|Local Sales Tax	
+				case 26:			|VAT
+				case 30:			|Not Applicable
+					select 	tcisg020.cste:o.cste
+					from	tcisg020
+					where 	tcisg020._index1 = {:i.ccty,:i.cste,:o.whinh936.taxc}
+					as set with 1 rows
+					selectdo
+						o.found = true
+						o.vat.amnt = o.vat.amnt + o.whinh936.aamt
+					endselect
+					
+					break
+			endcase
+		endselect
+	endselect
+	
+	return(o.found)
+}
+
+
+
+function extern boolean whisgdll0312.get.tax.from.tfacp935
+				(
+					domain	whinh.shpm	i.rcno,		|Receipt 
+					domain	tcpono		i.rcln,		|Line
+					domain	tcmcs.cste	i.cste,
+				ref	domain	tcamnt		o.other.amnt,	|Other Tax Amount
+				ref 	domain	tcamnt		o.vat.amnt	|VAT Amount
+				)
+{
+	domain	tcamnt	amount
+	domain	tcccty		o.ccty
+	domain	tccvat		o.cvat
+	domain	tcmcs.cste	o.cste
+	domain	tctax.indt.l	o.tcmcs036.indt.l
+	
+	o.other.amnt = 0
+	o.vat.amnt = 0
+	
+	boolean o.found
+	o.found = false
+	
+	select	tfacp935.ccty:o.ccty, 
+		tfacp935.cvat:o.cvat, 
+		sum(tfacp935.vamt):amount
+	from	tfacp935
+	where	tfacp935.rcno = :i.rcno
+	and	tfacp935.rseq = :i.rcln
+	group by tfacp935.ccty, tfacp935.cvat
+	selectdo
+		select	tcmcs036.indt.l:o.tcmcs036.indt.l
+		from	tcmcs036
+		where	tcmcs036._index1 = {:o.ccty, :o.cvat}
+		selectdo
+			on case etol(o.tcmcs036.indt.l)
+			case 1:				|Service
+			case 4:				|Basic Excise Duty
+			case 9:				|Basic Custom Duty	
+			case 10:			|Countervailing Duty
+			case 14:			|ECess CVD
+			case 15:			|ECess on Custom
+			case 16:			|Ecess on Service
+			case 17:			|Ecess on Excise
+			case 19:			|SHE Cess on CVD
+			case 20:			|SHE Cess on Excise
+			case 21:			|SHE Cess on Service
+			case 22:			|SHE Cess on Custom
+			case 3:				|Central Sales Tax
+				o.other.amnt = o.other.amnt + amount
+				break
+			case 2:				|Local Sales Tax	
+			case 26:			|VAT
+			case 30:			|Not Applicable
+				select 	tcisg020.cste:o.cste
+				from	tcisg020
+				where 	tcisg020._index1 = {:o.ccty,:i.cste,:o.cvat}
+				as set with 1 rows
+				selectdo
+					o.found = true
+					o.vat.amnt = o.vat.amnt + amount
+				endselect
+				
+			endcase
+		endselect
+	endselect
+	
+	return(o.found)
+}

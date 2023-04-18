@@ -1,0 +1,191 @@
+|******************************************************************************
+|* tdisgspool  0  VRC B61U a7 live
+|* Spool Device Test Program
+|* Installation user             
+|* 2014-07-10
+|******************************************************************************
+|* Main table tccom100 Business Partners, Form Type 4
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttccom100 | Business Partners
+
+   extern  domain  tccom.bpid       bpid.f    fixed
+   extern  domain  tccom.bpid       bpid.t    fixed
+   extern  domain  tcyesno  txta.txt
+   extern	domain	tcamnt	iamt.m,exc.amnt,exc.rate,stx.rate,
+				stx.amnt,tot.amnt,oth.chg1,oth.chg2
+   
+   table	ttdisg832
+   table	ttppdm740
+   table	ttdisg831
+   table	ttctax941
+   table	ttcmcs036
+
+|****************************** program section ********************************
+before.program:
+	populate.tax.amounts()
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+| choice.cont.process:
+| on.choice:
+|    execute(print.data)
+
+| choice.print.data:
+| on.choice:
+|    if rprt_open() then
+|        read.main.table()
+|        rprt_close()
+|    else
+|        choice.again()
+|    endif
+
+
+choice.cont.generate:
+on.choice:
+	read.main.table()
+|****************************** field section *********************************
+
+field.bpid.f:
+when.field.changes:
+   bpid.t = bpid.f
+
+
+|****************************** function section ******************************
+
+functions:
+
+function read.main.table()
+{
+	long ret_val
+	
+	spool.device = "PDF"
+	spool.report = "rtdisg140001tes"
+| 	spool.fileout = "E:\Infor\ERPLN\bse\tmp\test.pdf"
+	spool.fileout = "E:\Infor\ERPLN\bse\tmp\abc.pdf"
+| 	ret_val = spool.open(spool.report,spool.device,1)   
+	ret_val = brp.open(spool.report,spool.device,1)   
+	
+	select 	tccom100.*
+	from	tccom100
+	where	tccom100._index1 inrange {:bpid.f} and {:bpid.t}
+	selectdo
+		brp.ready(ret_val)
+	endselect
+	
+	brp.close(ret_val)
+}
+
+
+function populate.tax.amounts()
+{
+	domain	tcamnt		line.tax.amount.array(1, 1)	based
+	domain	tcamnt		line.base.amount.array(1, 1)	based
+	domain	tccvat		line.tax.code.array(1, 1)	based
+	domain	tctax.indt.l	o.line.indirect.tax.array(1, 1)	based
+	domain	tctax.indt.l	i.duty.type.array(1, 1)		based
+	domain	tcyesno		expensed.tax(1, 1)		based
+	domain	tcmcs.s250m	o.comb.output.set(1)		based
+	domain	tcpvat		o.tax.rates(1,1)		based
+	domain	tcamnt		i.duties.array(1,1)		based
+	domain tctax.seqn 	o.maximum.sequence.number
+	domain tcamnt 		o.claimable.tax.amount
+	domain tcamnt 		o.non.claimable.tax.amount
+	domain tcamnt 		o.total.tax.amount
+	domain tcamnt 		o.sales.tax
+	domain tcmcs.s250m 	o.error.msg mb
+	domain	tcamnt		tmp.rate		|#ISGEC0104.n
+	
+	tmp.rate = 0					|#ISGEC0104.n
+	
+| 	tdisg832.sasa.l = 
+| 	tppdm740.ccur = "INR"
+| 	tppdm740.rtyp = "SAL"
+
+	select 	tdisg832.*,tdisg831.*
+	from	tdisg832,tdisg831
+	where	tdisg832._index1 = "DBA000023"
+	and	tdisg832.edrn refers to tdisg831
+	selectdo
+		select tppdm740.*
+		from	tppdm740
+		where	tppdm740._index1 = {:tdisg831.cprj,:tdisg831.ofbp}
+		as set with 1 rows
+		selectdo
+		endselect
+		
+	tctax.dll9141.determine.aggregate.tax.amounts.per.line( 
+						tdisg831.ccty,				| domain tcccty i.tax.country, 
+						tdisg831.cvat,				| domain tccvat i.aggregate.tax.code, 
+						utc.num(),				| domain tcdate i.tax.date, 
+						tdisg832.sasa.l,				| domain tcamnt i.order.line.price, 
+						tdisg832.sasa.l,				| domain tcamnt i.customs.value, 
+						tdisg832.sasa.l,			| domain tcamnt i.market.retail.price, 
+						0.00,					| domain tcamnt i.retail.sales.price, 
+						0.00,					| domain tcamnt i.tariff.price, 
+						tppdm740.ccur,				| domain tcccur i.price.currency, 
+						utc.num(),				| domain tcdate i.currency.rate.date, 
+						tppdm740.rtyp,				| domain tcrtyp i.currency.exchange.rate.type, 
+						tdisg832.sasa.l,			| domain tcpric i.asv.excise, 
+						tdisg832.sasa.l,			| domain tcpric i.asv.vat, 
+						tdisg832.sasa.l,			| domain tcpric i.asv.service.tax, 
+						utc.num(),				| domain tcdate i.ship.or.receive.date, 
+						tcyesno.no,				| domain tcyesno i.as.is.sales, 
+						tcyesno.no,				| domain tcyesno i.yesno.flag, 
+						i.duty.type.array,			| ref domain tctax.indt.l i.duty.type.array(,), 
+						i.duties.array,				| ref domain tcamnt i.duties.array(,), 
+						o.tax.rates,				| ref domain tcpvat o.tax.rates(,), 
+						o.maximum.sequence.number,		| ref domain tctax.seqn o.maximum.sequence.number, 
+						line.base.amount.array,			| ref domain tcamnt o.line.base.amount.array(,), 
+						line.tax.amount.array,			| ref domain tcamnt o.line.tax.amount.array(,), 
+						line.tax.code.array,			| ref domain tccvat o.line.tax.code.array(,) fixed, 
+						o.line.indirect.tax.array,		| ref domain tctax.indt.l o.line.indirect.tax.array(,), 
+						expensed.tax,				| ref domain tcyesno o.expensed.tax(,), 
+						o.claimable.tax.amount,			| ref domain tcamnt o.claimable.tax.amount, 
+						o.non.claimable.tax.amount,		| ref domain tcamnt o.non.claimable.tax.amount, 
+						o.total.tax.amount,			| ref domain tcamnt o.total.tax.amount, 
+						o.sales.tax,				| ref domain tcamnt o.sales.tax, 
+						o.comb.output.set,			| ref domain tcmcs.s250m o.comb.output.set() fixed mb, 
+						o.error.msg)						| ref domain tcmcs.s250m o.error.msg mb )
+						
+	select tctax941.*,tcmcs036.*
+	from tctax941,tcmcs036
+	where tctax941._index1 = {:tdisg831.ccty,:tdisg831.cvat}
+	and	tctax941.type = 20		|tctax.type.l.tax
+	and	tctax941.cmbb refers to tcmcs036
+	selectdo
+		on case tcmcs036.indt.l
+		case	tctax.indt.l.bed:
+		case	tctax.indt.l.service:			|#ISGEC0104.n
+			exc.amnt = exc.amnt + line.tax.amount.array(tctax941.layr,tctax941.seqn)
+			exc.rate = o.tax.rates(tctax941.layr,tctax941.seqn)
+			tmp.rate = exc.rate			|#ISGEC0104.n
+			break
+		case	tctax.indt.l.aed:	
+		case	tctax.indt.l.sed:	
+		case	tctax.indt.l.e.cess.excise:	
+		case	tctax.indt.l.e.cess.service:		|#ISGEC0104.n	
+		case	tctax.indt.l.hse.cess.excise:
+		case	tctax.indt.l.hse.cess.servic:		|#ISGEC0104.n
+			exc.amnt = exc.amnt + line.tax.amount.array(tctax941.layr,tctax941.seqn)
+| 			exc.rate = exc.rate + o.tax.rates(tctax941.layr,tctax941.seqn)/10	|#ISGEC0104.o
+			exc.rate = exc.rate + (tmp.rate * o.tax.rates(tctax941.layr,tctax941.seqn))/100	|#ISGEC0104.n
+			break
+		default:
+			stx.amnt = stx.amnt + line.tax.amount.array(tctax941.layr,tctax941.seqn)
+			stx.rate = o.tax.rates(tctax941.layr,tctax941.seqn)
+		endcase
+	endselect				
+	endselect
+	
+	message("HI")
+}

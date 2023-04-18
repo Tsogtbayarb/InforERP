@@ -1,0 +1,443 @@
+|******************************************************************************
+|* tpisg0412m300  0  VRC B61U a7 isg 
+|* Print Elementwise Sanction Balance and PO Status
+|* Adarsh Pal                    
+|* 2019-09-10
+|******************************************************************************
+|* Main table tpisg012 Sanction Control Lines, Form Type 4
+|******************************************************************************
+|****************************** declaration section ***************************
+declaration:
+
+	table   ttpisg012		|Sanction Control Lines
+	table   ttpisg063
+	table   ttcmcs052	
+	table   ttppdm090
+	table   tdmisg005
+	table   ttdisg002
+	table   ttdpur201
+	table   ttdpur200
+	
+	extern  domain  tccprj		cprj.f			fixed
+	extern  domain  tccprj          cprj.t			fixed
+	extern	domain	tcamnt		bal.amnt,var.amnt
+	extern	domain	tcmcs.str30	engs.stat
+	extern	domain	tcmcs.str3	po.closed.flag
+	extern	domain	tcpono		po.crea,po.acti,po.canc,
+					po.crea.tot,po.acti.tot,po.canc.tot,
+					item.count,item.count.tot
+	extern	domain	tcamnt		rq.amnt,rq.amnt.tot
+	
+		domain	tccprj		cprj
+		domain	tppdm.cspa	elem
+		domain	dmdoc.revv	max.revn
+		
+			boolean		complete,partial,free,po.is.closed,po.is.not.closed
+		
+  
+|****************************** program section ********************************
+
+|****************************** group section **********************************
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+choice.cont.process:
+on.choice:
+   execute(print.data)
+
+choice.print.data:
+on.choice:
+	if reportno = 1 then
+		if rprt_open() then
+			read.main.table()
+			rprt_close()
+		else
+			choice.again()
+		endif
+	else if reportno = 2 then
+		if rprt_open() then
+			read.main.table.2()
+			rprt_close()
+		else
+			choice.again()
+		endif
+	endif
+	endif
+
+|****************************** field section *********************************
+field.cprj.f:
+check.input:
+	if not isspace(cprj.f) then
+		select	tcmcs052.cprj
+		from	tcmcs052
+		where	tcmcs052._index1 = {:cprj.f}
+		selectdo
+		selectempty
+			set.input.error("@Please enter correct Project!")
+		endselect
+	endif
+	
+when.field.changes:
+   cprj.t = cprj.f
+
+field.cprj.t:
+check.input:
+	if cprj.t <> "~~~~~~~~~" then
+		select	tcmcs052.cprj
+		from	tcmcs052
+		where	tcmcs052._index1 = {:cprj.t}
+		selectdo
+		selectempty
+			set.input.error("@Please enter correct Project!")
+		endselect
+	endif
+
+|****************************** function section ******************************
+functions:
+
+function read.main.table()
+{
+	po.closed.flag = ""
+	engs.stat = ""
+	bal.amnt = 0
+	var.amnt = 0
+	po.crea = 0
+	po.acti = 0
+	po.canc = 0
+	rq.amnt = 0.0
+	
+	select	tpisg012.cprj,
+		tpisg012.elem,
+		tpisg012.totl,
+		tpisg012.exha,
+		tpisg012.ritb
+	from	tpisg012
+	where	tpisg012._index1 inrange {:cprj.f} and {:cprj.t}
+	and	tpisg012.levl in (3,4)
+	selectdo
+		select	tcmcs052.dsca
+		from	tcmcs052
+		where	tcmcs052._index1 = {:tpisg012.cprj}
+		selectdo
+		selectempty
+			tcmcs052.dsca = ""
+		endselect
+		
+		select	tppdm090.desc
+		from	tppdm090
+		where	tppdm090._index1 = {:tpisg012.elem}
+		selectdo
+		selectempty
+			tppdm090.desc = ""
+		endselect
+		
+		select	tpisg063.engs
+		from	tpisg063
+		where	tpisg063._index1 = {:tpisg012.cprj,:tpisg012.elem}
+		selectdo
+		selectempty
+			tpisg063.engs = empty
+		endselect
+		
+		select	tdpur201.rqno,tdpur201.pono,tdpur201.oamt,tdpur200.rqst
+		from	tdpur201,tdpur200
+		where	tdpur201._index2 = {:tpisg012.cprj}
+		and	tdpur201.cspa = :tpisg012.elem
+		and	tdpur201.rqno refers to tdpur200
+		selectdo
+			select	tdpur202.prno,tdpur202.ppon
+			from	tdpur202
+			where	tdpur202._index1 = {:tdpur201.rqno,:tdpur201.pono}
+			selectdo
+			selectempty
+				if (tdpur200.rqst = tdpur.rqst.created or tdpur200.rqst = tdpur.rqst.submitted) then
+					po.crea = po.crea + 1
+				else if (tdpur200.rqst = tdpur.rqst.approved or tdpur200.rqst = tdpur.rqst.modified or 
+					tdpur200.rqst = tdpur.rqst.converted) then
+						po.acti = po.acti + 1
+				else if (tdpur200.rqst = tdpur.rqst.rejected or tdpur200.rqst = tdpur.rqst.canceled or 
+					tdpur200.rqst = tdpur.rqst.closed) then
+						po.canc = po.canc + 1
+				endif
+				endif
+				endif
+				
+				rq.amnt = rq.amnt + tdpur201.oamt
+			endselect
+		endselect
+		
+		bal.amnt = tpisg012.totl - tpisg012.exha
+		var.amnt = tpisg012.ritb - tpisg012.exha
+		engs.stat = enum.descr$("tpengs",tpisg063.engs)
+		
+		count.child.items.pending.for.indenting(tpisg012.cprj,tpisg012.elem)
+		
+		if po.is.closed.f(tpisg012.cprj,tpisg012.elem) then
+			po.closed.flag = "Yes"
+		else
+			po.closed.flag = "No"
+		endif
+		
+		rprt_send()
+		
+		po.crea = 0
+		po.acti = 0
+		po.canc = 0
+		rq.amnt = 0.0
+	endselect
+}
+
+function boolean work.is.completed(domain tcorno i.orno)
+{
+	select	tdmsl400.work
+	from	tdmsl400
+	where	tdmsl400._index1 = {:i.orno,0}
+	and	tdmsl400.work = 3
+	selectdo
+		return(true)
+	endselect
+	
+	return(false)
+}
+
+function boolean po.is.closed.f(	domain	tccprj		i.cprj,
+					domain	tppdm.cspa	i.cspa	)
+{
+	max.revn = ""
+
+	select	dmisg005.docn,max(dmisg005.revn):max.revn
+	from	dmisg005
+	where	dmisg005._index1 = {:i.cprj,:i.cspa}
+	group by dmisg005.docn
+	selectdo
+		select	dmisg005.docn,
+			dmisg005.item
+		from	dmisg005
+		where	dmisg005._index1 = {:i.cprj,:i.cspa,:dmisg005.docn}
+		and	dmisg005.revn = :max.revn
+		and	dmisg005.qnty > 0.0
+		and	dmisg005.stat <> 4
+		selectdo
+			select	dmisg121.docn
+			from	dmisg121
+			where	dmisg121._index1 = {:dmisg005.docn,:max.revn}
+			and 	dmisg121.orgn = "ISG"
+			selectdo
+				select	tdisg002.slct,
+					tdisg002.stat,
+					tdisg002.orno
+				from	tdisg002
+				where	tdisg002._index2 = {:dmisg005.docn,:dmisg005.item}
+				selectdo
+					if not work.is.completed(tdisg002.orno) then
+						return(false)
+					endif
+				selectempty
+					return(false)
+				endselect
+			endselect
+		endselect
+	selectempty
+		return(true)
+	endselect
+	
+	return(true)
+}
+
+function read.main.table.2()
+{
+	cprj = ""
+	elem = ""
+	
+	complete = false
+	partial = false
+	free = false
+	po.is.closed = false
+	po.is.not.closed = false
+	
+	po.closed.flag = ""
+	engs.stat = ""
+	bal.amnt = 0
+	var.amnt = 0
+	
+	po.crea = 0
+	po.acti = 0
+	po.canc = 0
+	po.crea.tot = 0
+	po.acti.tot = 0
+	po.canc.tot = 0
+	rq.amnt = 0.0
+	item.count.tot = 0
+	rq.amnt.tot = 0.0
+	
+	select	tpisg012.cprj,
+		tpisg012.elem,
+		tpisg012.totl,
+		tpisg012.exha,
+		tpisg012.ritb
+	from	tpisg012
+	where	tpisg012._index1 inrange {:cprj.f} and {:cprj.t}
+	and	tpisg012.levl = 2
+	selectdo
+		select	tcmcs052.dsca
+		from	tcmcs052
+		where	tcmcs052._index1 = {:tpisg012.cprj}
+		selectdo
+		selectempty
+			tcmcs052.dsca = ""
+		endselect
+		
+		select	tppdm090.desc
+		from	tppdm090
+		where	tppdm090._index1 = {:tpisg012.elem}
+		selectdo
+		selectempty
+			tppdm090.desc = ""
+		endselect
+		
+		select	a_tpisg012.cprj:cprj,
+			a_tpisg012.elem:elem
+		from	tpisg012 a_tpisg012
+		where	a_tpisg012._index1 = {:tpisg012.cprj}
+		and	a_tpisg012.elem(1;4) = :tpisg012.elem(1;4)
+		and	a_tpisg012.levl in (3,4)
+		selectdo
+			select	tdpur201.rqno,tdpur201.pono,tdpur201.oamt,tdpur200.rqst
+			from	tdpur201,tdpur200
+			where	tdpur201._index2 = {:cprj}
+			and	tdpur201.cspa = :elem
+			and	tdpur201.rqno refers to tdpur200
+			selectdo
+				select	tdpur202.prno,tdpur202.ppon
+				from	tdpur202
+				where	tdpur202._index1 = {:tdpur201.rqno,:tdpur201.pono}
+				selectdo
+				selectempty
+					if (tdpur200.rqst = tdpur.rqst.created or tdpur200.rqst = tdpur.rqst.submitted) then
+						po.crea = po.crea + 1
+					else if (tdpur200.rqst = tdpur.rqst.approved or tdpur200.rqst = tdpur.rqst.modified or 
+						tdpur200.rqst = tdpur.rqst.converted) then
+							po.acti = po.acti + 1
+					else if (tdpur200.rqst = tdpur.rqst.rejected or tdpur200.rqst = tdpur.rqst.canceled or 
+						tdpur200.rqst = tdpur.rqst.closed) then
+							po.canc = po.canc + 1
+					endif
+					endif
+					endif
+					
+					rq.amnt = rq.amnt + tdpur201.oamt
+				endselect
+			endselect
+			
+			po.crea.tot = po.crea.tot + po.crea
+			po.acti.tot = po.acti.tot + po.acti
+			po.canc.tot = po.canc.tot + po.canc
+			rq.amnt.tot = rq.amnt.tot + rq.amnt
+			
+			select	tpisg063.engs
+			from	tpisg063
+			where	tpisg063._index1 = {:cprj,:elem}
+			selectdo
+				if tpisg063.engs = tpengs.complete then
+					complete = true
+				else if tpisg063.engs = tpengs.partial then
+					partial = true
+				else if tpisg063.engs = tpengs.free then
+					free = true
+				endif
+				endif
+				endif
+			selectempty
+				tpisg063.engs = empty
+				complete = false
+				partial = false
+				free = false
+			endselect
+			
+			count.child.items.pending.for.indenting(cprj,elem)
+			item.count.tot = item.count.tot + item.count
+			
+			if po.is.closed.f(cprj,elem) then
+				po.is.closed = true
+			else
+				po.is.not.closed = true
+			endif
+			
+			po.crea = 0
+			po.acti = 0
+			po.canc = 0
+			rq.amnt = 0.0
+		endselect
+		
+		if po.is.closed and not po.is.not.closed then
+			po.closed.flag = "Yes"
+		else
+			po.closed.flag = "No"
+		endif
+		
+		if complete and not partial and not free then
+			engs.stat = "Complete"
+		endif
+		
+		if partial then
+			engs.stat = "Partial"
+		endif
+		
+		if free and not complete and not partial then
+			engs.stat = "Free"
+		endif
+		
+		if not complete and not partial and not free then
+			engs.stat = ""
+		endif
+		
+		bal.amnt = tpisg012.totl - tpisg012.exha
+		var.amnt = tpisg012.ritb - tpisg012.exha
+		
+		rprt_send()
+		
+		po.is.closed = false
+		po.is.not.closed = false
+		complete = false
+		partial = false
+		free = false
+		
+		po.crea.tot = 0
+		po.acti.tot = 0
+		po.canc.tot = 0
+		item.count.tot = 0
+		rq.amnt.tot = 0.0
+	endselect
+}
+
+function count.child.items.pending.for.indenting(	domain	tccprj		i.cprj,
+							domain	tppdm.cspa	i.cspa	)
+{
+	max.revn = ""
+	item.count = 0
+
+	select	dmisg005.docn,max(dmisg005.revn):max.revn
+	from	dmisg005
+	where	dmisg005._index1 = {:i.cprj,:i.cspa}
+	group by dmisg005.docn
+	selectdo
+		select	dmisg005.docn,
+			dmisg005.item
+		from	dmisg005
+		where	dmisg005._index1 = {:i.cprj,:i.cspa,:dmisg005.docn}
+		and	dmisg005.revn = :max.revn
+		and	dmisg005.qnty > 0.0
+		and	dmisg005.stat <> 4
+		selectdo
+			select	tdisg003.item
+			from	tdisg003
+			where	tdisg003._index2 = {:dmisg005.docn,:dmisg005.item}
+			selectdo
+			selectempty
+				item.count = item.count + 1
+			endselect
+		endselect
+	endselect
+}

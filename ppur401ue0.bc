@@ -1,0 +1,2112 @@
+|******************************************************************************
+|* tdpur401ue  0  VRC B61U a7 live
+|* Purchase Order Lines
+|* tools1
+|* 14-02-11 [09:51]
+|******************************************************************************
+|* Script Type: Library
+|******************************************************************************
+|******************************************************************************
+| IDENT  ISG001001  GAURAV TYAGI 11/02/2014 VRC B61U a7 live
+|******************************************************************************
+|* IDENT ISG001014, Manish Kumar , 12-03-2014 , VRC B61U a7 live
+|* Updating Actual Start Date Of tppss200 when record inserted in tdpur401
+|* for a particular element
+|* 
+|* Arjit, 23/07/2014
+|* Block Auto Populate of Bill of Material Child Item as suggested by Mr. Nishant Verma
+|******************************************************************************
+|******************************************************************************
+| IDENT  ISG001017  Ankit Sharma 12/03/2014 VRC B61U a7 live
+| IDENT  ISG001023  Manish Manchanda 29/03/2014 VRC B61U a7 live
+|*
+|* ID ISGECDV001108	Sujeet Kumar,		2014-10-15
+|* Potential Back Order Check
+|* If tdpur401.qibo <> tdpur401.qbbc and tdpur400.hdst = modified then
+|* Not Allowed to Confirm the Back Orders
+|* else if tdpur401.qibo <> tdpur401.qbbc and tdpur400.hdst <> modified then
+|* Allow to Confirm the Back Order 
+|* Functional: Mr. Nishant Verma
+|*
+|* ISGECDV001118, IT0205, Arjit Gupta, VRC B61U a7 live, Dt. 18-10-2014
+|* When deleting PO line check if PO header status is created and linking exist
+|* in tdpur202 then delete linking record from tdpur202 and change status of same 
+|* Requisition to Approved. Suggested by Mr. Nishant Verma
+|*
+|* ISGECDV001162, IT0205, Arjit Gupta, VRC B61U a7 live, Dt. 17-11-2014
+|* While cancelling PO Line ask question if Advance made against PO as suggested
+|* by Mr. Nishant Verma.
+|
+|* ISGEC001161, IT0352, Abhishek Singh , 24/02/2014
+|* Email Alert while PO creation if buy from BP country is other than IND
+| *************************************************************************
+| ISGEC001171, IT0304, GAURAV GUPTA, 03-03-2015, VRC B61U a7 isg 
+| ADDED ONE MORE NEW RECEIVER OF MAIL
+|* 
+|* ID :PATCH001032, Sujeet Kumar, 2015-03-17
+|* Check Project with Buy From Business Partner
+|*
+
+|* ISEC015001, Shilpa Janardanan, 20/04/2015
+|* Updating amount in Sanction Control lines(tpisg017)
+|
+|* ISGEC015032, IT0302, Ankit Sharma, VRC B61U a7 live, Dt. 21-10-2014
+|* When deleting PO line check if PO header status is Modified and linking exist
+|* in tdpur202 then delete linking record from tdpur202 and change status of same 
+|* Requisition to Approved. Suggested by Mr. Rahul Kumar
+|*
+|* ID ISGEC015039 ,Ankit Sharma,28-11-2015       VRC B61U a7 isg      
+|* Modification for BG Functionality
+|*
+|* ID ISGEC015086, Manish Manchanda, 2016-03-02
+|* Project Type check from business partner 
+|*
+|* IDENT ISGEC017018,Shilpa Janardanan,18-04-2017, VRC B61U a7 isg
+|* Check for PO Amendment
+|*
+|* ID : ISGEC017006, IT0386, Saurabh Dubey, 02 May 2017, VRC B61U a7 isg
+|* Isgec Onsite Deployment
+|*
+|* ID: ISGEC0163,IT0479,Anadi Shankar,19-04-2018,VRC B61U a7 isg
+|* Check On Project,Element,Item.
+|*
+|* ID: ISGEC01101, Priya Jindal, 18/8/2018,VRC B61U a7 isg
+|* Changes for PO Balance
+|*
+|* ID: ISGEC001222, Atul Ojha, 24/08/2018, VRC B61U a7 isg
+|* Modification in PO Balance Logic
+|*
+|* ID: ISGEC01149, Priya Jindal, 4/1/2018, VRC B61U a7 isg
+|* Changes in PO Check
+|******************************************************************************
+
+#ident "@(#)ISG001001	GAURAV TYAGI 11/02/2014 VRC B61U a7 live"
+#ident "@(#)ISG001023	Manish Manchanda 29/03/2014 VRC B61U a7 live"
+
+#include <bic_dal>
+	table	ttdmsl400
+	table	ttdmsl503
+	table	ttpisg001
+	table	ttdpur451
+	table	ttppdm600
+	table	ttcisg001 | Maintain Terms of Payment by Purchase Order
+	table	ttdpur400 | Purchase Orders
+	table 	ttcisg002 | Extension to Payment terms
+	table 	ttcmcs014 | Payment Schedule
+	table 	ttpisg006 | Payment Term Components
+	table 	ttdpur401 | PO Lines
+	table	ttcmcs221
+	table	ttcmcs013
+	table 	ttppss200
+	table	ttdisg002
+	table 	ttcisg004
+	table	ttcisg003
+	table	ttdpur201
+	table	ttdpur202	|#ISGECDV001118.n
+	table	ttdpur101
+	table	ttfisg151				|#ISGEC015039.n
+	table	ttfmsl020		|#ISGEC017018.sn
+	table	ttfacp250			
+	table	ttdpur406			
+	table	ttfacp251			
+	table	ttfacp200		|#ISGEC017018.en
+	table	ttppdm600	
+	table	ttpisg229
+	table	ttfacp203		|ISGEC01101.n
+	table	ttdmsl500		|ISGEC01101.n
+	table	ttdpur094		|ISGEC01149.n
+	extern	domain	tcamnt		old_amount
+	extern	domain	tcyesno		o.approve
+	extern	domain	tcbool		advn.avail		|#ISGECDV001162.n
+	
+					|#ISGEC001161.sn
+                #include               <bic_cmf>
+                #pragma used dll ottdllbw 
+                #pragma used dll otcisgdll0100	|#ISGEC017006.n
+		table	ttccom001
+		table	tbpmdm001
+		table	ttccom100
+		table	ttccom130
+		table	ttdisg044
+		
+		string calling.prog.v(13)
+					|#ISGEC001161.en
+								|#sujeet20150513.sn				
+	domain	tcdate		o.tdpur401.cdf_ldat
+	domain	tcdate		tmp.tdpur401.cdf_ldat
+	domain	tcyesno		o.tdpur401.appr
+								|#sujeet20150513.en
+	domain	tdpur.hdst	hdst				|#ISGEC015039.sn
+	extern domain	tfgld.date	mdat
+	
+	long yr,mt,dy,hh,mm,ss					|#ISGEC015039.en
+	
+	domain	tcamnt	invoice.amount, unadjusted.amnt,unadjusted.amnt_2,  unadjusted.debit.note,total.balance.amount,		|#ISGEC017018.n
+		get.orderline.amount,unadjusted.payment, 
+		dnas.w,dnus.w,unassigned.unallocated,assigned.unallocated	|ISGEC01101.n
+		,Advance.amnt, tot.Advance.amnt, i.Advance.amnt	|#ISGEC001222.n
+	domain tcyesno nrml.val , orts.val , ortsas.val,phwr.val
+		
+	
+	
+
+#include <bic_dal>
+#include "itdisgdll0003"
+
+function extern long ue.before.before.save.object(long mode)
+{
+| 	domain	tccprj		o.cprj
+| 	domain	tppdm.cspa	o.cspa
+| 	domain	tcitem		o.item
+	domain	tcorno		o.vers
+| 	domain	tcrqno		o.rqno
+| 	domain	tcpono		o.rqpo
+
+
+	domain	tcrqno		o.rqno
+	domain	tcpono		o.rqpo
+	domain	tcqono		o.qono
+	domain	tcpono		o.qpon
+	domain	tccprj		o.cprj
+	domain	tppdm.cspa	o.cspa
+	domain	tcitem		o.item
+							|#ISGECDV001108.sn
+	domain	tfgld.sess	i.calling.session
+	domain	tdpur.hdst	o.hdst
+	domain	tcqsl1		back.qoor
+							|#ISGECDV001108.en
+							
+	domain	tcmcs.str30	i.reqt					|#PATCH001032.n	
+	
+	on case mode
+	case DAL_NEW:
+		if not validate.project.code(tdpur401.cprj) then
+			return(DALHOOKERROR)
+		endif
+		
+		
+		if not isspace(tdpur401.cprj) and not isspace(tdpur401.cspa) then
+			|Get Project Version
+			if not tpisgdll0012.check_sanction_status(tdpur401.cprj,o.vers) then
+				|Update Sanction Amount
+				tpisgdll0012.SanctionControlLine(tdpur401.cprj,o.vers,tdpur401.cspa)
+				tpisgdll0011.insert.sanction.order.relation(
+							tdpur401.cprj,
+							o.vers,
+							tdpur401.cspa,
+							tdisg.item.order,
+							tdpur401.orno,
+							tdpur401.pono,
+							tdpur401.oamt)
+			endif
+		endif	
+
+		| tdisg044.orno = tdpur401.orno				|#ISGEC001161.sn
+		| tdisg044.mail = tcyesno.no
+		
+		| db.insert(ttdisg044,db.skip.dupl)			|#ISGEC001161.en
+		
+						|#PATCH001032.sn
+		i.reqt = tdisg.dll0400.buy.from.bp.request.type(tdpur401.otbp)
+		
+| 		if strip$(i.reqt) = strip$(enum.descr$("tcreqt",tcreqt.prjs)) then			|#ISGEC015086.so
+| 			if not tdisg.dll0400.buy.from.bp.validate.project(tdpur401.otbp,tdpur401.cprj)then
+| 				dal.set.error.message("@ Buy From Business Partner is Project Specific")
+| 				return(DALHOOKERROR)
+| 			endif
+| 		endif											|#ISGEC015086.eo
+		
+			
+		
+						|#PATCH001032.en
+						
+		get.header.status(tdpur401.orno,hdst)							|#ISGEC015039.sn
+		if (hdst <> tdpur.hdst.created) or (hdst <> tdpur.hdst.modified) then
+			select	tfisg151.edte
+			from	tfisg151
+			where	tfisg151.orno = :tdpur401.orno
+			selectdo
+				utc.to.date(tdpur401.ddta,yr,mt,dy,hh,mm,ss)
+				mdat = date.to.num(yr,mt,dy)
+				if tfisg151.edte < mdat then
+					dal.set.error.message("@Advance BG Expiry date is earlier than last PO Delivery Date.")
+					show.dal.messages(MSG.ERROR) 
+				endif
+			endselect
+		endif											|#ISGEC015039.en
+		
+								|#ISGEC015086.sn
+		if	check.project.type()	then
+			return(1)
+		endif
+								|#ISGEC015086.en
+|ISGEC01101.sn
+		get.var(pid,"prog.name$",i.calling.session)		|#ISGEC017018.sn
+		if trim$(i.calling.session) = "tdpur4101m200" or trim$(i.calling.session) = "tdpur4101m000"then
+			if not (tdpur400.orno = "P10132380" or tdpur400.orno = "P10132381" or tdpur400.orno = "P82001308") then	|TEMP.BHARTI.09-01-19
+			if not check_po_balance_new()	then	|#ISGEC017018.sn		|#MM.sn				|* Temporarily Commented till GST Solution Uploaded 
+				dal.set.error.message("@PO cannot be modified below amount "& str$(int(total.balance.amount)) & 	|* on live. To be uncommented later.
+					", Receipt amount = "& str$(int(invoice.amount)) &
+	| 				", Advance - " & str$(unadjusted.amnt) &		|ISGEC01101.o 
+	| 				", Advance = " & str$(unadjusted.amnt + unadjusted.amnt_2) & |ISGEC01101.n	|#ISGEC001222.o
+					", Advance = " & str$(int(tot.Advance.amnt)) & 						|#ISGEC001222.n
+					" (Adjusted = " & str$(int(unadjusted.amnt_2)) & |ISGEC01101.n
+| 					",Unassigned = " & str$(unadjusted.amnt) &
+					",Unadjusted = " & str$(int(tot.Advance.amnt-unadjusted.amnt_2)) & |ISGEC01101.n
+					"), Unallocated Payment = " & str$(int(unadjusted.payment)) & 
+					" (Adjusted = " & str$(int(assigned.unallocated)) & |ISGEC01101.n
+					", Unadjusted = " & str$(int(unassigned.unallocated)) & ")" & |ISGEC01101.n
+					", Credit/Debit Note = " & str$(int(unadjusted.debit.note)) &
+					" (Adjusted = " & str$(int(dnas.w)) & |ISGEC01101.n
+					", Unadjusted = " & str$(int(dnus.w)) & |ISGEC01101.n
+					"), Maximum amount allowed for  modification = " & str$(int(get.orderline.amount - total.balance.amount)) & ")")|ISGEC01101.n
+				return(DALHOOKERROR)
+			endif
+			endif					|#ISGEC017018.en		
+		endif					|#ISGEC017018.en		
+		
+		break
+		|ISGEC01101.en
+			
+	case DAL_UPDATE:
+		
+		get.var(pid,"prog.name$",i.calling.session)		|#ISGEC017018.sn
+		if trim$(i.calling.session) = "tdpur4101m200" or trim$(i.calling.session) = "tdpur4101m000"then
+			if not (tdpur400.orno = "P10127792" or tdpur400.orno = "P20114455" or tdpur400.orno = "P20114475" or 
+				tdpur400.orno = "P30107495" or tdpur400.orno = "P50103614" or tdpur400.orno = "P50103615" or 
+				tdpur400.orno = "P10132380" or tdpur400.orno = "P10132381" or tdpur400.orno = "P82001308" ) then  |temp.bharti
+				if not check_po_balance()	then	|#ISGEC017018.sn		|#MM.sn		|* Temporarily Commented till GST Solution Uploaded 
+					 dal.set.error.message("@PO cannot be modified below amount "& str$(int(total.balance.amount)) &  |* on live. To be uncommented later.
+						", Receipt amount = "& str$(int(invoice.amount)) &
+		| 				", Advance - " & str$(unadjusted.amnt) &		|ISGEC01101.o 
+		| 				", Advance = " & str$(unadjusted.amnt + unadjusted.amnt_2) & |ISGEC01101.n	|#ISGEC001222.o
+						", Advance = " & str$(int(tot.Advance.amnt)) & 						|#ISGEC001222.n
+						" (Adjusted = " & str$(int(unadjusted.amnt_2)) & |ISGEC01101.n
+	| 					",Unassigned = " & str$(unadjusted.amnt_2) & |ISGEC01101.n
+						",Unadjusted = " & str$(int(tot.Advance.amnt-unadjusted.amnt_2)) & |ISGEC01101.n
+						"), Unallocated Payment = " & str$(int(unadjusted.payment)) & 
+						" (Adjusted = " & str$(int(assigned.unallocated)) & |ISGEC01101.n
+						", Unadjusted = " & str$(int(unassigned.unallocated)) & ")" & |ISGEC01101.n
+						", Credit/Debit Note = " & str$(int(unadjusted.debit.note)) &
+						" (Adjusted = " & str$(int(dnas.w)) & |ISGEC01101.n
+						", Unadjusted = " & str$(int(dnus.w)) & |ISGEC01101.n
+						"), Maximum amount allowed for  modification = " & str$(int(get.orderline.amount - total.balance.amount)) & ")")|ISGEC01101.n
+					return(DALHOOKERROR)
+				endif					|#ISGEC017018.en
+			endif		|temp.bharti
+		endif					|#ISGEC017018.en
+						
+		get.header.status(tdpur401.orno,hdst)						|#ISGEC015039.sn
+		if (hdst <> tdpur.hdst.created) or (hdst <> tdpur.hdst.modified) then
+			select	tfisg151.edte
+			from	tfisg151
+			where	tfisg151.orno = :tdpur401.orno
+			selectdo
+				utc.to.date(tdpur401.ddta,yr,mt,dy,hh,mm,ss)
+				mdat = date.to.num(yr,mt,dy)
+				if tfisg151.edte < mdat then
+					dal.set.error.message("@Advance BG Expiry date is earlier than last PO Delivery Date.")
+					show.dal.messages(MSG.ERROR) 
+				endif
+			endselect	
+		endif											|#ISGEC015039.en
+		
+		if not validate.project.code(tdpur401.cprj) then
+			return(DALHOOKERROR)
+		endif
+		
+		if not Update.Actual.Start.Date.In.tppss200() then
+			|****Error In Updating Actual Start Date In Activities************
+			dal.set.error.message("@tfisg200001")
+		endif
+
+		if changes_notallow_workflow_initiated() then
+			dal.set.error.message("tdmsl4000001")
+			return(DALHOOKERROR)
+		endif
+		if	tdpur401.clyn = tcyesno.yes	then
+									|#ISGECDV001162.sn
+			
+			if	not tdisg.dll0400.Check_Advance_Again_PO(tdpur401.orno)	then
+				advn.avail = true
+				return(DALHOOKERROR)
+			endif
+			if	advn.avail	then
+				return(DALHOOKERROR)
+			endif
+									|#ISGECDV001162.en
+| 			tcisgdll0003.cancel.po.child.item(tdpur401.orno, tdpur401.pono, tdpur401.item,	|#Temp.o
+| 							tdpur401.cprj, tdpur401.cspa)	
+		endif					
+		
+						|#ISGECDV001108.sn
+		get.var(pid,"prog.name$",i.calling.session)
+		if strip$(i.calling.session) = "tdpur4101m700" then
+			get.header.status(tdpur401.orno,o.hdst)
+			
+			
+			tdpur.dll4107.determine.potential.backorder.quantity(
+							tdpur401.orno,
+							tdpur401.pono,
+							tdpur401.sqnb,
+							tdpur401.item,
+							tdpur401.lseq = 0 ?
+								false :
+								true,
+							tdpur401.cuqp,
+							tdpur401.cvqp,
+							tdpur401.qoor,
+							tdpur401.qidl,
+							tdpur401.qirj,
+							back.qoor)
+			
+			
+			if tdpur401.qbbc <> 0 then
+				if (back.qoor <> tdpur401.qbbc) and (o.hdst <> tdpur.hdst.modified) then
+					dal.set.error.message("@ Modify PO to Change the Back Order Quantity")
+					return(DALHOOKERROR)
+				endif
+			endif
+			
+		endif
+		
+						|#ISGECDV001108.en
+| 		get.header.status(tdpur401.orno,o.hdst)
+| 		if o.hdst = tdpur.hdst.approved	 then
+| 			if not isspace(tdpur401.cprj) and not isspace(tdpur401.cspa) then			|#ISEC015001.sn
+| 				|Get Project Version
+| 				if not tpisgdll0012.check_sanction_status(tdpur401.cprj,o.vers) then
+| 					|Update Sanction Amount
+| 					tpisgdll0012.SanctionControlLine(tdpur401.cprj,o.vers,tdpur401.cspa)
+| 					tpisgdll0011.insert.sanction.order.relation(
+| 								tdpur401.cprj,
+| 								o.vers,
+| 								tdpur401.cspa,
+| 								tdisg.item.order,
+| 								tdpur401.orno,
+| 								tdpur401.pono,
+| 								tdpur401.oamt)
+| 				endif
+| 			endif	
+| 		endif		|#ISEC015001.en
+		
+		
+		with.object.set.do(check.ld.date)
+		get.var(pid,"tdpur401.cdf_ldat",tmp.tdpur401.cdf_ldat)
+		if o.tdpur401.appr = tcyesno.yes and (tmp.tdpur401.cdf_ldat <> o.tdpur401.cdf_ldat) then
+			tdpur401.appr = tcyesno.no
+		endif
+		
+		get.var(pid,"prog.name$",i.calling.session)
+		
+		if strip$(i.calling.session) = "tdpur4100m900" then
+			if not check.project.element()		then		|#ISGEC0163.sn	
+				dal.set.error.message("@ Project(%s),Element(%s),Item(%s) of PO (%s-%d)"& "Indent (%s-%d) Can't Be Different",
+						tdpur201.cprj,tdpur201.cspa,trim$(tdpur201.item),tdpur401.orno,tdpur401.pono,tdpur202.rqno,tdpur202.pono)
+				return(DALHOOKERROR)
+			endif							|#ISGEC0163.en	
+		endif
+		
+		break				
+								|#ISGEC015086.sn
+		if	check.project.type()	then
+			return(1)
+		endif
+								|#ISGEC015086.en
+	endcase
+	
+	|* Sanction Control
+	
+	if project.warehouse.validation(tdpur401.orno) then
+		return(DALHOOKERROR)
+	endif
+	
+	with.object.set.do(tcisgdll0003.Get_Order,tdpur401.orno,tdpur401.pono,o.cprj,o.cspa,o.item)
+	
+	if 	o.cprj <> tdpur401.cprj or 
+		o.cspa <> tdpur401.cspa or 
+		o.item <> tdpur401.item then
+		|#arjit.23.07.2014.so
+| 		if	tdpur401.corg = tdpur.corg.manual	then
+| 			select	tcisg004.item, tcisg004.desc, tcisg004.qnty, tcisg004.quom,
+| 				tcisg004.wght, tcisg004.docn, tcisg004.rvid
+| 			from	tcisg004
+| 			where	tcisg004._index1 = {:tdpur401.cprj, :tdpur401.cspa, :tdpur401.item}
+| 			and	tcisg004.orno = tcyesno.no
+| 			selectdo	
+| 				tcisgdll0003.Order_Bill_of_Material(
+| 							tdpur401.orno,
+| 							tdpur401.pono,
+| 							tcisg004.item,
+| 							tcisg004.desc,
+| 							tcisg004.qnty,
+| 							tcisg004.quom,
+| 							tcisg004.wght,
+| 							tcisg004.docn,
+| 							tcisg004.rvid)
+| 			endselect
+| 		endif
+		|#arjit.23.07.2014.eo
+
+| 			with.object.set.do(get.linking.data,o.rqno,o.rqpo,o.qono,o.qpon)			
+				
+| 				if not isspace(o.rqno) then
+| 					select 	tdisg003.*
+| 					from	tdisg003
+| 					where	tdisg003._index1 = {:o.rqno,:o.rqpo}
+| 					selectdo
+| 						tcisgdll0003.Order_Bill_of_Material(
+| 								tdpur401.orno,
+| 								tdpur401.pono,
+| 								tdisg003.sern,
+| 								tdisg003.item,
+| 								tdisg003.desc,
+| 								tdisg003.qnty,
+| 								tdisg003.quom,
+| 								tdisg003.wght)
+| 					endselect
+| 				
+| 				else if not isspace(o.qono) then
+| 					select 	tdisg004.*
+| 					from	tdisg004
+| 					where	tdisg004._index1 = {:tdpur101.qono,:tdpur101.pono}
+| 					selectdo
+| 						tcisgdll0003.Order_Bill_of_Material(
+| 								tdpur401.orno,
+| 								tdpur401.pono,
+| 								tdisg004.sern,
+| 								tdisg004.item,
+| 								tdisg004.desc,
+| 								tdisg004.qnty,
+| 								tdisg004.quom,
+| 								tdisg004.wght)
+| 					endselect
+| 				endif
+| 				endif
+	endif	
+	
+							|#ISGEC017006.sn
+	if tdpur401.gsta.l = tcyesno.yes then
+		select	tdmsl503.*
+		from	tdmsl503
+		where	tdmsl503._index1 = {:tdpur401.orno, :tdpur401.pono}
+		as set with 1 rows
+		selectdo
+			if isspace(tdmsl503.cvat) and GST.IMPLEMENTED() then
+				dal.set.error.message("@Tax Code Not Maintained in PO Line Extension...")
+				return(DALHOOKERROR)
+			endif
+			
+			if isspace(tdmsl503.code) and GST.IMPLEMENTED() then
+				dal.set.error.message("@HSN/SAC Code Not Maintained in PO Line Extension...")
+				return(DALHOOKERROR)
+			endif
+		selectempty
+			dal.set.warning.message("@First Maintain PO Lines Extension...")
+		endselect
+	endif	
+							|#ISGEC017006.en
+	
+
+	return(0)
+}
+
+function extern long ue.after.before.save.object(long mode)
+{
+	on case mode
+	case DAL_NEW:
+		break
+	case DAL_UPDATE:
+		
+| 		with.old.object.values.do(get_old_amount,tdpur401.orno,tdpur401.pono)
+|#sujeet.06.04.2014
+| 		get_old_amount(tdpur401.orno,tdpur401.pono)
+| 		with.old.object.values.do(get_approve_status,tdpur401.orno,tdpur401.pono)
+| 		
+| 		if tdpur401.appr  = tcyesno.yes then
+| 			if o.approve = tcyesno.no then
+| 				update_available_exhaust_amount()
+| 			endif
+| 		endif
+|#sujeet.06.04.2014		
+		break
+	endcase
+	return(0)
+}
+
+function extern long ue.before.after.save.object(long mode)
+{
+| 	domain	tcrqno		o.rqno
+| 	domain	tcpono		o.rqpo
+| 	domain	tcqono		o.qono
+| 	domain	tcpono		o.qpon
+| 	domain	tccprj		o.cprj
+| 	domain	tppdm.cspa	o.cspa
+| 	domain	tcitem		o.item
+| 	
+| 	
+| 	with.object.set.do(tcisgdll0003.Get_Order,tdpur401.orno,tdpur401.pono,o.cprj,o.cspa,o.item)
+| 	
+| 	if 	o.cprj <> tdpur401.cprj or 
+| 		o.cspa <> tdpur401.cspa or 
+| 		o.item <> tdpur401.item then
+				
+| 	
+| 	
+| 		on case mode
+| 		case DAL_NEW:
+| 			with.object.set.do(get.linking.data,o.rqno,o.rqpo,o.qono,o.qpon)			
+| 				
+| 				if not isspace(o.rqno) then
+| 					select 	tdisg003.*
+| 					from	tdisg003
+| 					where	tdisg003._index1 = {:o.rqno,:o.rqpo}
+| 					selectdo
+| 						tcisgdll0003.Order_Bill_of_Material(
+| 								tdpur401.orno,
+| 								tdpur401.pono,
+| 								tdisg003.sern,
+| 								tdisg003.item,
+| 								tdisg003.desc,
+| 								tdisg003.qnty,
+| 								tdisg003.quom,
+| 								tdisg003.wght)
+| 					endselect
+| 				
+| 				else if not isspace(o.qono) then
+| 					select 	tdisg004.*
+| 					from	tdisg004
+| 					where	tdisg004._index1 = {:tdpur101.qono,:tdpur101.pono}
+| 					selectdo
+| 						tcisgdll0003.Order_Bill_of_Material(
+| 								tdpur401.orno,
+| 								tdpur401.pono,
+| 								tdisg004.sern,
+| 								tdisg004.item,
+| 								tdisg004.desc,
+| 								tdisg004.qnty,
+| 								tdisg004.quom,
+| 								tdisg004.wght)
+| 					endselect
+| 				endif
+| 				endif
+| 			selectempty
+| 				BILL_OF_MATERIAL(tdpur401.cprj,tdpur401.cspa,tdpur401.item,401,
+| 					orno,tdpur401.orno,tdpur401.pono,0)
+| 			endselect
+			
+| 			break
+| 		case DAL_UPDATE:
+| 			
+| 			break
+| 		endcase
+	
+| 	endif
+
+	
+	
+	return(0)
+}
+
+function extern long ue.after.after.save.object(long mode)
+{
+	domain tcpono 		max_version
+	domain	tdmsl.work		work_flow_status
+	domain tdpur.hdst o.hdst |temp.n
+	domain tcorno  o.vers
+	
+	on case mode
+	case DAL_NEW:
+		get.var(pid,"prog.name$",calling.prog.v)
+		if calling.prog.v <> "tdpur2201m000" then
+			if buy_from_bp_country() then						|* ISGEC001161.sn
+				if check_po() then
+					tdisg044.orno = tdpur401.orno				
+					tdisg044.mail = tcyesno.yes
+					
+					db.insert(ttdisg044,db.skip.dupl)
+					
+					if send.email.alert() <> 0 then
+						return(DALHOOKERROR)
+					endif
+				endif	
+			endif									|* ISGEC001161.en
+		endif
+		break
+	case DAL_UPDATE:
+												|#sujeet20150513.sn
+			
+		get.header.status(tdpur401.orno,o.hdst)
+		if o.hdst = tdpur.hdst.approved	 then
+			if not isspace(tdpur401.cprj) and not isspace(tdpur401.cspa) then			|#ISEC015001.sn
+				|Get Project Version
+				if not tpisgdll0012.check_sanction_status(tdpur401.cprj,o.vers) then
+					|Update Sanction Amount
+					tpisgdll0012.SanctionControlLine(tdpur401.cprj,o.vers,tdpur401.cspa)
+					tpisgdll0011.insert.sanction.order.relation(
+								tdpur401.cprj,
+								o.vers,
+								tdpur401.cspa,
+								tdisg.item.order,
+								tdpur401.orno,
+								tdpur401.pono,
+								tdpur401.oamt)
+				endif
+			endif	
+		endif		|#ISEC015001.en	
+			
+		break
+	endcase
+	
+| 	update.progress.update.transaction()				|#Anadi.n 
+	return(0)
+}
+
+function extern long ue.before.before.destroy.object()
+{
+	domain	tcorno	bind.orno	|#ISGEC017006.sn
+	
+	if tdpur401.oltp = tdgen.oltp.orderline then
+		select	tdmsl503.orno:bind.orno
+		from	tdmsl503
+		where	tdmsl503._index1 = {:tdpur401.orno, :tdpur401.pono}
+		selectdo
+			dal.set.error.message("@Please Delete PO Line Extension First....")
+			return(DALHOOKERROR)
+		endselect
+	endif
+					|#ISGEC017006.en
+	tcisgdll0003.Modify.Order_Bill_of_Material(tdpur401.orno,tdpur401.pono,
+			tdpur401.cprj,tdpur401.cspa,tdpur401.item)
+	return(0)
+}
+
+function extern long ue.after.before.destroy.object()
+{
+	domain	tcorno		o.vers
+	if not isspace(tdpur401.cprj) and not isspace(tdpur401.cspa) then
+		|Get Project Version
+		if not tpisgdll0012.check_sanction_status(tdpur401.cprj,o.vers) then
+			|Update Sanction Amount
+			tpisgdll0012.SanctionControlLine(tdpur401.cprj,o.vers,tdpur401.cspa)
+		endif
+	endif	
+	return(0)
+}
+
+function extern long ue.before.after.destroy.object()
+{
+							|#ISGECDV001118.sn
+	if	PO_Header_Status(tdpur401.orno)	= tdpur.hdst.created
+		or PO_Header_Status(tdpur401.orno)	= tdpur.hdst.modified then 		|#ISGEC015032.n
+		Delete_Link_Requisition(tdpur401.orno, tdpur401.pono, tdpur401.sqnb)
+	endif	
+							|#ISGECDV001118.en
+	return(0)
+}
+
+function extern long ue.after.after.destroy.object()
+{
+	return(0)
+}
+
+function long changes_notallow_workflow_initiated()
+{
+	select 	tdmsl400.work,tdmsl400.vrsn
+	from	tdmsl400
+	where	tdmsl400._index1 = {:tdpur401.orno}
+	order by tdmsl400.vrsn desc
+	as set with 1 rows
+	selectdo
+		on case tdmsl400.work
+		case tdmsl.work.yes :
+| 			dal.set.error.message("tdmsl4000001")
+			return(1)
+			break
+		endcase
+	endselect
+	
+	return(0)
+}
+
+function get_old_amount	(
+					domain tcorno	i.orno,
+					domain	tcpono	i.pono
+				)
+{
+| 	select	tdpur401.oamt:old_amount
+| 	from	tdpur401
+| 	where	tdpur401._index1 = {:i.orno,:i.pono}
+	|and	tdpur401.appr = tcyesno.no
+| 	selectdo
+| 	selectempty
+| 		old_amount = 0
+| 	endselect
+	
+	select	tdpur451.pric:old_amount,tdpur451.trdt
+	from	tdpur451
+	where	tdpur451._index1 = {:i.orno,:i.pono}
+	order by tdpur451.trdt desc
+	as set with 2 rows
+	selectdo
+	selectempty
+		old_amount = 0
+	endselect
+}
+
+function get_approve_status
+				(
+					domain tcorno	o.orno,
+					domain	tcpono	o.pono
+				)
+{
+	select	tdpur401.appr:o.approve
+	from	tdpur401
+	where	tdpur401._index1 = {tdpur401.orno,:tdpur401.pono}
+	selectdo
+	endselect
+}
+
+function update_available_exhaust_amount()
+{
+	domain tcamnt	difference_amount
+	difference_amount =  tdpur401.oamt - old_amount
+	
+	select	tpisg001.*
+	from	tpisg001 for update
+	where	tpisg001._index1 = {:tdpur401.cprj}
+	and	tpisg001.elem = :tdpur401.cspa
+	selectdo
+		if tpisg001.avai > tdpur401.oamt then
+			tpisg001.avai = tpisg001.avai - difference_amount
+			tpisg001.exha = tpisg001.exha + difference_amount
+		else
+			tpisg001.avai = tpisg001.avai + difference_amount
+			tpisg001.exha = tpisg001.exha - difference_amount
+		endif
+		
+		db.update(ttpisg001,db.retry,e)
+	endselect		
+}
+|**********************************************************************
+function boolean Update.Actual.Start.Date.In.tppss200()						|#ISG001014.sn
+{	
+	long ret_val
+	
+	if not isspace(tdpur401.cprj) and not isspace(tdpur401.cspa) then
+| 		select	tdpur401.cprj,tdpur401.cspa
+| 		from	tdpur401
+| 		where	tdpur401._index5 = {:tdpur401.cprj}
+| 		and	tdpur401.cspa = :tdpur401.cspa
+| 		as set with 1 rows
+| 		selectdo
+| 		selectempty
+			select	tppdm600.cpla
+			from	tppdm600
+			where	tppdm600._index1 = {:tdpur401.cprj}
+			as set with 1 rows
+			selectdo
+				select	tppss200.asdt
+				from	tppss200 for update
+				where	tppss200._index1 = {:tdpur401.cprj,:tppdm600.cpla}
+				and	tppss200.pact = :tdpur401.cact
+				and	tppss200.cdf_acty = 3
+				selectdo
+					
+					if tppss200.asdt = 0 then
+						dal.change.object("tppss200")
+						dal.set.field("tppss200.asdt",tdpur401.odat)
+					
+						ret_val = dal.save.object("tppss200")
+					
+						if ret_val <> 0 then
+							
+							return(false)
+						endif
+					endif
+				endselect
+			endselect
+| 		endselect
+	endif
+	return(true)
+}													|#ISG001014.en
+
+
+|********************************************************************************
+| function update_tdisg002()
+| {
+| 	long ret
+| 	
+| 	db.retry.point()
+| 	select	tcisg003.*
+| 	from	tcisg003
+| 	where	tcisg003._index1 = {:tdpur401.cprj,:tdpur401.cspa,:tdpur401.item}
+| 	and	tcisg003.stat = tcisg.status.launched	
+| 	selectdo
+| 		select	tcisg004.*
+| 		from	tcisg004
+| 		where	tcisg004._index1 = {:tcisg003.proj,:tcisg003.elmt,:tcisg003.item,:tcisg003.revn}
+| 		and	tcisg004.orno = tcyesno.no
+| 		selectdo
+| 			select 	tdisg002.*
+| 			from	tdisg002 for update
+| 			where	tdisg002._index1 = {:tdpur401.orno,:tdpur401.pono,:tdpur401.sqnb}
+| 			and	tdisg002.sern = {:tcisg004.srno}
+| 			selectdo
+| 			selectempty	
+| 				dal.new.object("tdisg002")
+| 				dal.set.field("tdisg002.orno",tdpur401.orno)
+| 				dal.set.field("tdisg002.pono",tdpur401.pono)
+| 				dal.set.field("tdisg002.sqnb",tdpur401.sqnb)
+| 				dal.set.field("tdisg002.sern",tcisg004.srno)
+| 				dal.set.field("tdisg002.item",tcisg004.item)
+| 				dal.set.field("tdisg002.desc",tcisg004.desc)
+| 				dal.set.field("tdisg002.qnty",tcisg004.qnty)
+| 				dal.set.field("tdisg002.quom",tcisg004.quom)
+| 				dal.set.field("tdisg002.wght",tcisg004.wght)
+| 				ret = dal.save.object("tdisg002")
+| 			endselect
+| 			
+| 			if ret = 0 then
+| 				commit.transaction()
+| 			else
+| 				abort.transaction()
+| 			endif
+| 			
+| 		endselect	
+| 	endselect
+
+| }
+
+function update_table_tdisg002()				|#ISG001023.sn
+{
+	db.retry.point()
+	select 	tdisg002.*
+	from	tdisg002 for update
+	where	tdisg002._index1 = {:tdpur401.orno,:tdpur401.pono}
+	selectdo	
+		db.delete(ttdisg002,db.retry,e)
+	endselect
+}								|#ISG001023.en
+
+
+function get.linking.data
+			(
+				ref	domain	tcrqno		o.rqno,		|Requistion
+				ref	domain	tcpono		o.rqpo,		|Position
+				ref	domain	tcqono		o.qono,		|Quotation
+				ref	domain	tcpono		o.qpon		|Position
+			)
+{
+	select 	tdpur402.rqno:o.rqno,
+		tdpur402.rqpo:o.rqpo,
+		tdpur402.qono:o.qono,
+		tdpur402.qpon:o.qpon
+	from	tdpur402
+	where	tdpur402._index1 = {:tdpur401.orno,:tdpur401.pono,:tdpur401.sqnb}
+	as set with 1 rows
+	selectdo
+	endselect
+	
+
+}
+
+function long project.warehouse.validation
+			(
+				domain	tcorno		i.orno		|Requisition
+			)
+{
+	domain	tccwoc		o.cofc
+	domain	tcncmp		curr.comp
+	domain	tcpono		param.levl
+	domain	tppdm.cspa	o.elem
+	domain  tcemm.grid 	enterprise.unit
+	domain  tcemm.grid 	enterprise.unit1
+	long	ret.val
+	
+	curr.comp = get.compnr()
+	
+	select 	tdpur400.cofc:o.cofc
+	from	tdpur400
+	where	tdpur400._index1 = {:i.orno}
+	as set with 1 rows
+	selectdo
+	endselect
+	
+	ret.val = tdisg.dll0001.project.warehouse.validation(tdpur401.orno, o.cofc, tdpur401.cprj,
+				tdpur401.cspa, tdpur401.cwar)	
+				
+	if	ret.val then
+		return(DALHOOKERROR)
+	endif
+	
+	return(0)
+}
+
+						|#ISGECDV001108.sn
+function get.header.status
+			(
+				domain	tcorno		i.orno,
+			ref 	domain	tdpur.hdst	o.hdst
+			)
+{
+	select 	tdpur400.hdst:o.hdst
+	from	tdpur400
+	where	tdpur400._index1 = {:i.orno}
+	as set with 1 rows
+	selectdo
+	selectempty
+		o.hdst = empty
+	endselect
+	
+}
+						|#ISGECDV001108.en
+
+						|#ISGECDV001118.sn
+function domain tdpur.hdst PO_Header_Status
+			(
+			domain	tcorno	in.orno
+			)
+{
+	domain	tdpur.hdst	tmp.hdst
+	
+	tmp.hdst = empty
+	
+	select	st_tdpur400.hdst:tmp.hdst
+	from	tdpur400 st_tdpur400
+	where	st_tdpur400._index1 = {:in.orno}
+	selectdo
+	endselect
+	
+	return(tmp.hdst)
+}
+
+function Delete_Link_Requisition
+		(
+		domain	tcorno	in.orno,
+		domain	tcpono	in.pono,
+		domain	tcpono	in.sqnb
+		)
+{
+	domain	tcpono		u.ret, d.ret
+	
+	u.ret = 0
+	d.ret = 0
+	
+	select	tdpur202.rqno
+	from	tdpur202  for update
+	where	tdpur202._index2 = {:in.orno, :in.pono, :in.sqnb}
+	selectdo
+		select	tdpur200.rqst
+		from	tdpur200 for update
+		where	tdpur200._index1 = {:tdpur202.rqno}
+		selectdo
+			dal.change.object("tdpur200")
+			dal.set.field("tdpur200.rqst", tdpur.rqst.approved)
+			u.ret = dal.save.object("tdpur200")
+		endselect
+		d.ret = dal.destroy.object("tdpur202")
+	endselect
+}
+						|#ISGECDV001118.en
+
+									|* ISGEC001161.sn
+function boolean buy_from_bp_country()
+{
+	select	tdpur400.otad
+	from	tdpur400
+	where	tdpur400._index1 = {:tdpur401.orno}
+	selectdo
+		select	tccom130.ccty
+		from	tccom130
+		where	tccom130._index1 = {:tdpur400.otad}
+		and	tccom130.ccty <> ""
+		selectdo
+			if strip$(shiftl$(tccom130.ccty)) = "IN" then
+				return(false)
+			else
+				return(true)
+			endif
+		endselect
+	endselect
+	return(false)
+}
+
+function long send.email.alert()
+{
+	string tmp.file(200),line(500)
+	long fp
+	domain tcemno	emno.code
+	domain	tfgld.user	user.code
+	
+	long    message.ID
+        long    to.ID
+        long    attachment.ID
+        long    ret
+
+        domain ttcmf.prov service       
+                        |Infor ERP Enterprise eMessage Connector service for 
+                        |transporting messages
+        long stat       |Variable to hold return values
+        long mid        |CMF message id
+	
+	tmp.file = creat.tmp.file$(bse.tmp.dir$())
+	fp = seq.open(tmp.file,"w+")
+	if fp <=0 then
+		dal.set.error.message("@ Temp file can not be created")
+		return(1)
+	endif
+
+	select	tdpur400.otbp,tdpur400.ccon
+	from	tdpur400
+	where	tdpur400._index1 = {:tdpur401.orno}
+	selectdo
+	endselect
+	
+	select	tccom100.nama
+	from	tccom100
+	where	tccom100._index1 = {:tdpur400.otbp}
+	selectdo
+	endselect
+	
+	select	tccom001.nama
+	from	tccom001
+	where	tccom001._index1 = {:tdpur400.ccon}
+	selectdo
+	endselect
+	
+	line = ""
+	line = strip$(line) & " Please obtain the Foreign Exchange cover against Purchase Order No. " & tdpur401.orno & " placed on M/s " & strip$(shiftl$(tccom100.nama)) |& chr$(13)&chr$(10)
+	| seq.write(line,len(line),fp)
+	
+	line = strip$(line) & " by Buyer " & strip$(shiftl$(tccom001.nama)) & "." & chr$(13)&chr$(10)
+	seq.write(line,len(line),fp)
+	
+	line = "Request for Foreign Exchange Cover is being sent by buyer." & chr$(13)&chr$(10)
+	seq.write(line,len(line),fp)
+	
+	ret = seq.close(fp)
+	
+	user.code = logname$
+	select 	bpmdm001.mail,tccom001.nama 
+	from 	tccom001,bpmdm001
+	where 	tccom001._index4 = {:user.code}
+	and	tccom001.emno refers to bpmdm001
+	as set with 1 rows
+	selectdo
+	selectempty
+		bpmdm001.mail = ""
+		
+	endselect
+	if isspace(bpmdm001.mail) then
+		dal.set.error.message("@ Email ID for user " & user.code & " Not maintained")
+		return(1)
+	endif		
+	|******* Email Header
+        message.ID = cmf.create()
+	line = "ALERT : PO CREATED " & tdpur401.orno & " FOR FOREIGN SUPPLIER"
+        ret = cmf.setClass(message.ID, "CMF.NOTE.EMAIL")
+        ret = cmf.setSubject(message.ID,line)
+	
+	|******** from ID
+	to.ID = cmf.createRecipient(message.ID, ttcmf.role.from)  
+	ret = cmf.setRecipientName(to.ID,tccom001.nama)
+        ret = cmf.setRecipientAddress(to.ID, bpmdm001.mail)	
+	ret = cmf.setRecipientType(to.ID, "SMTP")
+ 
+	|******** to ID
+	select 	bpmdm001.mail,tccom001.nama 
+	from 	tccom001,bpmdm001
+	where 	bpmdm001._index1 = {:tdpur400.ccon}
+	and	tccom001.emno refers to bpmdm001
+	and	bpmdm001.mail <> ""
+	selectdo
+		to.ID = cmf.createRecipient(message.ID, ttcmf.role.to)  
+		ret = cmf.setRecipientName(to.ID,tccom001.nama)
+		ret = cmf.setRecipientAddress(to.ID, bpmdm001.mail)	
+		ret = cmf.setRecipientResponsibility(to.ID, "TRUE")		
+		ret = cmf.setRecipientType(to.ID, "SMTP")
+	selectempty
+		dal.set.error.message("@ Email ID for lead buyer not maintained" )
+		return(1)
+	endselect
+	
+	
+	| New receiver addded
+	select 	bpmdm001.mail,tccom001.nama 					|ISGEC001171.SN
+	from 	tccom001,bpmdm001
+	where 	bpmdm001._index1 = {"5099"}
+	and	tccom001.emno refers to bpmdm001
+	and	bpmdm001.mail <> ""
+	selectdo
+		to.ID = cmf.createRecipient(message.ID, ttcmf.role.to)  
+		ret = cmf.setRecipientName(to.ID,tccom001.nama)
+		ret = cmf.setRecipientAddress(to.ID, bpmdm001.mail)	
+		ret = cmf.setRecipientResponsibility(to.ID, "TRUE")		
+		ret = cmf.setRecipientType(to.ID, "SMTP")
+	selectempty
+		dal.set.error.message("@ Email ID not maintained for user 5150" )
+		return(1)
+	endselect
+										|ISGEC001171.EN
+
+	
+	
+	
+	|********* Mail Body
+	attachment.ID = cmf.createAttachment(message.ID)
+	ret = cmf.setAttachmentBody(attachment.ID,ttyeno.yes)
+	ret = cmf.setAttachmentMIME(attachment.ID,"text/plain")                       
+	ret = cmf.setAttachmentFileName(attachment.ID,tmp.file,"abc.txt")
+
+
+	|*********  Send mail
+        if message.ID <>0 then
+                stat = cmf.startService("SMTP",2)
+                if stat<>0 then
+                        dal.set.error.message("@ Message could not be sent "&
+                                "(Infor ERP Enterprise eMessage Connector"&
+                                " service did not start)")
+                        return(1)
+                endif
+                stat = cmf.send(message.ID,"SMTP")
+                if stat<>0 then
+                        dal.set.error.message("@ Message could not be sent "& "(Infor ERP Enterprise eMessage Connector "&
+                                "service refused message)")
+                        cmf.stopService("SMTP",2)
+                        return(1)
+                endif
+                stat = cmf.stopService("SMTP",2)
+        endif
+	return(0)
+}
+
+function	boolean check_po()
+{
+	select	tdisg044.*
+	from	tdisg044
+	where	tdisg044._index1 = {:tdpur401.orno}
+	and	tdisg044.mail = tcyesno.yes
+	selectdo
+		return(false)
+	selectempty
+		return(true)
+	endselect
+	
+	return(true)
+}
+									|* ISGEC001161.en
+									
+function boolean validate.project.code
+			(
+				domain	tccprj		i.cprj
+			)
+{
+
+	domain	tccprj		o.cprj
+	
+	if isspace(i.cprj) then
+		dal.set.error.message("@ Project is mandatory")
+		return(false)
+	else
+		select 	tcmcs052.cprj:o.cprj
+		from	tcmcs052
+		where	tcmcs052._index1 = {:i.cprj}
+		as set with 1 rows
+		selectdo
+		selectempty
+			dal.set.error.message("@Enter Valid Project Code")
+			return(false)
+		endselect
+		
+	endif
+	
+	return(true)
+}									
+
+function check.ld.date()
+{
+	
+
+
+	o.tdpur401.cdf_ldat = 0
+	tmp.tdpur401.cdf_ldat = 0
+	
+	select tdpur401.cdf_ldat:o.tdpur401.cdf_ldat,
+		tdpur401.appr:o.tdpur401.appr
+	from	tdpur401
+	where	tdpur401._index1 = {:tdpur401.orno,:tdpur401.pono,:tdpur401.sqnb}
+	and	tdpur401.appr = tcyesno.yes
+	as set with 1 rows
+	selectdo
+	endselect
+	
+	
+}
+
+									|#ISGEC015086.sn
+function	domain	tcbool	check.project.type()
+{
+	domain	tcyesno	v.prjs, v.dome
+	domain	tcccur	v.ccur	
+	
+	v.ccur	=	""
+	
+	select	tccom100.cdf_prjs:v.prjs,
+		tccom100.cdf_dome:v.dome
+	from	tccom100
+	where	tccom100._index1	=	{:tdpur400.otbp}
+	selectdo
+	selectempty
+		v.prjs	=	empty
+		v.dome	=	empty
+	endselect
+	
+	select	tppdm600.ccur:v.ccur
+	from	tppdm600
+	where	tppdm600._index1	=	{:tdpur401.cprj}
+	as	set with 1 rows
+	selectdo
+	endselect
+	
+	if	v.dome	=	tcyesno.yes	and
+		v.ccur	<>	"INR"	then
+		dal.set.error.message("@Supplier is approved only for Domestic Projects.")
+		return(true)
+	endif
+	
+	if	v.prjs	=	tcyesno.yes	then
+		select	tcisg102.cprj
+		from	tcisg102
+		where	tcisg102._index1	=	{:tdpur400.otbp}
+		and	tcisg102.cprj		=	:tdpur401.cprj
+		selectdo
+		selectempty
+			dal.set.error.message("@Selected project not maintained in supplier wise projects.")
+			return(true)
+		endselect
+	endif
+	return(false)
+}
+									|#ISGEC015086.en
+									
+function domain tcbool check_po_balance()		|#ISGEC017018.sn
+{
+	domain	tcncmp	curr.comp
+	domain	tcqsl1	add.qty, o.tdpur401.qoor
+	domain	tcamnt	temp.amnt,i.unadjusted.payment,tot.amnt,v.oamt,v.damt
+	domain	tccom.bpid	o.otbp
+	domain	tcqrd1	i.qoor	|ISGEC01101.n					
+	domain	tcpric	i.pric	|ISGEC01101.n					
+	domain	tcpono	i.pono,i.seqn	|ISGEC01101.n					
+		
+	select	tdpur400.cotp,			|ISGEC01149.sn
+		tdpur094.reto
+	from	tdpur400, tdpur094
+	where	tdpur400._index1 ={:tdpur401.orno}
+	and	tdpur400.cotp refers to tdpur094 
+	selectdo
+		if tdpur094.reto = tdpur.reto.yes or tdpur094.reto = tdpur.reto.rejectgoods then
+			return(true)
+		endif
+	endselect				|ISGEC01149.en
+	
+	curr.comp = get.compnr()
+	invoice.amount = 0.0
+	unadjusted.amnt = 0.0
+	unadjusted.amnt_2 = 0.0		|ISGEC01101.n
+	tot.amnt = 0.00
+	unadjusted.debit.note = 0.0
+	total.balance.amount = 0.0
+	i.Advance.amnt = 0.0
+	Advance.amnt = 0.0
+	
+	dnas.w = 0.00		|ISGEC01101.n
+	dnus.w = 0.00		|ISGEC01101.n
+	unadjusted.payment = 0.00		|ISGEC01101.n
+	assigned.unallocated = 0.00		|ISGEC01101.n
+	unassigned.unallocated = 0.00		|ISGEC01101.n
+	i.unadjusted.payment = 0.00		|ISGEC01101.n
+	
+	select	tfmsl020.orno
+	from	tfmsl020
+	where	tfmsl020._index2 = {:tdpur401.orno}
+	group by tfmsl020.orno
+	selectdo
+		select	tfmsl020.ttyp, tfmsl020.docn
+		from	tfmsl020
+		where	tfmsl020._index2 = {:tdpur401.orno}
+		selectdo
+			select	tfacp200.balh
+			from	tfacp200
+			where	tfacp200._index1 = {:tfmsl020.ttyp,:tfmsl020.docn}
+			and	tfacp200.docn = 0
+			selectdo
+				unadjusted.amnt = abs(tfacp200.balh(1))
+			selectempty
+					
+			endselect
+		endselect
+		
+		select	tfmsl020.optn,tfmsl020.ttyp,tfmsl020.docn,tfmsl020.fcom,tfmsl020.aamt
+		from	tfmsl020
+		where	tfmsl020._index2 = {:tdpur401.orno}
+		and	tfmsl020.optn = tfoption.advance or tfmsl020.optn = tfoption.site.advance
+		selectdo
+		endselect
+		
+		select	sum(tfmsl020.aamt):unadjusted.amnt
+		from	tfmsl020
+		where	tfmsl020._index2 = {:tdpur401.orno}
+		and	tfmsl020.optn = 4
+		selectdo
+		selectempty
+			
+		endselect
+		
+		select	tdpur400.otbp:o.otbp
+		from	tdpur400
+		where	tdpur400._index1 = {:tdpur401.orno}
+		selectdo
+		selectempty
+			o.otbp = ""
+		endselect
+		
+		select	sum(tfacp200.amth(1)):unadjusted.amnt_2
+		from	tfacp200
+		where	tfacp200._index2 = {:o.otbp}
+		and	tfacp200.cdf_prno = :tdpur401.orno
+		selectdo
+		selectempty
+			unadjusted.amnt_2 = 0.00
+		endselect
+		
+		unadjusted.amnt = unadjusted.amnt + unadjusted.amnt_2
+		|ISGEC01101.sn
+		unadjusted.amnt = 0
+		unadjusted.amnt_2 = 0
+		Advance.amnt = 0			|#ISGEC001222.sn
+		i.Advance.amnt = 0
+		tot.Advance.amnt = 0			|#ISGEC001222.en
+| 		if tfmsl020.optn = tfoption.account or tfmsl020.optn = tfoption.exchange  then	|#ISGEC001222.o
+		select	tfmsl020.*
+		from	tfmsl020
+		where	tfmsl020._index2 = {:tdpur401.orno}
+		selectdo
+			if tfmsl020.optn = tfoption.account or tfmsl020.optn = tfoption.exchange or tfmsl020.optn =  tfoption.retention then	|#ISGEC001222.n
+			else
+											|#ISGEC001222.sn
+				if (isspace(tfmsl020.ttyp)) and (tfmsl020.docn = 0) then	
+					Advance.amnt = Advance.amnt + tfmsl020.aamt
+				else							|#ISGEC001222.en
+					select	tfacp200.*
+					from	tfacp200
+| 					where	tfacp200.cdf_cprj = :tdpur401.cprj
+| 					and	tfacp200.cdf_prno = :tdpur401.orno
+					where	tfacp200._index1 = {:tfmsl020.ttyp,:tfmsl020.docn}
+					and	tfacp200.ifbp = :o.otbp
+					and	tfacp200._compnr = :tfmsl020.fcom				|#ISGEC001222.n
+		| 			and	tfacp200.tpay = tfacp.tpay.advance.ant
+					and 	tfacp200.line = :tfmsl020.lino					|# Veena 02-Oct-2018
+					selectdo
+						if tfacp200.tpay = tfacp.tpay.advance.ant then                   |#ISGEC01030.sn
+| 							if tfacp200.balh(1) <> 0 or tfacp200.bahc(1) <> 0 then
+								unadjusted.amnt = unadjusted.amnt + abs(tfacp200.balh(1)) + abs(tfacp200.bahc(1))	|Advance Unassign
+								unadjusted.amnt_2 = unadjusted.amnt_2 + abs(tfacp200.amth(1) - tfacp200.balh(1) - tfacp200.bala)
+								i.Advance.amnt = unadjusted.amnt + unadjusted.amnt_2
+| 							endif
+						else	
+							if tfacp200.tpay = tfacp.tpay.advance then 	|#ISGEC01030.en
+								unadjusted.amnt = unadjusted.amnt + abs(tfacp200.balh(1)) + abs(tfacp200.bahc(1))	|Advance Unassign
+								unadjusted.amnt_2 = unadjusted.amnt_2 + abs(tfacp200.amth(1)- tfacp200.balh(1) - tfacp200.bala)
+								i.Advance.amnt = unadjusted.amnt + unadjusted.amnt_2
+							endif
+						endif	                                                        |#ISGEC01030.n	
+						if tfacp200.tpay = tfacp.tpay.advance.ant or tfacp200.tpay = tfacp.tpay.advance then
+						if tfacp200.whti = tcyesno.yes   then
+							select 	tfacp203.amti
+							from	tfacp203
+							where	tfacp203._index1 = {:tfacp200.ttyp,:tfacp200.ninv,:tfacp200.line}
+							and	tfacp203.txtp = tctax.txtp.income.tax		|#ISGEC001061.n
+							selectdo
+								if tfacp200.balh(1) <> 0 or tfacp200.bahc(1) <> 0 then        	|#ISGEC01026.sn   
+									unadjusted.amnt = unadjusted.amnt + tfacp203.amti
+								else
+									unadjusted.amnt_2 = unadjusted.amnt_2 + tfacp203.amti
+								endif	
+								i.Advance.amnt = unadjusted.amnt + unadjusted.amnt_2
+| 								endif
+							endselect	
+						endif			
+						endif	
+					endselect
+				endif		
+			endif	
+		endselect	
+		|ISGEC01101.en
+		
+		tot.Advance.amnt = i.Advance.amnt + Advance.amnt		|#ISGEC001222.n
+		
+| 		select	sum(tfmsl020.aamt):unadjusted.payment		|#MM.sn		|ISGEC01101.so
+| 		from	tfmsl020
+| 		where	tfmsl020._index2 = {:tdpur401.orno}
+| 		|and	tfmsl020.optn in (1,2)				|#ISGEC001222.o
+| 		and	tfmsl020.optn in (1,2,4)			|#ISGEC001222.n
+| 		selectdo
+| 		endselect						|#MM.en		|ISGEC01101.eo
+| 					
+		|ISGEC01101.sn
+		select	tfmsl020.*	
+		from	tfmsl020
+		where	tfmsl020._index2 = {:tdpur401.orno}
+		and	tfmsl020.optn in (1,2,4)		
+		selectdo
+			if (isspace(tfmsl020.ttyp)) and (tfmsl020.docn = 0) then	
+				unadjusted.payment = unadjusted.payment + tfmsl020.aamt
+			else
+				select	tfacp200.*
+				from	tfacp200
+| 				where	tfacp200.cdf_cprj = :tdpur401.cprj
+| 				and	tfacp200.cdf_prno = :tdpur401.orno
+				where	tfacp200._index1 = {:tfmsl020.ttyp,:tfmsl020.docn}
+				and	tfacp200.ifbp = :o.otbp
+				and 	tfacp200.line = :tfmsl020.lino					|# Veena 02-Oct-2018
+				and	tfacp200._compnr = :tfmsl020.fcom		
+				and	tfacp200.tpay in (10,12)
+				selectdo
+					assigned.unallocated = assigned.unallocated + |Assigned Unallocated
+							abs(tfacp200.amth(1)
+							- tfacp200.balh(1)
+							- tfacp200.bala) 
+					unassigned.unallocated = unassigned.unallocated + 
+								abs(tfacp200.balh(1)) +
+								abs(tfacp200.bahc(1))
+					
+					i.unadjusted.payment = assigned.unallocated + unassigned.unallocated
+					
+					if tfacp200.whti = tcyesno.yes   then
+						select 	tfacp203.amti
+						from	tfacp203
+						where	tfacp203._index1 = {:tfacp200.ttyp,:tfacp200.ninv,:tfacp200.line}
+						and	tfacp203.txtp = tctax.txtp.income.tax	
+						selectdo
+							if tfacp200.balh(1) <> 0 or tfacp200.bahc(1) <> 0 then         
+								unassigned.unallocated = unassigned.unallocated + tfacp203.amti
+							else
+								assigned.unallocated = assigned.unallocated + tfacp203.amti
+							endif	
+							i.unadjusted.payment = assigned.unallocated +
+										     unassigned.unallocated
+						endselect	
+					endif			
+				endselect
+			endif		
+		endselect	
+		unadjusted.payment = unadjusted.payment + i.unadjusted.payment
+		unassigned.unallocated = unadjusted.payment - assigned.unallocated
+		|ISGEC01101.en
+					
+		invoice.amount = 0.00		|* New Logic for Invoice Amount
+		
+		select	tdpur406.rcno, tdpur406.rseq
+		from	tdpur406
+		where	tdpur406._index1 = {:tdpur401.orno}
+		selectdo
+			temp.amnt = 0.00
+			select	sum(tfacp251.iamt):temp.amnt
+			from	tfacp251
+			where	tfacp251._index3  = {
+						:curr.comp,
+						tfacp.otyp.purchase,
+						:tdpur401.orno
+						}
+			and	tfacp251.rcno = :tdpur406.rcno			
+			and	tfacp251.rseq = :tdpur406.rseq			
+			selectdo
+			selectempty
+				select	sum(tdpur406.damt):temp.amnt
+				from	tdpur406
+				where	tdpur406._index2 = {
+							:tdpur406.rcno,
+							:tdpur406.rseq,
+							:tdpur401.orno
+							}
+				selectdo
+				selectempty
+					temp.amnt = 0.00
+				endselect
+			endselect
+			invoice.amount = invoice.amount + temp.amnt
+		endselect
+		dnas.w = 0.00
+		dnus.w = 0.00
+		select	tfmsl020.*	
+		from	tfmsl020
+		where	tfmsl020._index2 = {:tdpur401.orno}
+		as set with 1 rows
+| 		and	tfmsl020.optn in (1,2,4)		
+		selectdo
+			select	tfacp200.amti,tfacp200.vath,
+				tfacp200.amnt,tfacp200.balh, tfacp200.bala	|ISGEC01101.n 
+		from	tfacp200
+		where	tfacp200.cdf_prno = {:tfmsl020.orno}
+		and	tfacp200.tpay = tfacp.tpay.credit
+			and	tfacp200._compnr = :tfmsl020.fcom		|ISGEC01101.n
+		selectdo
+			unadjusted.debit.note = abs(tfacp200.amti) - abs(tfacp200.vath(1))
+				dnas.w = dnas.w + abs(tfacp200.amnt- tfacp200.balh(1) - tfacp200.bala)	|ISGEC01101.n
+				dnus.w = dnus.w + (abs(tfacp200.balh(1)) + tfacp200.bala)		|ISGEC01101.n
+			endselect
+			
+			select	tfacp200.amti,tfacp200.vath,				|ISGEC01101.sn 
+				tfacp200.amnt,tfacp200.balh, tfacp200.bala	
+			from	tfacp200
+			where	tfacp200.cdf_prno = {:tfmsl020.orno}
+			and	tfacp200.tpay = tfacp.tpay.invoice
+			and	tfacp200.appr = tfacp.inv.expence
+			and	tfacp200._compnr = :tfmsl020.fcom		
+			selectdo
+				unadjusted.debit.note = unadjusted.debit.note - abs(tfacp200.amti) - abs(tfacp200.vath(1))
+				dnas.w = dnas.w - abs(tfacp200.amnt- tfacp200.balh(1) - tfacp200.bala)	
+				dnus.w = dnus.w - (abs(tfacp200.balh(1)) + tfacp200.bala)	
+			endselect								|ISGEC01101.en
+		endselect	
+		
+| 		total.balance.amount = unadjusted.amnt + unadjusted.payment + invoice.amount + unadjusted.debit.note |ISGEC01101.o
+| 		total.balance.amount = unadjusted.amnt + unadjusted.amnt_2 +unadjusted.payment + invoice.amount + unadjusted.debit.note |ISGEC01101.n	|#ISGEC001222.o
+		total.balance.amount = (tot.Advance.amnt - unadjusted.amnt_2) 
+					+ unassigned.unallocated + invoice.amount +
+					dnus.w  |#ISGEC001222.n
+		endselect
+	|ISGEC01101.sn
+	select	tdmsl500.oamt,tdmsl500.vrsn
+	from	tdmsl500
+	where	tdmsl500._index1 = {:tdpur401.orno}
+	order by tdmsl500.vrsn desc
+	as set with 1 rows
+	selectdo
+		if tdmsl500.oamt < total.balance.amount then
+| 			total.balance.amount = tdmsl500.oamt
+			return(true)
+		endif
+	endselect
+	
+	i.pono = tdpur401.pono
+	domain	tcpric	price
+	domain	tcpono	old.pono,position
+	domain	tcbool	flag
+	domain tcqsl1	quantity
+	price = 0
+	old.pono = 0
+	flag = false
+| 	select	tdpur401.oamt:v.oamt,tdpur401.damt:v.damt
+	select	tdpur401.pono:position,tdpur401.pric:price
+	from	tdpur401
+	where	tdpur401._index1 = {:tdpur401.orno}
+	and	tdpur401.pono <> :i.pono
+| 	and	tdpur401.oltp <> tdgen.oltp.total
+	selectdo
+| 		if v.damt <> 0 then
+| 			tot.amnt = tot.amnt + v.damt 
+| 		else
+| 			tot.amnt = tot.amnt + v.oamt
+| 		endif
+		if old.pono <> position then
+			flag = false
+			old.pono = position
+		endif
+		
+		if flag = false then
+			quantity = new.get.additional.qty.from.401(position)
+			tot.amnt = tot.amnt + quantity * price
+			flag = true
+		endif	
+	endselect	
+	
+	|ISGEC01101.en
+	
+	o.tdpur401.qoor = get.additional.qty.from.401()
+		
+	get.orderline.amount =  tdpur401.pric * o.tdpur401.qoor
+	
+	get.orderline.amount = get.orderline.amount + tot.amnt
+	
+	if get.orderline.amount < total.balance.amount then
+		return(false)
+	endif
+	
+	return(true)
+}	
+
+function domain tcqsl1	get.additional.qty.from.401()
+{
+	domain tcqsl1 ord.qty,app.qty,diff.qty,bac.qty
+	domain tcqsl1 final.rcpt.qnty, non.final.rcpt.qnty, old.qnty	
+	ord.qty = 0
+	app.qty = 0
+	bac.qty = 0
+	diff.qty = 0
+	non.final.rcpt.qnty = 0
+	final.rcpt.qnty = 0	
+						
+	select	sum(tdpur401.qidl):final.rcpt.qnty
+	from 	tdpur401 
+	where 	tdpur401._index1 = {:tdpur401.orno, :tdpur401.pono}
+	and	tdpur401.oltp <> 1		|* Not Total Line Type
+	and	tdpur401.clyn <> tcyesno.yes 	|* Not Consider Cancelled PO Line
+	selectdo
+	selectempty
+		final.rcpt.qnty = 0.00
+	endselect
+	
+	select	sum(tdpur401.qidl):non.final.rcpt.qnty,
+		sum(tdpur401.qoor):ord.qty
+	from 	tdpur401 
+	where 	tdpur401._index1 = {:tdpur401.orno, :tdpur401.pono}
+	and	tdpur401.fire = tcyesno.no
+	and	tdpur401.oltp <> 1		|* Not Total Line Type
+	and	tdpur401.clyn <> tcyesno.yes 	|* Not Consider Cancelled PO Line
+	selectdo
+	selectempty
+		ord.qty = 0.00
+		non.final.rcpt.qnty = 0.00
+	endselect
+	
+	diff.qty = final.rcpt.qnty + (ord.qty - non.final.rcpt.qnty)
+	
+	with.old.object.values.do(get.old.qnty, old.qnty)
+	diff.qty = (diff.qty + tdpur401.qoor) -  old.qnty
+	
+				
+	return(diff.qty)
+}
+
+function domain tcqsl1	new.get.additional.qty.from.401(domain tcpono position)				|Priya.sn
+{
+	domain tcqsl1 ord.qty,app.qty,diff.qty,bac.qty
+	domain tcqsl1 final.rcpt.qnty, non.final.rcpt.qnty, old.qnty	
+	ord.qty = 0
+	app.qty = 0
+	bac.qty = 0
+	diff.qty = 0
+	non.final.rcpt.qnty = 0
+	final.rcpt.qnty = 0	
+						
+	select	sum(tdpur401.qidl):final.rcpt.qnty
+	from 	tdpur401 
+	where 	tdpur401._index1 = {:tdpur401.orno, :position}
+	and	tdpur401.oltp <> 1		|* Not Total Line Type
+	and	tdpur401.clyn <> tcyesno.yes 	|* Not Consider Cancelled PO Line
+	selectdo
+	selectempty
+		final.rcpt.qnty = 0.00
+	endselect
+	
+	select	sum(tdpur401.qidl):non.final.rcpt.qnty,
+		sum(tdpur401.qoor):ord.qty
+	from 	tdpur401 
+	where 	tdpur401._index1 = {:tdpur401.orno, :position}
+	and	tdpur401.fire = tcyesno.no
+	and	tdpur401.oltp <> 1		|* Not Total Line Type
+	and	tdpur401.clyn <> tcyesno.yes 	|* Not Consider Cancelled PO Line
+	selectdo
+	selectempty
+		ord.qty = 0.00
+		non.final.rcpt.qnty = 0.00
+	endselect
+	
+	diff.qty = final.rcpt.qnty + (ord.qty - non.final.rcpt.qnty)
+	
+| 	diff.qty = diff.qty + tdpur401.qoor
+	
+				
+	return(diff.qty)
+}													|Priya.en
+
+function get.old.qnty(ref domain tcqsl1 o.old.qnty)
+{
+	o.old.qnty = tdpur401.qoor
+}
+				|#ISGEC017018.en
+									
+function boolean check.project.element()						|#ISGEC0163.sn
+{
+	select	tdpur202.rqno,
+		tdpur202.pono
+	from	tdpur202
+	where	tdpur202._index2 = {:tdpur401.orno,:tdpur401.pono}
+	selectdo
+		select	tdpur201.cprj,
+			tdpur201.cspa,
+			tdpur201.item
+		from	tdpur201
+		where	tdpur201._index1 = {:tdpur202.rqno,:tdpur202.pono}
+		selectdo
+			
+			if tdpur201.cprj <> tdpur401.cprj or tdpur201.cspa <> tdpur401.cspa or tdpur201.item<> tdpur401.item then
+| 				dal.set.error.message("@ Project(%s),Element(%s),Item(%s) of PO (%s-%d)"& "Indent (%s-%d) Can't Be Different",
+| 								tdpur201.cprj,tdpur201.cspa,trim$(tdpur201.item),tdpur401.orno,tdpur401.pono,tdpur202.rqno,tdpur202.pono)
+| 				return(DALHOOKERROR)
+				return(false)
+			endif
+		endselect
+	endselect
+	
+	return(true)
+}
+										|#ISGEC0163.en
+										
+										
+function domain tcbool check_po_balance_new()		|#ISGEC017018.sn
+{
+	domain	tcncmp	curr.comp
+	domain	tcqsl1	add.qty, o.tdpur401.qoor
+	domain	tcamnt	temp.amnt,i.unadjusted.payment,tot.amnt,v.oamt,v.damt
+	domain	tccom.bpid	o.otbp
+	domain	tcqrd1	i.qoor	|ISGEC01101.n					
+	domain	tcpric	i.pric	|ISGEC01101.n					
+	domain	tcpono	i.pono,i.seqn	|ISGEC01101.n					
+		
+	select	tdpur400.cotp,			|ISGEC01149.sn
+		tdpur094.reto
+	from	tdpur400, tdpur094
+	where	tdpur400._index1 ={:tdpur401.orno}
+	and	tdpur400.cotp refers to tdpur094 
+	selectdo
+		if tdpur094.reto = tdpur.reto.yes or tdpur094.reto = tdpur.reto.rejectgoods then
+			return(true)
+		endif
+	endselect				|ISGEC01149.en
+	
+	curr.comp = get.compnr()
+	invoice.amount = 0.0
+	unadjusted.amnt = 0.0
+	unadjusted.amnt_2 = 0.0		|ISGEC01101.n
+	tot.amnt = 0.00
+	unadjusted.debit.note = 0.0
+	total.balance.amount = 0.0
+	i.Advance.amnt = 0.0
+	Advance.amnt = 0.0
+	
+	dnas.w = 0.00		|ISGEC01101.n
+	dnus.w = 0.00		|ISGEC01101.n
+	unadjusted.payment = 0.00		|ISGEC01101.n
+	assigned.unallocated = 0.00		|ISGEC01101.n
+	unassigned.unallocated = 0.00		|ISGEC01101.n
+	i.unadjusted.payment = 0.00		|ISGEC01101.n
+	
+	select	tfmsl020.orno
+	from	tfmsl020
+	where	tfmsl020._index2 = {:tdpur401.orno}
+	group by tfmsl020.orno
+	selectdo
+		select	tfmsl020.ttyp, tfmsl020.docn
+		from	tfmsl020
+		where	tfmsl020._index2 = {:tdpur401.orno}
+		selectdo
+			select	tfacp200.balh
+			from	tfacp200
+			where	tfacp200._index1 = {:tfmsl020.ttyp,:tfmsl020.docn}
+			and	tfacp200.docn = 0
+			selectdo
+				unadjusted.amnt = abs(tfacp200.balh(1))
+			selectempty
+					
+			endselect
+		endselect
+		
+		select	tfmsl020.optn,tfmsl020.ttyp,tfmsl020.docn,tfmsl020.fcom,tfmsl020.aamt
+		from	tfmsl020
+		where	tfmsl020._index2 = {:tdpur401.orno}
+		and	tfmsl020.optn = tfoption.advance or tfmsl020.optn = tfoption.site.advance
+		selectdo
+		endselect
+		
+		select	sum(tfmsl020.aamt):unadjusted.amnt
+		from	tfmsl020
+		where	tfmsl020._index2 = {:tdpur401.orno}
+		and	tfmsl020.optn = 4
+		selectdo
+		selectempty
+			
+		endselect
+		
+		select	tdpur400.otbp:o.otbp
+		from	tdpur400
+		where	tdpur400._index1 = {:tdpur401.orno}
+		selectdo
+		selectempty
+			o.otbp = ""
+		endselect
+		
+		select	sum(tfacp200.amth(1)):unadjusted.amnt_2
+		from	tfacp200
+		where	tfacp200._index2 = {:o.otbp}
+		and	tfacp200.cdf_prno = :tdpur401.orno
+		selectdo
+		selectempty
+			unadjusted.amnt_2 = 0.00
+		endselect
+		
+		unadjusted.amnt = unadjusted.amnt + unadjusted.amnt_2
+		|ISGEC01101.sn
+		unadjusted.amnt = 0
+		unadjusted.amnt_2 = 0
+		Advance.amnt = 0			|#ISGEC001222.sn
+		i.Advance.amnt = 0
+		tot.Advance.amnt = 0			|#ISGEC001222.en
+| 		if tfmsl020.optn = tfoption.account or tfmsl020.optn = tfoption.exchange  then	|#ISGEC001222.o
+		select	tfmsl020.*
+		from	tfmsl020
+		where	tfmsl020._index2 = {:tdpur401.orno}
+		selectdo
+			if tfmsl020.optn = tfoption.account or tfmsl020.optn = tfoption.exchange or tfmsl020.optn =  tfoption.retention then	|#ISGEC001222.n
+			else
+											|#ISGEC001222.sn
+				if (isspace(tfmsl020.ttyp)) and (tfmsl020.docn = 0) then	
+					Advance.amnt = Advance.amnt + tfmsl020.aamt
+				else							|#ISGEC001222.en
+					select	tfacp200.*
+					from	tfacp200
+| 					where	tfacp200.cdf_cprj = :tdpur401.cprj
+| 					and	tfacp200.cdf_prno = :tdpur401.orno
+					where	tfacp200._index1 = {:tfmsl020.ttyp,:tfmsl020.docn}
+					and	tfacp200.ifbp = :o.otbp
+					and	tfacp200._compnr = :tfmsl020.fcom				|#ISGEC001222.n
+		| 			and	tfacp200.tpay = tfacp.tpay.advance.ant
+					and 	tfacp200.line = :tfmsl020.lino					|# Veena 02-Oct-2018
+					selectdo
+						if tfacp200.tpay = tfacp.tpay.advance.ant then                   |#ISGEC01030.sn
+| 							if tfacp200.balh(1) <> 0 or tfacp200.bahc(1) <> 0 then
+								unadjusted.amnt = unadjusted.amnt + abs(tfacp200.balh(1)) + abs(tfacp200.bahc(1))	|Advance Unassign
+								unadjusted.amnt_2 = unadjusted.amnt_2 + abs(tfacp200.amth(1) - tfacp200.balh(1) - tfacp200.bala)
+								i.Advance.amnt = unadjusted.amnt + unadjusted.amnt_2
+| 							endif
+						else	
+							if tfacp200.tpay = tfacp.tpay.advance then 	|#ISGEC01030.en
+								unadjusted.amnt = unadjusted.amnt + abs(tfacp200.balh(1)) + abs(tfacp200.bahc(1))	|Advance Unassign
+								unadjusted.amnt_2 = unadjusted.amnt_2 + abs(tfacp200.amth(1)- tfacp200.balh(1) - tfacp200.bala)
+								i.Advance.amnt = unadjusted.amnt + unadjusted.amnt_2
+							endif
+						endif	                                                        |#ISGEC01030.n	
+						if tfacp200.tpay = tfacp.tpay.advance.ant or tfacp200.tpay = tfacp.tpay.advance then
+						if tfacp200.whti = tcyesno.yes   then
+							select 	tfacp203.amti
+							from	tfacp203
+							where	tfacp203._index1 = {:tfacp200.ttyp,:tfacp200.ninv,:tfacp200.line}
+							and	tfacp203.txtp = tctax.txtp.income.tax		|#ISGEC001061.n
+							selectdo
+								if tfacp200.balh(1) <> 0 or tfacp200.bahc(1) <> 0 then        	|#ISGEC01026.sn   
+									unadjusted.amnt = unadjusted.amnt + tfacp203.amti
+								else
+									unadjusted.amnt_2 = unadjusted.amnt_2 + tfacp203.amti
+								endif	
+								i.Advance.amnt = unadjusted.amnt + unadjusted.amnt_2
+| 								endif
+							endselect	
+						endif			
+						endif	
+					endselect
+				endif		
+			endif	
+		endselect	
+		|ISGEC01101.en
+		
+		tot.Advance.amnt = i.Advance.amnt + Advance.amnt		|#ISGEC001222.n
+		
+| 		select	sum(tfmsl020.aamt):unadjusted.payment		|#MM.sn		|ISGEC01101.so
+| 		from	tfmsl020
+| 		where	tfmsl020._index2 = {:tdpur401.orno}
+| 		|and	tfmsl020.optn in (1,2)				|#ISGEC001222.o
+| 		and	tfmsl020.optn in (1,2,4)			|#ISGEC001222.n
+| 		selectdo
+| 		endselect						|#MM.en		|ISGEC01101.eo
+| 					
+		|ISGEC01101.sn
+		select	tfmsl020.*	
+		from	tfmsl020
+		where	tfmsl020._index2 = {:tdpur401.orno}
+		and	tfmsl020.optn in (1,2,4)		
+		selectdo
+			if (isspace(tfmsl020.ttyp)) and (tfmsl020.docn = 0) then	
+				unadjusted.payment = unadjusted.payment + tfmsl020.aamt
+			else
+				select	tfacp200.*
+				from	tfacp200
+| 				where	tfacp200.cdf_cprj = :tdpur401.cprj
+| 				and	tfacp200.cdf_prno = :tdpur401.orno
+				where	tfacp200._index1 = {:tfmsl020.ttyp,:tfmsl020.docn}
+				and	tfacp200.ifbp = :o.otbp
+				and 	tfacp200.line = :tfmsl020.lino					|# Veena 02-Oct-2018
+				and	tfacp200._compnr = :tfmsl020.fcom		
+				and	tfacp200.tpay in (10,12)
+				selectdo
+					assigned.unallocated = assigned.unallocated + |Assigned Unallocated
+							abs(tfacp200.amth(1)
+							- tfacp200.balh(1)
+							- tfacp200.bala) 
+					unassigned.unallocated = unassigned.unallocated + 
+								abs(tfacp200.balh(1)) +
+								abs(tfacp200.bahc(1))
+					
+					i.unadjusted.payment = assigned.unallocated + unassigned.unallocated
+					
+					if tfacp200.whti = tcyesno.yes   then
+						select 	tfacp203.amti
+						from	tfacp203
+						where	tfacp203._index1 = {:tfacp200.ttyp,:tfacp200.ninv,:tfacp200.line}
+						and	tfacp203.txtp = tctax.txtp.income.tax	
+						selectdo
+							if tfacp200.balh(1) <> 0 or tfacp200.bahc(1) <> 0 then         
+								unassigned.unallocated = unassigned.unallocated + tfacp203.amti
+							else
+								assigned.unallocated = assigned.unallocated + tfacp203.amti
+							endif	
+							i.unadjusted.payment = assigned.unallocated +
+										     unassigned.unallocated
+						endselect	
+					endif			
+				endselect
+			endif		
+		endselect	
+		unadjusted.payment = unadjusted.payment + i.unadjusted.payment
+		unassigned.unallocated = unadjusted.payment - assigned.unallocated
+		|ISGEC01101.en
+					
+		invoice.amount = 0.00		|* New Logic for Invoice Amount
+		
+		select	tdpur406.rcno, tdpur406.rseq
+		from	tdpur406
+		where	tdpur406._index1 = {:tdpur401.orno}
+		selectdo
+			temp.amnt = 0.00
+			select	sum(tfacp251.iamt):temp.amnt
+			from	tfacp251
+			where	tfacp251._index3  = {
+						:curr.comp,
+						tfacp.otyp.purchase,
+						:tdpur401.orno
+						}
+			and	tfacp251.rcno = :tdpur406.rcno			
+			and	tfacp251.rseq = :tdpur406.rseq			
+			selectdo
+			selectempty
+				select	sum(tdpur406.damt):temp.amnt
+				from	tdpur406
+				where	tdpur406._index2 = {
+							:tdpur406.rcno,
+							:tdpur406.rseq,
+							:tdpur401.orno
+							}
+				selectdo
+				selectempty
+					temp.amnt = 0.00
+				endselect
+			endselect
+			invoice.amount = invoice.amount + temp.amnt
+		endselect
+		dnas.w = 0.00
+		dnus.w = 0.00
+		select	tfmsl020.*	
+		from	tfmsl020
+		where	tfmsl020._index2 = {:tdpur401.orno}
+		as set with 1 rows
+| 		and	tfmsl020.optn in (1,2,4)		
+		selectdo
+			select	tfacp200.amti,tfacp200.vath,
+				tfacp200.amnt,tfacp200.balh, tfacp200.bala	|ISGEC01101.n 
+		from	tfacp200
+		where	tfacp200.cdf_prno = {:tfmsl020.orno}
+		and	tfacp200.tpay = tfacp.tpay.credit
+			and	tfacp200._compnr = :tfmsl020.fcom		|ISGEC01101.n
+		selectdo
+			unadjusted.debit.note = abs(tfacp200.amti) - abs(tfacp200.vath(1))
+				dnas.w = dnas.w + abs(tfacp200.amnt- tfacp200.balh(1) - tfacp200.bala)	|ISGEC01101.n
+				dnus.w = dnus.w + (abs(tfacp200.balh(1)) + tfacp200.bala)		|ISGEC01101.n
+			endselect
+			
+			select	tfacp200.amti,tfacp200.vath,				|ISGEC01101.sn 
+				tfacp200.amnt,tfacp200.balh, tfacp200.bala	
+			from	tfacp200
+			where	tfacp200.cdf_prno = {:tfmsl020.orno}
+			and	tfacp200.tpay = tfacp.tpay.invoice
+			and	tfacp200.appr = tfacp.inv.expence
+			and	tfacp200._compnr = :tfmsl020.fcom		
+			selectdo
+				unadjusted.debit.note = unadjusted.debit.note - abs(tfacp200.amti) - abs(tfacp200.vath(1))
+				dnas.w = dnas.w - abs(tfacp200.amnt- tfacp200.balh(1) - tfacp200.bala)	
+				dnus.w = dnus.w - (abs(tfacp200.balh(1)) + tfacp200.bala)	
+			endselect								|ISGEC01101.en
+		endselect	
+		
+| 		total.balance.amount = unadjusted.amnt + unadjusted.payment + invoice.amount + unadjusted.debit.note |ISGEC01101.o
+| 		total.balance.amount = unadjusted.amnt + unadjusted.amnt_2 +unadjusted.payment + invoice.amount + unadjusted.debit.note |ISGEC01101.n	|#ISGEC001222.o
+		total.balance.amount = (tot.Advance.amnt - unadjusted.amnt_2) 
+					+ unassigned.unallocated + invoice.amount +
+					dnus.w  |#ISGEC001222.n
+		endselect
+	|ISGEC01101.sn
+	select	tdmsl500.oamt,tdmsl500.vrsn
+	from	tdmsl500
+	where	tdmsl500._index1 = {:tdpur401.orno}
+	order by tdmsl500.vrsn desc
+	as set with 1 rows
+	selectdo
+		if tdmsl500.oamt < total.balance.amount then
+| 			total.balance.amount = tdmsl500.oamt
+			return(true)
+		endif
+	endselect
+	
+	i.pono = tdpur401.pono
+	domain	tcpric	price
+	domain	tcpono	old.pono,position
+	domain	tcbool	flag
+	domain tcqsl1	quantity
+	price = 0
+	old.pono = 0
+	flag = false
+| 	select	tdpur401.oamt:v.oamt,tdpur401.damt:v.damt
+	select	tdpur401.pono:position,tdpur401.pric:price
+	from	tdpur401
+	where	tdpur401._index1 = {:tdpur401.orno}
+	and	tdpur401.pono <> :i.pono
+| 	and	tdpur401.oltp <> tdgen.oltp.total
+	selectdo
+| 		if v.damt <> 0 then
+| 			tot.amnt = tot.amnt + v.damt 
+| 		else
+| 			tot.amnt = tot.amnt + v.oamt
+| 		endif
+		if old.pono <> position then
+			flag = false
+			old.pono = position
+		endif
+		
+		if flag = false then
+			quantity = new.get.additional.qty.from.401(position)
+			tot.amnt = tot.amnt + quantity * price
+			flag = true
+		endif	
+	endselect	
+	
+	|ISGEC01101.en
+	
+	o.tdpur401.qoor = get.additional.qty.from.401()
+		
+	get.orderline.amount =  tdpur401.pric * o.tdpur401.qoor
+	
+	get.orderline.amount = get.orderline.amount + tot.amnt + tdpur401.oamt
+	
+	
+	if get.orderline.amount < total.balance.amount then
+		get.orderline.amount = get.orderline.amount - tdpur401.oamt
+		return(false)
+	endif
+	
+	return(true)
+}	
+
+
+
+

@@ -1,0 +1,356 @@
+|******************************************************************************
+|* tcisg0404m100  0  VRC B61U a7 live
+|* Print Item to be Indented
+|* Installation user             
+|* 2014-09-11
+|******************************************************************************
+|* Main table tcisg004 Item Release Line, Form Type 4
+|******************************************************************************
+|* ISGECDV001029, IT0205, Arjit Gupta, Dt. 19-09-2014, VRC B61U a7 live
+|* Blocked Submitted Child for Printing as suggested by Mr. Nishant Verma
+|*  
+|* ISGEC001160, IT0205, Arjit Gupta, Dt. 14-11-2014, VRC B61U a7 live
+|* Get Release Date from Drawing Release Date
+|*
+|* ISGEC001179, IT0205, Arjit Gupta, Dt. 12-12-2014, VRC B61U a7 isg
+|* Filter all expired document. Support Case ID: 32172 
+|* Functional Mr. Rahul
+|*
+|* SD27072017, IT0386, Saurabh Dubey, 27 July 2017, VRC B61U a7 isg
+|* Isgec Onsite Deployment
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttcisg004 | Item Release Line
+	table	ttcmcs052
+	table	ttcibd001
+	table	ttpptc100
+	table	ttpptc120
+	table	ttppss200
+	table	tdmisg001
+	table	tdmisg002
+	table	tdmisg005
+
+	|******************* Input Form Variables *****************
+	extern	domain	tppdm.cspa	elmt.f    fixed
+	extern	domain	tppdm.cspa	elmt.t    fixed
+	extern	domain	tcitem		item.f    fixed
+	extern	domain	tcitem		item.t    fixed
+	extern	domain	tcitem		itmh.f    fixed
+	extern	domain	tcitem		itmh.t    fixed
+	extern	domain	tccprj		proj.f    fixed
+	extern	domain	tccprj		proj.t    fixed
+	|******************* Report Variables *********************
+	extern	domain	tccprj		rep.cprj
+	extern	domain	tppdm.cspa	rep.cspa
+	extern	domain	tppdm.cact	rep.cact
+	extern	domain	tcitem		rep.loti
+	extern	domain	tcitem		rep.item
+	extern	domain	tcdsca		rep.ltdc
+| 	extern	domain	tcdsca		rep.itdc
+	extern	domain	tcmcs.str100	rep.itdc
+	extern	domain	tcdsca		rep.pjdc
+	extern	domain	tcdsca		rep.eldc
+	extern	domain	tcqiv1		rep.qnty
+	extern	domain	tcqiv1		rep.wght
+	extern	domain	tccuni		rep.cuni
+	extern	domain	tcdate		rep.rldt
+	extern	domain	tpptc.stat	rep.elst
+	extern	domain	dmstat		rep.itst
+
+|****************************** program section ********************************
+before.program:
+	inputfield.invisible("item.f.segment.1", "item.t.segment.1")
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+choice.cont.process:
+on.choice:
+	execute(print.data)
+
+choice.print.data:
+on.choice:
+	if	rprt_open()	then
+		read.main.table()
+		rprt_close()
+	else
+		choice.again()
+	endif
+
+|****************************** field section *********************************
+field.proj.f:
+when.field.changes:
+	proj.t = proj.f
+
+field.elmt.f:
+when.field.changes:
+	elmt.t = elmt.f
+
+field.itmh.f:
+when.field.changes:
+	itmh.t = itmh.f
+
+field.item.f:
+when.field.changes:
+	item.t = item.f
+|****************************** function section ******************************
+functions:
+
+function read.main.table()
+{
+| 	Get_Submitted()			|#ISGECDV001029.o
+	Get_Drawing_Released()
+	Get_Item_Released()
+}
+
+
+function Get_Item_Released()
+{
+	domain	dmstat	temp.stat	|#SD27072017.n
+	
+	select	tcisg004.*, tcmcs052.dsca, tcibd001.dsca
+	from	tcisg004, tcmcs052, tcibd001
+	where	tcisg004._index1 inrange {:proj.f, :elmt.f, :itmh.f, :item.f}
+				and	{:proj.t, :elmt.t, :itmh.t, :item.t}
+	and	tcisg004.indt = tcyesno.no
+	and	tcisg004.stat <> dmstat.expire				|#ISGEC001179.n
+	and	tcisg004.proj refers to tcmcs052	Unref Clear	
+	and	tcisg004.itmh refers to tcibd001	Unref Clear	
+	order by tcisg004._index1
+	selectdo			
+						|#SD27072017.sn
+		select	dmisg005.stat:temp.stat
+		from	dmisg005
+		where	dmisg005._index1 = {
+					:tcisg004.proj,
+					:tcisg004.elmt,
+					:tcisg004.docn,
+					:tcisg004.rvid
+					}
+		selectdo
+		selectempty
+			temp.stat = empty
+		endselect
+		
+		if temp.stat = dmstat.expire then
+			continue
+		endif
+						|#SD27072017.en
+		Initialize_Variables()
+		rep.cprj = tcisg004.proj
+		rep.cspa = tcisg004.elmt
+		rep.pjdc = tcmcs052.dsca
+		rep.loti = tcisg004.itmh
+		rep.ltdc = tcibd001.dsca
+		rep.item = tcisg004.item
+		rep.itdc = tcisg004.desc
+		rep.qnty = tcisg004.qnty
+		rep.wght = tcisg004.wght
+		rep.cuni = tcisg004.quom
+		rep.itst = tcisg004.stat
+		select	tpptc100.desc:rep.eldc
+		from	tpptc100
+		where	tpptc100._index1 = {:tcisg004.proj, :tcisg004.elmt}
+		selectdo
+		selectempty
+			rep.eldc = ""
+		endselect
+		
+		select	tpptc120.cact, tpptc120.cpla
+		from	tpptc120
+		where	tpptc120._index3 = {:tcisg004.itmh, :tcisg004.proj, :tcisg004.elmt}
+		as set with 1 rows
+		selectdo
+			rep.cact = tpptc120.cact
+		selectempty
+			tpptc120.cact = ""
+			tpptc120.cpla = ""
+			rep.cact = ""
+		endselect
+		
+		select	tppss200.*
+		from	tppss200
+		where	tppss200._index1 = {:tcisg004.proj, :tpptc120.cpla, :tpptc120.cact}
+		selectdo
+| 			rep.rldt = tppss200.asdt		|#ISGECDV001160.o
+			rep.elst = tppss200.stat		
+		endselect
+								|#ISGECDV001160.sn
+		select	dmisg001.drdt
+		from	dmisg001
+		where	dmisg001._index1 = {:tcisg004.docn, :tcisg004.rvid}
+		selectdo
+			rep.rldt = dmisg001.drdt
+		selectempty
+			rep.rldt = 0
+		endselect
+								|#ISGECDV001160.en
+			
+		rprt_send()
+	endselect
+}
+
+function Initialize_Variables()
+{
+	rep.cprj = ""
+	rep.cspa = ""
+	rep.cact = ""
+	rep.loti = ""
+	rep.item = ""
+	rep.ltdc = ""
+	rep.itdc = ""
+	rep.pjdc = ""
+	rep.eldc = ""
+	rep.qnty = 0
+	rep.wght = 0
+	rep.cuni = ""
+	rep.rldt = 0
+	rep.elst = empty
+	rep.itst = empty	
+}
+
+function Get_Drawing_Released()
+{
+	select	dmisg005.*, tcmcs052.dsca, tcibd001.dsca
+	from	dmisg005, tcmcs052, tcibd001
+	where	dmisg005._index2 inrange {:proj.f, :elmt.f, :itmh.f}
+				and	{:proj.t, :elmt.t, :itmh.t}
+	and	dmisg005.item inrange {:item.f}	and	{:item.t}
+	and	dmisg005.stat = dmstat.process
+	and	dmisg005.cprj refers to tcmcs052 Unref Clear
+	and	dmisg005.loti refers to tcibd001 Unref Clear
+	selectdo
+		Initialize_Variables()
+		rep.cprj = dmisg005.cprj
+		rep.cspa = dmisg005.cspa
+		rep.pjdc = tcmcs052.dsca
+		rep.loti = dmisg005.loti
+		rep.ltdc = tcibd001.dsca
+		rep.item = dmisg005.item
+		rep.itdc = dmisg005.dsca
+		rep.qnty = dmisg005.qnty
+		rep.wght = dmisg005.wght
+		rep.cuni = dmisg005.cuni
+		rep.itst = dmisg005.stat
+		select	tpptc100.desc:rep.eldc
+		from	tpptc100
+		where	tpptc100._index1 = {:dmisg005.cprj, :dmisg005.cspa}
+		selectdo
+		selectempty
+			rep.eldc = ""
+		endselect
+		
+		select	tpptc120.cact, tpptc120.cpla
+		from	tpptc120
+		where	tpptc120._index3 = {:dmisg005.loti, :dmisg005.cprj, :dmisg005.cspa}
+		as set with 1 rows
+		selectdo
+			rep.cact = tpptc120.cact
+		selectempty
+			tpptc120.cact = ""
+			tpptc120.cpla = ""
+			rep.cact = ""
+		endselect
+		
+		select	tppss200.*
+		from	tppss200
+		where	tppss200._index1 = {:dmisg005.cprj, :tpptc120.cpla, :tpptc120.cact}
+		selectdo
+| 			rep.rldt = tppss200.asdt		|#ISGECDV001160.o
+			rep.elst = tppss200.stat
+		endselect
+			
+								|#ISGECDV001160.sn
+		select	dmisg001.drdt
+		from	dmisg001
+		where	dmisg001._index1 = {:dmisg005.docn, :dmisg005.revn}
+		selectdo
+			rep.rldt = dmisg001.drdt
+		selectempty
+			rep.rldt = 0
+		endselect
+								|#ISGECDV001160.en
+		rprt_send()
+	endselect
+}
+
+
+function Get_Submitted()
+{
+	select	dmisg001.*, tcmcs052.dsca
+	from	dmisg001, tcmcs052
+	where	dmisg001.cprj inrange {:proj.f}	and	{:proj.t}
+	and	dmisg001.stat = dmstat.submitted
+	and	dmisg001.cprj refers to tcmcs052 Unref Clear
+	selectdo
+		if	dmisg001.crtp = tcyesno.no	then
+			if	(dmisg001.cspa => elmt.f)	and	(dmisg001.cspa <= elmt.t)	then
+			else
+				continue
+			endif
+		endif	
+		select	dmisg002.*
+		from	dmisg002
+		where	dmisg002._index1 = {:dmisg001.docn, :dmisg001.revn}
+		and	dmisg002.item inrange {:item.f}	and	{:item.t}
+		selectdo
+			if	dmisg001.crtp = tcyesno.yes	then
+				if	(dmisg002.elem => elmt.f)	and	(dmisg002.elem <= elmt.t)	then
+				else
+					continue
+				endif
+			endif
+			Initialize_Variables()
+			if	isspace(dmisg002.elem)	then
+				dmisg002.elem = dmisg001.cspa
+			endif	
+			rep.cprj = dmisg001.cprj
+			rep.cspa = dmisg002.elem
+			rep.pjdc = tcmcs052.dsca
+			rep.loti = ""
+			rep.ltdc = ""
+			rep.item = dmisg002.item
+			rep.itdc = dmisg002.dsca
+			rep.qnty = dmisg002.qnty
+			rep.wght = dmisg002.wght
+			rep.cuni = dmisg002.cuni
+			rep.itst = dmisg001.stat
+			select	tpptc100.desc:rep.eldc
+			from	tpptc100
+			where	tpptc100._index1 = {:dmisg001.cprj, :dmisg002.elem}
+			selectdo
+			selectempty
+				rep.eldc = ""
+			endselect
+			
+			select	tpptc120.cact, tpptc120.cpla
+			from	tpptc120
+			where	tpptc120._index1 = {:dmisg001.cprj, :dmisg002.elem}
+			as set with 1 rows
+			selectdo
+				rep.cact = tpptc120.cact
+			selectempty
+				tpptc120.cact = ""
+				tpptc120.cpla = ""
+				rep.cact = ""
+			endselect
+			
+			select	tppss200.*
+			from	tppss200
+			where	tppss200._index1 = {:dmisg001.cprj, :tpptc120.cpla, :tpptc120.cact}
+			selectdo
+| 				rep.rldt = tppss200.asdt	|#ISGECDV001160.o
+				rep.elst = tppss200.stat
+			endselect
+			rep.rldt = dmisg001.drdt		|#ISGECDV001160.n	
+			rprt_send()
+		endselect
+	endselect
+}
+

@@ -1,0 +1,252 @@
+|******************************************************************************
+|* tfmsl0220m100  0  VRC B61U a7 live
+|* Update Advance Payment Document
+|* Tools                         
+|* 2014-06-13
+|******************************************************************************
+|* Main table tfmsl020 Advance Request, Form Type 4
+|******************************************************************************
+|* ID : ISGEC001208, IT0386, Saurabh Dubey, 08 - Feb - 2016, VRC B61U a7 live
+|* Modifications in Payment Request Update logic
+|*
+|* Adarsh Pal, 11-06-19, VRC B61u a7 isg
+|* Additional logic for updating tfacp500
+|******************************************************************************
+|****************************** declaration section ***************************
+declaration:
+
+  table   	ttfmsl020 | Advance Request
+  table		ttfcmg103
+  table		ttfcmg112
+  table		ttfcmg113
+  table		ttfcmg100
+  table		ttdpur400
+  table		ttfacp200
+  table		ttfacp500								|#Adarsh.11.06.19.n
+  table		ttfisg000
+  table		ttcmcs050
+  table		ttcmcs051
+
+   extern  domain  tcorno           adrq.f    fixed
+   extern  domain  tcorno           adrq.t    fixed
+
+|****************************** program section ********************************
+
+
+|****************************** field section **********************************
+field.adrq.f:
+when.field.changes:
+	adrq.t = adrq.f
+|****************************** choice section ************************************
+choice.cont.generate:
+on.choice:
+	set.fmin(adrq.f,"tcorno") 
+	set.fmax(adrq.t,"tcorno") 
+	update_transactions_from_cmg(adrq.f,adrq.t)
+after.choice:
+	execute(end.program)
+group.1:
+init.group:
+   get.screen.defaults()
+|****************************** Functions ************************************
+functions:
+function update_transactions_from_cmg
+			(
+				domain	tcorno		i.adrq.f,
+				domain	tcorno		i.adrq.t
+			)
+{
+	boolean 	found
+	domain	tfgld.ttyp	header.ttyp			|#ISGEC001208.n
+	domain	tfgld.docn	header.docn			|#ISGEC001208.n
+	domain	tcmcs.str100	dummy.error.message		|#ISGEC001208.n
+	
+	select 	tfmsl020.ttyp,
+		tfmsl020.docn,
+		tfmsl020.chqe,
+		tfmsl020.chdt,
+		tfmsl020.lino,
+		tfmsl020.orno,
+		tfmsl020.cprj,
+		tfmsl020.btno,
+		tfmsl020.fcom,
+		tfmsl020.adrq
+	from	tfmsl020 for update
+	where	tfmsl020._index1 inrange {:i.adrq.f} and {:i.adrq.t}	
+	and	tfmsl020.stat = tfmsl.lc.stat.proc
+	and	tfmsl020.paym = tfpaym.advice
+	selectdo
+		tcmcs.dll0095.read.parm("tfisg000")
+		found = false
+		select 	tcmcs050.seri,tcmcs051.lngt
+		from	tcmcs050,tcmcs051
+		where	tcmcs050._index1 = {:tfisg000.nrgr}
+		and	tcmcs050.nrgr refers to tcmcs051
+		selectdo
+			if tfmsl020.adrq(1;tcmcs051.lngt) =  strip$(tcmcs050.seri) then
+				found = true
+			else
+				continue
+			endif
+			
+		endselect
+		
+		if not found then
+			continue
+		endif
+		
+			
+		mess("tfmsl020.0011",0,tfmsl020.adrq)
+		select	tfcmg113.ttyp,
+			tfcmg113.docn,
+			tfcmg113.cheq,
+			tfcmg113.rdat
+		from	tfcmg113
+		where	tfcmg113._index1 = {:tfmsl020.btno}
+| 		and	tfcmg113._compnr = :tfmsl020.fcom	|#ISGEC001208.o
+		and	tfcmg113._compnr = :tfmsl020.comp	|#ISGEC001208.n
+		as set with 1 rows
+		selectdo
+			select	tfcmg103.bank
+			from	tfcmg103
+			where	tfcmg103._index1 = {:tfmsl020.btno}
+			and	tfcmg103.ttyp = :tfcmg113.ttyp
+			and	tfcmg103.docn = :tfcmg113.docn
+| 			and	tfcmg103._compnr = :tfmsl020.fcom	|#ISGEC001208.o
+			and	tfcmg103._compnr = :tfmsl020.comp	|#ISGEC001208.n	
+			selectdo
+				select	tfcmg112.ctyp, tfcmg112.cdoc, tfcmg112.clin
+				from	tfcmg112
+				where	tfcmg112._index1 = {:tfcmg103.bank, :tfcmg113.ttyp, :tfcmg113.docn}
+				and	tfcmg112.cdoc <> 0
+| 				and	tfcmg112._compnr = :tfmsl020.fcom	|#ISGEC001208.o	
+				and	tfcmg112._compnr = :tfmsl020.comp	|#ISGEC001208.n	
+				selectdo
+					tfmsl020.ttyp = tfcmg112.ctyp
+					tfmsl020.docn = tfcmg112.cdoc
+					tfmsl020.lino = tfcmg112.clin
+					tfmsl020.chqe = tfcmg113.cheq
+					tfmsl020.chdt = tfcmg113.rdat
+				selectempty
+					tfmsl020.ttyp = tfcmg113.ttyp
+					tfmsl020.docn = tfcmg113.docn
+					tfmsl020.lino = 1
+					tfmsl020.chqe = tfcmg113.cheq
+					tfmsl020.chdt = tfcmg113.rdat
+				endselect
+			endselect
+			
+			| select 	tfcmg100.ttyp,
+			| 	tfcmg100.docn
+			| from	tfcmg100
+			| where	tfcmg100.typo = :tfcmg113.ttyp
+			| and	tfcmg100.doco = :tfcmg113.docn
+			| as set with 1 rows
+			| selectdo
+			| 	if tfcmg100.docn <> 0 then
+			| 		tfmsl020.ttyp = tfcmg100.ttyp
+			| 		tfmsl020.docn = tfcmg100.docn
+			| 		tfmsl020.chqe = tfcmg113.cheq
+			| 		tfmsl020.chdt = tfcmg113.rdat
+			| 	else
+			| 		tfmsl020.ttyp = tfcmg113.ttyp
+			| 		tfmsl020.docn = tfcmg113.docn
+			| 		tfmsl020.chqe = tfcmg113.cheq
+			| 		tfmsl020.chdt = tfcmg113.rdat
+			| 	endif
+			| 	
+			| selectempty
+			| 	
+			| 	tfmsl020.ttyp = tfcmg113.ttyp
+			| 	tfmsl020.docn = tfcmg113.docn
+			| 	tfmsl020.chqe = tfcmg113.cheq
+			| 	tfmsl020.chdt = tfcmg113.rdat
+			| endselect
+					
+
+		endselect
+		
+								|#ISGEC001208.sn
+		if tfmsl020.fcom <> tfmsl020.comp then
+			if not tfgld.dll6042.intercompany.document.present(
+					tfmsl020.comp,			|* Source
+					tfmsl020.ttyp,			|* Source
+					tfmsl020.docn,			|* Source
+					tfmsl020.fcom,			|* Target
+					header.ttyp,			|* ref
+					header.docn,			|* ref
+					dummy.error.message) then	|* 
+					continue
+			else
+
+				tfmsl020.ttyp = header.ttyp
+				tfmsl020.docn = header.docn
+			endif
+		else
+			header.ttyp = tfmsl020.ttyp
+			header.docn = tfmsl020.docn	
+			
+		endif
+								|#ISGEC001208.en
+		
+		select tdpur400.cdf_qdat
+		from	tdpur400 for update 
+		where	tdpur400._index1 = {:tfmsl020.orno}
+		selectdo
+			put.var(pid,"tdpur400.cdf_qdat",tfmsl020.chdt)
+			db.update(ttdpur400,db.retry,e)
+| 			commit.transaction()												|#Adarsh.11.06.19.n										
+		endselect
+		
+| 		update_pur_inv_tfacp200(tfmsl020.fcom, tfmsl020.ttyp, tfmsl020.docn, tfmsl020.lino, tfmsl020.orno, tfmsl020.cprj)	|#ISGEC001208.o
+		update_pur_inv_tfacp200(tfmsl020.fcom, header.ttyp, header.docn, tfmsl020.lino, tfmsl020.orno, tfmsl020.cprj)		|#ISGEC001208.n
+		update_pur_inv_tfacp500(tfmsl020.fcom, header.ttyp, header.docn, tfmsl020.lino, tfmsl020.orno, tfmsl020.cprj)		|#Adarsh.11.06.19.n
+		db.update(ttfmsl020,db.retry,e)
+			commit.transaction()
+		
+	endselect
+}	
+
+function update_pur_inv_tfacp200(
+		domain	tcncmp		i.ncmp,
+		domain	tfgld.ttyp	i.ttyp,
+		domain	tfgld.docn	i.docn,
+		domain	tfgld.lino	i.line,
+		domain	tcorno		i.orno,
+		domain	tccprj		i.cprj	
+			)
+{
+	select	tfacp200.cdf_cprj, tfacp200.cdf_prno
+	from	tfacp200 for update
+	where	tfacp200._index1 = {:i.ttyp, :i.docn, :i.line}
+	and	tfacp200.docn = 0
+	and	tfacp200._compnr = :i.ncmp
+	selectdo
+		put.var(pid,"tfacp200.cdf_prno", i.orno)
+		put.var(pid,"tfacp200.cdf_cprj", i.cprj)
+		db.update(ttfacp200,db.retry,e)
+| 		commit.transaction()										|#Adarsh.11.06.19.n
+	endselect
+}	
+														|#Adarsh.11.06.19.sn
+function update_pur_inv_tfacp500(
+		domain	tcncmp		i.ncmp,
+		domain	tfgld.ttyp	i.ttyp,
+		domain	tfgld.docn	i.docn,
+		domain	tfgld.lino	i.line,
+		domain	tcorno		i.orno,
+		domain	tccprj		i.cprj	
+			)
+{
+	select	tfacp500.cdf_cprj, tfacp500.cdf_prno
+	from	tfacp500 for update
+	where	tfacp500._index1 = {:i.ncmp, :i.ttyp, :i.docn, :i.line}
+	and	tfacp500._compnr = :i.ncmp
+	selectdo
+		put.var(pid,"tfacp500.cdf_prno", i.orno)
+		put.var(pid,"tfacp500.cdf_cprj", i.cprj)
+		db.update(ttfacp500,db.retry,e)
+| 		commit.transaction()
+	endselect
+}	
+														|#Adarsh.11.06.19.en

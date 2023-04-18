@@ -1,0 +1,124 @@
+|******************************************************************************
+|* tfmsl0520m000  0  VRC B61U a  live
+|* Advance Request Overview
+|* MCS user (Merino)             
+|* 2010-07-25
+|******************************************************************************
+|* Main table tfmsl020 Advance Request, Form Type 1
+|******************************************************************************
+|* IDENT ISG001014 , Manish Kumar , IT0303 , 05-03-2014 ,VRC B61U a  live
+|* Modifications as per the case Id:- 3105
+
+|* IDENT ISGEC015073, Shilpa Janardanan, IT0289, 19-10-2015
+|* 
+|* ID ISGEC002017, Manish Manchanda, 2016-01-05
+|* history record maintained in table
+|*
+|* ID ISGEC01050, Priya Jindal, 26/6/2018
+|* Changes in reject button
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttfmsl020 	|# Advance Request
+  table	   ttccom001
+  table	   ttfmsl070	
+
+domain	tcloco		log_name
+extern domain	tcmcs.str100		adrq
+domain	tcmcs.str15	session_code
+domain	tcemno		user
+
+	#include "itfisg2100"			|#ISGEC002017.n
+|****************************** program section ********************************
+before.program:
+	user = logname$
+	
+	select	tccom001.emno
+	from	tccom001
+	where	tccom001._index4 = {:user}
+	selectdo
+	selectempty
+		tccom001.emno = ""
+	endselect
+
+choice.mark.occur:
+after.choice:
+	if	tfmsl020.stat = tfmsl.lc.stat.sfin or tfmsl020.stat = tfmsl.lc.stat.proc or tfmsl020.stat = tfmsl.lc.stat.canl  then
+		disable.commands(mark.delete)
+	else
+		enable.commands(mark.delete)
+	endif
+	
+
+|****************************** choice section **********************************
+choice.update.db:							|#ISG001014.sn
+after.choice:
+	refresh.parent(-1)						|#ISG001014.en
+
+choice.link_assign:
+on.choice:
+	start.synchronized.child("tfmsl0522m000","tfmsl020.adrq","tfmsl022.adrq")
+	
+choice.approve:				|#ISGEC015073.sn
+on.choice:
+	select	tfmsl070.minv,tfmsl070.maxv		
+	from	tfmsl070
+	where	tfmsl070.emno = :tccom001.emno
+	selectdo
+	selectempty
+		tfmsl070.minv = 0
+		tfmsl070.maxv = 0
+	endselect
+| 	if tfmsl020.sapr = tcyesno.yes then
+| 		select 	tfmsl020.stts 
+		select 	tfmsl020.stts,tfmsl020.aamt,tfmsl020.stat,tfmsl020.adrq
+		from 	tfmsl020 for update
+		where 	tfmsl020.sapr = tcyesno.yes
+		and	tfmsl020.stts = tfmsl.stat.pend
+		selectdo
+			if (tfmsl020.aamt >= tfmsl070.minv) and (tfmsl020.aamt <= tfmsl070.maxv) and ((tfmsl020.stts <> tfmsl.stat.verf)
+				and (tfmsl020.stts <> tfmsl.stat.appr) and (tfmsl020.stat=tfmsl.lc.stat.sapr or tfmsl020.stat=tfmsl.lc.stat.rejc))then
+				
+				tfmsl020.stts = tfmsl.stat.appr		
+				tfmsl020.apdt = utc.num()
+				tfmsl020.appr = logname$
+				tfmsl020.stat = tfmsl.lc.stat.appr
+				tfmsl020.sapr = tcyesno.no
+				db.update(ttfmsl020,db.retry)
+				itfisg2100.update.history(tfmsl020.adrq,utc.num())
+			endif	
+		endselect
+| 	endif
+after.choice:
+	commit.transaction()
+
+| 	itfisg2100.update.history(tfmsl020.adrq,utc.num())		|#ISGEC002017.n
+	
+choice.reject:
+on.choice:
+	select 	tfmsl020.stts 
+	from 	tfmsl020 for update
+	where 	tfmsl020._index1 = {:tfmsl020.adrq}
+	selectdo
+		tfmsl020.stts = tfmsl.stat.rejc
+| 		tfmsl020.stat = tfmsl.lc.stat.rejc	|ISGEC01050.o
+		tfmsl020.stat = tfmsl.lc.stat.crea	|ISGEC01050.n
+		tfmsl020.sapr = tcyesno.no
+		db.update(ttfmsl020,db.retry)
+	endselect				
+	
+after.choice:
+	commit.transaction()			
+	
+	itfisg2100.update.history(tfmsl020.adrq,utc.num())		|#ISGEC002017.n
+
+
+				|#ISGEC015073.en
+|*************************Field Sections **********************************************
+field.tccom001.nama:
+before.display:
+	select tccom001.nama from tccom001
+	where tccom001._index1 = {:tfmsl020.rqpr}
+	selectdo
+	endselect
+	

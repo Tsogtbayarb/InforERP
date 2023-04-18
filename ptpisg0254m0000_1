@@ -1,0 +1,104 @@
+|******************************************************************************
+|* tpisg0254m000  0  VRC B61U a7 isg 
+|* Generate Cost Sheet
+|* merino1                       
+|* 2019-03-12
+|******************************************************************************
+|* Main table tpisg054 Cost Sheet Project Master, Form Type 4
+|******************************************************************************
+|* ISGEC01171, Prasanna Bhuyan, 12/3/2019, VRC B61U a7 isg
+|* New Development  
+|*
+|* #GH219, Adarsh Pal, 10-12-2019, VRC B61U a7 isg
+|* All Project Generation Authorization to Sachin Gupta and Rajeev Negi
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttpisg054 | Cost Sheet Project Master
+	table	ttcmcs052 | Projects
+	table	ttppdm600 | Display Project
+	table	ttpisg011 | Santion Control
+	table	ttccom001
+	
+	extern	domain	tccprj		cprj
+	extern	domain 	tcdsca		dsca
+		domain	tcncmp		ncmp
+
+|****************************** program section ********************************
+
+|****************************** choice section **********************************
+choice.generate:
+before.choice:
+	check.all.input()
+	
+	domain	tcemno	log.name
+	string	qry.str(500)
+	
+	log.name = logname$
+	
+	select	tpisg011.act1
+	from	tpisg011
+	where	tpisg011._index1 = {:cprj}
+	and	tpisg011.act1 = tpisg.sanction.approved
+	selectdo
+	selectempty
+		message("Sanction Control is not Approved for Project %s",cprj)
+		choice.again()
+	endselect
+	
+	select	tccom001.emno
+	from	tccom001
+	where	tccom001._index4 = :log.name
+	selectdo
+		select	tpisg046.user
+		from	tpisg046
+		where	tpisg046._index1 = {:cprj}
+		and	tpisg046.user = :tccom001.emno
+		selectdo
+		selectempty
+			if trim$(tccom001.emno) <> "0592" and trim$(tccom001.emno) <> "5185" then			|#GH219.n
+				message("User %s not authorized to generate this Project Cost Sheet %s!",log.name,cprj)
+				choice.again()
+			endif												|#GH219.n
+		endselect
+	endselect
+	
+on.choice:
+	tpisgdll000015.capture.tfgld106.data.in.tpisg069(cprj)
+	tpisgdll000015.capture.tpppc.data.in.tpisg059(cprj)
+	tpisgdll000015.Update_Cost_Sheet(cprj,"0")
+	tpisgdll000015.capture.elementwise.consumption.detail(cprj)
+	
+	message("Data inserted successfully...")
+
+|****************************** field section **********************************
+field.cprj:
+check.input:
+	select	tppdm600.ncmp:ncmp
+	from	tppdm600
+	where	tppdm600._index1 = {:cprj}
+	selectdo
+	selectempty
+		message("Not a valid Project %s",cprj)
+		set.input.error("", e)
+	endselect	
+	
+	
+	select	tpisg054.*
+	from	tpisg054
+	where	tpisg054._index1 = {:cprj}
+	selectdo
+		message("Cost Sheet already generated for Project %s",cprj)
+		set.input.error("", e)
+	selectempty
+	endselect	
+
+field.dsca:
+before.display:
+	select	tcmcs052.dsca:dsca
+	from	tcmcs052
+	where	tcmcs052._index1 = {:cprj}
+	selectdo
+	selectempty
+		dsca = ""
+	endselect

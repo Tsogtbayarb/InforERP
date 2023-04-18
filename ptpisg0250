@@ -1,0 +1,213 @@
+|******************************************************************************
+|* tpisg025  0  VRC B61U a7 isg 
+|* DAL2 For tpisg025
+|* merino1
+|* 19-05-10 [15:54]
+|******************************************************************************
+|* Script Type: DAL
+|******************************************************************************
+                                                                                
+	table	ttpisg081
+	table	ttpisg082
+	table	ttpisg025
+	table	ttpptc101
+	table	ttpisg011
+	table	ttpest120
+	table	ttpisg311
+	
+
+
+#include <bic_dal2>
+function extern long before.open.object.set()
+{
+	dal.field.depends.on("tpisg025.cprj", 
+				HOOK_IS_VAlID, 
+					"tpisg025.cspa")
+	dal.field.depends.on("tpisg025.parn", 
+				HOOK_UPDATE, 
+					"tpisg025.cspa")
+	dal.field.depends.on("tpisg025.levl", 
+				HOOK_UPDATE, 
+					"tpisg025.cspa")
+	dal.field.depends.on("tpisg025.budg", 
+				HOOK_UPDATE, 
+					"tpisg025.totl")
+	dal.field.depends.on("tpisg025.actl", 
+				HOOK_UPDATE, 
+					"tpisg025.totl")
+	dal.field.depends.on("tpisg025.yetl", 
+				HOOK_UPDATE, 
+					"tpisg025.totl")
+	return(0)
+}
+
+function extern boolean method.is.allowed(long type)
+{
+	on case type
+	case DAL_NEW :
+	case DAL_UPDATE :	
+	case DAL_DESTROY :		
+		select	tpisg311.pros
+		from	tpisg311
+		where	tpisg311._index1 = {:tpisg025.cprj,:tpisg025.vers}
+		and 	tpisg311.pros = tcyesno.yes
+		as set with 1 rows
+		selectdo
+			return(false)
+		endselect
+		
+		break
+	endcase
+	return(true)
+}
+
+
+function extern long before.save.object(long type)
+{
+	return(0)
+}
+
+function extern long after.save.object(long type)
+{
+
+	domain	tcamnt		tot.incr.valu,tot.decr.valu,tot.incentive
+	domain	tcamnt		tot.netc
+	long ret
+	tot.incr.valu = 0.00
+	tot.decr.valu = 0.00
+	tot.incentive = 0.00
+	
+	select sum(a_tpisg025.totl):tot.incentive
+	from	tpisg025	a_tpisg025
+	where	a_tpisg025._index1 = {:tpisg025.cprj,:tpisg025.vers}
+	selectdo
+	selectempty
+		tot.incentive = 0.00
+	endselect
+	
+	select	tpisg311.*
+	from	tpisg311 for update
+	where	tpisg311._index1 = {:tpisg025.cprj,:tpisg025.vers}
+	and 	tpisg311.pros = tcyesno.no
+	as set with 1 rows
+	selectdo
+		increase_decrease_value(
+				tot.incr.valu,
+				tot.decr.valu)
+			
+		tot.netc = (tot.incr.valu - tot.decr.valu) + tot.incentive
+		dal.change.object("tpisg311")
+		dal.set.field("tpisg311.netc",tot.netc)
+		ret = dal.save.object("tpisg311",db.retry,e)
+		if not ret then
+			commit.transaction()
+		else
+			show.dal.messages(MSG.ALL)
+			return(DALHOOKERROR)
+		endif
+	endselect
+	return(0)
+}
+
+function extern boolean tpisg025.cspa.is.valid()
+{
+	select	tpisg082.cspa
+	from	tpisg082
+	where	tpisg082._index1 = {:tpisg025.cprj,:tpisg025.cspa}
+	and 	tpisg082.levl = 3
+	as set with 1 rows
+	selectdo
+	selectempty
+		dal.set.error.message("@ Invalid Element")
+		return(DALHOOKERROR)
+	endselect
+	return(true)
+}
+
+
+function extern tpisg025.parn.update()
+{
+	select	tpisg082.parn
+	from	tpisg082
+	where	tpisg082._index1 = {:tpisg025.cprj,:tpisg025.cspa}
+	as set with 1 rows
+	selectdo
+		tpisg025.parn = tpisg082.parn
+	selectempty
+		tpisg082.parn = ""
+	endselect
+
+}
+
+function extern tpisg025.levl.update()
+{
+	select	tpisg082.levl
+	from	tpisg082
+	where	tpisg082._index1 = {:tpisg025.cprj,:tpisg025.cspa}
+	as set with 1 rows
+	selectdo
+		tpisg025.levl = tpisg082.levl
+	selectempty
+		tpisg082.levl = 0
+	endselect
+
+}
+
+
+function extern tpisg025.budg.update()
+{
+	tpisg025.budg = tpisg025.totl
+}
+
+function extern tpisg025.actl.update()
+{
+	tpisg025.actl = tpisg025.totl
+}
+
+function extern tpisg025.yetl.update()
+{
+	tpisg025.yetl = tpisg025.totl
+}
+
+
+|********************************* Function Senction *******************************
+
+function increase_decrease_value(
+				ref	domain	tcamnt		otyp,	
+				ref	domain	tcamnt		ctyp	
+				)
+{
+
+	on case	 etol(tpisg311.otyp)
+	case 2:
+		on case etol(tpisg311.ctyp)
+		case 1:
+			otyp = 0.00
+			ctyp = 0.00
+		case 2:
+			otyp = tpisg311.ciov
+			ctyp = tpisg311.cict
+			break
+		case 3:
+			otyp = tpisg311.ciov
+			ctyp = tpisg311.cict * -1
+			break
+		endcase
+	break	
+	case 3:
+		on case etol(tpisg311.ctyp)
+		case 1: 				
+			otyp = 0.00
+			ctyp = 0.00
+		case 2:
+			otyp = tpisg311.ciov * -1
+			ctyp = tpisg311.cict
+			break
+		case 3:
+			otyp = tpisg311.ciov * -1
+			ctyp = tpisg311.cict * -1
+			break
+		endcase
+		break
+	endcase		
+}

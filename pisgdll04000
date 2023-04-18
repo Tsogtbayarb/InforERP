@@ -1,0 +1,758 @@
+|******************************************************************************
+|* tdisgdll0400  0  VRC B61U a7 live
+|* User Exit DLL for tdpur400ue
+|* tools1
+|* 14-06-12 [11:42]
+|******************************************************************************
+|* Script Type: Library
+|******************************************************************************
+|* ISGEC001127, IT0205, Arjit Gupta, VRC B61U a7 isg, Dt. 27-10-2014
+|* When PO is in modified Status and data is populated in PO Approval Table(tdmsl400)
+|* then payment terms data need to be copied from previous Revision as suggested
+|* by Mr. Nishant Verma
+|*
+|* ISGECDV001127,	Sujeet Kumar		2014-10-30
+|* Sanction Error Report
+|* Functional: Mr. Vikash Yadav
+|*
+|* ISGECDV001162, IT0205, Arjit Gupta, VRC B61U a7 live, Dt. 17-11-2014
+|* While cancelling PO Line ask question if Advance made against PO as suggested
+|* by Mr. Nishant Verma.
+|******************************************************************************
+        table	ttdmsl400   
+	table	ttdpur414
+	table	ttdpur400
+	table	ttdpur401
+	table	ttcmcs013
+	table	ttcisg002
+	table	ttcisg001
+	table	ttcmcs221
+	table	ttpisg006
+	
+	table	ttccom120			|#PATCH001034.n
+	
+#include<bic_dam>	
+function extern tdisgdll0400.order_status
+			(
+				domain	tcorno		i.orno,		|Order Number
+			ref 	domain	tdpur.hdst	o.hdst		|Status
+			)
+{
+	select 	tdpur400.hdst:o.hdst
+	from	tdpur400
+	where	tdpur400._index1 = {:i.orno}
+	as set with 1 rows
+	selectdo
+	endselect
+	
+}
+
+
+function extern  tdisgdll0400.Purchase_Order_ION_Tracking
+			(
+				domain	tcorno		i.orno,		|Order Number
+			ref 	domain	tcpono		o.max_version,	|Max Version
+			ref 	domain	tdmsl.work	o.work_status	|Work Flow Status
+			)
+{	
+	select	tdmsl400.vrsn:o.max_version,
+		tdmsl400.work:o.work_status
+	from	tdmsl400
+	where	tdmsl400._index1 = {:i.orno}
+	order by tdmsl400.vrsn desc
+	as set with 1 rows
+	selectdo
+	endselect
+}
+
+
+function extern long tdisgdll0400.Change_Purchase_Order_ION_Tracking_Status
+			(
+				domain	tcorno		i.orno,		|Order Number
+				domain	tcpono		i.vers,		|Version
+				domain	tdmsl.work	i.work		|Work Flow Status
+			)
+{
+	long ret_val
+	
+	select	tdmsl400.stat
+	from	tdmsl400 for update
+	where	tdmsl400._index1 = {:i.orno,:i.vers}
+	selectdo
+		dal.change.object("tdmsl400")
+		dal.set.field("tdmsl400.work",i.work)
+		ret_val = dal.save.object("tdmsl400")
+		if ret_val<> 0 then
+			return(DALHOOKERROR)
+		endif
+	endselect
+	
+	return(0)
+}
+
+function extern long	tdisgdll0400.Create_Purchase_Order_ION_Tracking
+		(
+			domain	tcorno		i.orno,		|Purchase Order
+			domain	tcpono		i.version,	|Version
+			domain	tdmsl.work 	i.workflow,	|Work Flow Status
+			domain tcyesno		i.status	|Approve Status
+		)
+{
+	long ret
+	
+	tdmsl400.orno = i.orno
+	tdmsl400.vrsn = i.version
+	tdmsl400.stat = i.status
+	tdmsl400.work = i.workflow
+	
+	ret = db.insert(ttdmsl400,db.retry)
+	|******* blocked for time being 2014-06-11
+	ret = tdmsl.dll0500.insert.history(i.orno,i.version)
+	return(ret)
+}
+
+
+function extern tdisgdll0400.CreateChangeOrderSequence
+			(
+				domain 	tcorno		i.orno,		|Purchase Order
+				domain 	tcmcs.str8	i.cosn		|Change Order Sequence 
+			)
+{
+	select 	tdpur414.cosn
+	from	tdpur414
+	where	tdpur414._index1 = {:i.orno,:i.cosn}
+	as set with 1 rows
+	selectdo
+	selectempty
+		tdpur414.orno = i.orno
+		tdpur414.cosn = i.cosn
+		tdpur414.dsca = "Change Order Sequence " & i.cosn
+		tdpur414.date = utc.num()
+		db.insert(ttdpur414,db.skip.dupl,e)
+	endselect
+	
+}
+
+|**********
+|* Sanction Control
+|**********
+
+function extern long tdisgdll0400.get.lines.project.element
+			(
+				domain	tcorno		i.orno,		|Purchase Order
+				boolean			process		|Process
+			)
+{
+	domain 	tcorno		o.vers
+	domain	tccprj		o.cprj
+	domain	tppdm.cspa	o.cspa
+	domain	tfgld.amnt	o.amnt,linked.amnt
+	
+	domain	tcamnt		o.totl
+	
+	
+	linked.amnt = 0
+	
+	select 	tdpur401.cprj:o.cprj,
+		tdpur401.cspa:o.cspa
+	from	tdpur401
+	where	tdpur401._index1 = {:i.orno}
+	group by tdpur401.cprj,tdpur401.cspa
+	selectdo
+		if not isspace(o.cprj) and not isspace(o.cspa) then
+			|Get Project Version
+			if not tpisgdll0012.check_sanction_status(o.cprj,o.vers) then
+				if process then
+					|Update Sanction Amount
+					tpisgdll0012.SanctionControlLine(o.cprj,o.vers,o.cspa)
+				else
+					|** ExhaustedAmount() is in dll tpisgdll0012
+					o.amnt = tpisgdll0012.ExhaustedAmount(o.cprj,o.cspa)
+| 					linked.amnt = check.indent.rfq.against.order(i.orno,o.cprj,o.cspa)
+| 					o.amnt = o.amnt - linked.amnt 
+					if tpisgdll0012.check_sanction_available_amount_for_po(o.cprj,
+							o.vers,o.cspa,o.amnt) then
+						|***
+							select tpisg012.totl:o.totl
+							from	tpisg012
+							where	tpisg012._index1 = {:o.cprj,:o.vers,:o.cspa}
+							as set with 1 rows
+							selectdo
+							endselect
+							
+| 						dal.set.error.message("tdisg400.0010",o.cprj,o.cspa)	
+| 						dal.set.error.message("tdisg400.0010",o.cprj,o.cspa,(o.totl-o.amnt))
+
+						dal.set.error.message("@ Insufficient Sanction Amount")
+						
+						return(DALHOOKERROR)
+					endif
+					
+				endif
+			else
+				return(DALHOOKERROR)
+			endif
+		endif	
+	endselect
+	return(0)
+}
+
+function extern domain tfgld.amnt check.indent.rfq.against.order
+				(
+					domain	tcorno		i.orno,		|Purchase Order
+					domain	tccprj		i.cprj,		|Project
+					domain	tppdm.cspa	i.cspa		|Element
+				)
+{
+	domain 	tcpono		o.pono,temp.pono
+	domain	tcpono		o.sqnb
+	domain	tcrqno		o.rqno,temp.rqno
+	domain	tcpono		o.rqpo
+	domain	tcqono		o.qono
+	domain	tcpono		o.qpon
+	domain	tcpono		o.qseq
+	
+	
+	domain	tfgld.amnt	o.oamt,total.amnt
+	
+	domain	tcccur		o.ccur
+	domain	tcdate		o.rdat
+	
+	domain	tcemm.expu	o.expu	|Exchange Rate Type
+ 	domain	tcccur		o.fcua	|Currency
+	domain	tcratc		o.rate
+	
+	o.oamt = 0
+	total.amnt = 0
+	
+	select tdpur401.pono:o.pono,
+		tdpur401.sqnb:o.sqnb
+	from	tdpur401
+	where	tdpur401._index1 = {:i.orno}
+	and	tdpur401.cprj = :i.cprj
+	and	tdpur401.cspa = :i.cspa
+	and	(tdpur401.oltp = tdgen.oltp.total or tdpur401.oltp = tdgen.oltp.orderline)
+	selectdo
+		
+		get.companies.data (get.compnr(),o.expu,o.fcua)
+		get.exchange.rate.type(i.cprj,o.expu)
+		get.exchange.rate(o.fcua,o.ccur,o.expu,o.rdat,o.rate)
+		
+		if o.fcua = o.ccur then
+			o.rate = 1.0
+		endif
+		
+		select 	tdpur402.rqno:o.rqno,
+			tdpur402.rqpo:o.rqpo,
+			tdpur402.qono:o.qono,
+			tdpur402.qpon:o.qpon,
+			tdpur402.qseq:o.qseq
+		from	tdpur402
+		where	tdpur402._index1 = {:i.orno,:o.pono,:o.sqnb}
+		as set with  1 rows
+		selectdo
+			if not isspace(o.rqno)  then
+				select 	tdpur201.oamt:o.oamt
+				from	tdpur201
+				where	tdpur201._index1 = {:o.rqno,:o.rqpo}
+				as set with 1 rows
+				selectdo
+					total.amnt = total.amnt + o.oamt * o.rate
+				endselect
+			else if not isspace(o.qono) then
+				select 	tdpur202.rqno:temp.rqno,
+					tdpur202.pono:temp.pono
+				from	tdpur202
+				where	tdpur202._index3 = {:o.qono,:o.qpon,:o.qseq}
+				as set with 1 rows
+				selectdo
+					select 	tdpur201.oamt:o.oamt
+					from	tdpur201
+					where	tdpur201._index1 = {:temp.rqno,:temp.pono}
+					as set with 1 rows
+					selectdo
+						total.amnt = total.amnt + o.oamt * o.rate
+					endselect
+				endselect
+					
+			endif
+			endif	
+		endselect
+	endselect	
+	
+	return(total.amnt)
+}
+							|#3615.en
+
+
+|***
+function extern long tdisgdll0400.insert_tcisg001										|#ISG001017.sn
+			(										
+				domain	tcpono		version	|Version
+			)										
+{
+	domain	tcamnt     	bamt.m
+	domain	tcamnt      	tamt.m
+	domain	tcdate      	ordt.m
+	domain	tcdate      	dldt.m
+						|#Kuldeep.20140902.sn
+	domain	tcmcs.str60	hold.prd
+	long 	prv.ver
+						|#Kuldeep.20140902.en
+	long ret
+	double tot.extx,tot.cltx
+
+	select  tcisg002.* 
+	from tcisg002
+	where tcisg002.cpay={:tdpur400.cpay}
+	selectdo
+		select tcmcs013.cpay,tcmcs013.pash 
+		from tcmcs013
+		where tcmcs013._index1 = {:tdpur400.cpay}
+		order by tcmcs013._index1
+		selectdo
+			select	tcmcs221.perc
+			from	tcmcs221
+			where	tcmcs221._index1={:tcmcs013.pash,:tcisg002.srno}
+			as set with 1 rows
+			selectdo
+			endselect							
+		endselect
+
+		tot.extx = 0
+		tot.cltx = 0
+		
+		select tdpur401.pono from tdpur401
+		where tdpur401._index1 = {:tdpur400.orno} 
+		group by tdpur401.pono
+		selectdo
+			select tdpur401.extx.l,tdpur401.cltx.l
+			from tdpur401
+			where tdpur401._index1 = {:tdpur400.orno,:tdpur401.pono} 
+			and	tdpur401.oltp = 1
+			selectdo
+				tot.extx = tot.extx + tdpur401.extx.l
+				tot.cltx = tot.cltx + tdpur401.cltx.l				
+			selectempty
+				select tdpur401.extx.l,tdpur401.cltx.l
+				from tdpur401
+				where tdpur401._index1 = {:tdpur400.orno,:tdpur401.pono} 
+				and	tdpur401.oltp = 4
+				selectdo
+					tot.extx = tot.extx + tdpur401.extx.l
+					tot.cltx = tot.cltx + tdpur401.cltx.l				
+				endselect					
+			endselect	
+		endselect
+
+		
+		bamt.m = round(tdpur400.oamt,2,1)
+		tamt.m = round((tdpur400.oamt + tdpur401.extx.l + tdpur401.cltx.l),2,1)
+		ordt.m = tdpur400.odat
+		dldt.m = tdpur400.ddat
+		
+		select tpisg006.catg 
+		from tpisg006 
+		where tpisg006.pmtc=:tcisg002.pmtc 
+		selectdo 
+		endselect
+						|#Kuldeep.20140902.sn
+		if version = 0 then
+			hold.prd = ""
+		else
+			hold.prd = ""
+			prv.ver = version - 1
+			select atcisg001.prd:hold.prd from tcisg001 atcisg001
+			where atcisg001._index1 = {:tdpur400.orno,:prv.ver,:tcisg002.srno}
+			as set with 1 rows
+			selectdo
+			endselect
+			
+		endif
+						|#Kuldeep.20140902.en
+		select tcisg001.* 
+		from tcisg001 for update
+							|#Kuldeep 2014.07.28.so
+| 		where tcisg001.orno = :tdpur400.orno
+| 		and tcisg001.srno = :tcisg002.srno
+							|#Kuldeep 2014.07.28.so
+		where tcisg001._index1 = {:tdpur400.orno,:version,:tcisg002.srno}	|#Kuldeep 2014.07.28.n
+		selectdo
+| 			tcisg001.cpay = tdpur400.cpay
+| 			tcisg001.nods = tcisg002.nods
+| 			tcisg001.bdat = tcisg002.bdat
+| 			tcisg001.pmtc = tcisg002.pmtc
+| 			tcisg001.perc = tcmcs221.perc
+| 			tcisg001.catg = tpisg006.catg
+| 			ret = db.update(ttcisg001,db.retry) 
+		selectempty
+			db.set.to.default(ttcisg001)
+			tcisg001.orno = tdpur400.orno
+			tcisg001.vrsn = version
+			tcisg001.srno = tcisg002.srno
+			tcisg001.cpay = tdpur400.cpay
+			tcisg001.nods = tcisg002.nods
+			tcisg001.bdat = tcisg002.bdat
+			tcisg001.pmtc = tcisg002.pmtc
+			tcisg001.perc = tcmcs221.perc
+			tcisg001.catg = tpisg006.catg
+			tcisg001.prd  = hold.prd			|#Kuldeep.20140902.n
+			ret = db.insert(ttcisg001,db.skip.dupl) 
+		endselect	
+	endselect
+	UpdateAmnt(tdpur400.orno)
+
+	return(ret)
+}													
+
+function UpdateAmnt(domain	tcorno mOrno)
+{
+	domain	tcamnt cAmt1, tot.extx,tot.cltx
+	domain	tcamnt cAmt2
+	long mCtr
+	long mPer
+	long i
+	
+	domain	tcamnt     	bamt.m
+	domain	tcamnt      	tamt.m
+	
+	i = 0
+	cAmt1 = 0
+	cAmt2 = 0
+	
+	tot.extx = 0
+	tot.cltx = 0
+	select tdpur401.pono from tdpur401
+	where tdpur401._index1 = {:tdpur400.orno} 
+	group by tdpur401.pono
+	selectdo
+		select tdpur401.extx.l,tdpur401.cltx.l
+		from tdpur401
+		where tdpur401._index1 = {:tdpur400.orno,:tdpur401.pono} 
+		and	tdpur401.oltp = 1
+		selectdo
+			tot.extx = tot.extx + tdpur401.extx.l
+			tot.cltx = tot.cltx + tdpur401.cltx.l				
+		selectempty
+			select tdpur401.extx.l,tdpur401.cltx.l
+			from tdpur401
+			where tdpur401._index1 = {:tdpur400.orno,:tdpur401.pono} 
+			and	tdpur401.oltp = 4
+			selectdo
+				tot.extx = tot.extx + tdpur401.extx.l
+				tot.cltx = tot.cltx + tdpur401.cltx.l				
+			endselect					
+		endselect	
+	endselect
+
+	
+	bamt.m = round(tdpur400.oamt,2,1)
+	tamt.m = round((tdpur400.oamt + tot.extx + tot.cltx),2,1)
+	
+	select sum(tcisg001.perc):mPer 
+	from tcisg001 
+	where tcisg001.orno=:mOrno 
+	selectdo 
+	endselect
+	
+	select  count(*):mCtr 
+	from tcisg001 
+	where tcisg001.orno=:mOrno 
+	and tcisg001.catg=tcisg.catg.running.payment 
+	selectdo 
+	endselect
+  
+	select  tcisg001.* 
+	from tcisg001 for  update 
+	where tcisg001.orno=:mOrno
+	and (tcisg001.catg = tcisg.catg.advance or tcisg001.catg = tcisg.catg.retention)		
+	selectdo
+		tcisg001.amnt = round((tcisg001.perc * bamt.m) / 100,2,1)
+		cAmt1 = cAmt1 + tcisg001.amnt
+		db.update(ttcisg001,db.retry) 
+	endselect	
+
+	select  tcisg001.* 
+	from tcisg001 for  update 
+	where tcisg001.orno=:mOrno
+	and tcisg001.catg = tcisg.catg.running.payment
+	selectdo
+		i = i + 1
+		if i = mCtr then
+			if abs(mPer - 100.00) <= 0.1 then
+				tcisg001.amnt = tamt.m - cAmt1 - cAmt2
+			else
+				tcisg001.amnt = round((tamt.m - cAmt1) * tcisg001.perc / 100,2,1)
+			endif
+		else
+			tcisg001.amnt = round((tamt.m - cAmt1) * tcisg001.perc / 100,2,1)
+		endif
+		cAmt2 = cAmt2 + tcisg001.amnt
+		db.update(ttcisg001,db.retry) 
+	endselect	
+}
+
+
+
+function long insert_in_tcisg001()
+{
+	long ret
+	select tcisg001.*
+	from	tcisg001
+	where tcisg001._index1 = {:tdpur400.orno}
+	order by tcisg001.srno desc
+	as set with 1 rows
+	selectdo
+		tcisg001.srno = tcisg001.srno + 1
+		db.insert(ttcisg001,db.skip.dupl,e)
+	endselect
+	
+	
+	return(e)
+
+}													|#ISG001017.en
+
+						|#ISGEC001127.sn
+function extern long tdisgdll0400.Insert_tcisg001_Prv_Vrsn
+			(
+			domain	tcpono	i.version
+			)
+{
+	domain	tcpono	prv.vrsn
+	long	i.ret
+	
+	prv.vrsn = 0
+	select	max(tcisg001.vrsn):prv.vrsn
+	from	tcisg001
+	where	tcisg001._index1 = {:tdpur400.orno}
+	selectdo
+	endselect
+	
+	select	tcisg001.*
+	from	tcisg001
+	where	tcisg001._index1 = {:tdpur400.orno, :prv.vrsn}
+	selectdo
+		i.ret = dal.copy.object("tcisg001")
+		dal.set.field("tcisg001.vrsn", i.version)
+		i.ret = dal.save.object("tcisg001")
+	endselect
+
+	return(i.ret)
+}
+						|#ISGEC001127.en
+
+
+
+|******** Sanction Error Report ********************************************
+						|#ISGECDV001127.sn
+function extern tdisgdll0400.sanction.error.report
+			(
+				domain	tcorno		i.orno		|Purchase Order
+			)
+{
+	domain 	tcorno		o.vers
+	domain	tccprj		o.cprj
+	domain	tppdm.cspa	o.cspa
+	domain	tfgld.amnt	o.amnt,linked.amnt
+	
+	domain	tcamnt		o.totl
+	
+	
+	linked.amnt = 0
+	
+	long brp_id
+	
+	extern	domain	tccprj		rep.cprj
+	extern	domain	tppdm.cspa	rep.cspa
+	extern	domain	tcorno		rep.vers
+							|#ISGECDV001181.sn
+	extern	domain	tppdm.dscl	o.tpptc100.desc
+	extern	domain	tcamnt		o.tpisg012.exha
+	extern	domain	tcamnt		rep.avai.on
+	extern	domain	tcamnt		rep.avai.after
+	extern	domain	tcamnt		po.amnt
+							|#ISGECDV001181.en
+	extern string 	err.msg(100)
+	
+	|*************** Open Report *********************
+	brp_id = brp.open("rtpisg041201100","D",0)
+	
+	
+	select 	tdpur401.cprj:o.cprj,
+		tdpur401.cspa:o.cspa
+	from	tdpur401
+	where	tdpur401._index1 = {:i.orno}
+	group by tdpur401.cprj,tdpur401.cspa
+	selectdo
+		
+		
+		
+		if not isspace(o.cprj) and not isspace(o.cspa) then
+			|Get Project Version
+			rep.cprj = o.cprj
+			rep.cspa = o.cspa
+			
+							|#ISGECDV001181.sn
+			tpisgdll0012.check_sanction_status(o.cprj,o.vers)
+			select tpptc100.desc:o.tpptc100.desc
+			from	tpptc100
+			where	tpptc100._index1 = {:o.cprj,:o.cspa}
+			as set with 1 rows
+			selectdo
+			selectempty
+				o.tpptc100.desc = ""
+			endselect
+			
+			select 	tpisg012.totl:o.totl,
+				tpisg012.exha:o.tpisg012.exha
+			from	tpisg012
+			where	tpisg012._index1 = {:o.cprj,:o.vers,:o.cspa}
+			as set with 1 rows
+			selectdo
+			endselect
+			
+			rep.avai.on = o.totl - o.tpisg012.exha
+			
+							|#ISGECDV001181.en
+			
+			if not tpisgdll0012.check_sanction_status(o.cprj,o.vers) then
+				rep.vers = o.vers
+				|** ExhaustedAmount() is in dll tpisgdll0012
+				o.amnt = tpisgdll0012.ExhaustedAmount(o.cprj,o.cspa)
+				if tpisgdll0012.check_sanction_available_amount_for_po(o.cprj,
+						o.vers,o.cspa,o.amnt) then
+					|***
+| 						select tpisg012.totl:o.totl
+| 						from	tpisg012
+| 						where	tpisg012._index1 = {:o.cprj,:o.vers,:o.cspa}
+| 						as set with 1 rows
+| 						selectdo
+| 						endselect
+										|#ISGECDV001181.so
+| 					err.msg = form.text$("tdisg400.0010")
+| 					err.msg = sprintf$(err.msg,o.cprj,o.cspa,(o.totl - o.amnt))
+										|#ISGECDV001181.eo
+					rep.avai.after = (o.totl - o.amnt)	|#ISGECDV001181.n
+					po.amnt = o.amnt
+					brp.ready(brp_id)
+				else
+					po.amnt = o.amnt
+					rep.avai.after = (o.totl - o.amnt)
+| 					err.msg = "Process Completed "
+					brp.ready(brp_id)			|#ISGECDV001181.n
+				endif
+					
+			else
+										|#ISGECDV001181.so
+| 				rep.vers = o.vers
+| 				dal.get.error.message(err.msg)
+										|#ISGECDV001181.eo
+				brp.ready(brp_id)				|#ISGECDV001181.n
+										
+			endif
+		endif	
+	endselect
+	
+	brp.close(brp_id)
+}
+
+							|#|#ISGECDV001127.en
+
+							|#ISGECDV001162.sn
+function extern boolean tdisg.dll0400.Check_Advance_Again_PO
+					(
+					domain	tcorno	in.orno
+					)
+{
+	domain	tcorno		t.orno
+	domain	tfacp.tpay	t.tpay
+	string			question.rem(250)
+	
+	t.orno = ""
+	t.tpay = empty
+	select	ad_tfacp200.cdf_prno:t.orno,
+		ad_tfacp200.tpay:t.tpay
+	from	tfacp200 ad_tfacp200
+	where	ad_tfacp200.cdf_prno = :in.orno	
+	and	ad_tfacp200.tpay in (tfacp.tpay.advance, tfacp.tpay.advance.ant, tfacp.tpay.unallocated, tfacp.tpay.unallocated.ant)
+					|9,10,11,12
+	as set with 1 rows
+	selectdo
+		|if	ask.enum("tdisg000000001", tcyesno.no, in.orno) = tcyesno.no	then
+			|Advance has been made for PO %1$s. Do you want to cancel..?
+		question.rem = "Advance has been released against this order to vendor. Please make sure that advance is adjusted 
+^				against another PO. Take Material Head Approval before cancellation."	
+		if	ask.enum("tcbod00003", tcyesno.no, question.rem) = tcyesno.no	then		
+			|%1$s Continue?
+			return(false)
+		endif
+	endselect	
+	return(true)
+}
+							|#ISGECDV001162.en
+							
+|*****************************
+							|#PATCH001034.sn
+function extern domain tcmcs.str30 tdisg.dll0400.buy.from.bp.request.type
+				(
+					domain	tccom.bpid	i.bpid
+				)
+{
+	domain	tcmcs.str30	o.tccom120.cdf_rtyp
+	o.tccom120.cdf_rtyp = ""
+	
+	select 	tccom120.cdf_rtyp:o.tccom120.cdf_rtyp
+	from	tccom120
+	where	tccom120._index1 = {:i.bpid}
+	as set with 1 rows
+	selectdo
+	endselect
+	
+	return(o.tccom120.cdf_rtyp)
+}
+
+
+function extern boolean tdisg.dll0400.one.time.buy.from.bp
+				(
+					domain	tccom.bpid	i.bpid,
+					domain	tcorno		i.orno
+				)
+{
+	domain	tcmcs.str30	o.tccom120.cdf_cprj
+	
+	select 	tccom120.cdf_cprj:o.tccom120.cdf_cprj
+	from	tccom120 for update 
+	where	tccom120._index1 = {:i.bpid}
+	and	tccom120.cdf_cprj = ""
+	selectdo
+		put.var(pid,"tccom120.cdf_cprj",i.orno)
+		db.update(ttccom120,db.retry,e)
+	selectempty
+		return(false)
+	endselect
+	
+	return(true)
+}
+
+function extern boolean tdisg.dll0400.buy.from.bp.validate.project
+				(
+					domain	tccom.bpid		i.bpid,
+					domain	tcmcs.str30		i.cprj
+				)
+{
+	domain	tcmcs.str30		o.tccom120.cdf_cprj
+	
+	select 	tccom120.cdf_cprj:o.tccom120.cdf_cprj
+	from	tccom120
+	where	tccom120._index1 = {:i.bpid}
+	and	tccom120.cdf_cprj = :i.cprj
+	as set with 1 rows
+	selectdo
+	selectempty
+		return(false)
+	endselect
+	
+	return(true)
+	
+}
+									|#PATCH001034.en

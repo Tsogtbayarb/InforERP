@@ -1,0 +1,931 @@
+|******************************************************************************
+|* tdpur200ue  0  VRC B61U a7 live
+|* Purchase Requisition
+|* tools1
+|* 14-02-24 [11:38]
+|******************************************************************************
+|* Script Type: Library
+|******************************************************************************
+|* ID INCIDENT  3615	Sujeet Kumar	14-05-2014
+|* Sanction Control Logic
+|* When the Status of the Requisition will be changed
+|* For All those lines which having Project & Element
+|* Update the Sanction Amount
+|*
+|* ISGECDV001147, IT0205, Arjit Gupta, VRC B61U a7 live, Dt. 10-11-2014
+|* When Indent Reject then child item may not get deleted it must be unfreeze state
+|*
+|* ISGEC001141, IT0042, Kuldeep Sharma, 2015-01-15
+|* Email Alert when Requision is approved.
+|* 
+|* ID ISGEC001165, Manish Manchanda, 2015-02-24
+|* Sanction Control Lines added
+|*
+|* ID ISGEC01112, Ritu Shrivastava, 2015-06-23
+|* Modification to update transaction date for requisition as per the requisition status.
+|*
+|* ID ISGEC015027, Ankit Sharma, 2015-07-20
+|* Check on submit button
+|*
+|* #Adarsh.19.07.2019, Adarsh Pal, 19-07-2019, VRC B61U a7 isg
+|* Additional Logic for updating the change in Buyer in Requisition
+|******************************************************************************
+                                                                                
+#include <bic_dal>
+#include "itdisgdll0003"	
+							|#ISGEC001141.sn
+#include <bic_cmf>
+#pragma used dll ottdllbw 
+
+	table	ttccom001
+	table	tbpmdm001
+	table	ttdisg083
+	table	ttdisg100
+	table	ttdisg117				|#Adarsh.19.07.2019.n				
+	table	ttdpur203				|#ISGEC001141.en
+	table	ttdisg210
+	table	ttpisg229
+	table	tdmisg140
+		
+extern	domain	tdpur.rqst	old.rqst
+							|#Adarsh.19.07.2019.sn
+extern	domain	tcemno		old.ccon			
+extern	domain	tcemno		log.name			
+extern	domain	tcdate		curr.date			
+extern	domain	tcmail		remn.mail,ccon.mail,log.name.mail,division.email			
+							|#Adarsh.19.07.2019.en
+extern	domain	tcrqno		i.rqno
+extern	domain	tccprj		i.cprj
+extern	domain	tcpono		i.pono
+extern	domain	tppdm.cspa	i.cspa
+extern	domain	tcitem		i.item
+
+table	ttdpur200
+table	ttdpur201
+table	ttpisg009
+table	ttpisg010
+table	ttpmsl000
+table	ttdisg003					|#ISGEC015027.n
+
+function extern long ue.before.before.save.object(long mode)
+{
+	on case mode
+	case DAL_NEW:
+		break
+	case DAL_UPDATE:
+		with.old.object.values.do(get_old_status)
+		if old.rqst = tdpur.rqst.created and tdpur200.rqst = tdpur.rqst.submitted then
+			
+			if check.bill.of.material.exists(tdpur200.rqno) then
+				dal.set.error.message("@ Please Maintain Bill of Material Lines")
+				return(DALHOOKERROR)
+			endif
+			
+			if Check_Limit() then
+				dal.set.error.message("@ All Indents For The Project %s Utilized",tdpur201.cprj)
+				return(DALHOOKERROR)
+			else
+				Update_Indent()
+			endif
+									|#ISGEC01034.sn
+			if not check.if.reason.code.maintained() then
+				dal.set.error.message("@ Indent Priority is Urgent/Emergency.Please Maintain Reason Code")
+				return(DALHOOKERROR)
+			endif
+									|#ISGEC01034.en
+		endif							
+									|#ISGEC015027.sn
+		if (old.rqst = tdpur.rqst.created or old.rqst = tdpur.rqst.rejected or old.rqst = tdpur.rqst.modified)	
+			and tdpur200.rqst = tdpur.rqst.submitted then							
+			if not check.item.freezed() then
+				dal.set.error.message("@ Items are selected but not Freeze, Approval not allowed")
+				return(DALHOOKERROR)
+			endif						
+									
+															
+		endif							|#ISGEC015027.en
+									|#3615.sn
+		tcmcs.dll0095.read.parm("tpmsl000")
+		if tpmsl000.rqno = tcyesno.yes then
+			if tdpur200.rqst = tdpur.rqst.submitted then
+				sanction_control_lines()		|#ISGEC001165.n
+				|* Check Requisition Line Amount
+				if check.requisition.line.amount(tdpur200.rqno) then
+					return(DALHOOKERROR)
+				endif
+				
+				if tpisgdll0012.Budget_check_For_Requisition(tdpur200.rqno) then
+					return(DALHOOKERROR)
+				endif
+			endif
+		endif
+		
+		if (tdpur200.rqst = tdpur.rqst.rejected or tdpur200.rqst = tdpur.rqst.canceled) then
+			remove_indent_from_indent_count()
+			unlink_bill_of_material()	|GT.03072014.n
+		endif
+		
+		|* Sanction Control
+		if old.rqst <> tdpur200.rqst then
+			get.lines.project.element(tdpur200.rqno)
+		endif	
+											|#3615.en
+											|#Adarsh.19.07.2019.sn
+		with.old.object.values.do(get.old.buyer)
+											|#Adarsh.19.07.2019.en
+		break
+	endcase
+	return(0)
+}
+
+function extern long ue.after.before.save.object(long mode)
+{
+	on case mode
+	case DAL_NEW:
+		break
+	case DAL_UPDATE:
+		break
+	endcase
+	return(0)
+}
+
+function extern long ue.before.after.save.object(long mode)
+{
+	on case mode
+	case DAL_NEW:
+		break
+	case DAL_UPDATE:
+		break
+	endcase
+	return(0)
+}
+
+function extern long ue.after.after.save.object(long mode)
+{
+	on case mode
+	case DAL_NEW:
+		break
+	case DAL_UPDATE:
+		|* Sanction Control
+		
+		if old.rqst <> tdpur200.rqst then
+			get.lines.project.element(tdpur200.rqno)
+		endif
+									|* ISGEC001141.sn
+		if old.rqst <> tdpur.rqst.approved and tdpur200.rqst = tdpur.rqst.approved then
+			|** Temporary Block
+| 			if send.email.alert() <> 0 then
+| 				return(DALHOOKERROR)
+| 			endif
+		endif
+									|* ISGEC001141.en
+		
+| 		if  then
+			domain	tcdate	o.trdt
+											|#ISGEC01112.sn
+			if old.rqst = tdpur.rqst.submitted or old.rqst = tdpur.rqst.rejected
+			and  tdpur200.rqst = tdpur.rqst.approved then
+											|#ISGEC01112.en
+				select 	tdpur203.trdt:o.trdt
+				from	tdpur203
+				where	tdpur203._index1 = {:tdpur200.rqno}
+				and	tdpur203.rqst = tdpur.rqst.approved
+				order by tdpur203.trdt desc
+				as set with 1 rows
+				selectdo
+					tdisg210.rqno = tdpur203.rqno
+					tdisg210.apdt = o.trdt
+					tdisg210.apvr = tdpur203.aemn
+					db.insert(ttdisg210,db.skip.dupl,e)
+				endselect
+			endif								|#ISGEC01112.n
+		
+			if (tdpur200.rqst = tdpur.rqst.rejected) or (tdpur200.rqst = tdpur.rqst.canceled) then
+				DeleteDatesFromPMDL()
+			endif
+											|#Adarsh.19.07.2019.sn
+		if old.ccon <> tdpur200.ccon then
+			
+			curr.date = utc.num()
+			log.name = logname$
+			
+			select	tdisg117.* 
+			from	tdisg117 
+			where	tdisg117._index1 = {:tdpur200.rqno,:curr.date}
+			selectdo
+			selectempty
+				tdisg117.rqno = tdpur200.rqno
+				tdisg117.buyr = tdpur200.ccon
+				tdisg117.chgo = curr.date
+				tdisg117.chgb = log.name
+				db.insert(ttdisg117,DB.RETRY)
+				commit.transaction()
+			endselect
+			
+			select	bpmdm001.mail:remn.mail
+			from	bpmdm001
+			where	bpmdm001._index1 = {:tdpur200.remn}
+			selectdo
+			selectempty
+				remn.mail = ""
+			endselect
+			
+			select	bpmdm001.mail:ccon.mail
+			from	bpmdm001
+			where	bpmdm001._index1 = {:tdpur200.ccon}
+			selectdo
+			selectempty
+				ccon.mail = ""
+			endselect
+			
+			select	bpmdm001.mail:log.name.mail
+			from	bpmdm001
+			where	bpmdm001._index1 = {:log.name}
+			selectdo
+			selectempty
+				log.name.mail = ""
+			endselect
+			
+			on case tdpur200.cofc                                                
+	
+			case "PUR200": division.email = "Indentreturn.boiler@isgec.co.in"
+				break
+			case "PUR230": division.email = "Indentreturn.smd@isgec.co.in"	
+				break
+			case "PUR210": division.email = "Indentreturn.epc@isgec.co.in"	
+				break
+			case "PUR240": division.email = "Indentreturn.apce@isgec.co.in"	
+                               break
+			case "PUR220": division.email = "Indentreturn.pc@isgec.co.in"
+                               break
+			case "PUR700": division.email = "Indentreturn.redecam@isgec.co.in"
+                               break
+			case "PUR250": division.email = "Indentreturn.fgd@isgec.co.in"
+                               break
+			endcase                                   
+			
+			send.email(	log.name.mail,
+					remn.mail,
+					ccon.mail,
+					division.email,
+					"baansupport@isgec.co.in",
+					"Buyer changed in Indent " & trim$(tdpur200.rqno),
+					get.email.body.file()					)
+		endif
+												|#Adarsh.19.07.2019.en
+		break
+	endcase
+	return(0)
+}
+
+function extern long ue.before.before.destroy.object()
+{
+	get.lines.project.element(tdpur200.rqno)			|#3615.n
+	
+	return(0)
+}
+
+function extern long ue.after.before.destroy.object()
+{
+	return(0)
+}
+
+function extern long ue.before.after.destroy.object()
+{
+	return(0)
+}
+
+function extern long ue.after.after.destroy.object()
+{
+	return(0)
+}
+function long Check_Limit()
+{
+	long	ret
+	ret = 0
+	select	tdpur201.rqno,tdpur201.cprj
+	from	tdpur201
+	where	tdpur201._index1 = {:tdpur200.rqno}
+	group by tdpur201.rqno,tdpur201.cprj
+	selectdo
+		select	tpisg009.*
+		from	tpisg009
+		where	tpisg009._index1 = {:tdpur201.cprj}
+		and	tpisg009.appr = tcyesno.yes
+		selectdo
+			select	tpisg010.balc
+			from	tpisg010
+			where	tpisg010._index1 = {:tdpur201.cprj}
+			and	tpisg010.balc <= 0
+			selectdo
+				ret = 1
+				return(ret)
+	| 			|dal.set.error.message("@ All Indents For The Project %s Utilized",tdpur201.cprj)
+	| 			|return(DALHOOKERROR)
+			endselect	
+		selectempty
+			ret = 1
+			return(ret)
+		endselect	
+		
+	endselect	
+	
+	return(ret)
+}
+
+
+function remove_indent_from_indent_count()
+{
+	domain	tccprj		o.cprj
+	domain	tcmcs.long	o.balc
+	
+	
+	select 	tdpur201.cprj:o.cprj
+	from	tdpur201
+	where	tdpur201._index1 = {:tdpur200.rqno}
+	group by tdpur201.cprj
+	selectdo
+		select 	tpisg010.balc:o.balc
+		from	tpisg010 for update 
+		where	tpisg010._index1 = {:o.cprj,:tdpur200.rqno}
+		selectdo
+			db.delete(ttpisg010,db.retry,e)
+			select 	tpisg010.util,
+				tpisg010.balc
+			from	tpisg010 for update 
+			where	tpisg010._index1 = {:o.cprj}|,:tdpur200.rqno}
+			and	tpisg010.balc < :o.balc
+			selectdo
+				tpisg010.util = tpisg010.util - 1
+				tpisg010.balc = tpisg010.balc + 1
+				db.update(ttpisg010,db.retry,e)
+			endselect
+		endselect
+	endselect
+}
+		|GT.03072014.sn
+function	unlink_bill_of_material()
+{
+	select	tdpur201.cprj:i.cprj,
+		tdpur201.cspa:i.cspa
+	from	tdpur201
+	where	tdpur201._index1 = {:tdpur200.rqno}
+	group by tdpur201.cprj,tdpur201.cspa
+	selectdo
+		select	tdpur201.rqno:i.rqno,
+			tdpur201.pono:i.pono,
+			tdpur201.item:i.item
+		from	tdpur201
+		where	tdpur201._index1 = {:tdpur200.rqno}
+		and	tdpur201.cprj = :i.cprj
+		and	tdpur201.cspa = :i.cspa
+		selectdo
+											|#ISGECDV001147.sn
+			if	tdpur200.rqst = tdpur.rqst.rejected	then
+				tcisgdll0003.Reject_Indent_Bill_of_Material(i.rqno,i.pono,i.cprj,
+					i.cspa,i.item)
+			else
+											|#ISGECDV001147.en
+				tcisgdll0003.Modify.Indent_Bill_of_Material(i.rqno,i.pono,i.cprj,
+					i.cspa,i.item)
+			endif									|#ISGECDV001147.n		
+		endselect			
+	endselect	
+}
+
+		|GT.03072014.en
+function Update_Indent()
+{
+	long	v.bal,v.utl
+	
+	v.bal = 0
+	v.utl = 0
+	
+	select	tdpur201.rqno,tdpur201.cprj
+	from	tdpur201
+	where	tdpur201._index1 = {:tdpur200.rqno}
+	group by tdpur201.rqno,tdpur201.cprj
+	selectdo
+		select	min(tpisg010.balc):v.bal,max(tpisg010.util):v.utl
+		from	tpisg010
+		where	tpisg010._index1 = {:tdpur201.cprj}
+		selectdo
+		selectempty
+			v.bal = 0
+			v.utl = 0
+		endselect
+		
+		tpisg010.cprj = tdpur201.cprj
+		tpisg010.rqno = tdpur201.rqno
+		tpisg010.util = v.utl + 1
+		tpisg010.balc = v.bal - 1
+		db.insert(ttpisg010,db.skip.dupl,e)
+	endselect
+}	
+function get_old_status()
+{
+	old.rqst = tdpur200.rqst
+}
+
+							|#3615.sn
+
+function get.lines.project.element
+			(
+				domain	tcrqno		i.rqno
+			)
+{
+	domain 	tcorno		o.vers
+	domain	tccprj		o.cprj
+	domain	tppdm.cspa	o.cspa
+	
+	select 	tdpur201.cprj:o.cprj,
+		tdpur201.cspa:o.cspa
+	from	tdpur201
+	where	tdpur201._index1 = {:i.rqno}
+	group by tdpur201.cprj,tdpur201.cspa
+	selectdo
+		if not isspace(o.cprj) then
+			|Get Project Version
+			if not tpisgdll0012.check_sanction_status(o.cprj,o.vers) then
+				|Update Sanction Amount
+				tpisgdll0012.SanctionControlLine(o.cprj,o.vers,o.cspa)
+			endif
+		endif	
+	endselect
+	
+}
+
+function long check.requisition.line.amount
+			(
+				domain	tcrqno		i.rqno
+			)
+{
+	domain	tcamnt		o.oamt
+	
+	select 	tdpur201.oamt:o.oamt
+	from	tdpur201
+	where	tdpur201._index1 = {:i.rqno}
+	and	tdpur201.oamt = 0
+	as set with 1 rows
+	selectdo
+		dal.set.error.message("@ Requisition Amount Should not be Zero")
+		return(DALHOOKERROR)
+	endselect
+	
+	return(0)
+}
+
+
+function long check.bill.of.material.exists
+				(
+					domain	tcrqno		i.rqno	|Requisition Number
+				)
+{
+	domain	tcrqno		o.rqno
+	
+	select 	tdisg003.rqno:o.rqno
+	from	tdisg003
+	where	tdisg003._index1 = {:i.rqno}
+	and	tdisg003.stat = tcyesno.yes
+	as set with 1 rows
+	selectdo
+	selectempty
+		if tdisgdll0001.bill_of_material() then
+			return(DALHOOKERROR)
+		endif
+	endselect
+	
+	return(0)
+}							|#3615.en
+									|* ISGEC001141.sn
+function long send.email.alert()
+{
+	string tmp.file(200),line(500)
+	long fp
+	domain tcemno	emno.code
+	domain	tfgld.user	user.code
+	
+	long    message.ID
+        long    to.ID
+        long    attachment.ID
+        long    ret
+
+	double	amount
+	domain	tccprj	cprj
+        domain	ttcmf.prov service       
+                        |Infor ERP Enterprise eMessage Connector service for 
+                        |transporting messages
+        long stat       |Variable to hold return values
+        long mid        |CMF message id
+
+	select max(tdpur201.cprj):cprj,sum(tdpur201.oamt):amount from tdpur201
+	where tdpur201._index1 = {:tdpur200.rqno}
+	selectdo
+	endselect
+	select tdisg100.* from tdisg100
+	where tdisg100._index1 = {:tdpur200.rqno}
+	as set with 1 rows
+	selectdo
+	endselect
+	select tdpur203.* from tdpur203
+	where tdpur203._index1 = {:tdpur200.rqno}
+	and tdpur203.rqst = 3
+	order by tdpur203.trdt desc
+	as set with 1 rows
+	selectdo
+	endselect
+	
+	tmp.file = creat.tmp.file$(bse.tmp.dir$())
+	fp = seq.open(tmp.file,"w+")
+	if fp <=0 then
+		dal.set.error.message("@ Temp file can not be created")
+		return(1)
+	endif
+| 	line = "Dear All" & chr$(13)&chr$(10)
+| 	seq.write(line,len(line),fp)
+	line = ""
+	line = strip$(line) & " Project :" & cprj	& chr$(13)&chr$(10)
+	seq.write(line,len(line),fp)
+	
+	select tccom001.nama from tccom001
+	where tccom001._index1 = {:tdpur200.remn}
+	as set with 1 rows
+	selectdo
+	endselect
+	
+	line = "Requester :" & tccom001.nama & chr$(13)&chr$(10)
+	seq.write(line,len(line),fp)
+	
+	line = "Material/Service :" & tdpur200.refa & chr$(13)&chr$(10)
+	seq.write(line,len(line),fp)
+	
+	line = "Amount :" & str$(amount) & chr$(13)&chr$(10)
+	seq.write(line,len(line),fp)
+	
+	
+	line = "Requition Date :" & sprintf$("%u(%02d.%02m.%04Y)",tdpur200.rdat) & chr$(13)&chr$(10)
+	seq.write(line,len(line),fp)
+	
+	line = "Priority :" &  enum.descr$  ("tdisg.in.type",  tdisg100.prio) & chr$(13)&chr$(10)
+	seq.write(line,len(line),fp)
+	
+	line = "Reason :" &  tdisg100.emgr & chr$(13)&chr$(10)
+	seq.write(line,len(line),fp)
+	
+	line = "Approval Date:" &  sprintf$("%u(%02d.%02m.%04Y) %U(%02H:%02m:%02s)",tdpur200.rdat,tdpur200.rdat)  & chr$(13)&chr$(10)
+	seq.write(line,len(line),fp)
+	ret = seq.close(fp)
+	
+	user.code = logname$
+	select bpmdm001.mail,tccom001.nama from tccom001,bpmdm001
+	where tccom001._index4 = {:user.code}
+	and	tccom001.emno refers to bpmdm001
+	as set with 1 rows
+	selectdo
+	selectempty
+		bpmdm001.mail = ""
+		
+	endselect
+	if isspace(bpmdm001.mail) then
+		dal.set.error.message("@ Email ID for user " & user.code & " Not maintained")
+		return(1)
+	endif		
+	|******* Email Header
+        message.ID = cmf.create()
+	line = "ALERT : INDENT APPROVED " & tdpur200.rqno 
+        ret = cmf.setClass(message.ID, "CMF.NOTE.EMAIL")
+        ret = cmf.setSubject(message.ID,line)
+	
+	|******** from ID
+	to.ID = cmf.createRecipient(message.ID, ttcmf.role.from)  
+	ret = cmf.setRecipientName(to.ID,tccom001.nama)
+        ret = cmf.setRecipientAddress(to.ID, bpmdm001.mail)	
+	ret = cmf.setRecipientType(to.ID, "SMTP")
+ 
+	|******** to ID
+	if isspace(tdpur200.ccon) then
+	select tdisg083.emno,bpmdm001.mail,tccom001.nama 
+	from tccom001,bpmdm001,tdisg083
+	where tdisg083._index1 = {tdrole.lead.buyr}
+	and	tdisg083.emno refers to  tccom001
+	and	tccom001.emno refers to bpmdm001
+	and	bpmdm001.mail <> ""
+	selectdo
+		to.ID = cmf.createRecipient(message.ID, ttcmf.role.to)  
+		ret = cmf.setRecipientName(to.ID,tccom001.nama)
+		ret = cmf.setRecipientAddress(to.ID, bpmdm001.mail)	
+		ret = cmf.setRecipientResponsibility(to.ID, "TRUE")		
+		ret = cmf.setRecipientType(to.ID, "SMTP")
+	selectempty
+		dal.set.error.message("@ Email ID for lead buyer not maintained" )
+		return(1)
+	endselect
+	else
+		select bpmdm001.mail,tccom001.nama from tccom001,bpmdm001
+		where tccom001._index1 = {:tdpur200.ccon}
+		and	tccom001.emno refers to bpmdm001
+		as set with 1 rows
+		selectdo
+		selectempty
+			bpmdm001.mail = ""
+		endselect
+		if isspace(bpmdm001.mail) then
+			dal.set.error.message("@ Email ID for Buyer " & tdpur200.ccon & " Not maintained")
+			return(1)
+		else
+			to.ID = cmf.createRecipient(message.ID, ttcmf.role.to)  
+			ret = cmf.setRecipientName(to.ID,tccom001.nama)
+			ret = cmf.setRecipientAddress(to.ID, bpmdm001.mail)	
+			ret = cmf.setRecipientResponsibility(to.ID, "TRUE")		
+			ret = cmf.setRecipientType(to.ID, "SMTP")
+		endif		
+	endif
+	|********* Mail Body
+	attachment.ID = cmf.createAttachment(message.ID)
+	ret = cmf.setAttachmentBody(attachment.ID,ttyeno.yes)
+	ret = cmf.setAttachmentMIME(attachment.ID,"text/plain")                       
+	ret = cmf.setAttachmentFileName(attachment.ID,tmp.file,"abc.txt")
+
+
+	|*********  Send mail
+        if message.ID <>0 then
+                stat = cmf.startService("SMTP",2)
+                if stat<>0 then
+                        dal.set.error.message("@ Message could not be sent "&
+                                "(Infor ERP Enterprise eMessage Connector"&
+                                " service did not start)")
+                        return(1)
+                endif
+                stat = cmf.send(message.ID,"SMTP")
+                if stat<>0 then
+                        dal.set.error.message("@ Message could not be sent "& "(Infor ERP Enterprise eMessage Connector "&
+                                "service refused message)")
+                        cmf.stopService("SMTP",2)
+                        return(1)
+                endif
+                stat = cmf.stopService("SMTP",2)
+        endif
+	return(0)
+}
+									|*ISGEC001141.en
+									|#ISGEC01034.sn
+function boolean check.if.reason.code.maintained()
+{
+	select	tdisg100.reas,tdisg100.prio
+	from	tdisg100
+	where	tdisg100._index1 = {:tdpur200.rqno}
+	selectdo
+		if tdisg100.prio  = tdisg.in.type.urgent or tdisg100.prio = tdisg.in.type.emergency then
+			if isspace(tdisg100.reas) then
+				return(false)
+			endif
+		endif
+	endselect
+	return(true)
+}
+									|#ISGEC01034.en
+									
+function sanction_control_lines()					|#ISGEC001165.sn
+{
+	domain	tccprj		o.cprj
+	domain	tppdm.cspa	o.cspa,v.cspa
+	domain	tcorno		o.vers
+	domain	tfgld.amnt	o.amnt, linked.amnt
+	domain	tcamnt		o.totl
+	
+	linked.amnt	=	0
+	
+	long	brp_id
+	
+	extern	domain	tccprj		rep.cprj
+	extern	domain	tppdm.cspa	rep.cspa
+	extern	domain	tcorno		rep.vers,v.rqno
+	extern	domain	tppdm.dscl	o.tpptc100.desc
+	extern	domain	tcamnt		o.tpisg012.exha, o.tpisg012.avai
+	extern	domain	tcamnt		rep.avai.on
+	extern	domain	tcamnt		rep.avai.after
+	extern	domain	tcamnt		po.amnt, o.tdpur201.oamt,o.tdpur201.oamt.tot
+	extern	string	err.msg(100)
+	extern	domain	tcpono	v.pono
+	
+	o.tdpur201.oamt.tot = 0
+	v.cspa = ""
+
+	brp_id = brp.open("rtpisg041201100","D",0)
+| 	select 	tdpur201.cprj:o.cprj,
+	select 	tdpur201.rqno:v.rqno,tdpur201.pono:v.pono,tdpur201.cprj:o.cprj,
+		tdpur201.cspa:o.cspa, tdpur201.oamt:o.tdpur201.oamt
+	from	tdpur201
+	where	tdpur201._index1 = {:tdpur200.rqno}
+	
+| 	group by tdpur201.cprj,tdpur201.cspa, tdpur201.oamt
+	group by tdpur201.rqno,tdpur201.pono,tdpur201.cprj,tdpur201.cspa, tdpur201.oamt
+	order by tdpur201.rqno,tdpur201.pono
+	selectdo
+			if v.cspa <> o.cspa then 
+				o.tdpur201.oamt.tot = 0
+				v.cspa = o.cspa
+			endif
+			o.tdpur201.oamt.tot = o.tdpur201.oamt.tot + o.tdpur201.oamt
+			if not isspace(o.cprj) and not isspace(o.cspa) then
+			rep.cprj = o.cprj
+			rep.cspa = o.cspa
+			
+			tpisgdll0012.check_sanction_status(o.cprj,o.vers)
+			select tpptc100.desc:o.tpptc100.desc
+			from	tpptc100
+			where	tpptc100._index1 = {:o.cprj,:o.cspa}
+			as set with 1 rows
+			selectdo
+			selectempty
+				o.tpptc100.desc = ""
+			endselect
+			
+			select 	tpisg012.totl:o.totl,
+				tpisg012.exha:o.tpisg012.exha,
+				tpisg012.avai:o.tpisg012.avai
+			from	tpisg012
+			where	tpisg012._index1 = {:o.cprj,:o.vers,:o.cspa}
+			as set with 1 rows
+			selectdo
+			endselect
+			|rep.avai.on = o.totl - o.tpisg012.exha
+
+			rep.avai.on = o.tpisg012.avai
+	
+			if 	not tpisgdll0012.check_sanction_status(o.cprj,o.vers) then
+				rep.vers = o.vers
+				o.amnt = tpisgdll0012.ExhaustedAmount(o.cprj,o.cspa)
+				if 	tpisgdll0012.check_sanction_available_amount_for_po(o.cprj,o.vers,o.cspa,o.amnt) then
+| 					rep.avai.after = (o.totl - o.amnt)
+					rep.avai.after	=	o.tpisg012.avai	-	o.tdpur201.oamt.tot
+					po.amnt = o.amnt
+					brp.ready(brp_id)
+				else
+					po.amnt = o.amnt
+| 					rep.avai.after = (o.totl - o.amnt)
+					rep.avai.after	=	o.tpisg012.avai	-	o.tdpur201.oamt.tot
+					brp.ready(brp_id)		
+				endif
+			else
+				brp.ready(brp_id)												
+			endif
+		endif	
+	endselect
+	brp.close(brp_id)
+}													|#ISGEC001165.en
+													|#ISGEC015027.sn
+function boolean check.item.freezed()
+{
+	select	tdpur201.rqno,tdpur201.pono
+	from	tdpur201
+	where	tdpur201._index1 = {:tdpur200.rqno}
+	selectdo
+		select	tdisg003.*
+		from	tdisg003
+		where	tdisg003._index1 = {:tdpur201.rqno,:tdpur201.pono}
+		selectdo
+			if not isspace(tdisg003.item) then
+				if tdisg003.stat = tcyesno.no then
+					return(false)
+				endif	
+			endif	
+		endselect	
+		
+	endselect	
+	return(true)
+}													|#ISGEC015027.en
+
+function DeleteDatesFromPMDL()										|#ISGEC01100.sn				
+{
+	select	tdisg003.docn 
+	from	tdisg003
+	where	tdisg003._index1 = {:tdpur200.rqno}
+	group by tdisg003.docn
+	selectdo
+		select	dmisg140.*
+		from	dmisg140 for update
+		where	dmisg140.docn =:tdisg003.docn
+		selectdo
+			dmisg140.iadt = 0
+			db.update(tdmisg140,db.retry,e)
+			commit.transaction()
+		endselect
+	endselect
+}
+													|#ISGEC01100.en
+													|#Adarsh.19.07.2019.sn
+function get.old.buyer()
+{
+	old.ccon = tdpur200.ccon
+}
+
+function domain tcmcs.str100 get.email.body.file()
+{
+	domain	tcmcs.str100	email.body.file
+	domain	tcnama		old.ccon.name,new.ccon.name
+	long	fp
+	
+	email.body.file = ""
+	old.ccon.name = ""
+	new.ccon.name = ""
+	fp = 0
+	
+	email.body.file = creat.tmp.file$(bse.tmp.dir$())
+	email.body.file = email.body.file & ".txt"
+	
+	fp = seq.open(email.body.file,"w")
+	
+	select	tccom001.nama:old.ccon.name
+	from	tccom001
+	where	tccom001._index1 = {:old.ccon}
+	selectdo
+	selectempty
+		old.ccon.name = ""
+	endselect
+	
+	select	tccom001.nama:new.ccon.name
+	from	tccom001
+	where	tccom001._index1 = {:tdpur200.ccon}
+	selectdo
+	selectempty
+		new.ccon.name = ""
+	endselect
+	
+	if fp then 
+		seq.puts(	"In Indent " & trim$(tdpur200.rqno) & ", Buyer has been changed from " & trim$(old.ccon.name) & 
+				" (" & trim$(old.ccon) & ") to " & trim$(new.ccon.name) & " (" & trim$(tdpur200.ccon) & ").",fp		)
+		seq.puts("",fp)
+		seq.puts("This is for your information please.",fp)
+		seq.puts("",fp)
+		seq.puts("",fp)
+		seq.puts("This is a system generated E-mail!",fp)
+	endif
+	
+	seq.close(fp)
+	return(trim$(email.body.file))
+}
+
+function send.email(	domain tcmcs.str132	email.from,
+			domain tcmcs.str132	email.to,
+			domain tcmcs.str132	email.cc,
+			domain tcmcs.str132     email.cc2,
+			domain tcmcs.str132	email.bcc,
+			domain tcmcs.str132	email.subj,
+			domain tcmcs.str132	email.body	)
+{
+	domain	ttcmf.prov	service
+		long 		ret,stat
+		long 		message.id,from.id,to.id,cc.id,bcc.id,subj.id,body.id
+	
+	service = "SMTP"
+	
+	message.id = cmf.create()
+	ret = cmf.setclass(message.id,"CMF.NOTE.EMAIL")
+	ret = cmf.setsubject(message.id,email.subj)
+		
+	if not isspace(email.from) then							
+		from.id = cmf.createrecipient(message.id,ttcmf.role.from)
+		ret = cmf.setrecipientname(from.id,email.from)
+		ret = cmf.setrecipientaddress(from.id,email.from)
+		ret = cmf.setrecipienttype(from.id,"SMTP")
+	endif	
+	if not isspace(email.to) then					
+		to.id = cmf.createrecipient(message.id,ttcmf.role.to)
+		ret = cmf.setrecipientname(to.id,email.to)
+		ret = cmf.setrecipientaddress(to.id,email.to)
+		ret = cmf.setrecipienttype(to.id,"SMTP")
+		ret = cmf.setrecipientresponsibility(to.id,"TRUE")
+	endif	
+	if not isspace(email.cc) then					
+		cc.id = cmf.createrecipient(message.id,ttcmf.role.cc)
+		ret = cmf.setrecipientname(cc.id,email.cc)
+		ret = cmf.setrecipientaddress(cc.id,email.cc)
+		ret = cmf.setrecipienttype(cc.id,"SMTP")
+		ret = cmf.setrecipientresponsibility(cc.id,"TRUE")
+	endif	
+	if not isspace(email.cc2) then                                        
+		cc.id = cmf.createrecipient(message.id,ttcmf.role.cc)
+		ret = cmf.setrecipientname(cc.id,email.cc2)	
+		ret = cmf.setrecipientaddress(cc.id,email.cc2)	
+		ret = cmf.setrecipienttype(cc.id,"SMTP")	
+		ret = cmf.setrecipientresponsibility(cc.id,"TRUE")	
+	endif        
+	if not isspace(email.bcc) then					
+		bcc.id = cmf.createrecipient(message.id,ttcmf.role.bcc)
+		ret = cmf.setrecipientname(bcc.id,email.bcc)
+		ret = cmf.setrecipientaddress(bcc.id,email.bcc)
+		ret = cmf.setrecipienttype(bcc.id,"SMTP")
+		ret = cmf.setrecipientresponsibility(bcc.id,"TRUE")
+	endif	
+	
+	body.id = cmf.createattachment(message.id)
+	ret = cmf.setattachmentbody(body.id,ttyeno.yes)
+	ret = cmf.setattachmentmime(body.id,"text/plain")
+	ret = cmf.setattachmentfilename(body.id,email.body)
+		
+	stat = cmf.startservice(service,2)
+	stat = cmf.send(message.Id,service)
+	stat = cmf.stopservice(service,2)
+}
+													|#Adarsh.19.07.2019.en

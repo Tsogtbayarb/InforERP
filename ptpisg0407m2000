@@ -1,0 +1,450 @@
+|******************************************************************************
+|* tpisg0407m200  0  VRC B61U a7 isg 
+|* Print Project-wise Utilization and Savings
+|* Adarsh Pal                    
+|* 2019-09-20
+|******************************************************************************
+|* Main table tpisg007 Sanction Control History, Form Type 4
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttpisg007	|Sanction Control History
+	table	ttpisg008
+	table	ttpisg011
+	table	ttpisg012
+	table	ttpisg112
+	table	ttpisg003
+	table	ttppdm090
+	table	ttppdm600
+	table	ttcemm030
+	table	ttcmcs052
+
+	extern  domain	tccprj		cprj.f	fixed
+	extern  domain  tccprj		cprj.t	fixed
+	extern  domain  tcorno		vers.f	fixed
+	extern  domain  tcorno		vers.t	fixed
+	extern  domain  tcdate		apdt.f   
+	extern  domain  tcdate		apdt.t    
+	
+		domain	tcmcs.str50	aref
+		domain	tidate		adte
+		domain	tcdesc		rsnd
+		
+			string		file.name.server(100),file.name.client(100),line(500)
+			long 		fp,ret
+			
+#include <bic_desktop>
+|****************************** program section ********************************
+
+|****************************** group section **********************************
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+|****************************** field section *********************************
+field.cprj.f:
+check.input:
+	if not isspace(cprj.f) then
+		select	tcmcs052.cprj
+		from	tcmcs052
+		where	tcmcs052._index1 = {:cprj.f}
+		selectdo
+		selectempty
+			set.input.error("@Please enter correct Project!")
+		endselect
+	endif
+
+when.field.changes:
+   cprj.t = cprj.f
+ 
+field.cprj.t:
+check.input:
+	if cprj.t <> "~~~~~~~~~" then
+		select	tcmcs052.cprj
+		from	tcmcs052
+		where	tcmcs052._index1 = {:cprj.f}
+		selectdo
+		selectempty
+			set.input.error("@Please enter correct Project!")
+		endselect
+	endif 
+   
+field.vers.f:
+check.input:
+	if not isspace(vers.f) then
+		if not isdigit(trim$(vers.f)) then
+			set.input.error("@Please enter correct Version!")
+		endif
+	endif
+	
+when.field.changes:
+   vers.t = vers.f
+
+field.vers.t:
+check.input:
+	if vers.t <> "~~~~~~~~~" then
+		if not isdigit(trim$(vers.t)) then
+			set.input.error("@Please enter correct Version!")
+		endif
+	endif
+	
+|****************************** function section ******************************
+functions:
+
+function extern print.report()
+{
+	create.file()
+	
+	fp = seq.open(file.name.server,"w")
+		
+	if fp then
+		write.header()
+		read.detail()
+		ret = seq.close(fp)
+	endif
+	
+	ret = server2client(file.name.server,file.name.client,true)
+	if not ret then
+		start.application.local(file.name.client,false,ret)
+	endif
+	
+	ret = seq.unlink(file.name.server)
+}	
+
+function read.detail()
+{
+	select	tpisg007.*,tcmcs052.dsca,tppdm600.ncmp,tcemm030.dsca
+	from	tpisg007,tcmcs052,tppdm600,tcemm030
+	where  	tpisg007._index1 inrange {:cprj.f,:vers.f} and {:cprj.t,:vers.t}
+	and	tpisg007.apdt between :apdt.f and :apdt.t
+	and	tpisg007.acti in (20,120)
+	and	tpisg007.cprj refers to tcmcs052
+	and 	tppdm600.cprj refers to tpisg007.cprj
+	and	tcemm030.fcmp refers to tppdm600.ncmp
+	order by	tpisg007._index1
+	selectdo
+		select 	tpisg008.*,tppdm090.desc
+		from	tpisg008,tppdm090
+		where	tpisg008._index1 = {:tpisg007.cprj,:tpisg007.vers}
+		and	tpisg008.elem refers to tppdm090
+		selectdo
+			if (tpisg007.acti = tpisg.sanction.partial and tpisg008.ttbt <> 0.0) or
+			   (tpisg007.acti = tpisg.sanction.csrevise and tpisg008.sbta <> 0.0) or
+			   (tpisg007.acti = tpisg.sanction.trans.to.ctoh and tpisg008.ttch <> 0.0) then
+				if tpisg007.adte <> 0 then
+					write.detail(	tcemm030.dsca,
+							tpisg008.cprj,
+							tcmcs052.dsca,
+							tpisg008.vers,
+							tpisg008.elem,
+							tppdm090.desc,
+							sprintf$("%u(%02d/%02m/%04Y) %U(%02:%02m:%02s)",tpisg007.apdt,tpisg007.apdt),
+							tpisg008.tfcy,
+							tpisg008.tfcs,
+							tpisg008.tfwy,
+							tpisg008.tfch,
+							tpisg008.ttbt,
+							tpisg007.aref,
+							sprintf$("%D(%02d/%02m/%04Y)",tpisg007.adte),
+							get.reason.desc(tpisg007.acti,tpisg008.reas),
+							0.0,
+							tpisg008.ttch									)
+				else
+					write.detail(	tcemm030.dsca,
+							tpisg008.cprj,
+							tcmcs052.dsca,
+							tpisg008.vers,
+							tpisg008.elem,
+							tppdm090.desc,
+							sprintf$("%u(%02d/%02m/%04Y) %U(%02:%02m:%02s)",tpisg007.apdt,tpisg007.apdt),
+							tpisg008.tfcy,
+							tpisg008.tfcs,
+							tpisg008.tfwy,
+							tpisg008.tfch,
+							tpisg008.ttbt,
+							tpisg007.aref,
+							"",
+							get.reason.desc(tpisg007.acti,tpisg008.reas),
+							0.0,
+							tpisg008.ttch									)
+				endif
+			endif
+		endselect	
+	endselect
+	
+	select 	tpisg011.*,tcmcs052.dsca,tppdm600.ncmp,tcemm030.dsca
+	from 	tpisg011,tcmcs052,tppdm600,tcemm030
+	where  	tpisg011._index1 inrange {:cprj.f,:vers.f} and {:cprj.t,:vers.t}
+	and	tpisg011.apdt between :apdt.f and :apdt.t
+	and	tpisg011.acti in (20,120)
+	and	tpisg011.cprj refers to tcmcs052
+	and 	tppdm600.cprj refers to tpisg011.cprj
+	and	tcemm030.fcmp refers to tppdm600.ncmp
+	order by	tpisg011._index1
+	selectdo
+		select 	tpisg012.*,tppdm090.desc
+		from	tpisg012,tppdm090
+		where	tpisg012._index1 = {:tpisg011.cprj,:tpisg011.vers}
+		and	tpisg012.elem refers to tppdm090
+		selectdo
+			if (tpisg011.acti = tpisg.sanction.partial and tpisg012.ttbt <> 0.0) or
+			   (tpisg011.acti = tpisg.sanction.csrevise and tpisg012.sbta <> 0.0) or
+			   (tpisg011.acti = tpisg.sanction.trans.to.ctoh and tpisg012.ttch <> 0.0) then
+				if tpisg011.adte <> 0 then
+					write.detail(	tcemm030.dsca,
+							tpisg012.cprj,
+							tcmcs052.dsca,
+							tpisg012.vers,
+							tpisg012.elem,
+							tppdm090.desc,
+							sprintf$("%u(%02d/%02m/%04Y) %U(%02:%02m:%02s)",tpisg011.apdt,tpisg011.apdt),
+							tpisg012.tfcy,
+							tpisg012.tfcs,
+							tpisg012.tfwy,
+							tpisg012.tfch,
+							tpisg012.ttbt,
+							tpisg011.aref,
+							sprintf$("%D(%02d/%02m/%04Y)",tpisg011.adte),
+							get.reason.desc(tpisg011.acti,tpisg012.reas),
+							0.0,
+							tpisg012.ttch									)
+				else
+					write.detail(	tcemm030.dsca,
+							tpisg012.cprj,
+							tcmcs052.dsca,
+							tpisg012.vers,
+							tpisg012.elem,
+							tppdm090.desc,
+							sprintf$("%u(%02d/%02m/%04Y) %U(%02:%02m:%02s)",tpisg011.apdt,tpisg011.apdt),
+							tpisg012.tfcy,
+							tpisg012.tfcs,
+							tpisg012.tfwy,
+							tpisg012.tfch,
+							tpisg012.ttbt,
+							tpisg011.aref,
+							"",
+							get.reason.desc(tpisg011.acti,tpisg012.reas),
+							0.0,
+							tpisg012.ttch									)
+				endif
+			endif
+		endselect	
+	endselect
+	
+	select	tpisg112.*,tcemm030.dsca,tcmcs052.dsca,tppdm090.desc,tppdm600.ncmp
+	from	tpisg112,tcemm030,tcmcs052,tppdm090,tppdm600
+	where	tpisg112._index1 inrange {:cprj.f,:vers.f} and {:cprj.t,:vers.t}
+	and	tpisg112.date between :apdt.f and :apdt.t
+	and	tpisg112.amnt > 0.0
+	and	tpisg112.cprj refers to tcmcs052
+	and	tpisg112.elem refers to tppdm090
+	and	tppdm600.cprj refers to tpisg112.cprj
+	and 	tcemm030.fcmp refers to tppdm600.ncmp
+	selectdo
+		get.agenda.ref.and.date.and.reason.desc(tpisg112.cprj,tpisg112.vers,tpisg112.elem,aref,adte,rsnd)
+		if adte <> 0 then
+			write.detail(	tcemm030.dsca,
+					tpisg112.cprj,
+					tcmcs052.dsca,
+					tpisg112.vers,
+					tpisg112.elem,
+					tppdm090.desc,
+					sprintf$("%u(%02d/%02m/%04Y) %U(%02:%02m:%02s)",tpisg112.date,tpisg112.date),
+					0.0,
+					0.0,
+					0.0,
+					0.0,
+					0.0,
+					aref,
+					sprintf$("%D(%02d/%02m/%04Y)",adte),
+					rsnd,                                                                      
+					tpisg112.amnt,
+					0.0										)
+		else
+			write.detail(	tcemm030.dsca,
+					tpisg112.cprj,
+					tcmcs052.dsca,
+					tpisg112.vers,
+					tpisg112.elem,
+					tppdm090.desc,
+					sprintf$("%u(%02d/%02m/%04Y) %U(%02:%02m:%02s)",tpisg112.date,tpisg112.date),
+					0.0,
+					0.0,
+					0.0,
+					0.0,
+					0.0,
+					aref,
+					"",
+					rsnd,
+					tpisg112.amnt,
+					0.0										)
+		endif
+	endselect
+}
+
+function create.file()
+{
+	file.name.server = creat.tmp.file$(bse.tmp.dir$())
+	file.name.server = file.name.server & ".xls"
+	file.name.client = "D:\report.xls"
+}
+
+function write.header()
+{
+	line = concat$(	"	",
+			"Division",
+			"Project Code",
+			"Project Name",
+			"Version",
+			"Element Code",
+			"Element Name",
+			"Approval Date",
+			"Utilization from Contingency",
+			"Utilization from Contingency-S",
+			"Utilization from Warranty",
+			"Utilization from CTOH",
+			"Total Amount Utilized",
+			"Agenda Ref No",
+			"Agenda Ref Date",
+			"Reason",
+			"Transferred to Contingency-S",
+			"Transferred to CTOH"		)
+			
+	ret = seq.puts(line,fp)
+}		
+
+function write.detail(	domain	tcdsca		i.divd,
+			domain	tccprj		i.cprj,
+			domain	tcdsca		i.prjd,
+			domain	tcorno		i.vers,
+			domain	tppdm.cspa	i.cspa,
+			domain	tppdm.dscl	i.spad,
+			domain	tcmcs.str10	i.apdt,
+			domain	tcamnt		i.tfcy,
+			domain	tcamnt		i.tfcs,
+			domain	tcamnt		i.tfwy,
+			domain	tcamnt		i.tfch,
+			domain	tcamnt		i.ttbt,
+			domain	tcmcs.str50	i.aref,
+			domain	tcmcs.str10	i.adte,
+			domain	tcdesc		i.rsnd,
+			domain	tcamnt		i.ttcs,
+			domain	tcamnt		i.ttct	)
+			
+{
+	line = concat$(	"	",
+			trim$(i.divd),
+			trim$(i.cprj),
+			trim$(i.prjd),
+			trim$(i.vers),
+			trim$(i.cspa),
+			trim$(i.spad),
+			str$(i.apdt),
+			str$(i.tfcy),
+			str$(i.tfcs),
+			str$(i.tfwy),
+			str$(i.tfch),
+			str$(i.ttbt),
+			trim$(i.aref),
+			str$(i.adte),
+			trim$(i.rsnd),
+			str$(i.ttcs),
+			str$(i.ttct)	)
+			
+	ret = seq.puts(line,fp)
+}	
+
+function domain	tcdesc get.reason.desc(	domain	tpisg.sanction	i.acti,
+					domain	tcccty		i.reas	)
+
+{
+	select	tpisg003.dsca
+	from	tpisg003
+	where	tpisg003._index1 = {:i.acti,:i.reas}
+	selectdo
+	selectempty
+		tpisg003.dsca = ""
+	endselect
+	
+	return(tpisg003.dsca)
+}
+
+function double	get.ttcs(	domain	tccprj		i.cprj,
+				domain	tppdm.cspa	i.elem,
+				domain	tcorno		i.vers	)
+{
+	double	ttcs.amnt
+
+	select	sum(tpisg112.amnt):ttcs.amnt
+	from	tpisg112
+	where	tpisg112._index1 = {:i.cprj,:i.vers,:i.elem}
+	selectdo
+	selectempty
+		ttcs.amnt = 0
+	endselect
+	
+	return(ttcs.amnt)
+}
+
+function get.agenda.ref.and.date.and.reason.desc(		domain	tccprj 		i.cprj,
+								domain	tcorno 		i.vers,
+								domain	tppdm.cspa	i.cspa,
+							ref	domain	tcmcs.str50	o.aref,	
+							ref	domain	tidate		o.adte,
+							ref	domain	tcdesc		o.dsca	)
+{
+	select	tpisg007.acti,tpisg007.aref,tpisg007.adte
+	from	tpisg007
+	where	tpisg007._index1 = {:i.cprj,:i.vers}
+	selectdo
+		o.aref = tpisg007.aref
+		o.adte = tpisg007.adte
+		
+		select 	tpisg008.reas
+		from	tpisg008
+		where	tpisg008._index1 = {:i.cprj,:i.vers,:i.cspa}
+		selectdo
+			select	tpisg003.dsca
+			from	tpisg003
+			where	tpisg003._index1 = {:tpisg007.acti,:tpisg008.reas}
+			selectdo
+				o.dsca = tpisg003.dsca
+			selectempty
+				o.dsca = ""
+			endselect
+		selectempty
+			o.dsca = ""
+		endselect
+	selectempty
+		select 	tpisg011.acti,tpisg011.aref,tpisg011.adte
+		from	tpisg011
+		where	tpisg011._index1 = {:i.cprj,:i.vers}
+		selectdo
+			o.aref = tpisg011.aref
+			o.adte = tpisg011.adte
+			
+			select 	tpisg012.reas
+			from	tpisg012
+			where	tpisg012._index1 = {:i.cprj,:i.vers,:i.cspa}
+			selectdo
+				select	tpisg003.dsca
+				from	tpisg003
+				where	tpisg003._index1 = {:tpisg011.acti,:tpisg012.reas}
+				selectdo
+					o.dsca = tpisg003.dsca
+				selectempty
+					o.dsca = ""
+				endselect
+			selectempty
+				o.dsca = ""
+			endselect
+		selectempty
+			o.aref = ""
+			o.adte = 0
+			o.dsca = ""
+		endselect
+	endselect
+}
