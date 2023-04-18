@@ -1,0 +1,513 @@
+|******************************************************************************
+|* tdisg440101000   VRC B61U a7 live
+|* Print Purchase Order Lines
+|* tools1
+|* 14-03-21 [12:06]
+|******************************************************************************
+|* ID ISGEC001015, Kuldeep Sharma, 2014-09-05
+|*    Bypass Audit Report if PO Value is <= 200000
+|*    Remove Default value in case Payment Line is not linked
+|*	againt document
+|*	Add no of days on Payment Terms
+|*
+|* ISGEC001107, IT0205, Arjit Gupta, VRC B61U a7 isg, Dt. 16-10-2014
+|* Get LD date of PO Line of last seqn
+
+|*IDENT ISGEC015015, IT0289, Shilpa Janardanan, VRC B61U a7 isg, Dt. 29-05-2015
+|* Approval Quantity to be changed to 5 lakh from 2 lakh
+|*
+|* ISGEC002040, Manish Manchanda 2016-04-08
+|* Order amount converted for the audit layout 
+|****************************** declaration section ***************************
+
+declaration:
+	table	ttcisg001
+	table	ttdisg001
+	table	ttpisg005
+	table	ttdpur401
+	table	ttcibd001
+	table	ttdpur402
+	table	ttdpur201
+	table	tttaad200
+	table	ttdmsl500
+	extern	domain	tcpono	ann.page
+	extern	domain	tcpono	doc.line
+	extern	domain	tcitem	prv.item
+	extern	domain	tcwght	unt.wght
+	boolean print.line.header,print.document.header,print.sample.header,
+		print.document.footer,print.sample.footer,print.audit.header
+	long hold.key,next.key,printed.record,dupl.record
+	extern	domain	tcitem	hold.item
+	extern	domain	tcdsca	hold.dsca
+	extern	domain	tcpono	k.resn
+	extern	domain	tcdate	k.date
+	extern	domain	tcname		k.name
+	extern	domain	tcmcs.str30	k.refb
+	extern	domain	tfgld.user	k.apby
+	
+							|#ISGEC01034.sn
+	extern	domain	tcmcs.str100	refe.txt
+	extern	domain	tcmcs.str30	document.label,refe.label
+	extern	domain	tcmcs.str30	docu.array(999),refe.array(999)
+	extern	domain	tcmcs.str30	o.refe,o.docu
+		long 	i,j,k
+		string var.desc1(100),var.desc2(100),var.desc3(100)
+							|#ISGEC01034.en
+					
+	
+before.program:
+	print.line.header = true
+	print.document.header = true
+	print.sample.header = true
+	print.document.footer = true
+	print.sample.footer = true
+	print.audit.header = true
+							|#ISGEC01034.sn
+	refe.txt = "This Purchase Order is being sent along with following documents:"
+	document.label = "Document"
+	refe.label = "Reference Number"
+	i = 0
+	j = 0
+	k = 0
+	
+	for i = 1 to 50
+		docu.array(1,i) = ""
+		refe.array(1,i) = ""
+	endfor
+	i = 0
+							|#ISGEC01034.en
+	
+after.line.indc.10:
+before.layout:
+	hold.key = 0
+						|#ISGEC001015.sn
+| 	if tdpur400.oamt <= 200000 then		|#ISGEC015015.o
+| 	if tdpur400.oamt <= 500000 then	|#ISGEC015015.n			|#ISGEC002040.o
+	if (tdpur400.oamt * tdpur400.ratp(1)) <= 500000 then	|#ISGEC002040.n
+		lattr.print = false
+	endif
+						|#ISGEC001015.en
+						
+						
+						
+						
+after.line.indc.20:
+before.layout:
+						|#ISGEC001015.sn
+	| if tdpur400.oamt <= 200000 then		|#ISGEC015015.o
+| 	if tdpur400.oamt <= 500000 then	|#ISGEC015015.n		|#ISGEC002040.o
+	if (tdpur400.oamt * tdpur400.ratp(1)) <= 500000 then	|#ISGEC002040.n
+		lattr.print = false
+	endif
+						|#ISGEC001015.en
+	select tdpur401.item:hold.item,tcibd001.dsca:hold.dsca,
+		tdpur401.pono:hold.key
+	from tdpur401,tcibd001
+	where tdpur401._index1 = {:tdpur400.orno}
+	and	tdpur401.pono > :hold.key
+	and	tdpur401.item refers to tcibd001 Unref Clear
+	as set with 1 rows
+	selectdo
+	selectempty
+		lattr.print = false
+	endselect
+| 	message("Hello Layout")
+after.layout:
+	layout.again()
+after.line.indc.30:
+before.layout:
+						|#ISGEC001015.sn
+	|if tdpur400.oamt <= 200000 then		|#ISGEC015015.o
+| 	if tdpur400.oamt <= 500000 then	|#ISGEC015015.n			|#ISGEC002040.o
+	if (tdpur400.oamt * tdpur400.ratp(1)) <= 500000 then	|#ISGEC002040.n
+		lattr.print = false
+	endif
+						|#ISGEC001015.en
+	hold.key = 0
+after.line.indc.40:
+before.layout:
+						|#ISGEC001015.sn
+| 	if tdpur400.oamt <= 200000 then		|#ISGEC015015.o
+| 	if tdpur400.oamt <= 500000 then	|#ISGEC015015.n				|#ISGEC002040.o
+	if (tdpur400.oamt * tdpur400.ratp(1)) <= 500000 then	|#ISGEC002040.n
+		lattr.print = false
+	endif
+						|#ISGEC001015.en
+	select 	tdpur402.pono:hold.key,tdpur201.dldt,
+		tdpur201.rqno, tdpur201.pono			|#Atul.15.11.2018.n
+	from 	tdpur402,tdpur201
+	where 	tdpur402._index1 = {:tdpur400.orno}
+	and	tdpur402.pono > :hold.key
+	and	tdpur402.cmbe refers to tdpur201
+	as set with 1 rows
+	selectdo
+		tdpur401.ddta = get.last.ld.date(hold.key)		|#ISGEC001107.n
+	selectempty
+		lattr.print = false
+	endselect
+after.layout:
+	layout.again()
+after.line.indc.45:
+before.layout:
+						|#ISGEC001015.sn
+	| 	if tdpur400.oamt <= 200000 then		|#ISGEC015015.o
+| 	if tdpur400.oamt <= 500000 then	|#ISGEC015015.n				|#ISGEC002040.o
+	if (tdpur400.oamt * tdpur400.ratp(1)) <= 500000 then	|#ISGEC002040.n
+		lattr.print = false
+	endif
+						|#ISGEC001015.en
+	
+after.line.indc.50:
+before.layout:
+	hold.key = -1
+						|#ISGEC001015.sn
+	| 	if tdpur400.oamt <= 200000 then		|#ISGEC015015.o
+| 	if tdpur400.oamt <= 500000 then	|#ISGEC015015.n			|#ISGEC002040.o
+	if (tdpur400.oamt * tdpur400.ratp(1)) <= 500000 then	|#ISGEC002040.n
+		lattr.print = false
+	endif
+						|#ISGEC001015.en
+after.line.indc.51:
+before.layout:
+						|#ISGEC001015.sn
+	| 	if tdpur400.oamt <= 200000 then		|#ISGEC015015.o
+| 	if tdpur400.oamt <= 500000 then	|#ISGEC015015.n			|#ISGEC002040.o
+	if (tdpur400.oamt * tdpur400.ratp(1)) <= 500000 then	|#ISGEC002040.n
+		lattr.print = false
+	endif
+						|#ISGEC001015.en
+	po.val = 0
+	
+	select 	tdmsl400.vrsn:k.resn,tdmsl400.apdt:k.date, tdmsl400.apby:k.apby
+	from 	tdmsl400
+	where 	tdmsl400._index1 = {:tdpur400.orno}
+	and 	tdmsl400.vrsn > :hold.key
+	and 	tdmsl400.vrsn < :tdmsl400.vrsn
+	as set with 1 rows
+	selectdo
+		hold.key  = k.resn
+		select	ttaad200.name:k.name
+		from	ttaad200
+		where	ttaad200._index1 = {:k.apby}
+		and	ttaad200._compnr = 000
+		selectdo
+		selectempty
+			k.name = ""
+		endselect
+		
+| 		select	tdmsl500.refb:k.refb
+		select	tdmsl500.reas,
+			tdmsl500.oamt:po.val,
+			tdisg400.desc:k.refb
+		from	tdmsl500, tdisg400
+		where	tdmsl500._index1 = {:tdpur400.orno, :k.resn}
+		and	tdmsl500.reas refers to tdisg400 UNREF CLEAR
+		selectdo
+		selectempty
+			k.refb = ""
+			po.val = 0
+		endselect
+	selectempty
+		lattr.print = false
+	endselect
+after.layout:
+	layout.again()
+after.line.indc.52:
+before.layout:
+						|#ISGEC001015.sn
+	| 	if tdpur400.oamt <= 200000 then		|#ISGEC015015.o
+| 	if tdpur400.oamt <= 500000 then	|#ISGEC015015.n			|#ISGEC002040.o
+	if (tdpur400.oamt * tdpur400.ratp(1)) <= 500000 then	|#ISGEC002040.n
+		lattr.print = false
+	endif
+						|#ISGEC001015.en
+	
+after.line.indc.53:
+before.layout:
+	if (tdpur400.oamt * tdpur400.ratp(1)) <= 500000 then	
+		lattr.print = false
+	endif
+
+	
+after.line.indc.70:
+before.layout:
+| 	if order.accp.print = tcyesno.no and  tdpur400.oamt > 200000 then		|#ISGEC015015.o
+| 	if order.accp.print = tcyesno.no and  tdpur400.oamt > 500000 then		|#ISGEC015015.n		|#ISGEC002040.o
+	if order.accp.print = tcyesno.no and  (tdpur400.oamt * tdpur400.ratp(1)) > 500000 then		|#ISGEC002040.n
+		page()
+	endif
+after.line.indc.90:
+before.layout:
+	print.line.header = false
+after.layout:
+	prv.item = ""
+	ann.page = 0
+	doc.line = 0
+after.line.indc.100:
+before.layout:
+	print.document.header = false
+	lattr.print = false
+	ann.page = 0
+	print.document.footer = false
+	
+after.line.indc.110:
+before.layout:
+	print.sample.header = false
+	lattr.print = false
+	ann.page = 0
+	print.sample.footer = false
+
+before.line.indc.1:
+before.layout:
+	if not print.line.header then
+		lattr.print = false
+	endif
+
+before.line.indc.5:
+before.layout:
+	if not print.document.header then
+		lattr.print = false
+	else
+		ann.page = ann.page + 1
+	endif
+before.line.indc.10:
+before.layout:
+	if not print.sample.header then
+		lattr.print = false
+	else
+		ann.page = ann.page + 1
+	endif
+
+before.tdpur401.pono.10:
+before.layout:
+	if not print.document.header then
+		lattr.print = false
+	endif
+before.tdpur401.pono.20:
+before.layout:
+	if not print.sample.header then
+		lattr.print = false
+	endif
+detail.10:
+before.layout:
+	if prv.item <> tdisg002.item then
+		doc.line = doc.line + 1
+		prv.item = tdisg002.item
+	endif
+	if tdisg002.qnty > 0 then
+		unt.wght = tdisg002.wght / tdisg002.qnty
+	endif
+
+detail.11:										|#Anadi.sn 11-07-2018
+before.layout:
+	var.desc1 = trim$(tdisg002.desc(31;30))
+	
+	if not isspace(var.desc1) then
+		lattr.print =true
+	else
+		lattr.print = false
+	endif
+
+after.layout:
+	var.desc1 = ""
+	
+detail.12:
+before.layout:
+	var.desc2 = trim$(tdisg002.desc(61;30))
+	if not isspace(var.desc2) then
+		lattr.print =true
+	else
+		lattr.print = false
+	endif
+after.layout:
+	var.desc2 = ""
+
+detail.13:
+before.layout:
+	var.desc3 = trim$(tdisg002.desc(91;9))
+	if not isspace(var.desc3) then
+		lattr.print =true
+	else
+		lattr.print = false										|#Anadi.en 11-07-2018
+	endif
+after.layout:
+	var.desc3 = ""
+
+after.tdpur401.pono.10:
+after.layout:
+	doc.line = 0
+	prv.item = ""
+	
+after.tdpur400.orno.50:
+before.layout:
+	hold.key = 0
+	next.key = 0
+	printed.record = 0
+	read.tcisg001.record(hold.key,tdpur400.orno,tdmsl400.vrsn)
+	
+after.tdpur400.orno.55:
+after.layout:
+	read.tcisg001.record(hold.key,tdpur400.orno,tdmsl400.vrsn)
+	if next.key = 0 and printed.record <> 0 then
+		|*** read again if no document record found
+		read.tcisg001.record(hold.key,tdpur400.orno,tdmsl400.vrsn)
+	endif	
+	if hold.key > 0 then
+		layout.again()
+	endif
+after.tdpur400.orno.60:
+before.layout:
+	hold.key = 0
+	read.tdisg001.record(hold.key,tdpur400.orno,tdmsl400.vrsn)
+after.tdpur400.orno.65:
+after.layout:
+	read.tdisg001.record(hold.key,tdpur400.orno,tdmsl400.vrsn)
+	if hold.key > 0 then
+		layout.again()
+	endif
+footer.10:
+before.layout:
+	if print.document.footer = false then
+		lattr.print = false
+	endif
+footer.20:
+before.layout:
+	if print.sample.footer = false then
+		lattr.print = false
+	endif
+						|#ISGEC01034.sn
+after.tdpur400.orno.82:
+before.layout:
+	
+	
+	if isspace(refe.array(1,1)) then
+		select	tdisg869.orno,
+			tdisg869.docu,
+			tdisg869.refe,
+			tdisg869.sele
+		from	tdisg869
+		where	tdisg869._index1 = {:tdpur400.orno}
+		and	tdisg869.sele = tcyesno.yes
+		selectdo
+			if not isspace(tdisg869.refe) then
+				i = i + 1
+				refe.array(1,i) = tdisg869.refe
+				docu.array(1,i) = tdisg869.docu
+			endif
+		endselect
+	endif
+	
+	if j = 0 then
+		j = 1
+	endif
+	o.refe = refe.array(1,j)
+	o.docu = docu.array(1,j)
+	
+	if not isspace(o.refe) then
+		lattr.print = true
+	else
+		lattr.print = false
+	endif
+
+after.layout:
+	
+	if j < i then
+		j = j + 1
+		layout.again()
+	endif
+						|#ISGEC01034.en
+	
+	
+functions:
+function read.tcisg001.record(	domain tcpono 	i.pono,
+				domain tcorno	i.orno,
+				domain	tcsern	i.vrsn)
+{
+	if next.key = 0 then
+		select tcisg001.* 
+		from tcisg001
+		where tcisg001._index1 = {:i.orno,:i.vrsn}
+		and tcisg001.srno > :i.pono
+		as set with 1 rows
+		selectdo
+			hold.key = tcisg001.srno
+			next.key = 0
+			printed.record = 0
+			dupl.record = 0
+		selectempty
+			hold.key = 0
+		endselect
+	else
+		dupl.record = 1
+	endif
+	select 	tpisg005.desc,tdisg001.pono from tpisg005,tdisg001
+	where 	tdisg001._index1 = {:i.orno,:i.vrsn}
+	and 	tdisg001.pmtl=:tcisg001.srno 
+	and	tdisg001.pono >:next.key
+	and	tdisg001.docn refers to tpisg005
+	as set with 1 rows
+	selectdo
+		next.key = tdisg001.pono
+		printed.record = 1
+	selectempty
+		tpisg005.desc = ""
+		next.key = 0
+	endselect		
+	
+}
+function read.tdisg001.record(	domain tcpono 	i.pono,
+				domain tcorno	i.orno,
+				domain	tcsern	i.vrsn)
+{
+	select 	tdisg001.*,tpisg005.desc
+	from 	tdisg001,tpisg005
+	where 	tdisg001._index1 = {:i.orno,:i.vrsn}
+	and 	tdisg001.pono > :i.pono
+	and	tdisg001.docn refers to tpisg005
+	as set with 1 rows
+	selectdo
+		select 	tcisg001.* from tcisg001
+		where 	tcisg001._index1 = {:i.orno,:i.vrsn,:tdisg001.pmtl}
+		as set with 1 rows
+		selectdo
+						|#ISGEC001015.sn
+		selectempty
+			tcisg001.catg = ltoe(0)
+						|#ISGEC001015.en
+		endselect
+		hold.key = tdisg001.pono
+	selectempty
+		hold.key = 0
+	endselect
+		
+}
+					|#ISGEC001107.sn
+function domain tcdate get.last.ld.date(domain tcpono	in.pono)
+{
+	domain	tcdate	ot.ddta
+	domain	tcpono	t.seqn
+	
+	ot.ddta = 0
+	if	highest.vrsn	then
+		select	ld_tdpur401.ddta:ot.ddta,
+			ld_tdpur401.sqnb:t.seqn
+		from	tdpur401 ld_tdpur401
+		where	ld_tdpur401._index1 = {:tdpur400.orno, :in.pono}
+		order by ld_tdpur401.sqnb desc
+		as set with 1 rows
+		selectdo
+		endselect
+	else
+		select	ld_tdmsl501.ddta:ot.ddta,
+			ld_tdmsl501.sqnb:t.seqn
+		from	tdmsl501 ld_tdmsl501
+		where	ld_tdmsl501._index1 = {:tdpur400.orno, :tdmsl400.vrsn, :in.pono}
+		order by ld_tdmsl501.sqnb desc
+		as set with 1 rows
+		selectdo
+		endselect	
+	endif
+	
+	return(ot.ddta)	
+}
+						|#ISGEC001107.en

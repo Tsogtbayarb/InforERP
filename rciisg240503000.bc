@@ -1,0 +1,266 @@
+|******************************************************************************
+|* ciisg240501000   VRC B61U a7 live
+|* Print Invoice-Source Relations
+|* baan
+|* 14-07-25 [10:42]
+|******************************************************************************
+|* IDENT PATCH002031 , Mani sharma , Dt. 2015-04-16  VRC B61U a7 isg  
+|* print travel Expense detail 
+|*
+|* ID ISGEC016034, Mudit Sharma, 2016-11-08, VRC B61U a7 isg
+|* Addition of feild for Packing and Forwarding on report.
+|****************************** declaration section ***************************
+
+declaration:
+	table	tciisg000
+	table	ttpisg030
+	table	tcisli206
+	table	ttctax941
+	table	ttcmcs036
+	
+	extern	domain tcmcs.str215 	cash.str
+
+	extern	domain	tcamnt		total.invoice
+	extern	domain	tfgld.amnt	o.excise
+	extern	domain	tfgld.amnt	o.vat
+	extern	domain	tfgld.amnt	o.service
+	extern	domain	tfgld.amnt	o.cst
+	extern	domain	tfgld.amnt	o.freight
+	extern	domain	tfgld.amnt	o.travel
+	extern	domain	tfgld.amnt	o.pnfn					|#ISGEC016034.n
+	extern	domain	tfgld.amnt	o.pnfp 					|#ISGEC016034.n
+	
+	extern	domain	tcmcs.str80		excise.desc	
+	extern	domain	tcdsca		vat.desc	
+	extern	domain	tcdsca		service.desc	
+	extern	domain	tcdsca		cst.desc	
+	extern	domain	tcdsca		freight.desc	
+	extern	domain	tcdsca		travel.desc	
+	extern	domain	tcdsca		packing.desc				|#ISGEC016034.n	
+	
+	extern	domain	tcamnt		gross.amount
+	extern	domain	tcamnt		net.due.amnt
+
+| 	extern	domain	tcmcs.str35	company.name
+	extern	domain tcmcs.str15	pan.no
+	extern	domain tcmcs.str25	cin.no
+		domain	tcncmp		get.ncmp
+	extern	domain	tcmcs.str50	reg.name1, reg.name2
+before.program:
+	total.invoice = 0
+	o.excise = 0
+	o.vat = 0
+	o.service = 0
+	o.cst = 0
+	o.freight = 0
+	o.travel = 0						
+	gross.amount = 0
+	net.due.amnt = 0
+	o.pnfn = 0								|#ISGEC016034.n
+	o.pnfp  = 0								|#ISGEC016034.n
+	packing.desc = ""							|#ISGEC016034.n
+	
+	excise.desc = ""
+	vat.desc = ""
+	service.desc = ""
+	cst.desc = ""
+	freight.desc = ""
+	travel.desc = ""
+	company.name = "Isgec Heavy Engineering Limited"
+	get.ncmp = get.compnr() 
+
+header.10:
+before.layout:
+	on case get.ncmp
+	case 651:
+		pan.no = "AAACI1229C"
+		cin.no = "U52109DL1986PLC025908"
+		reg.name1 = "D-860, NFC"
+		reg.name2 = "New Delhi - 110065 - India"
+		break
+	case 200:
+| 		pan.no = "AAACI5540K"
+		pan.no = "AAACT5540K"				|RAvi.cng
+| 		cin.no = "L23423HR1933 PL000097"
+		cin.no = "L23423HR1933PLC000097"		|RAvi.cng
+		reg.name1 = "Radaur Road."
+		reg.name2 = "Yamunanagar - 135001 (Haryana) India"
+		break
+		
+	case 700:
+		pan.no = "AAECI3897A"
+		cin.no = "U29308HR2017PTC067285"
+		reg.name1 = "Radaur Road."
+		reg.name2 = "Yamunanagar - 135001 (Haryana) India"
+		break
+	endcase
+
+
+detail.1:
+before.layout:
+	if print.gr = 0 and tpisg039.remb = tcyesno.no then
+		total.invoice = total.invoice + tpisg039.rval
+	endif
+	
+	if print.gr = 0 and tpisg039.remb = tcyesno.yes then
+	
+
+		select	ciisg000.*
+		from	ciisg000
+		where	ciisg000._index1 = {0}
+		and	ciisg000._compnr = :cisli235.slcp
+		as set with 1 rows
+		selectdo
+		endselect
+				
+				
+		if 	(ciisg000.vati = tpisg039.rtyp) then
+| 			o.vat = o.vat + tpisg039.rval	|* N.A After GST
+		else if ciisg000.frgt = tpisg039.rtyp then
+			o.freight = o.freight + tpisg039.rval
+		else if ciisg000.trvl = tpisg039.rtyp then
+			o.travel = o.travel + tpisg039.rval 
+											|#ISGEC016034.sn
+		else if (ciisg000.pnfp = tpisg039.rtyp) then
+			o.pnfp = o.pnfp + tpisg039.rval
+		endif
+											|#ISGEC016034.en
+		endif
+		endif
+		endif
+	lattr.print = false	
+	
+	endif
+
+detail.70:
+before.layout:
+	if print.tax = 2 then
+		if o.cisli206.txah = 0 then
+			lattr.print = false
+		else
+			gross.amount = gross.amount + o.cisli206.txah 
+		endif
+		
+	else
+		lattr.print = false
+	endif
+	
+	
+after.invoice.no.65:
+before.layout:
+	select	tcmcs036.indt.l,
+		cisli206.txid,
+		sum(cisli206.txah(1)):o.cisli206.txah
+	from	cisli206,tcmcs036
+	where	cisli206._index1 = {:cisli235.scmp,:cisli205.ityp,:cisli205.idoc,:cisli205.txct}
+	and	cisli206._compnr = :cisli235.scmp
+	and	cisli206.cmbb refers to tcmcs036
+	and	tcmcs036._compnr = :cisli235.scmp
+	group by tcmcs036.indt.l,cisli206.txid
+	order by tcmcs036.indt.l 
+	selectdo
+| 		o.vat = o.cisli206.txah
+		select 	tcmcs037.dsca
+		from	tcmcs037
+		where	tcmcs037._index1 = {:cisli206.txid}
+		as set with 1 rows
+		selectdo
+		endselect
+		
+	
+		print.tax = 2
+		r.70.s.detail()
+		print.tax = -1
+	endselect
+	
+	lattr.print = false
+
+after.invoice.no.20:
+before.layout:
+	if o.excise = 0 then
+		lattr.print = false
+	else
+| 		excise.desc = get.description(ciisg000.exii)
+		excise.desc = "Reimbursement Of Ex.Duty & CESS charged by Manufacturer as per annexure attached"
+	endif
+
+after.invoice.no.30:
+before.layout:
+	if o.vat = 0 then
+		lattr.print = false
+	else
+		vat.desc = get.description(ciisg000.vati)	
+	endif
+
+after.invoice.no.40:
+before.layout:
+	if o.service = 0 then
+		lattr.print = false
+	else
+		service.desc = get.description(ciisg000.srvi)
+	endif
+	
+after.invoice.no.50:
+before.layout:
+	if o.cst = 0 then
+		lattr.print = false
+	else
+		cst.desc = get.description(ciisg000.csti)
+	endif
+
+after.invoice.no.60:
+before.layout:
+	if o.freight = 0 then
+		lattr.print = false
+	else
+		freight.desc = get.description(ciisg000.frgt)
+	endif
+	
+after.invoice.no.62:							|PATCH002031.sn
+before.layout:
+	if o.travel = 0 then
+		lattr.print = false
+	else
+		travel.desc = get.description(ciisg000.trvl)
+	endif	
+									|PATCH002031.en
+
+									|#ISGEC016034.sn
+after.invoice.no.63:
+before.layout:
+	if o.pnfp = 0	then
+		lattr.print = false
+	else
+		packing.desc = get.description(ciisg000.pnfp)
+	endif
+									|#ISGEC016034.en
+
+after.invoice.no.70:
+before.layout:
+| 	gross.amount = gross.amount + total.invoice + o.excise + o.vat + o.service + 	o.cst + o.freight + o.travel 		|#ISGEC016034.o	
+	gross.amount = gross.amount + total.invoice + o.excise + o.vat + o.service + 	o.cst + o.freight + o.travel + o.pnfp	|#ISGEC016034.n	
+
+	
+after.invoice.no.110:
+before.layout:
+	net.due.amnt = gross.amount - abs(ret.tfacr200.amth) - abs(adv.tfacr200.amth)
+	tfgld.dll9999.1.in.words(net.due.amnt,cash.str)
+	
+| after.invoice.no.111:
+| before.layout:
+	
+	
+functions:
+function domain tcdsca	get.description(domain tcccty		i.field)
+{
+	select	tpisg030.dsca
+	from	tpisg030
+	where	tpisg030._index1 = {:i.field}
+	as set with 1 rows
+	selectdo
+	selectempty
+		tpisg030.dsca = ""
+	endselect
+	
+	return(tpisg030.dsca)
+}

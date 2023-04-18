@@ -1,0 +1,136 @@
+|******************************************************************************
+|* tpisg3111m100  0  VRC B61U a7 isg 
+|* Maintain Sanction Amendment
+|* merino1                       
+|* 2019-04-15
+|******************************************************************************
+|* Main table tpisg311 Sanction Amendment Header, Form Type 1
+|******************************************************************************
+|* ID: ISGEC002025, Arun Chauhan, Date- 17-04-2019,
+|* New Development
+|****************************** declaration section ***************************
+declaration:
+
+#include <bic_dam>
+
+  table   ttpisg311 | Sanction Amendment Header
+
+
+	extern domain	tccprj		v.cprj
+	extern domain	tcorno		v.vers
+	extern domain	tcmcs.str13	session.code
+	extern domain	tcmcs.str3	upsc
+	extern domain	tcdsca		cprj.dsca
+
+|****************************** program section ********************************
+before.program:
+	import("prog.name$",session.code)
+	if session.code = "tpisg0111m001" then
+		import("tpisg011.cprj",v.cprj)
+		import("tpisg011.vers",v.vers)
+	endif
+before.display.object:
+	disable.commands(add.set)
+|****************************** Choice section **********************************
+choice.end.program:
+before.choice:
+	refresh.parent(-1)
+	
+choice.abort.program:
+before.choice:
+	refresh.parent(-1)
+	
+choice.update.due.to.client:
+on.choice:
+	domain tcmcs.long	ret_val
+	if total.net.change() then
+		dal.start.business.method("tpisg311","update_in_sanction_control",ret_val)
+		
+		if ret_val >= 0 then
+			message("Updation Successful")
+		else
+			message("Upadtaion Failed")
+		endif
+	endif
+
+|****************************** Field Section **********************************
+field.cprj.dsca:
+before.display:
+	select	tcmcs052.dsca:cprj.dsca
+	from	tcmcs052
+	where	tcmcs052._index1 = {:tpisg311.cprj}
+	selectdo
+	selectempty
+		cprj.dsca = ""
+	endselect
+|****************************** Group Section **********************************
+group.2:
+init.group:   
+	select	tpisg311.cprj,
+		tpisg311.vers
+	from	tpisg311
+	where	tpisg311._index1={:v.cprj,:v.vers}
+	as set with 1 rows
+	selectdo
+		execute(find.data)
+	selectempty
+		tpisg311.cprj = v.cprj
+		tpisg311.vers = v.vers
+	endselect
+	
+	
+|*******************************Function Section ***********************************
+functions:
+function boolean total.net.change()
+{
+	domain	tcamnt		tot.valu,incr.valu,decr.valu
+	tot.valu = 0.00
+	incr.valu = 0.00
+	decr.valu = 0.00
+
+	increase_decrease_tot_value(
+					tpisg311.cprj,
+					tpisg311.vers,
+					incr.valu,
+					decr.valu
+					)
+					
+	tot.valu = (incr.valu - decr.valu) 
+	
+	if tpisg311.netc <> tot.valu then
+		message("Total Change in Elements is not equal to Net Change in Project")
+		return(false)
+	endif
+	return(true)
+	
+}
+
+function increase_decrease_tot_value(
+			domain	tccprj		i.cprj,
+			domain	tcorno		i.vers,
+		ref	domain	tcamnt		inc.valu,	
+		ref	domain	tcamnt		dec.valu
+			)
+{
+	select	sum(a_tpisg312.valu):inc.valu
+	from	tpisg312 	a_tpisg312
+	where	a_tpisg312._index1= {:i.cprj,:i.vers}
+	and	a_tpisg312.ctyp = tpchng.type.increase	
+	selectdo
+	selectempty
+		inc.valu = 0.00
+	endselect
+	
+	select	sum(b_tpisg312.valu):dec.valu
+	from	tpisg312 	b_tpisg312
+	where	b_tpisg312._index1= {:i.cprj,:i.vers}
+	and	b_tpisg312.ctyp = tpchng.type.decrease	
+	selectdo
+	selectempty
+		dec.valu = 0.00
+	endselect
+	
+	
+}
+|*******************************End Of Code ****************************************
+

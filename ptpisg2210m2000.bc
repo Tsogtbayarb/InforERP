@@ -1,0 +1,359 @@
+|******************************************************************************
+|* tpisg2210m000  0  VRC B61U a7 isg 
+|* Upload Product Wise Activity Relationship
+|* merino1                       
+|* 2018-02-14
+|******************************************************************************
+|* Main table tpisg210 Product Wise Activity Relationship, Form Type 4
+|******************************************************************************
+|* ID: ISG01015, Gokul Chaurasia, 14-02-2018, VRC B61U a7 isg
+|* New Devlopment
+|****************************** declaration section ***************************
+declaration:
+
+#pragma used dll ottdllbw
+
+	table	ttpisg210 | Product Wise Activity Relationship
+	table	ttpisg200 | 
+
+	|--------------------- Form Variables ----------------------------------
+	
+	extern	domain	tcorno		f.cprd		fixed
+	extern	domain	tcdsca		cprd.desc	fixed
+	extern	domain	tcmcs.str100m	file.path
+	
+	|--------------------- File Upload Variables --------------------------
+	
+	string	upload.file(100), err.log(100), line(1000), file.format(200)
+	string	file.name(200), line1(1000), msg.errs(100)
+	long	ret_val,ret_val1,file_pntr,file_pntr1,tot.record,err.flag, ActivityCount
+	
+	|---------------------- Script Variables -------------------------------
+	
+	domain	tcmcs.long	id_data
+	domain	tcmcs.str100m	name_data
+	|domain	tcmcs.str256m	pred_data
+	domain	tcmcs.long	lead_data
+	domain	tcmcs.str30	cact_data
+	domain	tcmcs.str30	rltp_data
+	domain	tfgld.sess	im.sess
+	domain	tcorno		im.cprd
+	string pred_data(1000)
+	
+
+|****************************** program section ********************************
+
+before.program:
+	handle.session.interface()
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+	get.screen.defaults()
+
+|***************************** field section ***********************************
+
+field.f.cprd:
+check.input:
+	if not check.product.type(f.cprd)	then
+		message("Please Select Valid Product Type")
+		set.input.error("",e)
+	endif
+
+after.field:
+	select	dmisg145.name:cprd.desc
+	from	dmisg145
+	where	dmisg145._index1 = {:f.cprd}
+	selectdo
+	selectempty
+		cprd.desc = ""
+	endselect
+
+|********************************** choice section *********************************
+
+choice.browse_file:
+on.choice:
+	mess("tigenstring", 0, "Select The File . . .")
+	if seq.open.dialog.local(false,
+				"",
+				"",
+				"Text Files(*.csv)|*.csv|All File(*.*)|*.*",
+				file.path) > 0 then
+		mess("tigenstring", 0, "Success . . .")
+	else
+		mess("tigenstring", 0, "Cancelled . . .")
+	endif
+	if isspace(file.path) then
+		mess("tigenstring", 1, "Please Specify a File")
+		choice.again()
+	else
+		display("file.path")
+	endif
+
+choice.upload_file:
+before.choice:
+	check.all.input()
+	
+	if isspace(file.path)	then
+		mess("tigenstring", 1, "Please Specify a File")
+		choice.again()
+	endif
+										|25.04.19.Adarsh.so
+| 	if ask.enum("tpisg2200m2001",tcyesno.no) = tcyesno.yes	then
+| 		select	tpisg210.*
+| 		from	tpisg210	for update
+| 		where	tpisg210._index1 = {:f.cprd}
+| 		selectdo
+| 			db.delete(ttpisg210,db.retry,e)
+| 			commit.transaction()
+| 		endselect
+| 	endif
+										|25.04.19.Adarsh.eo
+										
+on.choice:
+	upload.product.wise.activity.relationship()
+
+
+|******************************* function section ************************
+
+functions:
+
+function handle.session.interface()
+{
+	im.sess = ""
+	im.cprd = ""
+	import("prog.name$",im.sess)
+	
+	if trim$(im.sess) = "tpisg2110m000"	then
+		import("tpisg210.cprd",im.cprd)
+	endif
+}
+
+function boolean check.product.type(
+		domain	tcorno		i.cprd)
+{
+	select	dmisg145.prod
+	from	dmisg145
+	where	dmisg145._index1 = {:i.cprd}
+	selectdo
+	selectempty
+		return(false)
+	endselect
+	
+	return(true)
+}
+
+function upload.product.wise.activity.relationship()
+{	
+	err.flag = 0
+	
+	upload.file = bse.dir$()&"/"& strip$(str$(utc.num()))&".csv"
+	
+	ret_val = client2server(file.path,upload.file,true)
+	
+	if not ret_val then
+		file_pntr  = seq.open(upload.file,"r")
+		if file_pntr >= 1 then
+			
+			err.log = bse.dir$()  &"/" &
+				strip$(str$(utc.num())) & ".txt"
+			file.name = "c:\temp\" & str$(utc.num()) & ".txt"
+			file_pntr1 = seq.open(err.log, "w+")
+			
+			seq.puts("Errors on the Records while uploading...",
+				file_pntr1)
+			seq.puts(" ", file_pntr1)
+			
+			if file_pntr1 >= 1 then
+				read.file.data()
+				seq.close(file_pntr)
+			endif
+			
+			seq.close(file_pntr1)
+			if err.flag = 1	then
+				ret_val1 = server2client(err.log,file.name,1)
+				ret_val1 = app_start(file.name,"c:","","","")
+				file.rm(err.log)
+			endif
+		endif
+	endif
+}
+
+function read.file.data()
+{
+	tot.record = 0
+
+	while (not seq.eof(file_pntr))
+		ret_val1 = seq.gets(line,1500,file_pntr)
+		if ret_val1 = 0 then
+			initialize()		  |1 |2 |3 |4 |5
+			ret_val1 = string.scan(line,"%d,%s,%s,%s,%s,%d",
+						id_data,	|1
+						name_data,	|2
+						cact_data,	|3
+						pred_data,	|4
+						rltp_data,	|5
+						lead_data)	|6
+			if ret_val1 > 0 then
+				if not check.all.record() then
+					if  not insert.all.activity() then
+						tot.record = tot.record + 1
+						commit.transaction()
+						initialize()
+					else
+						message("Error in ID %d Product type ", id_data)
+						abort.transaction()
+					endif
+				else
+					print.err.log()
+				endif
+			endif	
+		endif
+	endwhile
+	
+	message("%d Records Processed....", tot.record)
+}
+
+function initialize()
+{
+	id_data	  = 0
+	name_data = ""
+	pred_data = ""
+	rltp_data = ""
+	lead_data = 0
+	cact_data = ""
+}
+
+function long insert.all.activity()
+{
+	domain	tcmcs.str30	i.pred
+	domain	tcmcs.str256m	o.pred
+	domain	tppss.rsty	i.rltp
+	long			char.len,i.val,tot.cont
+	long			i.loop,pos1
+	|string			array.parc(30,25)
+	string			array.parc(30,100)
+	
+	if not isspace(pred_data)	then
+		i.val = 1
+		i.loop = 1
+		tot.cont = 0
+		i.pred = ""
+		char.len = len(trim$(pred_data))
+		
+		for i.loop = 1 to char.len
+			o.pred = pred_data(i.val;char.len)
+			pos1 = pos(o.pred,"|")
+			
+			if pos1 > 0	then
+				tot.cont = tot.cont + 1
+				array.parc(1,tot.cont) = o.pred(1;pos1-1)
+				i.val = i.val + pos1
+			else
+				tot.cont = tot.cont + 1
+				array.parc(1,tot.cont) = o.pred(1;char.len)
+				break
+			endif
+		endfor
+	else
+		array.parc(1,1) = ""
+		tot.cont = 1
+	endif
+
+	i.loop = 1
+	
+	on case trim$(toupper$(rltp_data))
+	case "FS" :
+		i.rltp = tppss.rsty.fist
+		break
+	case "SF" :
+		i.rltp = tppss.rsty.stfi
+		break
+	case "SS" :
+		i.rltp = tppss.rsty.stst
+		break
+	case "FF" :
+		i.rltp = tppss.rsty.fifi
+		break
+	default :
+		i.rltp = empty
+	endcase
+	|message("Processing activity Code " & cact_data)
+	
+	for i.loop = 1 to tot.cont
+		i.pred = array.parc(1,i.loop)
+		
+		|**********modified by Veena on 11/04/2018***************
+		
+		ActivityCount = 0
+		select count(*):ActivityCount from tpisg200 
+		where tpisg200._index1 = {:f.cprd,:i.pred}
+		selectdo
+		endselect
+		
+		if ActivityCount > 0 then
+		
+		|*****************End**********************
+		
+			select	tpisg210.*
+| 			from	tpisg210				|25.04.19.Adarsh.o
+			from	tpisg210	for update		|25.04.19.Adarsh.n
+			where	tpisg210._index1 = {:f.cprd,
+						    :cact_data,
+						    :i.pred}
+			selectdo
+									|25.04.19.Adarsh.sn
+				tpisg210.rltp = i.rltp			
+				tpisg210.lead = lead_data
+				
+				db.update(ttpisg210,DB.RETRY)
+									|25.04.19.Adarsh.en
+			selectempty
+				tpisg210.cprd = f.cprd
+				tpisg210.cact = cact_data
+				tpisg210.pact = i.pred
+				tpisg210.rltp = i.rltp
+				tpisg210.lead = lead_data
+				
+				db.insert(ttpisg210,db.skip.dupl,e)
+			endselect
+		endif|Added by Veena on 11/04/2018
+	endfor
+	return(e)
+}
+
+function long check.all.record()
+{
+	select	tpisg200.cprd
+	from	tpisg200
+	where	tpisg200._index1 = {:f.cprd,
+				    :cact_data}
+	selectdo
+	selectempty
+		msg.errs = sprintf$("Activity %s Not Found against Product %s",
+					cact_data,f.cprd)
+		return(1)
+	endselect
+
+	return(0)
+}
+
+function print.err.log()
+{
+	line1 = concat$(",",
+	sprintf$("%s", id_data),		|ID
+	sprintf$("%s", name_data),		|Name
+	sprintf$("%s", cact_data),		|Activity
+	sprintf$("%s", pred_data),		|Parent Activity
+	sprintf$("%s", rltp_data),		|Relationship
+	sprintf$("%d", lead_data),		|Lead
+	sprintf$("%s", msg.errs))		|Error Message
+	
+	line1 = strip$(shiftl$(line1))
+	seq.puts(line1, file_pntr1)
+	
+	err.flag = 1
+}
+
+|******************************* END *************************************

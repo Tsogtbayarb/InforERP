@@ -1,0 +1,212 @@
+|******************************************************************************
+|* tpisg5100m100  0  VRC B61U a7 isg 
+|* Customer Receipts Forwarded to Accounts
+|* Ravi Kumar                    
+|* 2019-11-06
+|******************************************************************************
+|* Main table tpisg500 Customer Receipt Before Accounting, Form Type 1
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttpisg500 | Customer Receipt Before Accounting
+   table	ttpisg505
+   
+	extern	domain	tcnama	bpid.nama	
+	extern	domain	tcdsca	ccur.dsca, natu.dsca, eunt.dsca
+	extern	string	error.message(100)
+	extern	domain	tcamnt	amnt.cprjwise, amnt.invwise
+
+	#include <bic_dam>
+|****************************** program section ********************************
+before.program:
+	query.extend.where("tpisg500.stat = tpisg.stat.acc.forward or tpisg500.stat = tpisg.stat.acc.freeze")
+	
+before.display.object:
+	if tpisg500.stat = tpisg.stat.acc.freeze then
+		disable.group(3)
+		disable.commands("freeze")
+		disable.commands("return")
+	else
+		enable.commands("forward")
+		enable.commands("return")
+	endif
+
+|****************************** group section **********************************
+
+field.bpid.nama:
+before.display:
+	select	tccom100.nama:bpid.nama
+	from	tccom100
+	where	tccom100._index1 = {:tpisg500.bpid}
+	as set with 1 rows
+	selectdo
+	selectempty
+		bpid.nama = ""
+	endselect
+	
+field.ccur.dsca:
+before.display:
+	select	tcmcs002.dsca:ccur.dsca
+	from	tcmcs002
+	where	tcmcs002._index1 = {:tpisg500.ccur}
+	as set with 1 rows
+	selectdo
+	selectempty
+		ccur.dsca = ""
+	endselect
+	
+field.eunt.dsca:
+before.display:
+	select	tcemm030.dsca:eunt.dsca
+	from	tcemm030
+	where	tcemm030._index1 = {:tpisg500.eunt}
+	as set with 1 rows
+	selectdo
+	selectempty
+		eunt.dsca = ""
+	endselect
+	
+choice.return:
+before.choice:
+	if ask.enum("tpisg5100.0003",tcyesno.yes) = tcyesno.no then
+		choice.again()
+	else
+		if tpisg500.stat = tpisg.stat.acc.freeze then
+			message("Receipt freezed, cannot be returned")
+			choice.again()
+		endif
+	endif
+	
+on.choice:
+	select	tpisg500.stat
+	from	tpisg500 for update
+	where	tpisg500._index1 = {:tpisg500.rcid}
+	as set with 1 rows
+	selectdo
+		if dal.change.object("tpisg500") = 0 then
+			dal.set.field("tpisg500.stat", tpisg.stat.acc.return)
+			if dal.save.object("tpisg500") = 0 then
+				commit.transaction()
+			else
+				abort.transaction()
+				dal.get.error.message(error.message)
+				message(error.message)
+			endif
+		endif
+	endselect
+	
+	create.history()
+	refresh.parent(-1)
+	exit()
+	
+choice.freeze:
+before.choice:
+	if ask.enum("tpisg5100.0002",tcyesno.yes) = tcyesno.no then
+		choice.again()
+	else
+		if tpisg500.ebia = tcyesno.no then
+			message("Entry not yet booked in Accounts , cannot be freezed")
+			choice.again()
+		endif
+		
+		if tpisg500.rtyp = tpisg.rtyp.advance then
+			select	tpisg501.amnt:amnt.cprjwise
+			from	tpisg501
+			where	tpisg501._index1 = {:tpisg500.rcid}
+			as set with 1 rows
+			selectdo
+			selectempty
+				amnt.cprjwise = 0
+			endselect
+			
+			if amnt.cprjwise <> tpisg500.amnt then
+				message("Projectwise allocation not matched with Receipt , freezing not allowed")
+				choice.again()
+			endif
+		endif
+		
+		if tpisg500.rtyp = tpisg.rtyp.running or tpisg500.rtyp = tpisg.rtyp.retention then
+			select	tpisg502.amnt:amnt.invwise
+			from	tpisg502
+			where	tpisg502._index1 = {:tpisg500.rcid}
+			as set with 1 rows
+			selectdo
+			selectempty
+				amnt.invwise = 0 
+			endselect
+			
+			if amnt.invwise <> tpisg500.amnt then
+				message("Invoicewise allocation not matched with Receipt , freezing not allowed")
+				choice.again()
+			endif
+		endif
+		
+		if tpisg500.rtyp = tpisg.rtyp.not then
+			message("Freezing not allowed for Unknown type Receipt")
+			choice.again()
+		endif
+	endif
+	
+on.choice:
+	select	tpisg500.stat
+	from	tpisg500 for update
+	where	tpisg500._index1 = {:tpisg500.rcid}
+	as set with 1 rows
+	selectdo
+		if dal.change.object("tpisg500") = 0 then
+			dal.set.field("tpisg500.stat", tpisg.stat.acc.freeze)
+			if dal.save.object("tpisg500") = 0 then
+				commit.transaction()
+			else
+				abort.transaction()
+				dal.get.error.message(error.message)
+				message(error.message)
+			endif
+		endif
+	endselect
+	
+	create.history()
+	refresh.parent(-1)
+	exit()
+	
+|*******************************************************Functions********************************
+	
+functions:
+function extern create.history()
+{
+	select	tpisg500.*
+	from	tpisg500
+	where	tpisg500._index1 = {:tpisg500.rcid}
+	as set with 1 rows
+	selectdo
+		tpisg505.rcid = tpisg500.rcid
+		tpisg505.bpid = tpisg500.bpid
+		tpisg505.rtyp = tpisg500.rtyp
+		tpisg505.ddte = tpisg500.ddte
+		tpisg505.bank = tpisg500.bank
+		tpisg505.ccur = tpisg500.ccur
+		tpisg505.cheq = tpisg500.cheq
+		tpisg505.eunt = tpisg500.eunt
+		tpisg505.doex = tpisg500.doex
+		tpisg505.pric = tpisg500.pric
+		tpisg505.rtds = tpisg500.rtds
+		tpisg505.gtds = tpisg500.gtds
+		tpisg505.igst = tpisg500.igst
+		tpisg505.cgst = tpisg500.cgst
+		tpisg505.sgst = tpisg500.sgst
+		tpisg505.cess = tpisg500.cess
+		tpisg505.amnt = tpisg500.amnt
+		tpisg505.stat = tpisg500.stat
+		tpisg505.rmks = tpisg500.rmks
+		tpisg505.ebia = tpisg500.ebia
+		tpisg505.amks = tpisg500.amks
+		tpisg505.user = logname$
+		tpisg505.ldte = utc.num()
+		db.insert(ttpisg505, db.retry)
+		commit.transaction()
+	endselect
+}
+	
+	

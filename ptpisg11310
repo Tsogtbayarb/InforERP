@@ -1,0 +1,364 @@
+|******************************************************************************
+|* dmisg1131  0  VRC B61U a7 isg 
+|* Transmittal Creation and Submission for Approval
+|* Installation user             
+|* 2015-01-23
+|******************************************************************************
+|* Main table dmisg131 Transmittal Creation and Submission for Approval, Form Type 1
+|******************************************************************************
+|* ISGEC004004, IT0047, Dharmendra, Dt. 27-01-2015, B61U a7 isg
+|*
+|* ISGEC004020, IT0047, Dharmendra, Dt. 06-10-2015, B61U a7 isg
+|*
+|* ID: ISGEC01176,Bharti Garg, 18-03-2019,B61U a7 isg
+|* Added a duplicate icon in header to duplicate the records.
+|* 
+|****************************** declaration section ***************************
+declaration:
+#include               <bic_cmf>
+#include <bic_dam> 
+	table	tdmisg131 | Transmittal Creation and Submission for Approval
+	table	ttpmsl000
+	table	ttcmcs050
+	table	ttcmcs052	
+	table  	tdmisg132
+	table	ttccom001
+	table	ttcmcs065
+	table	ttcemm030
+	table	tdmisg129
+	table	tbpmdm001
+	table	tdmisg031			|ISGEC01176.n
+
+
+		domain	tcmcs.str2	transmittal.type
+	extern	domain	tcdsca	project.main, project.sub	
+	extern	domain tcdsca	sending
+	extern	domain tcdsca	submission
+	extern	domain	tcdsca	sent
+	extern	domain 	tcpono	tran.print, serial
+	extern	domain	tcnama	transmittal, contact.name, created.by, issued.by, approver.by
+	extern	domain	tclogn	login.user		|#ISGEC004020.sn
+	extern	domain tcemm.grid user.division
+	extern	domain	tcpono	length			|#ISGEC004020.en
+	extern	domain	tcmcs.str100	subject.1, subject.2
+	extern	domain	tcmcs.str100	note.1, note.2, note.3, mail.cc
+	extern	domain	tcdsca	user.dept, appr.dept, cin.no, address.1, address.2, address.3, address.4
+	extern	domain	tcmcs.str20	po.dsca
+	
+
+		
+
+|****************************** program section ********************************
+before.program:
+	read.parameters()
+
+|****************************** choice section **********************************
+choice.process:
+before.choice:
+	check_all_inputs()
+	
+on.choice:
+	submit.transmittal()
+	
+						|#ISGEC004020.sn
+choice.print.data:
+on.choice:
+	if rprt_open() then						
+		tdisgdll831rep_transmittal(dmisg131.tran)
+		rprt_close()
+	else
+		choice.again()
+	endif					|#ISGEC004020.en
+|****************************** field section **********************************
+field.dmisg131.tran:
+before.zoom:
+	tcmcs050.nrgr = tpmsl000.tran
+	
+field.dmisg131.cadr:	
+before.zoom:
+	query.extend.where.in.zoom("dmisg127.otbp = " & quoted.string(dmisg131.bpid))
+	
+field.dmisg131.vadr:
+before.zoom:
+	query.extend.where.in.zoom("dmisg128.ofbp = " & quoted.string(dmisg131.ofbp))
+	
+field.dmisg131.padr:
+before.zoom:
+	query.extend.where.in.zoom("dmisg126.cprj = " & quoted.string(dmisg131.cprj))
+
+field.project.main:
+before.display:
+	select	tcmcs052.dsca
+	from	tcmcs052
+	where	tcmcs052._index1 = {:dmisg131.cprj}
+	selectdo
+		project.main = tcmcs052.dsca
+	selectempty
+		project.main = ""
+	endselect
+
+field.project.sub:
+before.display:
+	select	tcmcs052.dsca
+	from	tcmcs052
+	where	tcmcs052._index1 = {:dmisg131.dprj}
+	selectdo
+		project.sub = tcmcs052.dsca
+	selectempty
+		project.sub = ""
+	endselect
+
+field.tccom001.nama:
+before.display:
+	select	tccom001.nama
+	from	tccom001
+	where	tccom001._index4 = {:dmisg131.logn}
+	selectdo
+	selectempty
+		tccom001.nama = ""
+	endselect
+
+field.dmisg131.tfld:
+before.zoom:
+	query.extend.where.in.zoom("dmisg015._index1 = {" & str$(etol(dmisg131.type)) & "," & quoted.string(dmisg131.dprj) & "}")
+
+|****************************** function section **********************************	
+functions:
+
+function read.parameters()
+{
+	tcmcs.dll0095.read.parm("tpmsl000")
+}
+
+function submit.transmittal()
+{
+	select	dmisg131.*
+	from	dmisg131 for update
+	where	dmisg131._index1 = {:dmisg131.tran}
+	selectdo
+		dmisg131.smdt = utc.num()
+		on case dmisg131.type
+		case ltoe(1):
+			transmittal.type = "TC"
+			break
+		case ltoe(2):
+			transmittal.type = "TI"	
+			break
+		case ltoe(3):
+			transmittal.type = "TS"
+			break
+		case ltoe(4):
+			transmittal.type = "TV"
+			break	
+		endcase	
+		dmisg131.refr = trim$(dmisg131.dprj) & "\" & transmittal.type & "\" & dmisg131.tran
+		dmisg131.stat = dmisg.doc.rec.underapp
+		dmisg131.rekm = ""
+		dmisg131.rejc = tcyesno.no
+		dmisg131.appr = tcyesno.no
+		dmisg131.retn = tcyesno.no	
+		dmisg131.irmk = ""
+		
+		db.update(tdmisg131, db.retry)
+		commit.transaction()
+		
+		login.user = logname$
+		length = len(login.user)
+		login.user = strip$(login.user) & string.set$(" ", 16-length)
+		
+		user.division = get.user.division()
+		if not isspace(user.division) then
+			send.email.alert()
+		endif	
+	endselect	
+	message("Transmittal Submitted Succesfully.")
+
+}
+
+function check_all_inputs()
+{
+	if isspace(dmisg131.subj) then
+		message("Subject can't be Blank")
+		choice.again()
+	endif
+
+	if isspace(dmisg131.issu) then
+		message("Issued via can't be Blank")
+		choice.again()
+	endif
+
+	select	dmisg132.*
+	from	dmisg132
+	where	dmisg132._index1 = {:dmisg131.tran}
+	selectdo
+		if isspace(dmisg132.stid) then
+			message("Send Status can't be Blank")
+			choice.again()
+		endif
+
+		if dmisg132.pono = 0 then
+			message("No. of copies can't be zero")
+			choice.again()
+		endif	
+	selectempty		
+		message("Can not submit without Document.")	|#ISGEC004020.sn
+		choice.again()	
+	endselect	
+	
+}
+
+
+function domain tcemm.grid get.user.division()
+{
+	domain tcemm.grid division
+	
+	division = ""
+	select	tccom001.cwoc
+	from	tccom001
+	where	tccom001._index4 = {:login.user}
+	selectdo
+		if not isspace(tccom001.cwoc) then
+			select	tcmcs065.comp, tcmcs065.ccal
+			from	tcmcs065
+			where	tcmcs065._index1 = {:tccom001.cwoc}
+			selectdo
+				select	tcemm030.eunt
+				from	tcemm030
+				where	tcemm030.fcmp = :tcmcs065.comp
+				and	tcemm030.ccal = :tcmcs065.ccal
+				as set with 1 rows
+				selectdo
+					division = tcemm030.eunt
+				selectempty
+					
+				endselect	
+			endselect
+		else
+	
+		endif
+	endselect
+	return(division)
+
+}
+
+function send.email.alert()
+{
+	string tmp.file(200),line(500)
+	long fp
+	
+	long    message.ID
+        long    to.ID
+	long	cc.ID				|ISGEC01176.n
+        long    attachment.ID
+        long    ret
+	long stat 
+	
+	tmp.file = creat.tmp.file$(bse.tmp.dir$())
+	fp = seq.open(tmp.file,"w+")
+	if fp <=0 then
+		message("Temp file can not be created")
+	endif
+
+	line = ""
+	line = strip$(line) & "Transmittal No. " & dmisg131.tran & " Type " & enum.descr$("dmisg.tran.typ", dmisg131.type)|& chr$(13)&chr$(10)
+	line = strip$(line) & " has been send for Approval." & chr$(13)&chr$(10)
+	seq.write(line,len(line),fp)
+	ret = seq.close(fp)
+
+	select 	bpmdm001.mail,tccom001.nama 
+	from 	tccom001,bpmdm001
+	where 	tccom001._index4 = {:login.user}
+	and	tccom001.emno refers to bpmdm001
+	as set with 1 rows
+	selectdo
+	selectempty
+		bpmdm001.mail = ""
+	endselect
+
+	if isspace(bpmdm001.mail) then
+		message("Email ID for user " & login.user & " Not maintained")
+	endif		
+	
+	|******* Email Header
+        message.ID = cmf.create()
+	line = "Approve " & enum.descr$("dmisg.tran.typ", dmisg131.type) & "Transmittal" & dmisg131.tran & " For" & dmisg131.dprj
+        ret = cmf.setClass(message.ID, "CMF.NOTE.EMAIL")
+        ret = cmf.setSubject(message.ID,line)
+	
+	|******** from ID
+	to.ID = cmf.createRecipient(message.ID, ttcmf.role.from)  
+	ret = cmf.setRecipientName(to.ID,tccom001.nama)
+        ret = cmf.setRecipientAddress(to.ID, bpmdm001.mail)	
+	ret = cmf.setRecipientType(to.ID, "SMTP")
+ 
+	|******** to ID
+	select	dmisg129.*
+	from	dmisg129
+	where	dmisg129._index1 = {:user.division, :dmisg131.dprj, :dmisg131.type}
+	selectdo
+		select 	bpmdm001.mail,tccom001.nama 
+		from 	tccom001,bpmdm001
+		where 	tccom001._index4 = {:dmisg129.logn}
+		and	tccom001.emno refers to bpmdm001
+		and	bpmdm001.mail <> ""
+		selectdo
+			to.ID = cmf.createRecipient(message.ID, ttcmf.role.to)  
+			ret = cmf.setRecipientName(to.ID,tccom001.nama)
+			ret = cmf.setRecipientAddress(to.ID, bpmdm001.mail)	
+			ret = cmf.setRecipientResponsibility(to.ID, "TRUE")		
+			ret = cmf.setRecipientType(to.ID, "SMTP")
+		selectempty
+		endselect
+	endselect
+	
+	|******	to.cc						|ISGEC01176.sn
+	select	dmisg031.emno
+	from	dmisg031
+	where	dmisg031._index1 = {:dmisg131.tran}
+	selectdo
+		select 	bpmdm001.mail,tccom001.nama 
+		from 	tccom001,bpmdm001
+		where 	tccom001._index1 = {:dmisg031.emno}
+		and	tccom001.emno refers to bpmdm001
+		and 	bpmdm001.mail <> ""
+		selectdo
+			cc.ID = cmf.createRecipient(message.ID, ttcmf.role.cc)  
+			ret = cmf.setRecipientName(cc.ID,tccom001.nama)
+			ret = cmf.setRecipientAddress(cc.ID, bpmdm001.mail)	
+			ret = cmf.setRecipientResponsibility(cc.ID, "TRUE")		
+			ret = cmf.setRecipientType(cc.ID, "SMTP")
+		selectempty
+		endselect
+	selectempty
+		dmisg031.emno = ""
+	endselect							|ISGEC01176.en
+	
+	|********* Mail Body
+	attachment.ID = cmf.createAttachment(message.ID)
+	ret = cmf.setAttachmentBody(attachment.ID,ttyeno.yes)
+	ret = cmf.setAttachmentMIME(attachment.ID,"text/plain")                       
+	ret = cmf.setAttachmentFileName(attachment.ID,tmp.file,"abc.txt")
+
+
+	|*********  Send mail
+        if message.ID <>0 then
+                stat = cmf.startService("SMTP",2)
+                if stat <> 0 then
+                        message("Message could not be sent "&
+                                "(Infor ERP Enterprise eMessage Connector"&
+                                " service did not start)")
+		endif
+			
+                stat = cmf.send(message.ID,"SMTP")
+                if stat<>0 then
+                        message("Message could not be sent "& "(Infor ERP Enterprise eMessage Connector "&
+                                "service refused message)")
+                        cmf.stopService("SMTP",2)
+                endif
+                stat = cmf.stopService("SMTP",2)
+        endif	
+}
+
+
+
+								|#ISGEC004020.en

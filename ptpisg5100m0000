@@ -1,0 +1,130 @@
+|******************************************************************************
+|* tpisg5100m000  0  VRC B61U a7 isg 
+|* Customer Receipt before Accounting
+|* Ravi Kumar                    
+|* 2019-11-04
+|******************************************************************************
+|* Main table tpisg500 Customer Receipt Before Accounting, Form Type 1
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttpisg500 | Customer Receipt Before Accounting
+  table	  ttpisg505
+  table	  ttcmcs050
+  table	  ttpmsl000
+
+	extern	domain	tcnama	bpid.nama	
+	extern	domain	tcdsca	ccur.dsca, natu.dsca, eunt.dsca
+	extern	string	error.message(100)
+	
+	#include <bic_dam>
+|****************************** program section *******************************'
+before.program:
+	query.extend.where("tpisg500.stat = tpisg.stat.acc.created or tpisg500.stat = tpisg.stat.acc.return")
+
+|****************************** field section **********************************
+field.tpisg500.rcid:
+selection.filter:
+	tcmcs.dll0095.read.parm("tpmsl000",0)
+	tcmcs050.nrgr = tpmsl000.crng
+
+field.bpid.nama:
+before.display:
+	select	tccom100.nama:bpid.nama
+	from	tccom100
+	where	tccom100._index1 = {:tpisg500.bpid}
+	as set with 1 rows
+	selectdo
+	selectempty
+		bpid.nama = ""
+	endselect
+	
+field.ccur.dsca:
+before.display:
+	select	tcmcs002.dsca:ccur.dsca
+	from	tcmcs002
+	where	tcmcs002._index1 = {:tpisg500.ccur}
+	as set with 1 rows
+	selectdo
+	selectempty
+		ccur.dsca = ""
+	endselect
+	
+field.eunt.dsca:
+before.display:
+	select	tcemm030.dsca:eunt.dsca
+	from	tcemm030
+	where	tcemm030._index1 = {:tpisg500.eunt}
+	as set with 1 rows
+	selectdo
+	selectempty
+		eunt.dsca = ""
+	endselect
+ 	
+choice.forward:
+on.choice:
+	if ask.enum("tpisg5100.0001",tcyesno.yes) = tcyesno.no then
+		choice.again()
+	else
+		select	tpisg500.stat
+		from	tpisg500 for update
+		where	tpisg500._index1 = {:tpisg500.rcid}
+		as set with 1 rows
+		selectdo
+			if dal.change.object("tpisg500") = 0 then
+				dal.set.field("tpisg500.stat", tpisg.stat.acc.forward)
+				if dal.save.object("tpisg500") = 0 then
+					commit.transaction()
+				else
+					dal.get.error.message(error.message)
+					message(error.message)
+					abort.transaction()
+				endif
+			endif
+		endselect
+		
+		create.history()
+		refresh.parent(-1)
+		exit()
+	endif
+	
+	
+|*******************************************************Functions********************************
+	
+functions:
+function extern create.history()
+{
+	select	tpisg500.*
+	from	tpisg500
+	where	tpisg500._index1 = {:tpisg500.rcid}
+	as set with 1 rows
+	selectdo
+		tpisg505.rcid = tpisg500.rcid
+		tpisg505.bpid = tpisg500.bpid
+		tpisg505.rtyp = tpisg500.rtyp
+		tpisg505.ddte = tpisg500.ddte
+		tpisg505.bank = tpisg500.bank
+		tpisg505.ccur = tpisg500.ccur
+		tpisg505.cheq = tpisg500.cheq
+		tpisg505.eunt = tpisg500.eunt
+		tpisg505.doex = tpisg500.doex
+		tpisg505.pric = tpisg500.pric
+		tpisg505.rtds = tpisg500.rtds
+		tpisg505.gtds = tpisg500.gtds
+		tpisg505.igst = tpisg500.igst
+		tpisg505.cgst = tpisg500.cgst
+		tpisg505.sgst = tpisg500.sgst
+		tpisg505.cess = tpisg500.cess
+		tpisg505.amnt = tpisg500.amnt
+		tpisg505.stat = tpisg500.stat
+		tpisg505.rmks = tpisg500.rmks
+		tpisg505.user = logname$
+		tpisg505.ldte = utc.num()
+		db.insert(ttpisg505, db.retry)
+		commit.transaction()
+	endselect
+}
+	
+	

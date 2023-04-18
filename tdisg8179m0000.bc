@@ -1,0 +1,609 @@
+|******************************************************************************
+|* tdisg8171m000  0  VRC B61U a7 isg 
+|* Maintain Free Issue By Mistake
+|* Installation User             
+|* 2015-10-19
+|******************************************************************************
+|* Main table tdisg879 Free Issue by Mistake, Form Type 1
+|******************************************************************************
+|* ID ISGEC002014, Manish Manchanda, 2015-10-19                                                                                
+|*                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttdisg879	|	Free Issue by Mistake
+	table	ttppdm740	|	Project Business Partners
+	table	ttppdm600	|	Project
+	table	ttcemm170	|	Companies
+	table	ttccom100	|	Business Partners
+	table	ttccom000	|	Implemented Software Components (Companies)
+	table	twhisg312	|	Purchase Receipt
+	table	twhinh312	|	Receipt Lines
+	table	ttfisg002	|	Maintain IR Wise GR Details
+	table	ttfacp100	|	Received Purchase Invoice
+	table	ttdisg872	|	Link/DLink - Free Issue by Mistake
+	table	ttdisg831	|	Billing Advice
+	table	ttdisg832	|	Billing Advice Lines
+	table	ttdpur400
+
+
+	domain	tdisg.type	v.type
+	extern	domain	tccprj	cprj.u, cprj.v
+	extern	domain	tccprj	cprj.f, cprj.t
+	domain	tcbool	v.done
+	domain	tccprj	cprj.n, cprj.m
+	extern domain	tcnama		o.otbp.nama
+	#include<bic_dam>
+|****************************** program section ********************************
+before.program:
+	tcmcs.dll0095.read.parm("tccom000")
+	query.extension	=	"tdisg879.cprj inrange '"&"         "&"' and '"&"         "&"'"
+	
+before.display.object:
+	if	isspace(tdisg879.inrq)	or	check.billing.advice()	then
+		enable.fields("tdisg879.inrq", actual.occ)
+	else
+		disable.fields("tdisg879.inrq", actual.occ)
+	endif
+|****************************** choice section *********************************
+choice.abort.program:
+before.choice:
+	delete.data()
+	
+choice.end.program:
+before.choice:
+	delete.data()
+	
+choice.link:
+after.choice:
+	if	v.done	then
+		message("Receipt Line Linked.")
+	endif
+	
+choice.dlink:
+after.choice:
+	if	v.done	then
+		message("Receipt Line Delinked.")
+	endif
+	
+choice.update.db:
+after.choice:
+	select	tdisg879.*
+	from	tdisg879	for	update
+	where	tdisg879._index4	=	{:tdisg879.rcno}
+	selectdo
+		tdisg879.stat	=	get.status(tdisg879.inrq)
+		db.update(ttdisg879,db.retry,e)
+		if	e	then
+			abort.transaction()
+		else
+			commit.transaction()
+		endif
+	endselect
+	refresh.all.occs()
+
+field.o.otbp.nama:
+before.display:
+	o.otbp.nama = ""
+	select 	tccom100.nama:o.otbp.nama
+	from	tccom100
+	where	tccom100._index1 = {:tdpur400.otbp}
+	as set with 1 rows
+	selectdo
+	endselect
+
+field.tdisg879.inrq:
+check.input:
+	select	tdisg831.cprj
+	from	tdisg831
+	where	tdisg831._index1	=	{:tdisg879.inrq}
+	and	tdisg831.cprj		=	:tdisg879.cprj
+	as	set with 1 rows
+	selectdo
+	selectempty
+		message("Billing Advice is linked to different Project.")
+		set.input.error("",e)
+	endselect
+|****************************** function section *******************************
+
+functions:
+
+function	domain	tcbool	check.billing.advice()
+{
+	select	tdisg872.cprj
+	from	tdisg872
+	where	tdisg872._index1	=	{:tdisg879.cprj,:tdisg879.otbp,:tdisg879.orno,:tdisg879.line,:tdisg879.seqn,
+							:tdisg879.rcno,:tdisg879.rcln,:tdisg879.grno,:tdisg879.grdt}
+	selectdo
+		return(false)
+	endselect
+
+	select	whisg312.inrq
+	from	whisg312
+	where	whisg312._index1	=	{:tdisg879.rcno,:tdisg879.rcln}
+	and	whisg312.inrq		<>	""
+	selectdo
+		return(false)
+	endselect
+	
+	return(true)
+
+}
+
+function	extern	generate()
+{
+	if	not	isspace(cprj.u)	and	not	isspace(cprj.v)	then
+		delete.data()
+	endif
+	start.session(MODAL,"tdisg8179m001","tdisg8179m000","")
+	import("cprj.f", cprj.u)
+	import("cprj.t", cprj.v)
+	select	tppdm740.*
+	from	tppdm740
+	where	tppdm740._index1	inrange	{:cprj.u}	and	{:cprj.v}
+	selectdo
+		select	tppdm600.ncmp, tcemm170.lcur
+		from	tppdm600, tcemm170
+		where	tppdm600._index1	=	{:tppdm740.cprj}
+		and	tcemm170._index1	=	{tppdm600.ncmp}
+		and	tcemm170.lcur		=	:tppdm740.ccur
+		selectdo
+			v.type	=	tdisg.type.domestic
+			get.receipt.data()
+		selectempty
+			select	tccom100.cadr, tccom130.ccty
+			from	tccom100, tccom130
+			where	tccom100._index1	=	{:tppdm740.ofbp}
+			and	tccom130._index1	=	{tccom100.cadr}
+			and	tccom130.ccty		=	:tccom000.ccty
+			selectdo
+				v.type	=	tdisg.type.domestic
+				get.receipt.data()
+			selectempty
+				v.type	=	empty
+			endselect
+		endselect
+	endselect
+	partial.update()
+	update.tdisg879()
+	show.data()
+}
+
+function	show.data()
+{
+	query.extension	=	"tdisg879.cprj inrange '"&cprj.u&"' and '"&cprj.v&"'"
+	rebuild.query()
+}
+
+function	get.receipt.data()
+{
+	domain	tfgld.docn	v.psno
+	
+	select	whisg312.rcno, whisg312.rcln, whisg312.inrq,
+		whisg312.orno, whisg312.oset, whisg312.line,
+		whisg312.seqn, whisg312.item, whinh312.psno
+	from	whisg312, whinh312
+	where	whisg312._index2	=	{:tppdm740.cprj}
+	and	whinh312._index1	=	{whisg312.rcno,whisg312.rcln}
+	selectdo
+		
+		v.psno	=	lval(whinh312.psno)
+		select	tfisg002.irno
+		from	tfisg002
+		where	tfisg002._index1	=	{:v.psno}
+		as	set with 1 rows
+		selectdo
+		selectempty
+		endselect
+		
+		select	tfacp100.isup
+		from	tfacp100
+		where	tfacp100._index1	=	{:v.psno}
+		selectdo
+		selectempty
+		endselect
+		
+		select	tdisg831.stat
+		from	tdisg831
+		where	tdisg831._index1	=	{:whisg312.inrq}
+		selectdo
+		selectempty
+			tdisg831.type	=	empty
+			tdisg831.stat	=	empty
+		endselect
+		
+		generate.data()
+	selectempty
+	endselect
+}
+
+function	generate.data()
+{
+	select	a_tdisg879.*
+	from	tdisg879	a_tdisg879
+	where	a_tdisg879._index1	=	{:tppdm740.cprj,:tppdm740.ofbp,:whisg312.orno,:whisg312.line,:whisg312.seqn,
+						:whisg312.rcno,:whisg312.rcln,:tfisg002.grno,:tfisg002.grdt}
+	selectdo
+	selectempty
+		tdisg879.cprj	=	tppdm740.cprj
+		tdisg879.otbp	=	tppdm740.ofbp
+		tdisg879.orno	=	whisg312.orno
+		tdisg879.line	=	whisg312.line
+		tdisg879.seqn	=	whisg312.seqn
+		tdisg879.rcno	=	whisg312.rcno
+		tdisg879.rcln	=	whisg312.rcln
+		tdisg879.oset	=	whisg312.oset
+		tdisg879.irno	=	whinh312.psno
+		tdisg879.isup	=	tfacp100.isup
+		tdisg879.grno	=	tfisg002.grno
+		tdisg879.grdt	=	tfisg002.grdt
+		tdisg879.item	=	whisg312.item
+		tdisg879.inrq	=	whisg312.inrq
+		tdisg879.type	=	v.type
+		tdisg879.stat	=	tdisg831.stat
+		tdisg879.sele	=	tcyesno.no
+		tdisg879.part	=	tcyesno.no
+		db.insert(ttdisg879, db.skip.dupl,e)
+		if	e	then
+			abort.transaction()
+		else
+			commit.transaction()
+		endif
+	endselect
+}
+
+function	partial.update()
+{
+	domain	whinh.shpm	i.rcno
+	domain	tcpono		i.rcln
+	domain	tcorno		i.inrq
+	
+	select	tdisg879.rcno:i.rcno, tdisg879.rcln:i.rcln, tdisg879.inrq:i.inrq
+	from	tdisg879
+	selectdo
+		if	not	isspace(i.inrq)	then
+			select	whisg312.rcno, whisg312.rcln
+			from	whisg312
+			where	whisg312._index1	=	{:i.rcno}
+			and	whisg312.rcln		<>	:i.rcln
+			and	whisg312.inrq		=	""
+			selectdo
+				update.partial()
+			endselect
+		endif
+	endselect
+}
+
+function	update.partial()
+{
+	db.retry.point()
+	select	tdisg879.*
+	from	tdisg879	for	update
+	where	tdisg879._index4	=	{:whisg312.rcno}
+	selectdo
+		tdisg879.part	=	tcyesno.yes
+		db.update(ttdisg879,db.retry,e)
+		if	e	then
+			abort.transaction()
+		else
+			commit.transaction()
+		endif
+	endselect
+}
+
+function	update.tdisg879()
+{
+	db.retry.point()
+	select	tdisg872.*
+	from	tdisg872
+	selectdo
+		select	tdisg879.*
+		from	tdisg879	for	update
+		where	tdisg879._index1	=	{:tdisg872.cprj,:tdisg872.otbp,:tdisg872.orno,:tdisg872.line,:tdisg872.seqn,
+							:tdisg872.rcno,:tdisg872.rcln,:tdisg872.grno,:tdisg872.grdt}
+		selectdo
+			tdisg879.inrq	=	tdisg872.inrq
+			tdisg879.stat	=	get.status(tdisg872.inrq)
+			db.update(ttdisg879, db.retry,e)
+			if	e	then
+				abort.transaction()
+			else
+				commit.transaction()
+			endif
+		endselect
+	endselect
+}
+
+function	domain	tdisg.stat	get.status(domain	tcorno	i.inrq)
+{
+	select	tdisg831.stat
+	from	tdisg831
+	where	tdisg831._index1	=	{:i.inrq}
+	selectdo
+	selectempty
+		tdisg831.stat	=	empty
+	endselect
+	return(tdisg831.stat)
+}
+
+function	extern	link()
+{
+	v.done	=	false
+	set.min(cprj.n, "tccprj")
+	set.max(cprj.m, "tccprj")
+	
+	select	tdisg879.*
+	from	tdisg879
+	where	tdisg879._index1	inrange	{:cprj.n}	and	{:cprj.m}
+	selectdo
+		if	tdisg879.sele	=	tcyesno.yes	then
+			select	tdisg831.stat, tdisg831.nvst
+			from	tdisg831
+			where	tdisg831._index1	=	{:tdisg879.inrq}
+			and	tdisg831.cprj		=	{:tdisg879.cprj}
+			and	tdisg831.ofbp		=	{:tdisg879.otbp}
+			selectdo
+				select	whisg312.*
+				from	whisg312
+				where	whisg312._index2	=	{:tdisg879.cprj,:tdisg879.rcno,:tdisg879.rcln}
+				and	whisg312.conf		=	tcyesno.yes
+				selectdo
+				selectempty
+					message("Cannot Link. Receipt " & tdisg879.rcno & " not Confirmed.")
+					choice.again()
+				endselect
+				
+				if	tdisg831.stat		=	tdisg.stat.freeze	then
+| 					if	tdisg831.nvst	=	tdisg.nvst.cominv	or
+| 						tdisg831.nvst	=	tdisg.nvst.transfer	then
+						insert.billing.advice.lines()
+| 					else
+| 						message("Cannot Link Billing Advice " & tdisg879.inrq & ", Invoice/Packing List not Commercial or Transfer to accounts.")
+| 						choice.again()
+| 					endif
+				else
+| 					message("Cannot Link. Billing Advice " & tdisg879.inrq & " not Freezed.")
+					message("Cannot Link. Billing Advice " & tdisg879.inrq & " is Processed.")
+					choice.again()
+				endif
+			selectempty
+				message("Billing Advice " & tdisg879.inrq & " does not exist.")
+				choice.again()
+			endselect
+		endif
+	endselect
+}
+
+function	extern	dlink()
+{
+	v.done	=	false
+	set.min(cprj.n, "tccprj")
+	set.max(cprj.m, "tccprj")
+	
+	select	tdisg879.*
+	from	tdisg879
+	where	tdisg879._index1	inrange	{:cprj.n}	and	{:cprj.m}
+	selectdo
+		if	tdisg879.sele		=	tcyesno.yes	then
+			select	tdisg831.stat
+			from	tdisg831
+			where	tdisg831._index1	=	{:tdisg879.inrq}
+			and	tdisg831.stat		=	tdisg.stat.freeze
+			selectdo
+				delete.on.dlink()
+			selectempty
+				message("Cannot delink as Billing Advice " & tdisg879.inrq & " is Processed.")
+				choice.again()
+			endselect
+		endif
+	endselect
+}
+
+
+function	insert.billing.advice.lines()
+{
+	domain	tcmcs.long	ret_val
+	
+	select	a_tdisg832.*
+	from	tdisg832	a_tdisg832
+	where	a_tdisg832._index1	=	{:tdisg879.inrq,:tdisg879.rcno,:tdisg879.rcln}
+	selectdo
+	selectempty
+		tdisg832.edrn	=	tdisg879.inrq
+		tdisg832.rcno	=	tdisg879.rcno
+		tdisg832.rcln	=	tdisg879.rcln
+		tdisg832.oorg	=	whinh.oorg.purchase	
+		tdisg832.orno	=	tdisg879.orno
+		tdisg832.pono	=	tdisg879.line
+		tdisg832.seqn	=	tdisg879.seqn
+		tdisg832.oset	=	tdisg879.oset
+		tdisg832.item	=	tdisg879.item
+		tdisg832.tobi	=	tcyesno.no
+		tdisg832.reas	=	"FIM"
+		tdisg832.nins	=	0
+		tdisg832.ninc	=	0
+		tdisg832.bivl	=	0
+		tdisg832.cinv	=	get.comm.inv()
+		tdisg832.qnty	=	get.qnty()
+		db.insert(ttdisg832, db.skip.dupl, e)
+		if	not	e	then
+			commit.transaction()
+			insert.tdisg872()
+		else
+			abort.transaction()
+		endif
+	endselect
+}
+
+function	domain	tcorno	get.comm.inv()
+{
+	select	tdisg831.cinv
+	from	tdisg831
+	where	tdisg831._index1	=	{:tdisg879.inrq}
+	as	set with 1 rows
+	selectdo
+	selectempty
+		tdisg831.cinv	=	""
+	endselect	
+	return(tdisg831.cinv)
+}
+
+function	domain	tcqiv1	get.qnty()
+{
+	select	whisg312.qrec
+	from	whisg312
+	where	whisg312._index1	=	{:tdisg879.rcno,:tdisg879.rcln}
+	selectdo
+	selectempty
+		whisg312.qrec	=	0
+	endselect
+	return(whisg312.qrec)
+}
+
+function	insert.tdisg872()
+{
+	tdisg872.cprj	=	tdisg879.cprj
+	tdisg872.otbp	=	tdisg879.otbp
+	tdisg872.orno	=	tdisg879.orno
+	tdisg872.line	=	tdisg879.line
+	tdisg872.seqn	=	tdisg879.seqn
+	tdisg872.rcno	=	tdisg879.rcno
+	tdisg872.rcln	=	tdisg879.rcln
+	tdisg872.oset	=	tdisg879.oset
+	tdisg872.irno	=	tdisg879.irno
+	tdisg872.isup	=	tdisg879.isup
+	tdisg872.grno	=	tdisg879.grno
+	tdisg872.grdt	=	tdisg879.grdt
+	tdisg872.item	=	tdisg879.item
+	tdisg872.inrq	=	tdisg879.inrq
+	tdisg872.type	=	tdisg879.type
+	tdisg872.stat	=	tdisg879.stat 
+	tdisg872.user	=	logname$
+	tdisg872.date	=	utc.num()
+	db.insert(ttdisg872, db.skip.dupl,e)
+	if	e	then
+		abort.transaction()
+		v.done	=	false
+	else
+		commit.transaction()
+		v.done	=	true
+		update.whisg312()
+	endif
+}
+
+function	update.whisg312()
+{
+	select	whisg312.*
+	from	whisg312	for	update
+	where	whisg312._index1	=	{:tdisg879.rcno,:tdisg879.rcln}
+	selectdo
+		whisg312.inrq	=	tdisg879.inrq
+		db.update(twhisg312,db.retry,e)
+		if	e	then
+			abort.transaction()
+			v.done	=	false
+		else
+			commit.transaction()
+			v.done	=	true
+		endif
+	endselect
+}
+
+function	delete.on.dlink()
+{
+	domain	tcmcs.long	ret_val
+	
+	db.retry.point()
+	
+	select	tdisg872.*
+	from	tdisg872	for	update
+	where	tdisg872._index1	=	{:tdisg879.cprj,:tdisg879.otbp,:tdisg879.orno,:tdisg879.line,:tdisg879.seqn,:tdisg879.rcno,:tdisg879.rcln,:tdisg879.grno,:tdisg879.grdt}
+	selectdo
+		db.delete(ttdisg872,db.retry,e)
+		if	e	then
+			abort.transaction()
+			v.done	=	false
+		else
+			commit.transaction()
+			v.done	=	true
+			dlink.tdisg832()
+			dlink.whisg312()
+		endif
+	selectempty
+		message("Cannot be Delinked, as Receipt No. " & tdisg879.rcno & "/" & str$(tdisg879.rcln) & " not linked through this session")
+	endselect
+}
+
+function	dlink.tdisg832()
+{
+	domain	tcmcs.long	ret_val
+	
+	select	tdisg832.*
+	from	tdisg832	for	update
+	where	tdisg832._index1	=	{:tdisg879.inrq,:tdisg879.rcno,:tdisg879.rcln}
+	selectdo
+		db.delete(ttdisg832,db.retry,e)
+		if	ret_val	=	0	then
+			commit.transaction()
+			v.done	=	true
+		else
+			abort.transaction()
+			v.done	=	false
+		endif
+	endselect
+}	
+
+function	dlink.whisg312()
+{
+	select	whisg312.*
+	from	whisg312	for	update
+	where	whisg312._index1	=	{:tdisg879.rcno,:tdisg879.rcln}
+	selectdo
+		whisg312.inrq	=	""
+		db.update(twhisg312,db.retry,e)
+		if	e	then
+			abort.transaction()
+			v.done	=	false
+		else
+			commit.transaction()
+			v.done	=	true
+		endif
+	endselect
+}
+	
+function	extern	filter.1()
+{
+	query.extension	=	"tdisg879.cprj inrange '"&cprj.u&"' and '"&cprj.v&"'"
+	rebuild.query()
+}
+
+function	extern	filter.2()
+{
+	query.extension	=	"tdisg879.cprj inrange '"&cprj.u&"' and '"&cprj.v&"'" &" and tdisg879.part = "&str$(etol(tcyesno.yes))
+	rebuild.query()
+}
+
+function	extern	filter.3()
+{
+	query.extension	=	"tdisg879.cprj inrange '"&cprj.u&"' and '"&cprj.v&"'" & " and tdisg879.inrq = '"&" "&"'"
+	rebuild.query()
+}
+
+function	delete.data()
+{
+	db.retry.point()
+	
+	select	tdisg879.*
+	from	tdisg879	for	update
+	where	tdisg879._index1	inrange	:cprj.u	and	:cprj.v
+	selectdo
+		db.delete(ttdisg879,db.retry,e)
+		if	e	then
+			abort.transaction()
+		else
+			commit.transaction()
+		endif
+	endselect
+}
+
+|****************************** END OF CODE ************************************

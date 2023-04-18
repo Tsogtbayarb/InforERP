@@ -1,0 +1,1298 @@
+|******************************************************************************
+|* tdisg8132m000  0  VRC B61U a7 live
+|* Export Dispatch Request Data Lines
+|* Tools                         
+|* 2014-05-05
+|******************************************************************************
+|* Main table tdisg832 Export Dispatch Request Data Lines, Form Type 1
+|******************************************************************************
+|* IDENT ISG001016, Yoshita Kundwani, IT0177, 31-05-2014 , VRC B61U a7 live  
+| IDENT  ISG001041  Abhishek Singh 05/06/2014 VRC B61U a7 live
+| IDENT  ISG001048  Biswajyoti Panda 07/06/2014 VRC B61U a7 live
+|*
+|* ISGECDV001082, IT0205, Arjit Gupta, VRC B61U a7 live, Dt. 06-10-2014
+|* Add FOC PO Vendor and enable/ disable logic
+|*
+|* ISGEC004024, Dharmendra, 03-11-2015, B61U a7 live
+|* Case ID 8268, Issue in warehouse receipt in case "free issue to vendor"
+|*
+|* ISGEC015079, IT0417, Vishal Anand, Dt. 07-01-2016, VRC B61U a7 live
+|* Flag required for handling Free Issue to Vendor and FICH Billing Advises for Export Projects 
+
+|* ID : ISGEC001209, IIT0386, Saurabh Dubey, 09 Feb 2016, VRC B61U a7 live
+|*
+|* ID : ISGEC017006, IT0386, Saurabh Dubey, 11 May 2017, VRC B61U a7 isg
+|* GST Related Modifications 
+|* Isgec Onsite Deployment
+|*
+|* IDENT: ISGEC018001, Mudit Sharma, 2018-03-20
+|* Order to Stock Modifications
+|* 
+|* ID: ISGEC01156,Bharti Garg, 17-01-2019
+|* Modifications. 
+|*
+|* ID: ISGEC01170,Prasanna Bhuyan, 05-03-2019, VRC B61U a7 isg
+|* Delete from table "tdisg832" when line is deleted
+|* 
+|* ID: GH300CR602, RAvi Kumar, 07-04-2020
+|* Attachment facility in Receipt, Billing advice and document tracking
+|* 
+|* GH429CR754, RAvi Kumar, 26-10-2020
+|* Process of GST Paid Invoices Dr Notes/Cr Notes of Export Invoicing
+|*
+| GH467CR000, RAvi Kumar, 04-01-2020
+|* Billing advice line cannot be delete after done Custom invoice and E-Invoicing
+|****************************** declaration section ***************************
+declaration:
+#ident "@(#)ISG001016, Yoshita Kundwani, IT0177, 31-05-2014 , VRC B61U "
+#ident "@(#)ISG001041	Abhishek Singh, IT0352, 05/06/2014 VRC B61U a7 live"
+#ident "@(#)ISG001048	Biswajyoti Panda, IT0243, 07/06/2014 VRC B61U a7 live"
+
+  table   	ttdisg832 |Billing Advice Lines
+  table		ttppdm600
+  table		ttppdm740
+  table         ttccom130
+  table         ttccom100
+  table         ttccom000
+  table         ttcemm170
+  table    	twhisg312				|#ISG001041.sn
+  table    	twhwmd260
+  table		ttdisg831
+  table		ttpisg031
+  table		twhinh312
+  table		ttppin020
+  table		ttdpur401
+  table		ttpisg031
+  table		twhisg311		|#ISGECDV001082.n
+  table		ttdisg867		|# ISGEC004024.sn
+  table		ttdisg873		|# ISGEC004024.en
+  table		twhisg311		|#ISGEC015079.n
+  table		twhinh940	|#ISGEC017006.n
+  table		ttcisg124	|#ISGEC017006.n
+  table		ttcmcs036
+ extern table		ttdisg027		|ISGEC018001.n
+ table		ttdisg030
+ table		tciisg800			|GH429CR754.a
+ table		tciisg801			|GH429CR754.a
+
+#include <bic_dam>
+extern 	domain 	tfgld.sess	import.session
+long ret_val
+domain tcmcs.str15	label
+extern 	domain 	tcorno		import.edrn
+extern  domain tcyesno		v.frzd
+	extern	domain	tcamnt		var.oamt
+	extern	domain	tcccur		var.ccur
+
+extern  domain  tccwar			t.cwar		|#ISG001041.sn
+extern  domain  tppdm.cspa		t.cspa
+extern  domain  tppdm.cact		t.cact
+extern  domain  tccpcp			t.cpcp
+extern  domain  tccprj			v.cprj,var.cprj,
+					t.cprj			|#ISGEC01170.n
+extern  domain  tccom.bpid		var.ofbp
+extern  domain  tcyesno		i.comm
+extern  domain  tcmcs.str10		v.session.type
+extern  domain  tcqiv1			t.invqty	|#ISG001041.en
+
+							|#30062014.sn
+extern	domain	tdisg.stat		o.stat		
+extern	domain	tfgld.docn		var.ir.no
+
+extern	domain	tppdm.nins		export.ninc
+extern	domain	tppdm.aalc	distributed.amnt
+extern	domain	tppdm.aalc	invoiced.amnt	
+extern	domain	tppdm.aalc	balance.to.billed	
+extern	domain	tppdm.aalc	invoice.proces	
+extern	domain	tppdm.aalc	balance.assigned	
+
+extern	domain	tcqsl1		receipt.qnty
+							|#30062014.en
+extern domain	tcmcs.str6	temp_reas
+	domain	tcisg.item.typ	o.ityp
+extern domain	tcpono		flag99
+extern	domain	tcmcs.long	ret
+	domain	tcyesno		cdf.otss
+	long sql, temp1			|ISGEC018001.n
+extern	domain	tcorno	new.orno,new.var.orno,stack.orno(99999),var.ornoj		|test.n	
+extern	domain	tcpono	new.pono,new.var.pono,var.ponoj		|test.n	
+extern  domain  tcsern	    l.count,var.count,l.count1
+long 		            stack.pono(99999),ret.val,sql.by.level(99999),sql.x
+	extern	domain	tfgld.ttyp	ityp				|GH429CR754.a
+	extern	domain	tcorno		docn.orno.str			|GH429CR754.a	
+	
+	#include"itcisg00001"
+	#include<bic_desktop>				|GH300CR602.a
+
+|****************************** program section ********************************
+
+before.program:
+	
+| 	dal.start.business.method("tdisg832","set.global.variable.new",ret_val,0)
+	
+	import("prog.name$",import.session)
+	import("tdisg831.cprj",v.cprj)
+	import("session.type",v.session.type)
+	
+	if import.session = "tdisg8131m000" then
+		dal.start.business.method("tdisg832","set.global.variable",ret_val,1)
+	endif
+	
+	if import.session = "tdisg8131m100" then
+		inputfield.invisible( "tdisg832.dbkb" )
+		dal.start.business.method("tdisg832","set.global.variable",ret_val,2)
+	endif
+	
+	import("tdisg831.edrn",import.edrn)
+	inputfield.invisible( "tdisg832.item.segment.1" )
+	
+	
+after.form.read:
+	import("tdisg831.edrn",import.edrn)
+	select	tppdm600.ccur
+	from	tdisg831,tppdm600
+	where	tdisg831._index1 = {:import.edrn}
+	and	tdisg831.cprj refers to tppdm600
+	as set with 1 rows
+	selectdo
+	endselect
+	
+	label = "Amount in (" & tppdm600.ccur & ")"
+	change.field.label("tdisg832.amnt",1,label)
+
+	enable.save.on.occ.change  ()
+	if import.session = "tdisg8131m100" then
+		remove.form.commands("tdisg8173m000")
+	endif
+
+
+before.display.object:
+| 	select	tdisg831.frzd:v.frzd,tdisg831.cprj:var.cprj,tdisg831.ofbp:var.ofbp,
+| 		tdisg831.stat:o.stat						|#30062014.n
+| 	from	tdisg831
+| 	where	tdisg831._index1 = {:tdisg832.edrn}
+| 	selectdo
+| 	endselect
+| 	
+| 	if import.session = "tdisg8131m100" then
+| 		disable.commands(mark.delete,add.set,dupl.occur)
+| 		disable.group(3)
+| 		disable.group(4)
+| 		disable.group(5)
+| 	else			
+| 	| 		if v.frzd = tcyesno.yes then					|#30062014.o	
+| 		if o.stat = tdisg.stat.freeze then
+| 			disable.commands(modify.set,mark.delete,add.set,dupl.occur)
+| 			disable.group(3)
+| 			disable.group(4)
+| 			disable.group(5)
+| 		else
+| 			enable.commands(modify.set,mark.delete,add.set,dupl.occur)
+
+| 			if not export.domestic() then
+| 				enable.group(3)
+| 				enable.group(4)
+| 				enable.group(5)
+| 				enable.group(5)
+| 			else
+| 				enable.group(3)
+| 				disable.group(4)
+| 				disable.group(5)	
+| 			endif			
+| 		endif	
+| 	endif	
+| 		
+	
+	if import.session = "tdisg8131m100" then
+		disable.commands("whisg3513m000","whinh9136m00l","tdisg0107m000")
+	endif	
+									|#ISGECDV001082.sn
+	set.enable.disable.command()
+									|#ISGECDV001082.en
+after.update.db.commit:
+	refresh.parent(-1)
+	
+| ****************************** choice section **********************************
+choice.taxes:														|#ISG001041.sn		
+on.choice:
+	start.synchronized.child("whinh9136m00l",
+				    "tdisg832.rcno","whinh936.rcno",
+				    "tdisg832.rcln","whinh936.rcln")	
+	
+choice.billing.child:														
+before.choice:
+	i.comm = tcyesno.yes
+	dal.start.business.method("tdisg832","insert.tdisg007",ret_val,1)
+	if ret_val <> 0 then
+		show.dal.messages  (MSG.ALL)
+		abort.transaction()
+	else
+		commit.transaction()
+	endif
+	
+	i.comm = tcyesno.no
+															|#ISG001041.en
+on.choice:
+	start.synchronized.child("tdisg0107m000", "tdisg832.rcno", "tdisg007.rcno", "tdisg832.rcln", "tdisg007.rcln")
+
+
+choice.add.set:
+before.choice:
+	select 	tdisg831.cprj
+	from	tdisg831
+	where	tdisg831._index1 = {:tdisg832.edrn}
+	as set with 1 rows
+	selectdo
+	endselect
+													|ISGEC018001.sn
+	if (ask.enum("tdreceipt.type",tdreceipt.type.project.receipt) = ltoe(1))	then
+		flag99 = 1
+		start.synchronized.child("whisg3112m000","tdisg831.cprj","whisg312.cprj",MULTI_OCC)
+| 		execute(find.data)
+| 		choice.again()
+	else
+		select	tppdm600.cdf_otss
+		from	tppdm600
+		where	tppdm600._index1 = {:tdisg831.cprj}
+		selectdo
+		endselect
+		get.var(pid, "tppdm600.cdf_otss", cdf.otss)
+		if cdf.otss = tcyesno.yes	then
+			flag99 = 2
+			start.synchronized.child("whisg3112m000","tdisg831.cprj","whisg312.cprj",MULTI_OCC)
+| 			execute(find.data)
+| 			choice.again()
+		else
+			flag99 = 3
+| 			start.synchronized.child("whisg3112m000","tdisg831.cprj","whisg312.cprj",MULTI_OCC)
+			start.synchronized.child("whisg3112m001","tdisg831.cprj","whisg312.cprj",MULTI_OCC)
+| 			execute(find.data)
+| 			choice.again()
+		endif
+	endif
+													|ISGEC018001.en
+| 	start.synchronized.child("whisg3112m000","tdisg831.cprj","whisg312.cprj",MULTI_OCC)		|ISGEC018001.so
+| 	execute(find.data)
+| 	choice.again()											|ISGEC018001.eo
+
+choice.cont_ir_details:
+on.choice:
+	get.ir.number()
+| 	var.ir.no = lval(whinh312.psno)
+	start.synchronized.child("tfacp1500m000","var.ir.no","tfacp100.ninv", SINGLE_OCC)
+	
+						|#ISGECDV001082.sn
+choice.foc_po:
+on.choice:
+	start.synchronized.child("tdisg8167m000", "tdisg832.edrn", "tdisg867.edrn", "tdisg832.rcno", "tdisg867.rcno",
+					"tdisg832.rcln", "tdisg867.rcln")	
+						|#ISGECDV001082.en
+						|# ISGEC004024.sn
+| choice.tdisg8173m000:								|#ISGEC01170.so#as discussed with mamta mam
+| before.choice:
+| 	insert.in.tdisg873()
+| 	update.quantity.in.tdisg873()
+						|# ISGEC004024.en		|#ISGEC01170.eo#as discussed with mamta mam
+						
+choice.mark.delete:						|#ISGEC01170.sn
+before.choice:
+	select	tdisg873.*
+	from	tdisg873 for update
+	where	tdisg873._index1 = {
+				:tdisg832.edrn, 
+				:tdisg832.rcno, 
+				:tdisg832.rcln
+				}
+	selectdo
+		db.delete(ttdisg873, db.retry)
+		commit.transaction()
+	endselect						|#ISGEC01170.en
+| ****************************** group section **********************************
+group.1:
+init.group:
+	import("tdisg831.edrn",import.edrn)
+	select	tppdm600.ccur
+	from	tdisg831,tppdm600
+	where	tdisg831._index1 = {:import.edrn}
+	and	tdisg831.cprj refers to tppdm600
+	as set with 1 rows
+	selectdo
+	endselect
+	
+	label = "Amount in (" & tppdm600.ccur & ")"
+	change.field.label("tdisg832.amnt",1,label)
+	
+group.2:							|GH300CR602.a.s
+init.group:
+ret = create.extra.toolbar(
+		"get_attachment",	"tcgen:activate")
+								|GH300CR602.a.e
+
+| ****************************** field section **********************************
+| field.tdisg832.tobi:										|#ISG001041.sn
+| after.field:
+| 	if v.frzd = tcyesno.no then
+| 		if not export.domestic() then
+| 			enable.group(3)
+| 			disable.group(4)
+| 			disable.group(5)
+			
+| 			if tdisg832.tobi = tcyesno.no then
+| 				enable.fields("tdisg832.reas",actual.occ)
+| 				disable.fields("tdisg832.slrt",actual.occ)
+| 			else
+| 				disable.fields("tdisg832.reas",actual.occ)	
+| 				enable.fields("tdisg832.slrt",actual.occ)	
+| 			endif	
+| 		else	
+| 			enable.group(3)
+| 			enable.group(4)
+| 			enable.group(5)
+| 		endif	
+| 	endif	
+
+| field.tdisg832.trad:
+| after.field:
+| 	if v.frzd = tcyesno.no then
+| 		if not export.domestic() then
+| 			enable.group(3)
+| 			enable.group(4)
+| 			enable.group(5)
+
+| 			if tdisg832.trad = tcyesno.no then
+| 				enable.fields("tdisg832.ctcd",actual.occ)
+| 				enable.fields("tdisg832.aren",actual.occ)
+| 			else
+| 				disable.fields("tdisg832.ctcd",actual.occ)	
+| 				disable.fields("tdisg832.aren",actual.occ)	
+| 			endif
+| 		else
+| 			enable.group(3)
+| 			disable.group(4)
+| 			disable.group(5)	
+| 		endif	
+| 	endif	
+	
+field.all:						|#ISGEC01170.sn
+init.field:
+	attr.dorp = 1					|#ISGEC01170.en
+
+field.tdisg832.rcno:
+before.zoom:
+	query.extend.where.in.zoom("whisg312.cprj =" &quoted.string(v.cprj))
+	
+field.tdisg832.rcln:
+before.zoom:
+	query.extend.where.in.zoom("whisg312.rcno =" &quoted.string(tdisg832.rcno))	
+| after.field:
+| 	select 	whisg312.orno,
+| 		whisg312.line,
+| 		whisg312.seqn,
+| 		whisg312.qrec
+| 	from	whisg312
+| 	where	whisg312._index1 = {:tdisg832.rcno,:tdisg832.rcln}
+| 	as set with 1 rows
+| 	selectdo
+| 		select 	tdpur401.pric
+| 		from	tdpur401
+| 		where	tdpur401._index1 = {:whisg312.orno,:whisg312.line,:whisg312.seqn}
+| 		as set with 1 rows
+| 		selectdo
+| 		endselect
+| 	endselect
+| 	
+| 	receipt.qnty = whisg312.qrec * tdpur401.pric
+field.receipt.qnty:
+before.display:
+	select 	whisg312.orno,
+		whisg312.line,
+		whisg312.seqn,
+		whisg312.qrec
+	from	whisg312
+	where	whisg312._index1 = {:tdisg832.rcno,:tdisg832.rcln}
+	as set with 1 rows
+	selectdo
+		select 	tdpur401.pric
+		from	tdpur401
+		where	tdpur401._index1 = {:whisg312.orno,:whisg312.line,:whisg312.seqn}
+		as set with 1 rows
+		selectdo
+		endselect
+	endselect
+| 	receipt.qnty = whisg312.qrec * tdpur401.pric				|ISGEC01156.o		
+	
+	select	whinh312.qrcr,whinh312.pono,whinh312.seqn,whinh312.orno			|ISGEC01156.sn
+	from	whinh312
+	where	whinh312._index1 = {:tdisg832.rcno,:tdisg832.rcln}
+	as set with 1 rows
+	selectdo
+		select 	tdpur401.pric
+		from	tdpur401
+		where	tdpur401._index1 = {:whinh312.orno,:whinh312.pono,:whinh312.seqn}
+		as set with 1 rows
+		selectdo
+		endselect
+	endselect
+	
+	if whisg312.qrec = whinh312.qrcr then
+		receipt.qnty = whisg312.qrec * tdpur401.pric	
+	else
+		receipt.qnty = whinh312.qrcr * tdpur401.pric
+	endif									|ISGEC01156.en
+	
+	
+	
+		
+field.t.cwar:								
+before.display:
+	select	whisg312.cwar
+	from	whisg312
+	where	whisg312._index1 = {:tdisg832.rcno,:tdisg832.rcln}
+	selectdo
+		t.cwar = whisg312.cwar
+	selectempty
+		t.cwar = ""
+	endselect		
+	
+field.t.cspa:
+before.display:
+	select	whisg312.cspa
+	from	whisg312
+	where	whisg312._index1 = {:tdisg832.rcno,:tdisg832.rcln}
+	selectdo
+		t.cspa = whisg312.cspa
+	selectempty
+		t.cspa = ""
+	endselect
+
+field.t.cprj:								|#ISGEC01170.sn							
+before.display:
+	select	whisg312.cprj:t.cprj
+	from	whisg312
+	where	whisg312._index1 = {:tdisg832.rcno,:tdisg832.rcln}
+	selectdo
+	selectempty
+		t.cprj = ""
+	endselect							|#ISGEC01170.en
+
+field.t.cact:
+before.display:
+	select	whisg312.cact
+	from	whisg312
+	where	whisg312._index1 = {:tdisg832.rcno,:tdisg832.rcln}
+	selectdo
+		t.cact = whisg312.cact
+	selectempty
+		t.cact = ""
+	endselect	
+
+field.t.cpcp:
+before.display:
+	select	whisg312.ccco
+	from	whisg312
+	where	whisg312._index1 = {:tdisg832.rcno,:tdisg832.rcln}
+	selectdo
+		t.cpcp = whisg312.ccco
+	selectempty
+		t.cpcp = ""
+	endselect	
+
+field.t.invqty:
+before.display:
+	select	whisg312.cwar,whisg312.cspa,whisg312.cact,whisg312.ccco,whisg312.item,whisg312.cprj
+	from	whisg312
+	where	whisg312._index1 = {:tdisg832.rcno,:tdisg832.rcln}
+	selectdo
+		select	whwmd260.qhnd
+		from	whwmd260
+		where	whwmd260._index1 = {:whisg312.cwar,:whisg312.cprj,:whisg312.item,:whisg312.cspa,:whisg312.cact}
+		selectdo
+			t.invqty = whwmd260.qhnd
+		selectempty
+			t.invqty = 0
+		endselect
+	selectempty
+		t.invqty = 0
+	endselect									|#ISG001041.en
+	
+field.tdisg832.nins:
+before.zoom:
+	
+	select	tdisg831.cprj,tdisg831.ofbp
+	from	tdisg831
+	where	tdisg831._index1 = {:tdisg832.edrn}
+	selectdo
+	selectempty
+		tdisg831.cprj = ""
+		tdisg831.ofbp = ""
+	endselect
+	
+	select 	whisg312.cspa
+	from	whisg312
+	where	whisg312._index1 = {:tdisg832.rcno,:tdisg832.rcln}
+	as set with 1 rows
+	selectdo
+	endselect
+	
+| 	tpisg031.cprj = tdisg831.cprj
+| 	tpisg031.ofbp = tdisg831.ofbp	
+
+	tppin020.cprj = tdisg831.cprj
+	tppin020.ofbp = tdisg831.ofbp
+	tppin020.cspa = whisg312.cspa
+		
+
+field.tdisg832.ninc:
+after.field:
+	get.installment.amount()
+	
+field.var.ccur:
+before.display:
+	select	tdpur400.oamt:var.oamt, tdpur400.ccur:var.ccur
+	from	tdpur400
+	where	tdpur400._index1 = {:tdisg832.orno}
+	selectdo
+	selectempty
+		var.oamt = 0
+		var.ccur = ""
+	endselect
+	
+field.var.ir.no:
+before.display:
+	get.ir.number()
+	
+
+					|#ISGEC015079.sn
+field.tdisg832.reas:
+before.zoom:	
+	select	tdisg831.bill, tdisg831.type
+	from	tdisg831
+	where	tdisg831._index1 = {:tdisg832.edrn}
+	as set with 1 rows
+	selectdo
+	endselect
+	temp_reas = whisg311.reas
+	select tdisg832.tobi,tdisg832.reas
+	from	tdisg832
+	where	tdisg832._index1 = {:tdisg832.edrn}
+	as set with 1 rows
+	selectdo
+		if tdisg831.bill = tcyesno.no then
+			select	whisg311.reas,whisg311.desc,whisg311.type
+			from	whisg311
+			where	whisg311._index1 = {:tdisg832.reas}
+			as set with 1 rows
+			selectdo
+| 				query.extend.where.in.zoom ("whisg311.reas = " & quoted.string(tdisg832.reas))	|#ISGEC001209.o
+				query.extend.where.in.zoom ("(whisg311.type = whreas.type.free.vendor or whisg311.type = whreas.type.free.customer or whisg311.type = whreas.type.stock) ")	|#ISGEC001209.n
+			selectempty
+| 				query.extend.where.in.zoom ("whisg311.type = whreas.type.free.vendor or whisg311.type = whreas.type.free.customer")	|#ISGEC001209.o
+				query.extend.where.in.zoom ("(whisg311.type = whreas.type.free.vendor or whisg311.type = whreas.type.free.customer or whisg311.type = whreas.type.stock)")	|#ISGEC001209.n	
+			endselect
+		else
+			if tdisg831.type = tdisg.type.export then	|#SD29022016.n
+				query.extend.where.in.zoom ("whisg311.reas <> 'FIV' and whisg311.reas <> 'FICH'")
+			endif	|#SD29022016.n
+			
+		endif
+	endselect
+	
+					|#ISGEC015079.en
+				
+		|#ISGEC017006.sn		
+field.tdisg832.code:
+before.zoom:
+	tcisgdll0100.get.item.type.from.goods.service(tdisg832.ityp, o.ityp)
+	tcisg124.ityp = o.ityp
+
+field.tdisg832.cvat:
+before.zoom:
+	tcmcs036.ccty = OWN.COUNTRY
+		
+		|#ISGEC017006.en
+					
+
+	
+	
+|************************************ function section ************************
+functions:
+function get.installment.amount()
+{
+	domain	tccprj		o.cprj		|Project
+	domain	tccom.bpid	o.ofbp		|Business Partner
+	domain	tppdm.aalc	o.insa		|Installment Amount
+	domain	tppdm.aalc	o.tiia
+	domain	tppdm.aalc	o.inia
+	domain	tppdm.aalc	o.bivl
+
+| #sujeet.so
+	tdisgdll0831.get.billing.advice.info(tdisg832.edrn,o.cprj,o.ofbp)
+	tpisgdll0031.get.installment.amount.info(
+					o.cprj,
+					o.ofbp,
+					tdisg832.ninc,
+					o.insa,
+					o.tiia,
+					o.inia)
+	tpisgdll0031.get.installment.under.process(
+					o.cprj,
+					o.ofbp,
+					tdisg832.ninc,
+					o.bivl)	
+|#sujeet.eo					
+	distributed.amnt = 0
+	invoiced.amnt = 0
+	balance.to.billed = 0
+	invoice.proces = 0
+	balance.assigned = 0
+	if tdisg832.ninc <> 0 then
+		select 	tpisg031.insa
+		from	tpisg031
+		where	tpisg031._index1 = {:o.cprj,:o.ofbp,:tdisg832.ninc}
+		as set with 1 rows
+		selectdo
+		endselect
+		
+		
+		distributed.amnt = o.insa
+		invoiced.amnt = o.tiia	
+		balance.to.billed = tpisg031.insa - o.tiia
+		invoice.proces = o.bivl
+		balance.assigned = tpisg031.insa - (invoiced.amnt + invoice.proces)
+	endif
+	
+}	
+
+| function boolean export.domestic()
+| {
+| 	select	tppdm600.ncmp,tppdm600.ccur
+| 	from	tppdm600
+| 	where	tppdm600._index1 = {:var.cprj}
+| 	selectdo
+| 		select	tppdm740.ofbp,tccom100.cadr
+| 		from	tppdm740,tccom100
+| 		where 	tppdm740._index1 = {:var.cprj,:var.ofbp}
+| 		and	tppdm740.ofbp refers to tccom100
+| 		selectdo
+| 			select	tccom130.ccty
+| 			from	tccom130
+| 			where	tccom130._index1 = {:tccom100.cadr}
+| 			selectdo
+| 			selectempty
+| 				tccom130.ccty = ""
+| 			endselect
+| 		selectempty
+| 			tccom130.ccty = ""	
+| 		endselect		
+| 		
+| 		select	tcemm170.lcur
+| 		from	tcemm170
+| 		where	tcemm170._index1 = {:tppdm600.ncmp}
+| 		and	tcemm170.lcur = :tppdm600.ccur
+| 		selectdo
+| 			select	tccom000.ccty
+| 			from	tccom000
+| 			where	tccom000._index1 = {0,:tppdm600.ncmp}
+| 			selectdo
+| 				if tccom000.ccty <> tccom130.ccty then
+| 					return(false)
+| 				endif
+| 			endselect		
+| 		selectempty
+| 			return(false)
+| 		endselect
+| 	endselect
+| 	
+| 	return(true)
+| }	
+
+function get.ir.number()
+{
+	select	whinh312.psno
+	from	whinh312
+	where	whinh312._index1 = {:tdisg832.rcno, :tdisg832.rcln}
+	selectdo
+		var.ir.no = lval(trim$(whinh312.psno))
+	selectempty
+		var.ir.no = 0
+	endselect	
+}
+
+									|#ISGECDV001082.sn
+function set.enable.disable.command()
+{
+	if	tdisg832.tobi = tcyesno.no	then
+		select	whisg311.type
+		from	whisg311
+		where	whisg311._index1 = {:tdisg832.reas}
+		and	whisg311.type in (whreas.type.free.vendor, whreas.type.stock)
+		selectdo
+			enable.commands("foc_po")
+		selectempty
+			disable.commands("foc_po")
+		endselect	
+	else
+		disable.commands("foc_po")
+	endif	
+	
+	select	tdisg831.type,								|GH429CR754.a.s
+		tdisg831.invn
+	from	tdisg831
+	where	tdisg831._index1 = {:tdisg832.edrn}
+	and	tdisg831.type = tdisg.type.export
+	as set with 1 rows
+	selectdo
+		ityp = tdisg831.invn(1; 3)
+		docn.orno.str = tdisg831.invn(4; 8)
+| 		enable.fields("tdisg832.cvat")
+		select	ciisg800.comp
+		from	ciisg800
+		where	ciisg800.tran = :ityp
+		and	ciisg800.docn = :docn.orno.str
+		as set with 1 rows
+		selectdo
+		endselect
+		
+		enable.commands("tdisg832.cvat")
+		select	ciisg801.errm
+		from	ciisg801
+		where	ciisg801._index1 = {:ciisg800.comp, :ityp, :docn.orno.str}
+		as set with 1 rows
+		selectdo
+			if isspace(ciisg801.errm) then
+				disable.commands("tdisg832.cvat")			
+				disable.commands(mark.delete, add.set, actual.occ)			|GH467CR000.a #IR165944
+				disable.fields("tdisg832.code", actual.occ,
+						"tdisg832.pqty", actual.occ,
+						"tdisg832.bivl", actual.occ,
+						"tdisg832.ityp", actual.occ,
+						"tdisg832.gdsc", actual.occ,
+						"tdisg832.pcun", actual.occ)
+			endif	
+		endselect									|GH429CR754.a.e
+	selectempty
+		disable.fields("tdisg832.cvat")
+	endselect
+}
+									|#ISGECDV001082.en
+
+									|# ISGEC004024.sn
+function insert.in.tdisg873()
+{
+	domain tcqiv1	receipt.qty, i.issu
+	domain	tdisg.stat	bind.stat
+	
+	db.retry.point()
+	select	tdisg867.*
+	from	tdisg867
+	where	tdisg867._index2 = {:tdisg832.orno, :tdisg832.pono}
+	selectdo		
+		select	isg832.qnty:receipt.qty
+		from	tdisg832 isg832
+		where	isg832._index1 = {:tdisg867.edrn, :tdisg867.rcno, :tdisg867.rcln}
+		selectdo
+		endselect
+		
+		select	sum(tdisg873.issu):i.issu
+		from	tdisg873 
+		where	tdisg873._index2 = {:tdisg867.edrn, :tdisg867.rcno, :tdisg867.rcln}
+		selectdo
+		selectempty
+			i.issu	=	0
+		endselect
+		
+		select	tdisg873.*
+		from	tdisg873
+		where	tdisg873._index1 = {
+					:tdisg832.edrn, 
+					:tdisg832.rcno, 
+					:tdisg832.rcln,
+					:tdisg867.edrn, 
+					:tdisg867.rcno, 
+					:tdisg867.rcln
+					}
+		selectdo
+		selectempty
+			tdisg873.sdrn = tdisg832.edrn
+			tdisg873.scno = tdisg832.rcno
+			tdisg873.scln = tdisg832.rcln
+			tdisg873.edrn = tdisg867.edrn
+			tdisg873.rcno = tdisg867.rcno
+			tdisg873.rcln = tdisg867.rcln
+| 			tdisg873.qnty = 0
+			tdisg873.qnty = i.issu
+			tdisg873.balc = receipt.qty	-	i.issu
+			tdisg873.issu = 0
+			tdisg873.frez = tcyesno.no
+			db.insert(ttdisg873, db.retry)
+		endselect	
+	endselect
+	temp1 = 0
+| 	insert.for.DC(tdisg832.orno, tdisg832.pono)				|ISGEC018001.sn
+	insert.for.DC.new()								|ISGEC018001.sn
+	sql  = 0
+| 	select	tdisg027.*
+| 	from	tdisg027
+| 	where	tdisg027._index1 = {:tdisg832.orno, :tdisg832.pono}
+| 	selectdo
+| 		
+| 		select whisg312.qrec:receipt.qty
+| 		from	whsig312
+| 		where	whisg312._index1 = {:tdisg027.rcno,:tdisg312.rcln}
+| 		selectdo
+| 		endselect
+| 		
+| 		select	tdisg873.*
+| 		from	tdisg873
+| 		where	tdisg873._index1 = {
+| 					:tdisg832.edrn, 
+| 					:tdisg832.rcno, 
+| 					:tdisg832.rcln,
+| 					:tdisg027.dech, 
+| 					:tdisg027.rcno, 
+| 					:tdisg027.recl
+| 					}
+| 		selectdo
+| 		selectempty
+| 			tdisg873.sdrn = tdisg832.edrn
+| 			tdisg873.scno = tdisg832.rcno
+| 			tdisg873.scln = tdisg832.rcln
+| 			tdisg873.edrn = tdisg027.dech
+| 			tdisg873.rcno = tdisg027.rcno
+| 			tdisg873.rcln = tdisg027.recl
+			|tdisg873.qnty = 0
+| 			tdisg873.qnty = i.issu
+| 			tdisg873.balc = receipt.qty	-	i.issu
+| 			tdisg873.issu = 0
+| 			tdisg873.frez = tcyesno.no
+| 			db.insert(ttdisg873, db.retry)
+| 		endselect	
+| 	endselect								|ISGEC018001.en
+
+	
+	commit.transaction()
+}
+									|# ISGEC004024.en
+									|ISGEC018001.sn
+| function insert.for.DC(domain tcorno	var.orno, domain tcpono var.pono)
+function extern long insert.for.DC()
+{
+	static domain tcorno		var.orno
+	static domain tcpono 		var.pono
+	static domain tcqiv1		receipt.qty, i.issu
+	static domain	tdisg.stat	bind.stat
+	static domain	tcpono 		ret|,temp1
+	
+	if temp1 > 0	then
+		var.orno = tdisg027.srpo
+		var.pono = tdisg027.srpl
+	else
+		var.orno = tdisg832.orno
+		var.pono = tdisg832.pono
+		temp1 = temp1 + 1
+	endif
+	
+| 	if (not sql)	then
+| 		sql = sql.parse(
+| 				"select	tdisg027.* " &
+| 				"from	tdisg027 " &
+| 				"where	tdisg027._index2 = {:1, :2}")
+| 	endif
+| 	sql.where.bind(sql, 1, var.orno)
+| 	sql.where.bind(sql, 2, var.pono)
+| 	ret = sql.exec(sql)
+| 	ret = sql.fetch(sql)
+| 	if not ret	then
+| 		while true
+| 		while (sql.exec(sql) = 0)
+		select	tdisg027.* 
+		from	tdisg027
+		where	tdisg027._index2 = {:var.orno,:var.pono}
+		selectdo
+			select whisg312.qrec:receipt.qty
+			from	whisg312
+			where	whisg312._index1 = {:tdisg027.rcno,:tdisg027.recl}
+			selectdo
+			endselect
+			
+			select	tdisg873.*
+			from	tdisg873
+			where	tdisg873._index1 = {
+						:tdisg832.edrn, 
+						:tdisg832.rcno, 
+						:tdisg832.rcln,
+						:tdisg027.dech, 
+						:tdisg027.rcno, 
+						:tdisg027.recl
+						}
+			selectdo
+			selectempty
+				tdisg873.sdrn = tdisg832.edrn
+				tdisg873.scno = tdisg832.rcno
+				tdisg873.scln = tdisg832.rcln
+				tdisg873.edrn = tdisg027.dech
+				tdisg873.rcno = tdisg027.rcno
+				tdisg873.rcln = tdisg027.recl
+		| 		tdisg873.qnty = 0
+| 				tdisg873.qnty = i.issu
+				tdisg873.qnty = receipt.qty
+				tdisg873.balc = receipt.qty	-	i.issu
+				tdisg873.issu = 0
+				tdisg873.frez = tcyesno.no
+				db.insert(ttdisg873, db.skip.dupl,e)
+				if e = 0 then
+					commit.transaction()
+				endif	
+			endselect
+	| 		var.orno = tdisg027.srpo
+	| 		var.pono = tdisg027.srpl
+	| 		insert.for.DC(tdisg027.srpo,tdisg027.srpl)
+	 		ret = insert.for.DC()  |Priya.n
+		selectempty
+| 			return
+		endselect
+		
+| 		insert.for.DC()	|Priya.o
+| 		endwhile
+| 	endif
+| 	sql.close(sql)
+| 	sql  = 0
+	return(0)
+}
+
+function insert.for.DC.new()				|Priya.sn
+{
+	static domain tcorno		var.orno
+	static domain tcpono 		var.pono
+	static domain tcqiv1		receipt.qty, i.issu
+	static domain	tdisg.stat	bind.stat
+	static domain	tcpono 		ret|,temp1
+	
+| 	if temp1 > 0	then
+| 		var.orno = tdisg027.srpo
+| 		var.pono = tdisg027.srpl
+| 	else
+		var.orno = tdisg832.orno
+		var.pono = tdisg832.pono
+		temp1 = temp1 + 1
+| 	endif
+| 	
+| 	if (not sql)	then
+| 		sql = sql.parse(
+| 				"select	tdisg027.* " &
+| 				"from	tdisg027 " &
+| 				"where	tdisg027._index2 = {:1, :2}")
+| 	endif
+| 	sql.where.bind(sql, 1, var.orno)
+| 	sql.where.bind(sql, 2, var.pono)
+| 	ret = sql.exec(sql)
+| 	ret = sql.fetch(sql)
+| 	if not ret	then
+| 		while true
+| 		while (sql.exec(sql) = 0)
+		select	tdisg027.*
+		from	tdisg027
+		where	tdisg027._index2 = {:var.orno,:var.pono}
+		selectdo
+			select whisg312.qrec:receipt.qty
+			from	whisg312
+			where	whisg312._index1 = {:tdisg027.rcno,:tdisg027.recl}
+			selectdo
+			endselect
+| 			
+			select	tdisg030.*
+			from	tdisg030
+			where	tdisg030._index1 = {:tdisg832.rcno,:tdisg832.rcln}
+			and	tdisg030.srcn = :tdisg027.rcno
+			and	tdisg030.srcl = :tdisg027.recl
+			selectdo
+			selectempty
+				tdisg030.iqty = 0				|#ISGEC01170.n
+			endselect	
+			
+			select	tdisg873.*
+			from	tdisg873
+			where	tdisg873._index1 = {
+						:tdisg832.edrn, 
+						:tdisg832.rcno, 
+						:tdisg832.rcln,
+						:tdisg027.dech, 
+						:tdisg027.rcno, 
+						:tdisg027.recl
+						}
+			selectdo
+			selectempty
+				tdisg873.sdrn = tdisg832.edrn
+				tdisg873.scno = tdisg832.rcno
+				tdisg873.scln = tdisg832.rcln
+				tdisg873.edrn = tdisg027.dech
+				tdisg873.rcno = tdisg027.rcno
+				tdisg873.rcln = tdisg027.recl
+		| 		tdisg873.qnty = 0
+| 				tdisg873.qnty = i.issu
+				tdisg873.qnty = receipt.qty
+				tdisg873.balc = receipt.qty	-	i.issu
+| 				tdisg873.issu = 0
+				tdisg873.issu = tdisg030.iqty
+				tdisg873.frez = tcyesno.no
+				db.insert(ttdisg873, db.skip.dupl,e)
+				if e = 0 then
+					commit.transaction()
+				endif	
+				
+			endselect
+	| 		var.orno = tdisg027.srpo
+	| 		var.pono = tdisg027.srpl
+	| 		insert.for.DC(tdisg027.srpo,tdisg027.srpl)
+| 			temp1 = 0 	
+		
+| 			ret = insert.for.DC()  |Priya.n  |test.o
+			new.orno = tdisg027.srpo  |test.sn
+			new.pono = tdisg027.srpl
+			var.count = 1
+			var.ornoj = ""
+			l.count1 = 1
+			stack.orno(1,1) = new.orno
+			stack.pono(1) = new.pono
+			insert.for.DC.bom()	  |test.en
+		selectempty
+		endselect
+		
+| 		insert.for.DC()	|Priya.o
+| 		endwhile
+| 	endif
+| 	sql.close(sql)
+| 	sql  = 0
+}								|Priya.en
+
+function insert.for.DC.bom()
+{
+	static domain tcqiv1	receipt.qty, i.issu
+	new.var.orno = ""
+	new.var.orno = stack.orno(1,l.count1)
+	new.var.pono = stack.pono(l.count1)
+
+	l.count1 = l.count1 + 1
+        sql.x=sql.parse(" select tdisg027.* 
+^			 from 	tdisg027
+^			 where	tdisg027._index2 = {:1,:2}")
+	
+        sql.where.bind(sql.x,1,new.var.orno)
+        sql.where.bind(sql.x,2,new.var.pono)
+	sql.by.level(l.count1) = sql.x
+
+	sql.exec(sql.x)     
+
+        while	(true)
+                
+                ret.val = (sql.fetch(sql.x))
+		if ret.val = eendfile then
+			break
+		endif
+		if var.ornoj = tdisg027.srpo and var.ponoj = tdisg027.srpl then
+			break
+		endif
+			
+		stack.orno(1,l.count1) = tdisg027.srpo
+		stack.pono(l.count1) = tdisg027.srpl
+		var.ornoj=tdisg027.srpo
+		var.ponoj=tdisg027.srpl
+		
+		select whisg312.qrec:receipt.qty
+		from	whisg312
+		where	whisg312._index1 = {:tdisg027.rcno,:tdisg027.recl}
+		selectdo
+		endselect
+		
+		select	tdisg873.*
+		from	tdisg873
+		where	tdisg873._index1 = {
+					:tdisg832.edrn, 
+					:tdisg832.rcno, 
+					:tdisg832.rcln,
+					:tdisg027.dech, 
+					:tdisg027.rcno, 
+					:tdisg027.recl
+					}
+		selectdo
+		selectempty
+			tdisg873.sdrn = tdisg832.edrn
+			tdisg873.scno = tdisg832.rcno
+			tdisg873.scln = tdisg832.rcln
+			tdisg873.edrn = tdisg027.dech
+			tdisg873.rcno = tdisg027.rcno
+			tdisg873.rcln = tdisg027.recl
+	| 		tdisg873.qnty = 0
+| 			tdisg873.qnty = i.issu
+			tdisg873.qnty = receipt.qty
+			tdisg873.balc = receipt.qty	-	i.issu
+			tdisg873.issu = 0
+			tdisg873.frez = tcyesno.no
+			db.insert(ttdisg873, db.skip.dupl,e)
+			if e = 0 then
+				commit.transaction()
+			endif	
+		endselect
+| 		l.count1 = l.count1 - 1
+
+	
+		
+
+| 		l.count1 = l.count1 + 1
+| 		var.count =  var.count + 1	
+		insert.for.DC.bom()	
+
+
+			
+	endwhile
+	sql.close(sql.x)
+	
+	l.count1 = l.count1 - 1
+	sql.x = sql.by.level(l.count1)
+	
+
+
+}
+
+function update.quantity.in.tdisg873()
+{
+	static domain tcorno		var.orno
+	static domain tcpono 		var.pono
+	static domain tcqiv1		receipt.qty, i.issu
+	static domain	tdisg.stat	bind.stat
+	static domain	tcpono 		ret|,temp1
+	
+	if temp1 > 0	then
+		var.orno = tdisg027.srpo
+		var.pono = tdisg027.srpl
+	else
+		var.orno = tdisg832.orno
+		var.pono = tdisg832.pono
+		temp1 = temp1 + 1
+	endif
+
+| 	select	tdisg030.*
+| 	from	tdisg030
+| 	where	tdisg030._index2 = {:tdisg027.rcno, :tdisg027.recl, tdisg027.foco, 
+| 				:tdisg027.focp, :tdisg832.rcno, :tdisg832.rcln}
+| 	selectdo
+| 		select	tdisg873.qnty, tdisg873.issu, tdisg873.frez, tdisg873.balc
+| 		from	tdisg873 for update
+| 		where	tdisg873._index1 = {:tdisg832.edrn, :tdisg832.rcno, :tdisg832.rcln}
+| 		and	tdisg873.rcno = :tdisg030.srcn
+| 		and	tdisg873.rcln = :tdisg030.srcl
+| 		selectdo
+| 			tdisg873.qnty = tdisg030.aqty
+| 			tdisg873.issu = tdisg030.iqty
+| 			tdisg873.balc = tdisg030.rqty - tdisg030.aqty
+| 			tdisg873.frez = tcyesno.yes
+| 			db.update(ttdisg873, db.retry)
+| 			commit.transaction()
+| 		endselect
+| 	endselect
+	
+	select	tdisg027.* 
+	from	tdisg027
+	where	tdisg027._index2 = {:var.orno,:var.pono}
+	selectdo
+		select whisg312.qrec:receipt.qty
+		from	whisg312
+		where	whisg312._index1 = {:tdisg027.rcno,:tdisg027.recl}
+		selectdo
+		endselect
+			
+		select	tdisg873.*
+		from	tdisg873 for update
+		where	tdisg873._index1 = {
+					:tdisg832.edrn, 
+					:tdisg832.rcno, 
+					:tdisg832.rcln,
+					:tdisg027.dech, 
+					:tdisg027.rcno, 
+					:tdisg027.recl
+					}
+		selectdo
+			tdisg873.qnty = tdisg027.aqty
+			tdisg873.balc = receipt.qty
+			tdisg873.frez = tcyesno.yes
+			db.update(ttdisg873, db.retry)
+			commit.transaction()
+		endselect
+	selectempty
+		return
+	endselect
+		
+	update.quantity.in.tdisg873()
+	
+}
+
+function extern get_attachment()								|GH300CR602.a.s
+{	
+	domain	tcncmp			curr.comp, curr.comp.o
+	domain	tcmcs.str1		p.char, c.char
+	domain	tcmcs.str30		i.host	
+	domain	tclogn			o.user
+	domain	tcmcs.str50		pass.string, handle.string
+		string			open.link(200),sess.code(30)
+	domain	tcibd.sern	irno.str	
+		
+	o.user = logname$
+	
+	i.host = hostname$()
+	i.host =  toupper$(i.host)
+	i.host = trim$(i.host)
+	
+	curr.comp.o = get.compnr()
+	
+	select	tcemm030.lcmp:curr.comp
+	from	tcemm030
+	where	tcemm030.fcmp = :curr.comp.o
+	as set with 1 rows
+	selectdo
+	selectempty
+		curr.comp = 0
+	endselect
+	
+	p.char = ""
+	c.char = ""
+	irno.str = ""
+	handle.string = ""
+	handle.string =  "IRN_" & str$(curr.comp)
+	
+	select	whinh310.dino:irno.str
+	from	whinh310
+	where	whinh310._index1 = {:tdisg832.rcno}
+	as set with 1 rows
+	selectdo
+	selectempty
+		select	tdpur406.dino:irno.str
+		from	tdpur406
+		where	tdpur406._index2 = {:tdisg832.rcno}
+		as set with 1 rows
+		selectdo
+		endselect
+	endselect
+	
+	pass.string = trim$(irno.str) 
+	
+| 	p.char = (whinh312.lsta  = whinh.lstc.confirmed) ? "n":"y"
+	p.char = "n"
+
+	on case i.host
+	case "VISHNU":	
+		open.link = 	"chrome.exe --app=http://192.9.200.146/Attachment/Attachment.aspx?AthHandle=" & trim$(handle.string) &
+				"&Index=" & trim$(pass.string) & "&AttachedBy=" & trim$(o.user) & "&ed=" & p.char	
+		break
+		
+	case "VISHNU10GST":	
+		open.link = 	"chrome.exe --app=http://192.9.200.146/ATHERPTEST/Attachment.aspx?AthHandle=" & trim$(handle.string) &
+				"&Index=" & trim$(pass.string) & "&AttachedBy=" & trim$(o.user) & "&ed=" & p.char
+		break
+	endcase
+		
+
+	open.link = trim$(open.link)
+	
+	app_start(open.link, "", "", "", "")
+}
+												|GH300CR602.a.e

@@ -1,0 +1,3589 @@
+|******************************************************************************
+|* tpisgdll000015  0  VRC B61U a7 isg 
+|* Update Cost Sheet
+|* merino1
+|* 19-03-18 [21:27]
+|******************************************************************************
+|* Script Type: Library
+|******************************************************************************
+|* ISGEC01171, Prasanna Bhuyan, 12/3/2019, VRC B61U a7 isg
+|* New Development 
+|*
+|* ISGEC002025, Arun Chauhan, 08/04/2019,VRC B61U a7 isg
+|* Onsite Modification - Add A logic Oteration Management 
+|* 
+|* Adarsh Pal, 27-05-19, VRC B61U a7 isg
+|* Material Cost Booked, Other Cost Booked, Non-Integrated Cost Logic Addition
+|*
+|* Adarsh Pal, 28-05-19, VRC B61U a7 isg
+|* Refresh Tables tpisg066 and tpisg067
+|*
+|* #Adarsh.17.12.19, 17-12-2019, VRC B61U a7 isg
+|* Logic addition for not considering Provisons GL in Non-Integrated Cost
+|* against Cost Heads
+|****************************** declaration section ***************************
+
+	table	ttpisg054 | Cost Sheet Project Master
+	table	ttpisg055 | Cost Sheet Header
+	table	ttpisg056 | Cost Sheet Detail
+	table	ttpisg057 | Cost Sheet Header History
+	table	ttpisg058 | Cost Sheet Details History
+	table	ttpisg011 | Sanction Control 
+	table	ttpisg012 | Sanction Control Lines
+	table	ttpisg008 | Sanction Control History Lines
+	table	ttppdm740 | Project Business Partners
+	table	ttcmcs052 | Projects
+	table	ttpisg082 | Export Incentives
+	table	ttppdm600 | Display Project
+	table	ttfgld008 | Chart of Accounts
+	table	ttfgld482 | Integrated Transactions
+	table	ttpisg112 | Maintain Log for Saving Transfer
+	table	ttpppc275
+	table	ttpppc271
+	table	ttfgld106
+	table	ttpisg314
+	table	ttpisg315
+	table	ttpisg007
+	table	ttcemm030
+	table	ttpisg066
+	table	ttpisg067
+	table	ttpisg068
+	table	ttpisg069
+	table	ttpisg062
+	table	ttpisg017
+	table	ttdmsl400
+	table	ttdmsl501
+	table	ttfgld495
+	table	ttdpur406
+	table	ttdisg832
+	table	ttpppc215
+	table	ttdisg873
+	table	ttdpur401
+	table	ttpisg319
+	table	ttpisg320
+	table	ttpisg093
+	table	ttpisg059
+	table	ttpppc211
+	table	ttpisg069
+	table	ttdpur400
+	table	ttcmcs008
+	table	ttpppc210
+	table	ttpppc270
+	table	ttpppc275
+	table	ttpppc215
+	
+  
+	extern	domain	tccprj		cprj
+		domain	tcamnt		rate, exhd, stcs, ctcm, cons, cont, warr, old.ctcm, old.exhd, o.s.tfcy, o.s.tfcs,
+					o.s.tfwy, o.s.tfch, o.h.tfcy, o.h.tfcs, o.h.tfwy, o.h.tfch, tfcy, tfcs, 
+					tfwy, tfch, ttch,o.s.ttch,o.h.ttch
+		domain	tfgld.amnt	cost.amnt, h.amnt
+		domain	tfgld.amnt	cbac.amth,cbac.amth.tot,cbac.curr,niba.amnt.debit,niba.amnt.credit,
+					niba.amnt,amth,cbas.curr,cbac.amth.mat.prov,cbac.amth.mat.prov.tot,
+					cbac.amth.waty.tot,cbac.amth.waty
+		domain	tcamnt		amth.mat.prov,amth.mat.prov.net,amth.waty,amth.waty.net,amth.iamt,
+					iamt.net,amth.namt,namt.net,amth.pamt,amth.pamt.net,amth.elem.dr.iamt,amth.elem.cr.iamt,
+					amth.elem.iamt.net,eamt,famt,pamt
+		domain	tcamnt		cssh.positive,ctsh.positive,wtsh.positive
+		domain	tppdm.cspa	curr.elem,hold.elem
+		domain	tppdm.cspa	curr.elem.tran
+		domain	tcamnt		amth.tran,amth.net.pono,orno.oamt,orno.oamt1,amth.samt,amth.samt.net
+		domain	tcncmp		ncmp,curr.fcmp,hold.fcmp
+		domain	tfgld.leac	leac.chco
+			string		str.pono(3)
+			long		len.str.pono,max.vrsn
+		domain	tcorno		orno	
+		domain	tcpono		pono		
+		domain	tcqrd1		add.qty	
+		domain	tcdate		max.stdt	
+			long		ret,min.sern
+			
+	#pragma used dll otpisgdll000021
+|******************************************************************************
+
+function extern tpisgdll000015.Update_Cost_Sheet(
+							domain	tccprj	i.cprj,
+							domain	tcorno	i.revn
+										)
+{
+	select	tpisg012.cprj, tpisg012.elem, tpisg012.levl,
+		tpisg012.totl, tpisg012.exha, tpisg012.smnt,
+		tpisg012.ardc, tpisg012.ardi, tpisg012.ritb
+	from	tpisg012
+	where	tpisg012._index1 = {:i.cprj}
+| 	and	tpisg012.levl in (0,1,2)				|ISGEC002025.n
+| 	and	tpisg012.levl in (0,1,2,3,4)				|ISGEC002025.n
+	and	tpisg012.levl in (0,2,3,4)				
+	selectdo
+		if (tpisg012.levl = 3 or tpisg012.levl = 4)  and tpisg012.elem(1;1) <> "9" then
+			continue
+		else
+			insert_and_update_costsheet_details(tpisg012.cprj, tpisg012.elem)
+			get_transferred_from_amount(tpisg012.cprj, tpisg012.elem, tfcy, tfcs, tfwy, tfch,ttch)
+			
+			select	tpisg056.*
+			from	tpisg056 for update
+			where	tpisg056._index1 = {:i.cprj, :i.revn, :tpisg012.elem}
+			selectdo
+				tpisg056.levl = tpisg012.levl
+				tpisg056.sfal = tpisg012.smnt
+				tpisg056.ibud = tpisg008.totl
+				tpisg056.tbud = tpisg012.totl
+				tpisg056.exhd = tpisg012.exha
+				
+| 				if lval(tpisg056.revn) > 0 and tpisg056.levl  = 2 then
+				if tpisg056.levl = 2 then
+| 					get_cost_to_commit_calculation_values(tpisg056.cprj, tpisg056.revn, tpisg056.elem, old.ctcm, old.exhd)
+| 					tpisg056.ctcm = ((old.ctcm) - (tpisg056.exhd - old.exhd))
+					tpisg056.ctcm = tpisg056.tbud - tpisg056.exhd
+					
+					if tpisg056.ctcm < 0 then
+						tpisg056.ctcm = 0
+					endif
+				else
+| 					if lval(tpisg056.revn) > 0 and tpisg056.levl  <> 2 then
+					if tpisg056.levl  <> 2 then
+						tpisg056.ctcm = 0
+					endif
+				endif
+				
+				tpisg056.tcst = tpisg056.ctcm + tpisg056.exhd
+| 				tpisg056.varc = tpisg056.ibud - tpisg056.tcst
+				tpisg056.cbac = cost.amnt
+				tpisg056.upov = tpisg056.exhd - tpisg056.cbac
+																|#Adarsh.12.09.19.sn
+				tpisg056.cont = tfcy + get.shortfall.met.old.data(tpisg012.cprj,tpisg012.elem,"99100000") 
+				tpisg056.cons = tfcs + get.shortfall.met.old.data(tpisg012.cprj,tpisg012.elem,"99180000") 
+				tpisg056.warr = tfwy + get.shortfall.met.old.data(tpisg012.cprj,tpisg012.elem,"99110000") 
+																|#Adarsh.12.09.19.en
+				tpisg056.stmc = tfch
+				tpisg056.ttch = ttch
+				tpisg056.ests = get_status(tpisg012.cprj, tpisg012.elem)
+				tpisg056.tsht = tpisg056.cont + tpisg056.cons + tpisg056.warr
+| 				tpisg056.stcs = get_saving_transfer_amnt(tpisg012.cprj, tpisg012.elem, "tpisg0511m000")
+				tpisg056.stcs = get_saving_transfer_amnt(tpisg012.cprj, tpisg012.elem)
+				tpisg056.stat = tpstat.open
+				tpisg056.ardc = get.addition.reduction.due.to.client.till.date(tpisg012.cprj,tpisg012.elem,tpisg012.levl,tpisg012.ardc)
+				tpisg056.ardi = get.addition.reduction.due.to.internal.transfer.till.date(tpisg012.cprj,tpisg012.elem,tpisg012.levl,tpisg012.ardi)
+				tpisg056.ritb = tpisg012.ritb
+				tpisg056.niba = 0
+				db.update(ttpisg056, db.retry,e)
+				if not e then
+					commit.transaction()
+				else
+					abort.transaction()
+				endif
+		
+			selectempty
+				initialise_line()
+				tpisg056.cprj = tpisg012.cprj
+				tpisg056.revn = i.revn
+				tpisg056.elem = tpisg012.elem
+				tpisg056.levl = tpisg012.levl
+				tpisg056.ibud = tpisg008.totl
+				tpisg056.tbud = tpisg012.totl
+				tpisg056.exhd = tpisg012.exha
+				tpisg056.sfal = tpisg012.smnt
+				
+				if tpisg056.levl = 2 then
+					tpisg056.ctcm = tpisg056.tbud - tpisg056.exhd
+					
+					if tpisg056.ctcm < 0 then
+						tpisg056.ctcm = 0
+					endif
+				else
+					if tpisg056.levl  <> 2 then
+						tpisg056.ctcm = 0
+					endif
+				endif
+				
+				tpisg056.tcst = tpisg056.ctcm + tpisg056.exhd
+| 				tpisg056.varc = tpisg056.ibud - tpisg056.tcst
+				tpisg056.cbac = cost.amnt
+				tpisg056.upov = tpisg056.exhd - tpisg056.cbac
+				tpisg056.cont = tfcy + get.shortfall.met.old.data(tpisg012.cprj,tpisg012.elem,"99100000") 
+				tpisg056.cons = tfcs + get.shortfall.met.old.data(tpisg012.cprj,tpisg012.elem,"99180000") 
+				tpisg056.warr = tfwy + get.shortfall.met.old.data(tpisg012.cprj,tpisg012.elem,"99110000") 
+				tpisg056.stmc = tfch
+				tpisg056.stmc = ttch
+				tpisg056.ests = get_status(tpisg012.cprj, tpisg012.elem)
+| 	 			tpisg056.tsht = tpisg056.cont + tpisg056.cons + tpisg056.warr 				|ISGEC002025.o
+				tpisg056.tsht = tpisg056.cont + tpisg056.cons + tpisg056.warr + tpisg056.stmc		|ISGEC002025.n
+			
+| 				tpisg056.stcs = get_saving_transfer_amnt(tpisg012.cprj, tpisg012.elem, "tpisg0511m000")
+				tpisg056.stcs = get_saving_transfer_amnt(tpisg012.cprj, tpisg012.elem)
+				tpisg056.rovr = ""
+				tpisg056.stat = tpstat.open
+				tpisg056.ardc = get.addition.reduction.due.to.client.till.date(tpisg012.cprj,tpisg012.elem,tpisg012.levl,tpisg012.ardc)
+				tpisg056.ardi = get.addition.reduction.due.to.internal.transfer.till.date(tpisg012.cprj,tpisg012.elem,tpisg012.levl,tpisg012.ardi)
+				tpisg056.ritb = tpisg012.ritb
+				tpisg056.niba = 0
+				db.insert(ttpisg056, db.skip.dupl,e)
+				if not e then
+					commit.transaction()
+				else
+					abort.transaction()
+				endif
+			endselect
+		endif
+	endselect
+	update_costsheet_header(i.cprj, i.revn)
+	initialize.new()
+	update.cbac.amnt(i.cprj)
+	update.niba.amnt(i.cprj,i.revn)
+	refresh.tpisg066(i.cprj)
+	refresh.tpisg067(i.cprj)
+	refresh.tpisg068(i.cprj)
+	refresh.tpisg093(i.cprj)
+	calculate.and.insert.or.update.loss.in.taxes.cost.head(i.cprj,i.revn)
+	update.total.cost.variance.and.unexpected.po.value(i.cprj)
+	insert.provisions.element(i.cprj,i.revn)
+	update.sum.on.parent.element(i.cprj)
+	update.cost.incurred(i.cprj)
+| 	message("Data updated successfully!")
+}
+														|Adarsh.07.06.19.sn
+function extern	tpisgdll000015.capture.tfgld106.data.in.tpisg069(domain tccprj i.cprj)
+{
+	select	tppdm600.ncmp
+	from	tppdm600
+	where	tppdm600._index1 = {:i.cprj}
+	as set with 1 rows
+	selectdo
+		select	tcemm030.lcmp
+		from	tcemm030
+		where	tcemm030.fcmp = :tppdm600.ncmp
+		as set with 1 rows
+		selectdo
+			select	tcemm030.fcmp
+			from	tcemm030
+			where	tcemm030.lcmp = :tcemm030.lcmp
+			selectdo
+				select	tpisg314.chco
+				from	tpisg314
+				selectdo
+					select	tfgld106.otyp,
+						tfgld106.odoc,
+						tfgld106.olin,
+						tfgld106.osrl,
+						tfgld106.osrn,
+						tfgld106.ocmp,
+						tfgld106.leac,
+						tfgld106.dim1,
+						tfgld106.refr,
+						tfgld106.ref2,
+						tfgld106.amth(1):amth.tran,
+						tfgld106.dbcr,
+						tfgld106.fprd,
+						tfgld106.fyer,
+						tfgld008.iprj
+					from	tfgld106,tfgld008
+					where	tfgld106.leac in(select	tpisg315.leac
+								 from	tpisg315
+								 where	tpisg315._index1 = {:tpisg314.chco})
+					and	tfgld106.dim1 = :i.cprj
+					and	tfgld106._compnr  = :tcemm030.fcmp
+					and 	tfgld106.leac refers to tfgld008
+					selectdo
+						curr.elem.tran = tfgld106.refr(19;8)
+						if tfgld106.refr(1;8) <> "tpppc010" then
+							curr.elem.tran = ""
+						endif
+						db.retry.point()
+						select	tpisg069.*
+						from	tpisg069 for update
+						where	tpisg069._index1 = {
+										:tcemm030.fcmp,
+										:tfgld106.otyp,
+										:tfgld106.odoc,
+										:tfgld106.olin,
+										:tfgld106.osrl,
+										:tfgld106.osrn
+												}
+						selectdo
+							tpisg069.ocmp = tfgld106.ocmp
+							tpisg069.leac = tfgld106.leac
+							tpisg069.fyer = tfgld106.fyer
+							tpisg069.fprd = tfgld106.fprd
+							tpisg069.ref2 = tfgld106.ref2
+							tpisg069.amth = amth.tran
+							tpisg069.dbcr = tfgld106.dbcr
+							tpisg069.dim1 = tfgld106.dim1
+							tpisg069.refr = tfgld106.refr
+							tpisg069.cspa = curr.elem.tran
+							tpisg069.chco = tpisg314.chco
+							tpisg069.iprj = tfgld008.iprj
+							tpisg069.lcmp = tcemm030.lcmp
+							db.update(ttpisg069,DB.RETRY)
+						selectempty
+							tpisg069.fcmp = tcemm030.fcmp
+							tpisg069.otyp = tfgld106.otyp
+							tpisg069.odoc = tfgld106.odoc
+							tpisg069.olin = tfgld106.olin
+							tpisg069.osrl = tfgld106.osrl
+							tpisg069.osrn = tfgld106.osrn
+							tpisg069.ocmp = tfgld106.ocmp
+							tpisg069.leac = tfgld106.leac
+							tpisg069.fyer = tfgld106.fyer
+							tpisg069.fprd = tfgld106.fprd
+							tpisg069.ref2 = tfgld106.ref2
+							tpisg069.amth = amth.tran
+							tpisg069.dbcr = tfgld106.dbcr
+							tpisg069.dim1 = tfgld106.dim1
+							tpisg069.refr = tfgld106.refr
+							tpisg069.cspa = curr.elem.tran
+							tpisg069.chco = tpisg314.chco
+							tpisg069.iprj = tfgld008.iprj
+							tpisg069.lcmp = tcemm030.lcmp
+							db.insert(ttpisg069,DB.RETRY)
+						endselect	
+						commit.transaction()
+					endselect
+				endselect	
+			endselect
+		endselect
+	endselect
+}
+
+function extern tpisgdll000015.capture.tpppc.data.in.tpisg059(domain tccprj i.cprj)
+{
+	db.retry.point()
+	select	tpisg059.*
+	from	tpisg059 for update
+	where	tpisg059._index2 = {:i.cprj}
+	selectdo
+		db.delete(ttpisg059,DB.RETRY)
+		commit.transaction()
+	endselect
+	
+	select	tpppc271.cprj,
+		tpppc271.csub,
+		tpppc271.cspa,
+		tpppc271.cpla,
+		tpppc271.cact,
+		tpppc271.amoc,
+		tpppc271.ftty,
+		tpppc271.fdoc,
+		tpppc271.flin
+	from	tpppc271
+	where	tpppc271._index1 = {:i.cprj}
+	selectdo
+		db.retry.point()
+		select	tpisg059.*
+		from	tpisg059 for update
+		where	tpisg059._index1 = {:tpppc271.ftty,:tpppc271.fdoc,:tpppc271.flin}
+		selectdo
+		selectempty
+			tpisg059.cprj = tpppc271.cprj
+			tpisg059.cspa = tpppc271.cspa
+			tpisg059.ftty = tpppc271.ftty
+			tpisg059.fdoc = tpppc271.fdoc
+			tpisg059.flin = tpppc271.flin
+			tpisg059.amoc = tpppc271.amoc
+			tpisg059.guid = ""
+			tpisg059.item = tpppc271.csub
+			tpisg059.cpla = tpppc271.cpla
+			tpisg059.cact = tpppc271.cact  
+			tpisg059.tabl = "tpppc271"
+			db.insert(ttpisg059,DB.RETRY)
+			commit.transaction()
+		endselect
+	selectempty
+	endselect
+	
+	select	tpppc275.cprj,
+		tpppc275.csub,
+		tpppc275.cspa,
+		tpppc275.cpla,
+		tpppc275.cact,
+		tpppc275.amoc,
+		tpppc275.ftty,
+		tpppc275.fdoc,
+		tpppc275.flin,
+		tpppc275.guid
+	from	tpppc275
+	where	tpppc275._index1 = {:i.cprj}
+	selectdo
+		db.retry.point()
+		select	tpisg059.*
+		from	tpisg059 for update
+		where	tpisg059._index1 = {:tpppc275.ftty,:tpppc275.fdoc,:tpppc275.flin}
+		selectdo
+		selectempty
+			tpisg059.cprj = tpppc275.cprj
+			tpisg059.cspa = tpppc275.cspa
+			tpisg059.ftty = tpppc275.ftty
+			tpisg059.fdoc = tpppc275.fdoc
+			tpisg059.flin = tpppc275.flin
+			tpisg059.amoc = tpppc275.amoc
+			tpisg059.guid = tpppc275.guid
+			tpisg059.item = tpppc275.csub
+			tpisg059.cpla = tpppc275.cpla
+			tpisg059.cact = tpppc275.cact
+			tpisg059.tabl = "tpppc275"
+			db.insert(ttpisg059,DB.RETRY)
+			commit.transaction()
+		endselect
+	selectempty
+	endselect
+	
+	select	tpppc211.cprj,
+		tpppc211.item,
+		tpppc211.cspa,
+		tpppc211.cpla,
+		tpppc211.cact,
+		tpppc211.amoc,
+		tpppc211.ftty,
+		tpppc211.fdoc,
+		tpppc211.flin
+	from	tpppc211
+	where	tpppc211._index1 = {:i.cprj}
+	selectdo
+		db.retry.point()
+		select	tpisg059.*
+		from	tpisg059 for update
+		where	tpisg059._index1 = {:tpppc211.ftty,:tpppc211.fdoc,:tpppc211.flin}
+		selectdo
+		selectempty
+			tpisg059.cprj = tpppc211.cprj
+			tpisg059.cspa = tpppc211.cspa
+			tpisg059.ftty = tpppc211.ftty
+			tpisg059.fdoc = tpppc211.fdoc
+			tpisg059.flin = tpppc211.flin
+			tpisg059.amoc = tpppc211.amoc
+			tpisg059.guid = ""
+			tpisg059.item = tpppc211.item
+			tpisg059.cpla = tpppc211.cpla
+			tpisg059.cact = tpppc211.cact
+			tpisg059.tabl = "tpppc211"
+			db.insert(ttpisg059,DB.RETRY)
+			commit.transaction()
+		endselect
+	selectempty
+	endselect
+	
+	select	tpppc215.cprj,
+		tpppc215.item,
+		tpppc215.cspa,
+		tpppc215.cpla,
+		tpppc215.cact,
+		tpppc215.amoc,
+		tpppc215.ftty,
+		tpppc215.fdoc,
+		tpppc215.flin,
+		tpppc215.guid
+	from	tpppc215
+	where	tpppc215._index1 = {:i.cprj}
+	selectdo
+		db.retry.point()
+		select	tpisg059.*
+		from	tpisg059 for update
+		where	tpisg059._index1 = {:tpppc215.ftty,:tpppc215.fdoc,:tpppc215.flin}
+		selectdo
+		selectempty
+			tpisg059.cprj = tpppc215.cprj
+			tpisg059.cspa = tpppc215.cspa
+			tpisg059.ftty = tpppc215.ftty
+			tpisg059.fdoc = tpppc215.fdoc
+			tpisg059.flin = tpppc215.flin
+			tpisg059.amoc = tpppc215.amoc
+			tpisg059.guid = tpppc215.guid
+			tpisg059.item = tpppc215.item
+			tpisg059.cpla = tpppc215.cpla
+			tpisg059.cact = tpppc215.cact
+			tpisg059.tabl = "tpppc215"
+			db.insert(ttpisg059,DB.RETRY)
+			commit.transaction()
+		endselect
+	selectempty
+	endselect
+	
+	update.tpisg069.logictic.element(i.cprj)
+}
+
+function extern tpisgdll000015.capture.elementwise.consumption.detail(domain tccprj i.cprj)
+{
+	eamt = 0.0
+	
+	db.retry.point()
+	select	tpisg062.*
+	from	tpisg062 for update
+	where	tpisg062._index1 = {:i.cprj}
+	selectdo
+		db.delete(ttpisg062,DB.RETRY)
+		commit.transaction()
+	endselect
+	
+	select	tpisg056.cprj,tpisg056.elem
+	from	tpisg056
+	where	tpisg056._index1 = {:i.cprj}
+	selectdo
+		select	tppdm600.ncmp
+		from	tppdm600
+		where	tppdm600._index1 = {:i.cprj}
+		as set with 1 rows
+		selectdo
+		endselect
+		
+		select	a_tdmsl501.orno:orno,a_tdmsl501.pono:pono
+		from	tdmsl501 a_tdmsl501
+		where	a_tdmsl501._index2 = {:tpisg056.cprj} 
+		and	a_tdmsl501.cspa(1;4) = :tpisg056.elem(1;4)
+		group by	a_tdmsl501.orno,a_tdmsl501.pono
+		selectdo
+			select	tdmsl400.apdt
+			from	tdmsl400
+			where	tdmsl400._index1 = {:orno,0}
+			and	tdmsl400.stat = 1
+			as set with 1 rows
+			selectdo
+			endselect
+			
+			select	max(tdmsl400.vrsn):max.vrsn
+			from	tdmsl400
+			where	tdmsl400._index1 = {:orno}
+			and	tdmsl400.work in (1,3)
+			selectdo
+			endselect
+			
+			select	tdmsl501.orno,
+				tdmsl501.pono,
+				tdmsl501.otbp,
+				tdmsl501.item,
+				tdmsl501.cspa
+			from	tdmsl501
+			where	tdmsl501._index5 = {:tpisg056.cprj,:orno,:max.vrsn,:pono}
+			and 	tdmsl501.cspa(1;4) = :tpisg056.elem(1;4)
+			group by	tdmsl501.orno,
+					tdmsl501.pono,
+					tdmsl501.otbp,
+					tdmsl501.item,
+					tdmsl501.cspa
+			selectdo
+				orno.oamt1 = get.oamt(tdmsl501.orno,tdmsl501.pono)
+				
+| 				select	tdpur400.odat,tdpur400.ccur
+| 				from	tdpur400
+| 				where	tdpur400._index1 = {:tdpur401.orno}
+| 				and 	tdpur400.impo.l = 1
+| 				as set with 1 rows
+| 				selectdo
+| 				select	tdmsl400.updt
+| 				from	tdmsl400
+| 				where	tdmsl400._index1 = {:tdpur401.orno,0}
+| 				selectdo
+| 					select	max(tcmcs008.stdt):max.stdt
+| 					from 	tcmcs008
+| 					where	tcmcs008._index1 = {"INR",:tdpur400.ccur,"PUR"} 
+| 					and	tcmcs008.stdt <= :tdmsl400.updt
+| 					and 	tcmcs008.excb = 2
+| 					selectdo
+| 						select	a_tcmcs008.rate
+| 						from 	tcmcs008 a_tcmcs008
+| 						where	a_tcmcs008._index1 = {"INR",:tdpur400.ccur,"PUR",:max.stdt} 
+| 						and 	a_tcmcs008.excb = 2
+| 						selectdo
+| 							orno.oamt1 = orno.oamt1 * tcmcs008.rate
+| 						selectempty
+| 							message("Currency Rate not found for PO %s",tdpur401.orno)
+| 						endselect
+| 					endselect
+| 				endselect
+				
+				
+				select	tdpur400.odat
+				from	tdpur400
+				where	tdpur400._index1 = {:tdpur401.orno}
+				and 	tdpur400.impo.l = 1
+				selectdo
+					select	min(tpppc215.sern):min.sern
+					from	tpppc215
+					where	tpppc215._index5 = {:tdpur401.orno,:tdpur401.pono}
+					selectdo
+						select	a_tpppc215.rtcc
+						from	tpppc215 a_tpppc215
+						where	a_tpppc215._index5 = {:tdpur401.orno,:tdpur401.pono}
+						and	a_tpppc215.sern = :min.sern
+						selectdo
+							orno.oamt1 = orno.oamt1 * tpppc215.rtcc(1)
+						endselect
+					selectempty
+						select	min(tpppc210.sern):min.sern
+						from	tpppc210
+						where	tpppc210._index3 = {:tdpur401.orno,:tdpur401.pono}
+						selectdo
+							select	b_tpppc210.rtcc
+							from	tpppc210 b_tpppc210
+							where	b_tpppc210._index3 = {:tdpur401.orno,:tdpur401.pono}
+							and	b_tpppc210.sern = :min.sern
+							selectdo
+								orno.oamt1 = orno.oamt1 * tpppc210.rtcc(1)
+							endselect
+						selectempty
+							select	min(tpppc275.sern):min.sern
+							from	tpppc275
+							where	tpppc275._index5 = {:tdpur401.orno,:tdpur401.pono}
+							selectdo
+								select	a_tpppc275.rtcc
+								from	tpppc275 a_tpppc275
+								where	a_tpppc275._index5 = {:tdpur401.orno,:tdpur401.pono}
+								and	a_tpppc275.sern = :min.sern
+								selectdo
+									orno.oamt1 = orno.oamt1 * tpppc275.rtcc(1)
+								endselect
+							selectempty
+								select	min(tpppc270.sern):min.sern
+								from	tpppc270
+								where	tpppc270._index3 = {:tdpur401.orno,:tdpur401.pono}
+								selectdo
+									select	b_tpppc270.rtcc
+									from	tpppc270 b_tpppc270
+									where	b_tpppc270._index3 = {:tdpur401.orno,:tdpur401.pono}
+									and	b_tpppc270.sern = :min.sern
+									selectdo
+										orno.oamt1 = orno.oamt1 * tpppc270.rtcc(1)
+									endselect
+								endselect
+							endselect
+						endselect
+					endselect
+				endselect
+				
+				tpisgdll000021.get.exhausted.amount.of.po.and.line(tdmsl501.orno,tdmsl501.pono,eamt)
+				insert.tpisg062(tpisg056.cprj,
+						tpisg056.elem,
+						tdmsl501.orno,
+						tdmsl501.pono,
+						tdmsl501.cspa,
+						tdmsl400.apdt,
+						tdmsl501.otbp,
+						tdmsl501.item,
+						orno.oamt1,
+						eamt)
+			endselect
+		endselect
+		update.tpisg062.cbac(tpisg056.cprj,tpisg056.elem,tppdm600.ncmp)	
+	endselect
+}
+
+function insert.tpisg062(
+				domain	tccprj		i.cprj,
+				domain	tppdm.cspa 	i.elem,
+				domain	tcorno     	i.orno,
+				domain	tcpono		i.pono,
+				domain	tppdm.cspa	i.cspa,
+				domain	tcdate		i.apdt,
+				domain	tccom.bpid	i.otbp,
+				domain	tcitem		i.item,
+				domain	tcamnt		i.amnt,
+				domain	tcamnt		i.eamt	)
+{
+	db.retry.point()
+	select	tpisg062.*
+	from	tpisg062 
+	where	tpisg062._index1 = {:i.cprj,:i.elem,:i.orno,:i.pono}
+	selectdo
+	selectempty
+		tpisg062.cprj = i.cprj
+		tpisg062.elem = i.elem
+		tpisg062.orno = i.orno
+		tpisg062.pono = i.pono
+		tpisg062.cspa = i.cspa
+		tpisg062.podt = i.apdt
+		tpisg062.otbp = i.otbp
+		tpisg062.item = i.item
+		tpisg062.oamt = i.amnt
+		tpisg062.chco = ""
+		tpisg062.cbac = 0.0
+		tpisg062.eamt = i.eamt
+		db.insert(ttpisg062,DB.RETRY)
+		commit.transaction()
+	endselect
+	
+}			
+
+| function update.tpisg062.cbac(	
+| 				domain	tccprj		i.cprj,
+| 				domain	tppdm.cspa	i.elem,
+| 				domain	tcncmp		i.ncmp
+| 								)
+| {
+| 	select	tfgld106.leac,tfgld106.ref2,tfgld106.amth
+| 	from	tfgld106
+| 	where	tfgld106.dim1 = {:i.cprj}
+| 	and	tfgld106._compnr = :i.ncmp
+| 	and	tfgld106.refr(19;4) = :i.elem(1;4)
+| 	and	tfgld106.dbcr = 1
+| 	selectdo
+| 		select	tpisg315.chco
+| 		from	tpisg315
+| 		where	tpisg315.leac = :tfgld106.leac
+| 		selectdo
+| 		endselect
+| 		
+| 		select	tfgld482.buid
+| 		from	tfgld482
+| 		where	tfgld482._index1 = {:tfgld106.ref2}
+| 		and	tfgld482._compnr = :i.ncmp
+| 		and	tfgld482.dbcr = 1
+| 		selectdo
+| 			select	tpppc215.orno,tpppc215.pono
+| 			from	tpppc215
+| 			where	tpppc215._index9 = {:tfgld482.buid}
+| 			selectdo
+| 				if str.startswith(tpppc215.orno,"P") then
+| 					update.tpisg062(i.cprj,i.elem,tpppc215.orno,tpppc215.pono,tpisg315.chco,tfgld106.amth(1))
+| 				else	
+| 					select	tdisg832.orno,tdisg832.pono
+| 					from	tdisg832
+| 					where	tdisg832.worn = :tpppc215.orno
+| 					and	tdisg832.wlin = :tpppc215.pono
+| 					selectdo
+| 						update.tpisg062(i.cprj,i.elem,tdisg832.orno,tdisg832.pono,tpisg315.chco,tfgld106.amth(1))
+| 					selectempty
+| 						select	tdisg873.rcno,tdisg873.rcln
+| 						from	tdisg873
+| 						where	tdisg873.worn = :tpppc215.orno
+| 						and	tdisg873.wlin = :tpppc215.pono
+| 						selectdo
+| 							select	tdpur406.orno,tdpur406.pono
+| 							from	tdpur406
+| 							where	tdpur406._index2 = {:tdisg873.rcno,:tdisg873.rcln}
+| 							selectdo
+| 								update.tpisg062(i.cprj,i.elem,tdpur406.orno,tdpur406.pono,tpisg315.chco,tfgld106.amth(1))
+| 							selectempty
+| 								message("Record not found in tdpur406 " & tfgld106.ref2)
+| 							endselect
+| 						selectempty
+| 							message("Record not found in tdisg873 " & tfgld106.ref2)
+| 						endselect
+| 					endselect
+| 				endif	
+| 			selectempty
+| 				select	tpppc275.orno,tpppc275.pono
+| 				from	tpppc275
+| 				where	tpppc275._index9 = {:tfgld482.buid}
+| 				selectdo
+| 					update.tpisg062(i.cprj,i.elem,tpppc275.orno,tpppc275.pono,tpisg315.chco,tfgld106.amth(1))
+| 				selectempty
+| 					message("Record not found in tpppc275 " & tfgld106.ref2)	
+| 				endselect
+| 			endselect
+| 		selectempty
+| 			message("Record not found in tfgld482 " & tfgld106.ref2)	
+| 		endselect
+| 	endselect	
+| }
+
+function update.tpisg062.cbac(	domain	tccprj		i.cprj,
+				domain	tppdm.cspa	i.elem,
+				domain	tcncmp		i.ncmp	)
+				
+{
+	select	tpisg069.leac,tpisg069.ref2,tpisg069.amth
+	from	tpisg069
+	where	tpisg069._index2 = {:i.cprj}
+	and	tpisg069.cspa(1;4) = :i.elem(1;4)
+	and	tpisg069.dbcr = 1
+	selectdo
+		select	tpisg315.chco
+		from	tpisg315
+		where	tpisg315.leac = :tpisg069.leac
+		selectdo
+		endselect
+		
+		select	tfgld482.buid
+		from	tfgld482
+		where	tfgld482._index1 = {:tpisg069.ref2}
+		and	tfgld482._compnr = :i.ncmp
+		and	tfgld482.dbcr = 1
+		selectdo
+			select	tpppc215.orno,tpppc215.pono
+			from	tpppc215
+			where	tpppc215._index9 = {:tfgld482.buid}
+			selectdo
+				if str.startswith(tpppc215.orno,"P") then
+					update.tpisg062(i.cprj,i.elem,tpppc215.orno,tpppc215.pono,tpisg315.chco,tpisg069.amth)
+				else	
+					select	tdisg831.edrn,tdisg832.orno,tdisg832.pono
+					from	tdisg831,tdisg832
+					where	tdisg831._index4 = {:i.cprj}
+					and	tdisg832._index1 refers to tdisg831
+					and	tdisg832.worn = :tpppc215.orno
+					and	tdisg832.wlin = :tpppc215.pono
+					selectdo
+						update.tpisg062(i.cprj,i.elem,tdisg832.orno,tdisg832.pono,tpisg315.chco,tpisg069.amth)
+					selectempty
+						select	tdisg873.rcno,tdisg873.rcln
+						from	tdisg873
+						where	tdisg873.worn = :tpppc215.orno
+						and	tdisg873.wlin = :tpppc215.pono
+						selectdo
+							select	tdpur406.orno,tdpur406.pono
+							from	tdpur406
+							where	tdpur406._index2 = {:tdisg873.rcno,:tdisg873.rcln}
+							selectdo
+								update.tpisg062(i.cprj,i.elem,tdpur406.orno,tdpur406.pono,tpisg315.chco,tpisg069.amth)
+							selectempty
+								message("Record not found in tdpur406 " & tpisg069.ref2)
+							endselect
+						selectempty
+							message("Record not found in tdisg873 " & tpisg069.ref2)
+						endselect
+					endselect
+				endif	
+			selectempty
+				select	tpppc275.orno,tpppc275.pono
+				from	tpppc275
+				where	tpppc275._index9 = {:tfgld482.buid}
+				selectdo
+					update.tpisg062(i.cprj,i.elem,tpppc275.orno,tpppc275.pono,tpisg315.chco,tpisg069.amth)
+				selectempty
+					message("Record not found in tpppc275 " & tpisg069.ref2)	
+				endselect
+			endselect
+		selectempty
+			message("Record not found in tfgld482 " & tfgld106.ref2)	
+		endselect
+	endselect	
+}
+
+
+function update.tpisg062(
+				domain	tccprj		i.cprj,
+				domain	tppdm.cspa	i.elem,
+				domain	tcorno		i.orno,
+				domain	tcpono		i.pono,
+				domain	tcmcs.str4	i.chco,
+				domain	tcamnt		i.amth
+								)
+{
+	db.retry.point()
+	select	tpisg062.chco,tpisg062.cbac
+	from	tpisg062 for update
+	where	tpisg062._index1 = {:i.cprj,:i.elem,:i.orno,:i.pono}
+	selectdo
+		tpisg062.chco = i.chco
+		tpisg062.cbac = tpisg062.cbac + i.amth
+		db.update(ttpisg062,DB.RETRY)
+	selectempty
+		message("Record not found in tpisg062 " & i.orno)
+	endselect
+	commit.transaction()
+}
+			
+function domain tcamnt get.oamt(
+					domain	tcorno	i.orno,
+					domain	tcpono	i.pono
+								)
+{
+	add.qty = 0.0
+	orno.oamt = 0.0
+	
+	select	tdpur401.orno,
+		tdpur401.pono,
+		tdpur401.sqnb,
+		tdpur401.oltp,
+		tdpur401.otbp,
+		tdpur401.item,
+		tdpur401.qoor,
+		tdpur401.cvqp,
+		tdpur401.oamt,
+		tdpur401.qidl,
+		tdpur401.fire
+	from	tdpur401
+	where	tdpur401._index1 = {:i.orno,:i.pono}
+	and	tdpur401.oltp in (1,4)
+	selectdo
+		add.qty = get.additional.qty.from.tdpur401(tdpur401.orno,tdpur401.pono)
+		if tdpur401.qoor <> 0 then
+			orno.oamt = (tdpur401.oamt / tdpur401.qoor) * (add.qty)
+		else
+			orno.oamt = 0
+		endif
+	endselect
+	return(orno.oamt)
+}	
+
+function domain tcqrd1 get.additional.qty.from.tdpur401(
+								domain tcorno i.orno,	
+								domain tcpono i.pono	
+											)
+{
+	domain	tcqrd1	final.rcpt.qnty,
+			non.final.rcpt.qnty,
+			ord.qty,
+			diff.qty
+			
+	final.rcpt.qnty = 0.0
+	non.final.rcpt.qnty = 0.0	
+	ord.qty = 0.0
+	diff.qty = 0.0
+
+	select	sum(tdpur401.qidl):final.rcpt.qnty
+	from	tdpur401
+	where 	tdpur401._index1 = {:i.orno,:i.pono}
+	and	tdpur401.oltp <> 1		
+	and	tdpur401.clyn <> tcyesno.yes 	
+	selectdo
+	selectempty
+		final.rcpt.qnty = 0.00
+	endselect
+	
+	final.rcpt.qnty = final.rcpt.qnty/tdpur401.cvqp	
+	
+	select	sum(tdpur401.qidl):non.final.rcpt.qnty,
+		sum(tdpur401.qoor):ord.qty
+	from 	tdpur401 
+	where 	tdpur401._index1 = {:i.orno, :i.pono}
+	and	tdpur401.fire = tcyesno.no
+	and	tdpur401.oltp <> 1		
+	and	tdpur401.clyn <> tcyesno.yes 	
+	selectdo
+	selectempty
+		ord.qty = 0.00
+		non.final.rcpt.qnty = 0.00
+	endselect
+	
+	diff.qty = final.rcpt.qnty + (ord.qty - non.final.rcpt.qnty)
+
+	return(diff.qty)
+}
+														|Adarsh.07.06.19.en
+function insert_and_update_costsheet_details(
+						domain 	tccprj		i.proj,
+						domain	tppdm.cspa	c.elem
+										)
+{
+	domain	tcboid		proj
+	domain	tppdm.cspa	p.elem
+	
+	tpisg008.totl = 0
+	select	tpisg008.totl
+	from	tpisg008
+	where	tpisg008._index1 = {:i.proj, "1.0", :c.elem}
+	selectdo
+	selectempty
+		tpisg008.totl = 0
+	endselect
+	
+	select	tppdm600.ncmp:ncmp
+	from	tppdm600
+	where	tppdm600._index1 = {:i.proj}
+	selectdo
+	endselect
+	
+	p.elem = ""
+	cost.amnt = 0
+	h.amnt = 0
+| 	select	atpisg012.elem:p.elem,
+| 		atpisg012.cprj:proj
+| 	from	tpisg012	atpisg012
+| 	where	atpisg012._index1 = {:i.proj}
+| 	and	atpisg012.levl = 3
+| 	and	atpisg012.cspa = :c.elem
+
+	select	atpisg012.elem:p.elem,		|veena.15-05-2019.n
+		atpisg012.cprj:proj
+	from	tpisg012	atpisg012
+	where	atpisg012._index1 = {:i.proj}
+	and	atpisg012.levl in(3,4)		
+	and	atpisg012.cspa(1;4) = :c.elem(1;4)
+	selectdo
+		select	tfgld482.leac, tfgld482.obre,
+			tfgld482.amth(1):h.amnt
+		from	tfgld482
+		where	tfgld482._compnr = :ncmp
+		and	tfgld482.rbid = :proj
+		and	tfgld482.dbcr = tfgld.dbcr.debit
+		and	tfgld482.sint = tfgld.ints.posted	
+		selectdo
+			select	tfgld008.leac
+			from	tfgld008
+			where	tfgld008._index1 = {:tfgld482.leac}
+			and	(tfgld008.inta = tcyesno.yes
+			or	tfgld008.iprj = tfgld.intr.proj.costs) 		|ISGEC002025.n
+			selectdo
+				if tfgld482.obre(3;8) = p.elem and tfgld482.leac(1;1) = "6" then
+					cost.amnt = cost.amnt + h.amnt
+				endif
+			endselect
+		endselect
+	endselect	
+}
+
+function domain tcamnt get_saving_transfer_amnt(
+						domain	tccprj		i.cprj,
+						domain	tppdm.cspa	i.elem
+| 						domain	tfgld.sess	i.sess
+										)
+{
+	domain	tcamnt	s.amnt
+	
+	s.amnt = 0
+	
+	select	sum(tpisg112.amnt):s.amnt
+| 		tpisg112.elem 
+| 		tpisg112.sess
+	from	tpisg112
+	where	tpisg112._index1 = {:i.cprj}
+	and	tpisg112.elem = :i.elem
+| 	and	tpisg112.sess = :i.sess
+| 	group by tpisg112.elem, tpisg112.sess
+	selectdo
+	endselect
+	
+	return(s.amnt)
+}
+
+function domain tpengs get_status(
+					domain	tccprj		i.cprj,
+					domain	tppdm.cspa	i.elem
+									)
+{
+	domain	tpengs	engs
+	
+	engs = empty
+	
+	select	tpisg063.engs:engs
+	from	tpisg063
+	where	tpisg063._index1 = {:i.cprj, :i.elem}
+	selectdo
+	selectempty
+		engs = empty
+	endselect
+	
+	return(engs)
+}
+
+function get_cost_to_commit_calculation_values(
+						domain	tccprj		i.cprj,
+						domain	tcorno		i.revn,
+						domain	tppdm.cspa	i.elem,
+					ref 	domain	tcamnt		o.ctcm,	
+					ref	domain	tcamnt		o.exhd
+										)
+{
+	domain	tcorno	revn
+	
+	revn = str$(lval(tpisg056.revn) - 1)
+	
+	select	tpisg058.ctcm:o.ctcm,
+		tpisg058.exhd:o.exhd
+	from	tpisg058
+	where	tpisg058._index1 = {:i.cprj, :revn, :i.elem}
+	selectdo
+	endselect
+}
+
+function get_transferred_from_amount(
+					domain	tccprj		i.cprj,
+					domain	tppdm.cspa	i.elem,
+				ref	domain	tcamnt		o.tfcy,
+				ref	domain	tcamnt		o.tfcs,
+				ref	domain	tcamnt		o.tfwy,
+				ref	domain	tcamnt		o.tfch,
+				ref	domain	tcamnt		o.ttch
+									)
+{
+	o.tfcy = 0
+	o.tfcs = 0
+	o.tfwy = 0
+	o.tfch = 0
+	o.ttch = 0
+	initialize_var()
+	
+	select	sum(tpisg012.tfcy):o.s.tfcy,
+	 	sum(tpisg012.tfcs):o.s.tfcs,
+	 	sum(tpisg012.tfwy):o.s.tfwy,
+	 	sum(tpisg012.tfch):o.s.tfch,
+	 	sum(tpisg012.ttch):o.s.ttch
+	from	tpisg012
+	where	tpisg012._index1 = {:i.cprj}
+	and	tpisg012.elem = :i.elem
+	selectdo
+	selectempty
+		o.s.tfcy = 0
+		o.s.tfcs = 0
+		o.s.tfwy = 0
+		o.s.tfch = 0
+		o.s.ttch = 0
+	endselect
+	
+	select	sum(tpisg008.tfcy):o.h.tfcy,
+	 	sum(tpisg008.tfcs):o.h.tfcs,
+	 	sum(tpisg008.tfwy):o.h.tfwy,
+	 	sum(tpisg008.tfch):o.h.tfch,
+	 	sum(tpisg008.ttch):o.h.ttch
+	from	tpisg008
+	where	tpisg008._index1 = {:i.cprj}
+	and	tpisg008.elem = :i.elem
+	selectdo
+	selectempty
+		o.h.tfcy = 0
+		o.h.tfcs = 0
+		o.h.tfwy = 0
+		o.h.tfch = 0
+		o.h.ttch = 0
+	endselect	
+	
+	o.tfcy = o.s.tfcy + o.h.tfcy
+	o.tfcs = o.s.tfcs + o.h.tfcs
+	o.tfwy = o.s.tfwy + o.h.tfwy
+	o.tfch = o.s.tfch + o.h.tfch
+	o.ttch = o.s.ttch + o.h.ttch
+}
+
+function initialize_var()
+{
+	o.s.tfcy = 0
+	o.s.tfcs = 0
+	o.s.tfwy = 0
+	o.s.tfch = 0
+	o.s.ttch = 0
+	o.h.tfcy = 0
+	o.h.tfcs = 0
+	o.h.tfwy = 0
+	o.h.tfch = 0
+	o.h.ttch = 0
+}
+
+function initialise_line()
+{
+	tpisg056.cprj = ""
+	tpisg056.revn = ""
+	tpisg056.elem = ""
+	tpisg056.levl = 0
+	tpisg056.ibud = 0
+	tpisg056.tbud = 0
+	tpisg056.exhd = 0
+	tpisg056.ctcm = 0
+	tpisg056.tcst = 0
+	tpisg056.varc = 0
+	tpisg056.cbac = 0
+	tpisg056.upov = 0
+	tpisg056.cont = 0
+	tpisg056.cons = 0
+	tpisg056.warr = 0
+	tpisg056.tsht = 0
+	tpisg056.stcs = 0
+	tpisg056.rovr = ""
+	tpisg056.stat = empty
+	tpisg056.ardc = 0
+	tpisg056.ardi = 0
+	tpisg056.ritb = 0
+}
+
+function update_costsheet_header(
+					domain	tccprj	i.cprj,
+					domain	tcorno	i.revn
+								)
+{
+	domain	tcamnt	budgeted.ctoh
+	rate = 0
+	exhd = 0
+	ctcm = 0
+	stcs = 0
+	cons = 0
+	warr = 0
+	cont = 0
+	ttch = 0
+	
+	select	tpisg055.*
+	from	tpisg055 for update
+	where	tpisg055._index1 = {:i.cprj, :i.revn}
+	selectdo
+		get_common_data(i.cprj)
+		budgeted.ctoh = 0.00							|ISGEC002025.n
+		get.budgeted.ctoh(i.cprj,budgeted.ctoh)					|ISGEC002025.n
+		tpisg055.rdat = utc.num()
+		tpisg055.pdsc = tcmcs052.dsca
+		tpisg055.cnfc = tppdm740.copr
+		tpisg055.cnrt = rate
+		tpisg055.cnhc = tpisg055.cnfc * tpisg055.cnrt
+		tpisg055.cinc = exhd
+		tpisg055.ctcm = ctcm
+		tpisg055.tcst = tpisg055.cinc + tpisg055.ctcm
+		tpisg055.ctoh = tpisg055.cnhc + tpisg082.totl - tpisg012.totl + tpisg055.ctcm	|ISGEC002025.n
+| 		tpisg055.ctoh = tpisg055.cnhc - tpisg055.tcst					|ISGEC002025.o
+| 		tpisg055.bcth = tpisg055.cnhc - tpisg012.totl + tpisg082.budg			|ISGEC002025.o
+		tpisg055.bcth = budgeted.ctoh							|ISGEC002025.n
+		tpisg055.bcnt = get_available_amount(tppdm740.cprj, "1.0", "99100000")
+		tpisg055.bwar = get_available_amount(tppdm740.cprj, "1.0", "99110000")
+		tpisg055.acys = get_available_amnt(tppdm740.cprj, "99180000")
+		tpisg055.acnt = get_available_amnt(tppdm740.cprj, "99100000")
+		tpisg055.awar = get_available_amnt(tppdm740.cprj, "99110000")
+		tpisg055.eitl = tpisg082.budg
+| 		tpisg055.cssh = stcs - cons - tpisg055.acys					|ISGEC002025.o
+| 		tpisg055.ctsh = tpisg055.bcnt - tpisg055.acnt					|ISGEC002025.o
+| 		tpisg055.wtsh = tpisg055.bwar - tpisg055.awar					|ISGEC002025.o
+| 		tpisg055.cssh = get_amount_element_wise(i.cprj,i.revn,"99180000")		|ISGEC002025.n
+| 		tpisg055.ctsh = get_amount_element_wise(i.cprj,i.revn,"99100000")		|ISGEC002025.n
+| 		tpisg055.wtsh = get_amount_element_wise(i.cprj,i.revn,"99110000")		|ISGEC002025.n
+		
+| 		if stcs < tpisg055.acys then
+| 			stcs = tpisg055.acys + cons
+| 		endif
+| 		
+| 		cssh.positive = stcs - cons - tpisg055.acys
+| 		ctsh.positive = get.revised.initial.budget(i.cprj,i.revn,"99100000") - cont - tpisg055.acnt	
+| 		wtsh.positive = get.revised.initial.budget(i.cprj,i.revn,"99110000") - warr - tpisg055.awar
+| 		
+| 		if cssh.positive ge 0 then
+| 			tpisg055.cssh = cssh.positive		
+| 		else
+| 			tpisg055.cssh = 0
+| 		endif
+| 		
+| 		if ctsh.positive ge 0 then
+| 			tpisg055.ctsh = ctsh.positive
+| 		else
+| 			tpisg055.ctsh = 0
+| 		endif
+| 		
+| 		if wtsh.positive ge 0 then
+| 			tpisg055.wtsh = wtsh.positive
+| 		else
+| 			tpisg055.wtsh = 0
+| 		endif
+		
+		tpisg055.cssh = get.data.from.tpisg008.and.tpisg012(i.cprj,"99180000")		
+		tpisg055.ctsh = get.data.from.tpisg008.and.tpisg012(i.cprj,"99100000")		
+		tpisg055.wtsh = get.data.from.tpisg008.and.tpisg012(i.cprj,"99110000")
+		
+		tpisg055.ttch = ttch
+		tpisg055.ardc = get.addition.reduction.due.to.client(i.cprj)
+		tpisg055.ardi = get.addition.reduction.due.to.internal.transfer(i.cprj)
+		tpisg055.icah = get.initial.contract.amount.in.home.currency(i.cprj)
+		tpisg055.eife = tpisg055.eitl - get.realised.export.incentive(i.cprj,"S013")
+		
+		if tpisg055.eife < 0 then
+			tpisg055.eife = 0
+		endif
+			
+		db.update(ttpisg055, db.retry,e)
+		if not e then
+			commit.transaction()
+| 			message("Data Updated Successfully!")
+		else
+			abort.transaction()
+		endif
+	selectempty
+		initialise_header()
+		get_common_data(i.cprj)					
+		budgeted.ctoh = 0.00								|ISGEC002025.n
+		get.budgeted.ctoh(i.cprj,budgeted.ctoh)						|ISGEC002025.n
+		tpisg055.cprj = tppdm740.cprj
+		tpisg055.revn = "0"
+		tpisg055.rvdt = utc.num()
+		tpisg055.rdat = utc.num()
+		tpisg055.pdsc = tcmcs052.dsca
+		tpisg055.cnfc = tppdm740.copr
+		tpisg055.cnrt = rate
+		tpisg055.cnhc = tpisg055.cnfc * tpisg055.cnrt
+		tpisg055.cinc = exhd
+		tpisg055.ctcm = ctcm
+		tpisg055.tcst = tpisg055.cinc + tpisg055.ctcm
+		tpisg055.ctoh = tpisg055.cnhc + tpisg082.totl - tpisg012.totl 
+| 		tpisg055.bcth = (tpisg055.cnrt * tpisg011.copr) - tpisg012.totl + tpisg082.budg	|ISGEC002025.n
+		tpisg055.bcth = budgeted.ctoh							|ISGEC002025.n
+		tpisg055.bcnt = get_available_amount(tppdm740.cprj, "1.0", "99100000")
+		tpisg055.bwar = get_available_amount(tppdm740.cprj, "1.0", "99110000")
+		tpisg055.acys = get_available_amnt(tppdm740.cprj, "99180000")
+		tpisg055.acnt = get_available_amnt(tppdm740.cprj, "99100000")
+		tpisg055.awar = get_available_amnt(tppdm740.cprj, "99110000")
+		tpisg055.eitl = tpisg082.budg
+| 		tpisg055.cssh = stcs - cons - tpisg055.acys
+| 		tpisg055.ctsh = tpisg055.bcnt - tpisg055.acnt
+| 		tpisg055.wtsh = tpisg055.bwar - tpisg055.awar
+| 		tpisg055.cssh = stcs - cons - tpisg055.acys		
+| 		tpisg055.ctsh = get.revised.initial.budget(i.cprj,i.revn,"99100000") - cont - tpisg055.acnt 		
+| 		tpisg055.wtsh = get.revised.initial.budget(i.cprj,i.revn,"99110000") - warr - tpisg055.awar
+		
+| 		if stcs < tpisg055.acys then
+| 			stcs = tpisg055.acys + cons
+| 		endif
+| 		
+| 		cssh.positive = stcs - cons - tpisg055.acys
+| 		ctsh.positive = get.revised.initial.budget(i.cprj,i.revn,"99100000") - cont - tpisg055.acnt	
+| 		wtsh.positive = get.revised.initial.budget(i.cprj,i.revn,"99110000") - warr - tpisg055.awar
+| 		
+| 		if cssh.positive ge 0 then
+| 			tpisg055.cssh = cssh.positive		
+| 		else
+| 			tpisg055.cssh = 0
+| 		endif
+| 		
+| 		if ctsh.positive ge 0 then
+| 			tpisg055.ctsh = ctsh.positive
+| 		else
+| 			tpisg055.ctsh = 0
+| 		endif
+| 		
+| 		if wtsh.positive ge 0 then
+| 			tpisg055.wtsh = wtsh.positive
+| 		else
+| 			tpisg055.wtsh = 0
+| 		endif
+
+		tpisg055.cssh = get.data.from.tpisg008.and.tpisg012(i.cprj,"99180000")		
+		tpisg055.ctsh = get.data.from.tpisg008.and.tpisg012(i.cprj,"99100000")		
+		tpisg055.wtsh = get.data.from.tpisg008.and.tpisg012(i.cprj,"99110000")
+		
+		tpisg055.stat = tpstat.open
+		tpisg055.ttch = ttch
+		tpisg055.ardc = get.addition.reduction.due.to.client(i.cprj)
+		tpisg055.ardi = get.addition.reduction.due.to.internal.transfer(i.cprj)
+		tpisg055.icah = get.initial.contract.amount.in.home.currency(i.cprj)
+		tpisg055.eife = tpisg055.eitl - get.realised.export.incentive(i.cprj,"S013")
+		
+		if tpisg055.eife < 0 then
+			tpisg055.eife = 0
+		endif
+		
+		db.insert(ttpisg055, db.skip.dupl,e)
+		if not e then
+			commit.transaction()
+			insert_in_costsheet_project_master(tpisg055.cprj)
+		else
+			message("Data not inserted in cost sheet header")
+			abort.transaction()
+		endif
+	endselect
+}
+
+function domain tcamnt get_available_amount(
+						domain	tccprj		i.cprj,
+						domain	tcorno		i.vers,
+						domain	tppdm.cspa	i.elem
+										)
+{
+	domain	tcamnt	avai
+	
+	avai = 0
+	
+	select	tpisg008.avai:avai
+	from	tpisg008
+	where	tpisg008._index1 = {:i.cprj,:i.vers,:i.elem}
+	selectdo
+	endselect
+	
+	return(avai)
+}
+
+function domain tcamnt get_amount_element_wise(
+						domain	tccprj		i.cprj,
+						domain	tcorno		i.vers,
+						domain	tppdm.cspa	i.elem
+										)
+{
+	domain	tcamnt	tot.ttch
+	
+	tot.ttch = 0
+	
+	select	sum(tpisg056.ttch):tot.ttch
+	from	tpisg056
+	where	tpisg056._index1 = {:i.cprj,:i.vers,:i.elem}
+	selectdo
+	endselect
+	
+	return(tot.ttch)
+}
+
+function domain tcamnt get.revised.initial.budget(
+							domain	tccprj		i.cprj,
+							domain	tcorno		i.vers,
+							domain	tppdm.cspa	i.elem
+											)
+{
+
+	select	tpisg056.ritb
+	from	tpisg056
+	where	tpisg056._index1 = {:i.cprj,:i.vers,:i.elem}
+	selectdo
+	endselect
+	
+	return(tpisg056.ritb)
+}
+
+function domain tcamnt get_available_amnt(
+						domain	tccprj		i.cprj,
+						domain	tppdm.cspa	i.elem
+										)
+{
+	domain	tcamnt	aval
+	
+	aval = 0
+	
+	select	sum(tpisg012.avai):aval
+	from	tpisg012
+	where	tpisg012._index1 = {:i.cprj}
+	and	tpisg012.elem = :i.elem
+	selectdo
+	endselect
+	
+	return(aval)
+}
+
+function initialise_header()
+{
+	rate = 0
+	exhd = 0
+	stcs = 0
+	ctcm = 0
+	cons = 0
+	tppdm740.copr = 0
+	tpisg055.cprj = ""
+	tpisg055.revn = ""
+	tpisg055.rvdt = 0
+	tpisg055.pdsc = ""
+	tpisg055.cnfc = 0
+	tpisg055.cnrt = 0
+	tpisg055.cnhc = 0
+	tpisg055.cinc = 0
+	tpisg055.ctcm = 0
+	tpisg055.tcst = 0
+	tpisg055.ctoh = 0
+	tpisg055.bcth = 0
+	tpisg055.bcnt = 0
+	tpisg055.bwar = 0
+	tpisg055.acys = 0
+	tpisg055.acnt = 0
+	tpisg055.awar = 0
+	tpisg055.eitl = 0
+	tpisg055.cssh = 0
+	tpisg055.ctsh = 0
+	tpisg055.wtsh = 0
+	tpisg055.stat = empty
+	tpisg055.ardc = 0
+	tpisg055.ardi = 0
+}
+
+function insert_in_costsheet_project_master(
+						domain	tccprj	i.cprj
+									)
+{
+	select	tpisg054.*
+	from	tpisg054
+	where	tpisg054._index1 = {:i.cprj}
+	selectdo
+	selectempty
+		tpisg054.cprj = i.cprj
+		tpisg054.date = utc.num()
+		tpisg054.user = logname$
+		db.insert(ttpisg054, db.skip.dupl,e)
+		if not e then
+			commit.transaction()
+| 			message("Data Inserted Successfully!")
+		else
+			abort.transaction()
+		endif
+	endselect
+}
+
+function get_common_data(
+				domain	tccprj	cprj
+							)
+{
+	select	tppdm740.cprj, tppdm740.copr,
+		tppdm740.rate(1):rate,
+		tcmcs052.dsca
+	from	tppdm740, tcmcs052
+	where	tppdm740._index1 = {:cprj}
+	and	tppdm740.cprj refers to tcmcs052 UNREF CLEAR
+	selectdo
+	selectempty
+		tcmcs052.dsca = ""
+	endselect
+
+	select	sum(tpisg056.exhd):exhd,
+		sum(tpisg056.ctcm):ctcm,
+		sum(tpisg056.stcs):stcs,
+		sum(tpisg056.cons):cons,
+		sum(tpisg056.cons):cont,
+		sum(tpisg056.cons):warr,
+		sum(tpisg056.ttch):ttch
+	from	tpisg056
+	where	tpisg056._index1 = {:cprj}
+	and	tpisg056.levl = 2
+	selectdo
+	endselect
+	
+	select 	tpisg012.totl
+	from	tpisg012
+	where	tpisg012._index1 = {:cprj}
+	and	tpisg012.levl = 0
+	as set with 1 rows
+	selectdo
+	selectempty
+	endselect
+	
+	select	tpisg011.copr
+	from	tpisg011
+	where	tpisg011._index1 = {:cprj}
+	as set with 1 rows
+	selectdo
+	selectempty
+		tpisg011.copr = 0
+	endselect
+	
+	select	tpisg082.budg, tpisg082.totl
+	from	tpisg082
+	where	tpisg082._index1 = {:cprj}
+	and	tpisg082.parn = ""
+	selectdo
+	selectempty
+		tpisg082.budg = 0
+		tpisg082.totl = 0
+	endselect
+}
+														|27.05.19.Adarsh.sn
+| function update.cbac.amnt(domain tccprj	i.cprj)
+| {
+| 	select	tpisg056.cprj,tpisg056.elem,tpisg056.levl
+| 	from	tpisg056
+| 	where	tpisg056._index1 = {:i.cprj}
+| 	selectdo
+| 		select	tpisg315.leac
+| 		from	tpisg315
+| 		where	tpisg315._index1 = {"C011"}
+| 		selectdo
+| 			if tpisg056.levl = 2 then
+| 				select	tppdm600.ncmp
+| 				from	tppdm600
+| 				where	tppdm600._index1 = {:i.cprj}
+| 				as set with 1 rows
+| 				selectdo
+| 					select	tcemm030.lcmp
+| 					from	tcemm030
+| 					where	tcemm030.fcmp = :tppdm600.ncmp
+| 					as set with 1 rows
+| 					selectdo
+| 						select	tcemm030.fcmp
+| 						from	tcemm030
+| 						where	tcemm030.lcmp = :tcemm030.lcmp
+| 						selectdo
+| 							select	tfgld106.amth(1):cbac.amth,tfgld106.dbcr
+| 							from	tfgld106
+| 							where	tfgld106._index3 = {:tpisg315.leac}
+| 							and	tfgld106.dim1 = :tpisg056.cprj
+| 							and	tfgld106.refr(1;8) = "tpppc010"  
+| 							and	tfgld106.refr(19;4) = :tpisg056.elem(1;4)
+| 							and	tfgld106._compnr  = :tcemm030.fcmp
+| 							selectdo
+| 								if tfgld106.dbcr = tfgld.dbcr.debit then
+| 									cbac.amth.tot = cbac.amth.tot + cbac.amth 
+| 								else	
+| 									if tfgld106.dbcr = tfgld.dbcr.credit then
+| 										cbac.amth.tot = cbac.amth.tot - cbac.amth 
+| 									endif
+| 								endif
+| 							endselect
+| 						endselect
+| 					endselect
+| 				endselect
+| 			else
+| 				if tpisg056.levl = 3 or tpisg056.levl = 4 then
+| 					select	tppdm600.ncmp
+| 					from	tppdm600
+| 					where	tppdm600._index1 = {:i.cprj}
+| 					as set with 1 rows
+| 					selectdo
+| 						select	tcemm030.lcmp
+| 						from	tcemm030
+| 						where	tcemm030.fcmp = :tppdm600.ncmp
+| 						as set with 1 rows
+| 						selectdo
+| 							select	tcemm030.fcmp
+| 							from	tcemm030
+| 							where	tcemm030.lcmp = :tcemm030.lcmp
+| 							selectdo
+| 								select	tfgld106.amth(1):cbac.amth,tfgld106.dbcr
+| 								from	tfgld106
+| 								where	tfgld106._index3 = {:tpisg315.leac}
+| 								and	tfgld106.dim1 = :tpisg056.cprj
+| 								and	tfgld106.refr(1;8) = "tpppc010"  
+| 								and	tfgld106.refr(19;8) = :tpisg056.elem
+| 								and	tfgld106._compnr  = :tcemm030.fcmp
+| 								selectdo
+| 									if tfgld106.dbcr = tfgld.dbcr.debit then
+| 										cbac.amth.tot = cbac.amth.tot + cbac.amth 
+| 									else	
+| 										if tfgld106.dbcr = tfgld.dbcr.credit then
+| 											cbac.amth.tot = cbac.amth.tot - cbac.amth 
+| 										endif
+| 									endif
+| 								endselect
+| 							endselect
+| 						endselect
+| 					endselect
+| 				endif
+| 			endif
+| 		endselect
+| 		cbac.amth.tot = abs(cbac.amth.tot)
+| 		update.tpisg056()
+| 		initialize.new()
+| 	endselect	
+| }
+
+function update.cbac.amnt(domain tccprj	i.cprj)
+{
+	select	tpisg056.cprj,tpisg056.elem,tpisg056.levl
+	from	tpisg056
+	where	tpisg056._index1 = {:i.cprj}
+	selectdo
+		select	tpisg315.leac
+		from	tpisg315
+		where	tpisg315._index1 = {"C011"}
+		selectdo
+			if tpisg056.levl = 2 then
+				select	tpisg069.*
+				from	tpisg069
+				where	tpisg069._index2 = {:tpisg056.cprj}
+				and 	tpisg069.leac = :tpisg315.leac
+				selectdo
+					if tpisg069.refr(19;4) = tpisg056.elem(1;4) then
+						if tpisg069.dbcr = tfgld.dbcr.debit then
+							cbac.amth.tot = cbac.amth.tot + tpisg069.amth 
+						else	
+							if tpisg069.dbcr = tfgld.dbcr.credit then
+								cbac.amth.tot = cbac.amth.tot - tpisg069.amth 
+							endif
+						endif
+					else
+						if tpisg069.iprj = tfgld.intr.proj.costs then
+							get.amount.for.missing.element()
+						endif
+					endif
+				endselect
+			else
+				if tpisg056.levl = 3 or tpisg056.levl = 4 then
+					select	tpisg069.*
+					from	tpisg069
+					where	tpisg069._index2 = {:tpisg056.cprj}
+					and 	tpisg069.leac = :tpisg315.leac
+					selectdo
+						if tpisg069.refr(19;8) = tpisg056.elem then
+							if tpisg069.dbcr = tfgld.dbcr.debit then
+								cbac.amth.tot = cbac.amth.tot + tpisg069.amth 
+							else	
+								if tpisg069.dbcr = tfgld.dbcr.credit then
+									cbac.amth.tot = cbac.amth.tot - tpisg069.amth 
+								endif
+							endif
+						else
+							if tpisg069.iprj = tfgld.intr.proj.costs then
+								get.amount.for.missing.element.2()
+							endif
+						endif
+					endselect
+				endif
+			endif
+		endselect
+		cbac.amth.tot = abs(cbac.amth.tot)
+		update.tpisg056()
+		initialize.new()
+	endselect	
+}
+
+function initialize.new()
+{
+	cbac.amth = 0.0
+	cbac.amth.tot = 0.0
+	cbac.curr = 0.0
+}
+
+function update.tpisg056()
+{
+	db.retry.point()
+	select	tpisg056.cbac:cbac.curr
+	from	tpisg056 for update
+	where	tpisg056._index1 = {:tpisg056.cprj}
+	and	tpisg056.elem = :tpisg056.elem
+	selectdo
+		tpisg056.cbac = cbac.amth.tot
+		db.update(ttpisg056,DB.RETRY)
+		commit.transaction()
+	endselect
+}
+
+function update.tpisg056.new()
+{
+	db.retry.point()
+	select	tpisg056.cbas:cbas.curr
+	from	tpisg056 for update
+	where	tpisg056._index1 = {:tpisg056.cprj}
+	and	tpisg056.elem = :tpisg056.elem
+	selectdo
+		tpisg056.cbas = cbac.amth.tot
+		db.update(ttpisg056,DB.RETRY)
+		commit.transaction()
+	endselect
+}
+
+| function update.niba.amnt(
+| 				domain 	tccprj	i.cprj,
+| 				domain	tcorno	i.revn
+| 							)
+| {
+| 	niba.amnt.debit = 0.0
+| 	niba.amnt.credit = 0.0
+| 	niba.amnt = 0.0
+| 	amth = 0.0
+| 	cbac.amth.mat.prov = 0.0 
+| 	cbac.amth.mat.prov.tot = 0.0
+| 	cbac.amth.waty.tot = 0.0
+| 	cbac.amth.waty = 0.0
+| 	
+| 	select	tppdm600.ncmp
+| 	from	tppdm600
+| 	where	tppdm600._index1 = {:i.cprj}
+| 	as set with 1 rows
+| 	selectdo
+| 		select	tcemm030.lcmp
+| 		from	tcemm030
+| 		where	tcemm030.fcmp = :tppdm600.ncmp
+| 		as set with 1 rows
+| 		selectdo
+| 			select	tcemm030.fcmp
+| 			from	tcemm030
+| 			where	tcemm030.lcmp = :tcemm030.lcmp
+| 			selectdo
+| 				select	tfgld106.amth(1):cbac.amth.mat.prov,tfgld106.dbcr
+| 				from	tfgld106
+| 				where	tfgld106._index3 = "2510210" 
+| 				and	tfgld106.dim1 = :i.cprj
+| 				and	tfgld106.otyp <> "OPB"
+| 				and	tfgld106._compnr  = :tcemm030.fcmp
+| 				selectdo
+| 					if tfgld106.dbcr = tfgld.dbcr.debit then
+| 						cbac.amth.mat.prov.tot = cbac.amth.mat.prov.tot + cbac.amth.mat.prov 
+| 					else	
+| 						if tfgld106.dbcr = tfgld.dbcr.credit then
+| 							cbac.amth.mat.prov.tot = cbac.amth.mat.prov.tot - cbac.amth.mat.prov 
+| 						endif
+| 					endif
+| 				endselect
+| 			endselect
+| 		endselect
+| 	endselect
+| 	
+| 	select	tppdm600.ncmp
+| 	from	tppdm600
+| 	where	tppdm600._index1 = {:i.cprj}
+| 	as set with 1 rows
+| 	selectdo
+| 		select	tcemm030.lcmp
+| 		from	tcemm030
+| 		where	tcemm030.fcmp = :tppdm600.ncmp
+| 		as set with 1 rows
+| 		selectdo
+| 			select	tcemm030.fcmp
+| 			from	tcemm030
+| 			where	tcemm030.lcmp = :tcemm030.lcmp
+| 			selectdo
+| 				select	tfgld106.amth(1):cbac.amth.waty,tfgld106.dbcr
+| 				from	tfgld106
+| 				where	tfgld106._index3 = "2530211" 
+| 				and	tfgld106.dim1 = :i.cprj
+| 				and	tfgld106.otyp <> "OPB"
+| 				and	tfgld106._compnr  = :tcemm030.fcmp
+| 				selectdo
+| 					if tfgld106.dbcr = tfgld.dbcr.debit then
+| 						cbac.amth.waty.tot = cbac.amth.waty.tot + cbac.amth.waty 
+| 					else	
+| 						if tfgld106.dbcr = tfgld.dbcr.credit then
+| 							cbac.amth.waty.tot = cbac.amth.waty.tot - cbac.amth.waty 
+| 						endif
+| 					endif
+| 				endselect
+| 			endselect
+| 		endselect
+| 	endselect
+| 	
+| 	select	tpisg314.chco
+| 	from	tpisg314
+| 	where	tpisg314._index1 not in ("C004","C018","C023","C025","C027")
+| 	selectdo
+| 		select	tppdm600.ncmp
+| 		from	tppdm600
+| 		where	tppdm600._index1 = {:i.cprj}
+| 		as set with 1 rows
+| 		selectdo
+| 			select	tcemm030.lcmp
+| 			from	tcemm030
+| 			where	tcemm030.fcmp = :tppdm600.ncmp
+| 			as set with 1 rows
+| 			selectdo
+| 				select	tcemm030.fcmp
+| 				from	tcemm030
+| 				where	tcemm030.lcmp = :tcemm030.lcmp
+| 				selectdo
+| 					get.company.wise.niba.data(i.cprj)
+| 				endselect
+| 			endselect
+| 		endselect
+| 		
+| 		niba.amnt.credit = niba.amnt.credit * (-1)
+| 		niba.amnt = niba.amnt.debit + niba.amnt.credit
+| 		
+| 		if tpisg314.chco = "C011" then
+| 			niba.amnt = niba.amnt + cbac.amth.mat.prov.tot + cbac.amth.waty.tot
+| 		endif
+| 		
+| 		insert.and.update.tpisg056(i.cprj,i.revn)
+| 		
+| 		niba.amnt.debit = 0.0
+| 		niba.amnt.credit = 0.0
+| 		niba.amnt = 0.0
+| 		amth = 0.0
+| 	endselect
+| 	update.niba.amnt.new(i.cprj)
+| }
+
+function update.niba.amnt(
+				domain 	tccprj	i.cprj,
+				domain	tcorno	i.revn
+							)
+{
+	niba.amnt.debit = 0.0
+	niba.amnt.credit = 0.0
+	niba.amnt = 0.0
+	amth = 0.0
+	cbac.amth.mat.prov = 0.0 
+	cbac.amth.mat.prov.tot = 0.0
+	cbac.amth.waty.tot = 0.0
+	cbac.amth.waty = 0.0
+	
+	select	tpisg069.*
+	from	tpisg069
+	where	tpisg069._index2 = {:i.cprj}
+	and	tpisg069.otyp <> "OPB"
+	and 	tpisg069.leac = "2510210"
+	selectdo
+		if tpisg069.dbcr = tfgld.dbcr.debit then
+			cbac.amth.mat.prov.tot = cbac.amth.mat.prov.tot + tpisg069.amth 
+		else	
+			if tfgld106.dbcr = tfgld.dbcr.credit then
+				cbac.amth.mat.prov.tot = cbac.amth.mat.prov.tot - tpisg069.amth 
+			endif
+		endif
+	endselect
+	
+	select	tpisg069.*
+	from	tpisg069
+	where	tpisg069._index2 = {:i.cprj}
+	and	tpisg069.otyp <> "OPB"
+	and 	tpisg069.leac = "2530211"
+	selectdo
+		if tpisg069.dbcr = tfgld.dbcr.debit then
+			cbac.amth.waty.tot = cbac.amth.waty.tot + tpisg069.amth 
+		else	
+			if tfgld106.dbcr = tfgld.dbcr.credit then
+				cbac.amth.waty.tot = cbac.amth.waty.tot - tpisg069.amth 
+			endif
+		endif
+	endselect
+	
+	select	tpisg314.chco
+	from	tpisg314
+	where	tpisg314._index1 not in ("C004","C018","C023","C025","C027")
+	selectdo
+		select	tpisg315.leac
+		from	tpisg315
+		where	tpisg315._index1 = {:tpisg314.chco}
+		and 	tpisg315.prgl = 2						|#Adarsh.17.12.19.n
+		selectdo
+			select	tpisg069.*
+			from	tpisg069
+			where	tpisg069._index2 = {:i.cprj}
+			and	tpisg069.leac = :tpisg315.leac
+			and	tpisg069.refr(1;8) <> "tpppc010" 
+			and	tpisg069.iprj <> 2
+			and	tpisg069.chco = :tpisg314.chco
+			selectdo
+				if tpisg069.dbcr = tfgld.dbcr.debit then
+					niba.amnt.debit = niba.amnt.debit + tpisg069.amth
+				else
+					if tpisg069.dbcr = tfgld.dbcr.credit then
+						niba.amnt.credit = niba.amnt.credit + tpisg069.amth
+					endif
+				endif		
+			endselect
+		endselect
+		
+		niba.amnt.credit = niba.amnt.credit * (-1)
+		niba.amnt = niba.amnt.debit + niba.amnt.credit
+		
+		if tpisg314.chco = "C011" then
+			niba.amnt = niba.amnt + cbac.amth.mat.prov.tot + cbac.amth.waty.tot
+		endif
+		
+		insert.and.update.tpisg056(i.cprj,i.revn)
+		
+		niba.amnt.debit = 0.0
+		niba.amnt.credit = 0.0
+		niba.amnt = 0.0
+		amth = 0.0
+	endselect
+	update.niba.amnt.new(i.cprj)
+}
+
+
+function insert.and.update.tpisg056(
+					domain tccprj i.cprj,
+					domain tcorno i.revn
+								)
+{
+	db.retry.point()
+	select	tpisg056.*
+	from	tpisg056 for update
+	where	tpisg056._index1 = {:i.cprj,:i.revn,:tpisg314.chco}
+	as set with 1 rows
+	selectdo
+		tpisg056.niba = niba.amnt
+		db.update(ttpisg056,DB.RETRY)
+		commit.transaction()
+	selectempty	
+		db.set.to.default(ttpisg056)
+		tpisg056.cprj = i.cprj
+		tpisg056.revn = i.revn
+		tpisg056.elem = tpisg314.chco
+		tpisg056.levl = 2
+		tpisg056.niba = niba.amnt
+		db.insert(ttpisg056,DB.RETRY)
+		commit.transaction()
+	endselect
+}
+
+| function get.company.wise.niba.data(domain tccprj i.cprj)
+| {
+| 	select	tpisg315.leac
+| 	from	tpisg315
+| 	where	tpisg315._index1 = {:tpisg314.chco}
+| 	selectdo
+| 		select	tpisg069.*
+| 		from	tpisg069
+| 		where	tpisg069._index2 = {:i.cprj}
+| 		and	tpisg069.leac = :tpisg315.leac
+| 		and	tpisg069.refr(1;8) <> "tpppc010" 
+| 		and	tpisg069.iprj = 2
+| 		selectdo
+| 		selectempty
+| 			if tpisg069.dbcr = tfgld.dbcr.debit then
+| 				niba.amnt.debit = niba.amnt.debit + tpisg069.amth
+| 			else
+| 				if tpisg069.dbcr = tfgld.dbcr.credit then
+| 					niba.amnt.credit = niba.amnt.credit + tpisg069.amth
+| 				endif
+| 			endif		
+| 		endselect
+| 	endselect
+| }
+
+| function update.niba.amnt.new(domain tccprj i.cprj)
+| {
+| 	select	tpisg056.cprj,tpisg056.elem,tpisg056.levl
+| 	from	tpisg056
+| 	where	tpisg056._index1 = {:i.cprj}
+| 	and	tpisg056.elem(1;1) <> "C"
+| 	selectdo
+| 		select	tpisg315.leac
+| 		from	tpisg315
+| 		where	tpisg315._index1 <> {"C011"}
+| 		selectdo
+| 			if tpisg056.levl = 2 then
+| 				select	tppdm600.ncmp
+| 				from	tppdm600
+| 				where	tppdm600._index1 = {:i.cprj}
+| 				as set with 1 rows
+| 				selectdo
+| 					select	tcemm030.lcmp
+| 					from	tcemm030
+| 					where	tcemm030.fcmp = :tppdm600.ncmp
+| 					as set with 1 rows
+| 					selectdo
+| 						select	tcemm030.fcmp
+| 						from	tcemm030
+| 						where	tcemm030.lcmp = :tcemm030.lcmp
+| 						selectdo
+| 							select	tfgld106.amth(1):cbac.amth,
+| 								tfgld106.dbcr,
+| 								tfgld106.otyp,
+| 								tfgld106.odoc,
+| 								tfgld106.refr
+| 							from	tfgld106
+| 							where	tfgld106._index3 = {:tpisg315.leac}
+| 							and	tfgld106.dim1 = :tpisg056.cprj
+| 						|	and	tfgld106.refr(1;8) = "tpppc010"  
+| 						|	and	tfgld106.refr(19;4) = :tpisg056.elem(1;4)
+| 							and	tfgld106._compnr  = :tcemm030.fcmp
+| 							selectdo
+| 								if tfgld106.refr(19;4) = tpisg056.elem(1;4) then
+| 									if tfgld106.dbcr = tfgld.dbcr.debit then
+| 										cbac.amth.tot = cbac.amth.tot + cbac.amth 
+| 									else	
+| 										if tfgld106.dbcr = tfgld.dbcr.credit then
+| 											cbac.amth.tot = cbac.amth.tot - cbac.amth 
+| 										endif
+| 									endif
+| 								else
+| 									select	tfgld008.leac
+| 									from	tfgld008
+| 									where	tfgld008._index1 = {:tpisg315.leac}
+| 									and	tfgld008.iprj = 2
+| 									selectdo
+| 										get.amount.for.missing.element()
+| 									endselect
+| 								endif
+| 							selectempty
+| 							endselect
+| 						endselect
+| 					endselect
+| 				endselect
+| 			else
+| 				if tpisg056.levl = 3 or tpisg056.levl = 4 then
+| 					select	tppdm600.ncmp
+| 					from	tppdm600
+| 					where	tppdm600._index1 = {:i.cprj}
+| 					as set with 1 rows
+| 					selectdo
+| 						select	tcemm030.lcmp
+| 						from	tcemm030
+| 						where	tcemm030.fcmp = :tppdm600.ncmp
+| 						as set with 1 rows
+| 						selectdo
+| 							select	tcemm030.fcmp
+| 							from	tcemm030
+| 							where	tcemm030.lcmp = :tcemm030.lcmp
+| 							selectdo
+| 								select	tfgld106.amth(1):cbac.amth,
+| 									tfgld106.dbcr,
+| 									tfgld106.otyp,
+| 									tfgld106.odoc,
+| 									tfgld106.refr
+| 								from	tfgld106
+| 								where	tfgld106._index3 = {:tpisg315.leac}
+| 								and	tfgld106.dim1 = :tpisg056.cprj
+| 							|	and	tfgld106.refr(1;8) = "tpppc010"  
+| 							|	and	tfgld106.refr(19;8) = :tpisg056.elem
+| 								and	tfgld106._compnr  = :tcemm030.fcmp
+| 								selectdo
+| 									if tfgld106.refr(19;8) = tpisg056.elem then
+| 										if tfgld106.dbcr = tfgld.dbcr.debit then
+| 											cbac.amth.tot = cbac.amth.tot + cbac.amth 
+| 										else	
+| 											if tfgld106.dbcr = tfgld.dbcr.credit then
+| 												cbac.amth.tot = cbac.amth.tot - cbac.amth 
+| 											endif
+| 										endif
+| 									else
+| 										select	tfgld008.leac
+| 										from	tfgld008
+| 										where	tfgld008._index1 = {:tpisg315.leac}
+| 										and	tfgld008.iprj = 2
+| 										selectdo
+| 											get.amount.for.missing.element.2()
+| 										endselect
+| 									endif
+| 								selectempty
+| 								endselect
+| 							endselect
+| 						endselect
+| 					endselect
+| 				endif
+| 			endif
+| 		endselect
+| 		update.tpisg056.new()
+| 		initialize.new()
+| 	endselect	
+| }
+
+function update.niba.amnt.new(domain tccprj i.cprj)
+{
+	select	tpisg056.cprj,tpisg056.elem,tpisg056.levl
+	from	tpisg056
+	where	tpisg056._index1 = {:i.cprj}
+	and	tpisg056.elem(1;1) <> "C"
+	selectdo
+		select	tpisg315.leac
+		from	tpisg315
+		where	tpisg315._index1 <> {"C011"}
+		selectdo
+			if tpisg056.levl = 2 then
+				select	tpisg069.*
+				from	tpisg069
+				where	tpisg069._index2 = {:i.cprj}
+				and	tpisg069.leac = :tpisg315.leac
+				selectdo
+					if tpisg069.refr(19;4) = tpisg056.elem(1;4) then
+						if tpisg069.dbcr = tfgld.dbcr.debit then
+							cbac.amth.tot = cbac.amth.tot + tpisg069.amth 
+						else	
+							if tpisg069.dbcr = tfgld.dbcr.credit then
+								cbac.amth.tot = cbac.amth.tot - tpisg069.amth 
+							endif
+						endif
+					else
+						if tpisg069.iprj = tfgld.intr.proj.costs then
+							get.amount.for.missing.element()
+						endif
+					endif
+				endselect
+			else
+				if tpisg056.levl = 3 or tpisg056.levl = 4 then
+					select	tpisg069.*
+					from	tpisg069
+					where	tpisg069._index2 = {:i.cprj}
+					and	tpisg069.leac = :tpisg315.leac
+					selectdo
+						if tpisg069.refr(19;8) = tpisg056.elem(1;8) then
+							if tpisg069.dbcr = tfgld.dbcr.debit then
+								cbac.amth.tot = cbac.amth.tot + tpisg069.amth 
+							else	
+								if tpisg069.dbcr = tfgld.dbcr.credit then
+									cbac.amth.tot = cbac.amth.tot - tpisg069.amth 
+								endif
+							endif
+						else
+							if tpisg069.iprj = tfgld.intr.proj.costs then
+								get.amount.for.missing.element.2()
+							endif
+						endif
+					endselect
+				endif
+			endif
+		endselect
+		update.tpisg056.new()
+		initialize.new()
+	endselect	
+}
+
+| function refresh.tpisg066(domain tccprj i.cprj)
+| {
+| 	amth.mat.prov = 0.0
+| 	amth.mat.prov.net = 0.0
+| 	amth.waty = 0.0
+| 	amth.waty.net = 0.0
+| 	amth.iamt = 0.0
+| 	iamt.net = 0.0
+| 	amth.namt = 0.0
+| 	namt.net = 0.0
+| 	
+| 	select	tppdm600.ncmp
+| 	from	tppdm600
+| 	where	tppdm600._index1 = {:i.cprj}
+| 	as set with 1 rows
+| 	selectdo
+| 		select	tcemm030.lcmp
+| 		from	tcemm030
+| 		where	tcemm030.fcmp = :tppdm600.ncmp
+| 		as set with 1 rows
+| 		selectdo
+| 			select	tcemm030.fcmp
+| 			from	tcemm030
+| 			where	tcemm030.lcmp = :tcemm030.lcmp
+| 			selectdo
+| 				select	tfgld106.amth(1):amth.mat.prov,tfgld106.dbcr
+| 				from	tfgld106
+| 				where	tfgld106._index3 = "2510210" 
+| 				and	tfgld106.dim1 = :i.cprj
+| 				and	tfgld106.otyp <> "OPB"
+| 				and	tfgld106._compnr  = :tcemm030.fcmp
+| 				selectdo
+| 					if tfgld106.dbcr = tfgld.dbcr.debit then
+| 						amth.mat.prov.net = amth.mat.prov.net + amth.mat.prov 
+| 					else	
+| 						if tfgld106.dbcr = tfgld.dbcr.credit then
+| 							amth.mat.prov.net = amth.mat.prov.net - amth.mat.prov 
+| 						endif
+| 					endif
+| 				endselect
+| 			endselect
+| 		endselect
+| 	endselect
+| 	
+| 	select	tppdm600.ncmp
+| 	from	tppdm600
+| 	where	tppdm600._index1 = {:i.cprj}
+| 	as set with 1 rows
+| 	selectdo
+| 		select	tcemm030.lcmp
+| 		from	tcemm030
+| 		where	tcemm030.fcmp = :tppdm600.ncmp
+| 		as set with 1 rows
+| 		selectdo
+| 			select	tcemm030.fcmp
+| 			from	tcemm030
+| 			where	tcemm030.lcmp = :tcemm030.lcmp
+| 			selectdo
+| 				select	tfgld106.amth(1):amth.waty,tfgld106.dbcr
+| 				from	tfgld106
+| 				where	tfgld106._index3 = "2530211" 
+| 				and	tfgld106.dim1 = :i.cprj
+| 				and	tfgld106.otyp <> "OPB"
+| 				and	tfgld106._compnr  = :tcemm030.fcmp
+| 				selectdo
+| 					if tfgld106.dbcr = tfgld.dbcr.debit then
+| 						amth.waty.net = amth.waty.net + amth.waty 
+| 					else	
+| 						if tfgld106.dbcr = tfgld.dbcr.credit then
+| 							amth.waty.net = amth.waty.net - amth.waty 
+| 						endif
+| 					endif
+| 				endselect
+| 			endselect
+| 		endselect
+| 	endselect
+| 	
+| 	select	tpisg314.chco,tpisg314.pseq
+| 	from	tpisg314
+| 	where	tpisg314.pseq > 0
+| 	selectdo
+| 		select	tppdm600.ncmp
+| 		from	tppdm600
+| 		where	tppdm600._index1 = {:i.cprj}
+| 		as set with 1 rows
+| 		selectdo
+| 			select	tcemm030.lcmp
+| 			from	tcemm030
+| 			where	tcemm030.fcmp = :tppdm600.ncmp
+| 			as set with 1 rows
+| 			selectdo
+| 				select	tcemm030.fcmp
+| 				from	tcemm030
+| 				where	tcemm030.lcmp = :tcemm030.lcmp
+| 				selectdo
+| 					select	tpisg315.leac
+| 					from	tpisg315
+| 					where	tpisg315._index1 = {:tpisg314.chco}
+| 					selectdo
+| 						select	tfgld106.amth(1):amth.iamt,tfgld106.dbcr
+| 						from	tfgld106
+| 						where	tfgld106._index3 = {:tpisg315.leac} 
+| 						and	tfgld106.dim1 = :i.cprj
+| 						and	tfgld106.refr(1;8) = "tpppc010"
+| 						and	tfgld106._compnr = :tcemm030.fcmp
+| 						selectdo
+| 							if tfgld106.dbcr = tfgld.dbcr.debit then
+| 								iamt.net = iamt.net + amth.iamt 
+| 							else	
+| 								if tfgld106.dbcr = tfgld.dbcr.credit then
+| 									iamt.net = iamt.net - amth.iamt 
+| 								endif
+| 							endif
+| 						endselect
+| 						select	tfgld106.amth(1):amth.namt,tfgld106.dbcr
+| 						from	tfgld106
+| 						where	tfgld106._index3 = {:tpisg315.leac} 
+| 						and	tfgld106.dim1 = :i.cprj
+| 						and	tfgld106.refr(1;8) <> "tpppc010"
+| 						and	tfgld106._compnr = :tcemm030.fcmp
+| 						selectdo
+| 							if tfgld106.dbcr = tfgld.dbcr.debit then
+| 								namt.net = namt.net + amth.namt 
+| 							else	
+| 								if tfgld106.dbcr = tfgld.dbcr.credit then
+| 									namt.net = namt.net - amth.namt 
+| 								endif
+| 							endif
+| 						endselect
+| 					endselect
+| 				endselect
+| 			endselect
+| 		endselect
+| 		if tpisg314.chco = "C011" then
+| 			namt.net = namt.net + amth.mat.prov.net + amth.waty.net
+| 		endif	
+| 		insert.and.update.tpisg066(i.cprj)
+| 		amth.iamt = 0.0
+| 		iamt.net = 0.0
+| 		amth.namt = 0.0
+| 		namt.net = 0.0
+| 	endselect
+| }
+
+function refresh.tpisg066(domain tccprj i.cprj)
+{
+	amth.mat.prov = 0.0
+	amth.mat.prov.net = 0.0
+	amth.waty = 0.0
+	amth.waty.net = 0.0
+	amth.iamt = 0.0
+	iamt.net = 0.0
+	amth.namt = 0.0
+	namt.net = 0.0
+	pamt = 0.0										|#Adarsh.17.12.19.n
+	
+	select	tpisg069.*
+	from	tpisg069
+	where	tpisg069._index2 = {:i.cprj}
+	and	tpisg069.leac = "2510210"
+	and	tpisg069.otyp <> "OPB"
+	selectdo
+		if tpisg069.dbcr = tfgld.dbcr.debit then
+			amth.mat.prov.net = amth.mat.prov.net + tpisg069.amth 
+		else	
+			if tpisg069.dbcr = tfgld.dbcr.credit then
+				amth.mat.prov.net = amth.mat.prov.net - tpisg069.amth 
+			endif
+		endif
+	endselect
+	
+	select	tpisg069.*
+	from	tpisg069
+	where	tpisg069._index2 = {:i.cprj}
+	and	tpisg069.leac = "2530211"
+	and	tpisg069.otyp <> "OPB"
+	selectdo
+		if tpisg069.dbcr = tfgld.dbcr.debit then
+			amth.waty.net = amth.waty.net + tpisg069.amth 
+		else	
+			if tpisg069.dbcr = tfgld.dbcr.credit then
+				amth.waty.net = amth.waty.net - tpisg069.amth 
+			endif
+		endif
+	endselect
+	
+	select	tpisg314.chco,tpisg314.pseq
+	from	tpisg314
+	where	tpisg314.pseq > 0
+	selectdo
+		select	tpisg069.*
+		from	tpisg069
+		where	tpisg069._index2 = {:i.cprj}
+		and	tpisg069.chco = :tpisg314.chco
+		and	(tpisg069.refr(1;8) = "tpppc010" or tpisg069.iprj = 2)
+		selectdo
+			if tpisg069.dbcr = tfgld.dbcr.debit then
+				iamt.net = iamt.net + tpisg069.amth 
+			else	
+				if tpisg069.dbcr = tfgld.dbcr.credit then
+					iamt.net = iamt.net - tpisg069.amth 
+				endif
+			endif
+		endselect
+	
+		select	tpisg069.*
+		from	tpisg069
+		where	tpisg069._index2 = {:i.cprj}
+		and	tpisg069.chco = :tpisg314.chco
+		and	(tpisg069.refr(1;8) <> "tpppc010" and tpisg069.iprj <> 2)
+		selectdo
+			if tpisg069.dbcr = tfgld.dbcr.debit then
+				namt.net = namt.net + tpisg069.amth 
+			else	
+				if tpisg069.dbcr = tfgld.dbcr.credit then
+					namt.net = namt.net - tpisg069.amth 
+				endif
+			endif
+		endselect
+		
+		get.provisions.against.bills(i.cprj,tpisg314.chco,pamt)					|#Adarsh.17.12.19.n
+	
+		if tpisg314.chco = "C011" then
+			namt.net = namt.net + amth.mat.prov.net + amth.waty.net
+		endif	
+		
+		insert.and.update.tpisg066(i.cprj)
+		amth.iamt = 0.0
+		iamt.net = 0.0
+		amth.namt = 0.0
+		namt.net = 0.0
+		pamt = 0.0										|#Adarsh.17.12.19.n
+	endselect
+}
+
+function insert.and.update.tpisg066(domain tccprj i.cprj)
+{
+	db.retry.point()
+	select	tpisg066.*
+	from	tpisg066 for update
+	where	tpisg066._index1 = {:i.cprj,:tpisg314.chco}
+	selectdo
+		tpisg066.iamt = iamt.net
+		tpisg066.namt = namt.net
+		tpisg066.pamt = pamt									|#Adarsh.17.12.19.n
+		tpisg066.pseq = tpisg314.pseq
+		db.update(ttpisg066,DB.RETRY)
+	selectempty
+		db.set.to.default(ttpisg066)
+		tpisg066.cprj = i.cprj
+		tpisg066.chco = tpisg314.chco
+		tpisg066.iamt = iamt.net
+		tpisg066.namt = namt.net
+		tpisg066.pamt = pamt									|#Adarsh.17.12.19.n
+		tpisg066.pseq = tpisg314.pseq
+		db.insert(ttpisg066,DB.RETRY)
+	endselect
+	commit.transaction()
+}
+
+function refresh.tpisg067(domain tccprj i.cprj)
+{
+	amth.pamt = 0.0
+	amth.pamt.net = 0.0
+	
+	select	tpisg314.chco,tpisg314.pseq
+	from	tpisg314
+	where	tpisg314.pseq = 0
+	selectdo
+		select	tppdm600.ncmp
+		from	tppdm600
+		where	tppdm600._index1 = {:i.cprj}
+		as set with 1 rows
+		selectdo
+			select	tcemm030.lcmp
+			from	tcemm030
+			where	tcemm030.fcmp = :tppdm600.ncmp
+			as set with 1 rows
+			selectdo
+				select	tcemm030.fcmp
+				from	tcemm030
+				where	tcemm030.lcmp = :tcemm030.lcmp
+				selectdo
+					select	tpisg315.leac
+					from	tpisg315
+					where	tpisg315._index1 = {:tpisg314.chco}
+					selectdo
+						select	tfgld106.amth(1):amth.pamt,tfgld106.dbcr
+						from	tfgld106
+						where	tfgld106._index3 = {:tpisg315.leac} 
+						and	tfgld106.dim1 = :i.cprj
+						and	tfgld106.otyp <> "OPB"
+						and	tfgld106._compnr = :tcemm030.fcmp
+						selectdo
+							if tfgld106.dbcr = tfgld.dbcr.debit then
+								amth.pamt.net = amth.pamt.net - amth.pamt 
+							else	
+								if tfgld106.dbcr = tfgld.dbcr.credit then
+									amth.pamt.net = amth.pamt.net + amth.pamt 
+								endif
+							endif
+						endselect
+					endselect
+				endselect
+			endselect
+		endselect
+		insert.and.update.tpisg067(i.cprj)
+		amth.pamt = 0.0
+		amth.pamt.net = 0.0
+	endselect
+}
+
+function insert.and.update.tpisg067(domain tccprj i.cprj)
+{
+	db.retry.point()
+	select	tpisg067.*
+	from	tpisg067 for update
+	where	tpisg067._index1 = {:i.cprj,:tpisg314.chco}
+	selectdo
+		tpisg067.pamt = amth.pamt.net
+		tpisg067.pseq = tpisg314.pseq
+		db.update(ttpisg067,DB.RETRY)
+	selectempty
+		db.set.to.default(ttpisg067)
+		tpisg067.cprj = i.cprj
+		tpisg067.chco = tpisg314.chco
+		tpisg067.pamt = amth.pamt.net
+		tpisg067.pseq = tpisg314.pseq
+		db.insert(ttpisg067,DB.RETRY)
+	endselect
+	commit.transaction()
+}
+
+function refresh.tpisg068(domain tccprj i.cprj)
+{
+	domain tfgld.amnt lamt.net
+	
+	db.retry.point()
+	select	tpisg068.*
+	from	tpisg068 for update
+	where	tpisg068._index1 = {:i.cprj}
+	selectdo		
+		db.delete(ttpisg068,DB.RETRY)
+	endselect
+	commit.transaction()
+	
+	
+	select 	tpisg314.chco
+	from	tpisg314
+	where	tpisg314.pseq > 0
+	selectdo
+		hold.elem = ""
+		hold.fcmp = 0
+				
+		select	atpisg069.cspa:hold.elem
+		from	tpisg069 atpisg069
+		where	atpisg069.dim1 = :i.cprj
+		and	atpisg069.chco = :tpisg314.chco
+		and 	atpisg069.cspa <> ""
+		group by atpisg069.cspa
+		selectdo
+			iamt.net = 0.0
+			select	tpisg069.*
+			from	tpisg069 
+			where	tpisg069.dim1 = :i.cprj
+			and	tpisg069.chco = :tpisg314.chco
+			and 	tpisg069.cspa = :hold.elem
+			selectdo				
+				if tpisg069.dbcr = tfgld.dbcr.debit then
+					iamt.net = iamt.net + tpisg069.amth
+				else 
+					if tpisg069.dbcr = tfgld.dbcr.credit then
+						iamt.net = iamt.net - tpisg069.amth
+					endif
+					
+				endif
+			endselect
+			hold.fcmp = tpisg069.fcmp
+			insert.and.update.tpisg068(i.cprj)
+		endselect
+		
+		hold.elem = ""
+		hold.fcmp = 0
+		
+		select	atpisg059.cspa:hold.elem
+		from	tpisg069 atpisg069, tpisg059 atpisg059
+		where	atpisg069.dim1 = :i.cprj
+		and	atpisg069.chco = :tpisg314.chco
+		and 	atpisg069.iprj = 2
+		and 	atpisg069.dim1 = atpisg059.cprj
+		and 	atpisg069.otyp = atpisg059.ftty
+		and 	atpisg069.odoc = atpisg059.fdoc
+		and 	atpisg069.olin = atpisg059.flin
+		group by atpisg059.cspa
+		selectdo
+			lamt.net = 0.0
+			select	tpisg069.*
+			from	tpisg069 
+			where	tpisg069.dim1 = :i.cprj
+			and	tpisg069.chco = :tpisg314.chco
+			and 	tpisg069.iprj = 2
+			selectdo
+				select	tpisg059.*
+				from	tpisg059
+				where	tpisg059.cprj = :tpisg069.dim1 
+				and 	tpisg059.ftty = :tpisg069.otyp 
+				and 	tpisg059.fdoc = :tpisg069.odoc 
+				and 	tpisg059.flin = :tpisg069.olin 
+				and 	tpisg059.cspa = :hold.elem
+				as set with 1 rows
+				selectdo				
+					if tpisg069.dbcr = tfgld.dbcr.debit then
+						lamt.net = lamt.net + tpisg069.amth
+					else 
+						if tpisg069.dbcr = tfgld.dbcr.credit then
+							lamt.net = lamt.net - tpisg069.amth
+						endif
+					endif
+				endselect
+			endselect
+			
+			hold.fcmp = tpisg069.fcmp
+			
+			select tpisg068.iamt from tpisg068 
+			where 	tpisg068.cprj = :i.cprj 
+			and 	tpisg068.elem = :hold.elem
+			and	tpisg068.chco = :tpisg314.chco
+			selectdo
+				iamt.net = tpisg068.iamt + lamt.net
+			selectempty
+				iamt.net = lamt.net
+			endselect			
+			insert.and.update.tpisg068(i.cprj)
+		endselect
+	endselect	
+}
+
+function insert.and.update.tpisg068(domain tccprj i.cprj)
+{
+	db.retry.point()
+	select	tpisg068.*
+	from	tpisg068 for update
+	where	tpisg068._index1 = {:i.cprj,:tpisg314.chco,:hold.elem,:hold.fcmp}
+	selectdo
+		tpisg068.iamt = iamt.net
+		db.update(ttpisg068,DB.RETRY)
+	selectempty
+		tpisg068.cprj = i.cprj
+		tpisg068.chco = tpisg069.chco
+		tpisg068.elem = hold.elem
+		tpisg068.iamt = iamt.net
+		tpisg068.ncmp = hold.fcmp
+		db.insert(ttpisg068,DB.RETRY)
+	endselect
+	commit.transaction()
+}
+
+function refresh.tpisg093(domain tccprj i.cprj)
+{
+	amth.samt = 0.0
+	amth.samt.net = 0.0
+	
+	select	tpisg319.slsh,tpisg319.pseq
+	from	tpisg319
+	selectdo
+		select	tppdm600.ncmp
+		from	tppdm600
+		where	tppdm600._index1 = {:i.cprj}
+		as set with 1 rows
+		selectdo
+			select	tcemm030.lcmp
+			from	tcemm030
+			where	tcemm030.fcmp = :tppdm600.ncmp
+			as set with 1 rows
+			selectdo
+				select	tcemm030.fcmp
+				from	tcemm030
+				where	tcemm030.lcmp = :tcemm030.lcmp
+				selectdo
+					select	tpisg320.leac
+					from	tpisg320
+					where	tpisg320._index1 = {:tpisg319.slsh}
+					selectdo
+						select	tfgld106.amth(1):amth.samt,tfgld106.dbcr
+						from	tfgld106
+						where	tfgld106._index3 = {:tpisg320.leac} 
+						and	tfgld106.dim1 = :i.cprj
+						and	tfgld106._compnr = :tcemm030.fcmp
+						selectdo
+							if tfgld106.dbcr = tfgld.dbcr.debit then
+								amth.samt.net = amth.samt.net + amth.samt 
+							else	
+								if tfgld106.dbcr = tfgld.dbcr.credit then
+									amth.samt.net = amth.samt.net - amth.samt 
+								endif
+							endif
+						endselect
+					endselect
+				endselect
+			endselect
+		endselect
+		amth.samt.net = amth.samt.net * (-1)
+		insert.and.update.tpisg093(i.cprj)
+		amth.samt = 0.0
+		amth.samt.net = 0.0
+	endselect
+}
+
+function insert.and.update.tpisg093(domain tccprj i.cprj)
+{
+	db.retry.point()
+	select	tpisg093.*
+	from	tpisg093 for update
+	where	tpisg093._index1 = {:i.cprj,:tpisg319.slsh}
+	selectdo
+		tpisg093.samt = amth.samt.net
+		tpisg093.pseq = tpisg319.pseq
+		db.update(ttpisg093,DB.RETRY)
+	selectempty
+		db.set.to.default(ttpisg093)
+		tpisg093.cprj = i.cprj
+		tpisg093.slsh = tpisg319.slsh
+		tpisg093.samt = amth.samt.net
+		tpisg093.pseq = tpisg319.pseq
+		db.insert(ttpisg093,DB.RETRY)
+	endselect
+	commit.transaction()
+}
+
+function domain tcamnt get.addition.reduction.due.to.client.till.date(
+									domain	tccprj		i.cprj,
+									domain	tppdm.cspa	i.elem,
+									domain	tppdm.sern	i.levl,
+									domain	tcamnt		i.ardc
+													)
+{
+	domain	tcamnt	ardc,ardc.td
+	
+	ardc = 0.0
+	ardc.td = 0.0
+	
+	if i.levl = 0 then
+		select	sum(zz_tpisg008.ardc):ardc
+		from	tpisg008 zz_tpisg008
+		where	zz_tpisg008._index1 ={:i.cprj}
+		selectdo
+		endselect
+		ardc.td = ardc + i.ardc
+	else
+		select 	sum(zz_tpisg008.ardc):ardc
+		from	tpisg008 zz_tpisg008
+		where	zz_tpisg008._index1 ={:i.cprj}
+		and 	zz_tpisg008.elem = :i.elem
+		selectdo
+		endselect
+		ardc.td = ardc + i.ardc	
+	endif
+	return(ardc.td)
+}
+
+function domain tcamnt get.addition.reduction.due.to.internal.transfer.till.date(
+											domain	tccprj		i.cprj,
+											domain	tppdm.cspa	i.elem,
+											domain	tppdm.sern	i.levl,
+											domain	tcamnt		i.ardi
+															)
+{
+	domain	tcamnt	ardi,ardi.td
+	
+	ardi = 0.0
+	ardi.td = 0.0
+	
+	if i.levl = 0 then
+		select	sum(zz_tpisg008.ardi):ardi
+		from	tpisg008 zz_tpisg008
+		where	zz_tpisg008._index1 ={:i.cprj}
+		selectdo
+		endselect
+		ardi.td = ardi + i.ardi
+	else
+		select 	sum(zz_tpisg008.ardi):ardi
+		from	tpisg008 zz_tpisg008
+		where	zz_tpisg008._index1 ={:i.cprj}
+		and 	zz_tpisg008.elem = :i.elem
+		selectdo
+		endselect
+		ardi.td = ardi + i.ardi	
+	endif
+	return(ardi.td)
+}	
+
+function domain tcamnt get.addition.reduction.due.to.client(domain tccprj i.cprj)
+{
+	domain	tcamnt	cict.i,cict.d,cict.n
+	
+	cict.i = 0.0
+	cict.d = 0.0
+	cict.n = 0.0
+	
+	select	sum(a_tpisg311.cict):cict.i
+	from	tpisg311 a_tpisg311
+	where	a_tpisg311._index1= {:i.cprj}
+	and	a_tpisg311.ctyp = tpchng.type.increase	
+	selectdo
+	selectempty
+		cict.i = 0.00
+	endselect
+	
+	select	sum(b_tpisg311.cict):cict.d
+	from	tpisg311 b_tpisg311
+	where	b_tpisg311._index1= {:i.cprj}
+	and	b_tpisg311.ctyp = tpchng.type.decrease	
+	selectdo
+	selectempty
+		cict.d = 0.00
+	endselect
+	
+	cict.n = cict.i - cict.d
+	return(cict.n)
+}
+
+function domain tcamnt get.addition.reduction.due.to.internal.transfer(domain tccprj i.cprj)
+{
+	domain	tcamnt	cict.i,cict.d,cict.n
+	
+	cict.i = 0.0
+	cict.d = 0.0
+	cict.n = 0.0
+	
+	select	sum(a_tpisg317.cict):cict.i
+	from	tpisg317 a_tpisg317
+	where	a_tpisg317._index1= {:i.cprj}
+	and	a_tpisg317.ctyp = tpchng.type.increase	
+	selectdo
+	endselect
+	
+	select	sum(b_tpisg317.cict):cict.d
+	from	tpisg317 b_tpisg317
+	where	b_tpisg317._index1= {:i.cprj}
+	and	b_tpisg317.ctyp = tpchng.type.decrease	
+	selectdo
+	endselect
+	
+	cict.n = cict.i - cict.d
+	return(cict.n)
+}
+
+function update.total.cost.variance.and.unexpected.po.value(domain tccprj i.cprj)
+{
+	db.retry.point()
+	select	tpisg056.exhd,
+		tpisg056.ctcm,
+		tpisg056.tcst,
+		tpisg056.niba,
+		tpisg056.upov,
+		tpisg056.cbac,
+		tpisg056.cbas
+	from	tpisg056 for update
+	where	tpisg056._index1 = {:i.cprj}
+	selectdo
+		tpisg056.tcst = tpisg056.exhd + tpisg056.ctcm + tpisg056.niba
+		tpisg056.upov = tpisg056.exhd - tpisg056.cbac - tpisg056.cbas
+		db.update(ttpisg056,DB.RETRY)
+		commit.transaction()
+	endselect
+	
+	select	tpisg056.tcst,
+		tpisg056.varc,
+		tpisg056.ritb
+	from	tpisg056 for update
+	where	tpisg056._index1 = {:i.cprj}
+	and	tpisg056.levl = 2
+	and	tpisg056.elem not in ("C004","C018","C023","C025","C027")
+	selectdo
+		tpisg056.varc = tpisg056.ritb - tpisg056.tcst
+		db.update(ttpisg056,DB.RETRY)
+		commit.transaction()
+	endselect
+}
+
+function calculate.and.insert.or.update.loss.in.taxes.cost.head(
+									domain	tccprj	i.cprj,
+									domain	tcorno	i.revn
+												)
+{
+	domain	tcamnt	samt,namt,lamt
+	
+	samt = 0.0
+	namt = 0.0
+	lamt = 0.0
+	
+	select	sum(tpisg093.samt):samt
+	from	tpisg093
+	where	tpisg093._index1 = {:i.cprj}
+	and	tpisg093.slsh in ("S006","S007")
+	selectdo
+	endselect
+	
+	select	sum(tpisg066.namt):namt
+	from	tpisg066
+	where	tpisg066._index1 = {:i.cprj}
+	and	tpisg066.chco in ("C004","C018","C023","C025","C027")
+	selectdo
+	endselect
+	
+	|lamt = samt - namt
+	
+	lamt = namt - samt		|Veena18-09-2019
+	
+	db.retry.point()
+	select	tpisg056.*
+	from	tpisg056 for update
+	where	tpisg056._index1 = {:i.cprj,:i.revn,"C028"}
+	selectdo
+		tpisg056.niba = lamt
+		db.update(ttpisg056,DB.RETRY)
+		commit.transaction()
+	selectempty
+		db.set.to.default(ttpisg056)
+		tpisg056.cprj = i.cprj 
+		tpisg056.revn = i.revn
+		tpisg056.elem = "C028"
+		tpisg056.levl = 2
+		tpisg056.niba = lamt
+		db.insert(ttpisg056,DB.RETRY)
+		commit.transaction()
+	endselect
+}
+
+function update.sum.on.parent.element(domain tccprj i.cprj)
+{
+	domain	tcamnt	ibud,
+			ctcm,
+			tcst,
+			varc,
+			cbac,cbac.1,cbac.2,
+			upov,upov.1,upov.2,
+			cont,cont.1,cont.2,
+			cons,cons.1,cons.2,
+			warr,warr.1,warr.2,
+			tsht,tsht.1,tsht.2,
+			stcs,stcs.1,stcs.2,
+			stmc,stmc.1,stmc.2,
+			niba,niba.1,niba.2,
+			ttch,ttch.1,ttch.2,
+			cbas,cbas.1,cbas.2,
+			ardc,ardc.1,ardc.2,
+			ardi,ardi.1,ardi.2
+			
+	ibud = 0.0 
+	ctcm = 0.0 
+	tcst = 0.0 
+	cbac = 0.0 cbac.1 = 0.0 cbac.2 = 0.0 
+	upov = 0.0 upov.1 = 0.0 upov.2 = 0.0 
+	cont = 0.0 cont.1 = 0.0 cont.2 = 0.0 
+	cons = 0.0 cons.1 = 0.0 cons.2 = 0.0 
+	warr = 0.0 warr.1 = 0.0 warr.2 = 0.0 
+	tsht = 0.0 tsht.1 = 0.0 tsht.2 = 0.0 
+	stcs = 0.0 stcs.1 = 0.0 stcs.2 = 0.0 
+	stmc = 0.0 stmc.1 = 0.0 stmc.2 = 0.0 
+	niba = 0.0 niba.1 = 0.0 niba.2 = 0.0 
+	ttch = 0.0 ttch.1 = 0.0 ttch.2 = 0.0 
+	cbas = 0.0 cbas.1 = 0.0 cbas.2 = 0.0 
+	ardc = 0.0 ardc.1 = 0.0 ardc.2 = 0.0 
+	ardi = 0.0 ardi.1 = 0.0 ardi.2 = 0.0 
+
+	select	sum(tpisg056.cbac):cbac.1,
+		sum(tpisg056.upov):upov.1,
+		sum(tpisg056.cont):cont.1,
+		sum(tpisg056.cons):cons.1,
+		sum(tpisg056.warr):warr.1,
+		sum(tpisg056.tsht):tsht.1,
+		sum(tpisg056.stcs):stcs.1,
+		sum(tpisg056.stmc):stmc.1,
+		sum(tpisg056.niba):niba.1,
+		sum(tpisg056.ttch):ttch.1,
+		sum(tpisg056.cbas):cbas.1,
+		sum(tpisg056.ardc):ardc.1,
+		sum(tpisg056.ardi):ardi.1
+	from	tpisg056
+	where	tpisg056._index1 = {:i.cprj}
+	and	tpisg056.elem(1;1) <> "9"
+	and	tpisg056.elem not in ("C004","C018","C023","C025","C027")
+	and	tpisg056.levl = 2
+	selectdo
+	endselect
+	
+	select	sum(tpisg056.cbac):cbac.2,
+		sum(tpisg056.upov):upov.2,
+		sum(tpisg056.cont):cont.2,
+		sum(tpisg056.cons):cons.2,
+		sum(tpisg056.warr):warr.2,
+		sum(tpisg056.tsht):tsht.2,
+		sum(tpisg056.stcs):stcs.2,
+		sum(tpisg056.stmc):stmc.2,
+		sum(tpisg056.niba):niba.2,
+		sum(tpisg056.ttch):ttch.2,
+		sum(tpisg056.cbas):cbas.2,
+		sum(tpisg056.ardc):ardc.2,
+		sum(tpisg056.ardi):ardi.2
+	from	tpisg056
+	where	tpisg056._index1 = {:i.cprj}
+	and	tpisg056.elem(1;1) = "9"
+	and	tpisg056.levl in (3,4)
+	selectdo
+	endselect
+	
+	select	sum(tpisg056.ctcm):ctcm,
+		sum(tpisg056.ibud):ibud,
+		sum(tpisg056.tcst):tcst,
+		sum(tpisg056.varc):varc
+	from	tpisg056
+	where	tpisg056._index1 = {:i.cprj}
+	and	tpisg056.levl = 2
+	and	tpisg056.elem not in ("C004","C018","C023","C025","C027")
+	selectdo
+	endselect
+	
+	cbac = cbac.1 + cbac.2
+	upov = upov.1 + upov.2
+	cont = cont.1 + cont.2
+	cons = cons.1 + cons.2
+	warr = warr.1 + warr.2
+	tsht = tsht.1 + tsht.2
+	stcs = stcs.1 + stcs.2
+	stmc = stmc.1 + stmc.2
+	niba = niba.1 + niba.2
+	ttch = ttch.1 + ttch.2
+	cbas = cbas.1 + cbas.2
+	ardc = ardc.1 + ardc.2
+	ardi = ardi.1 + ardi.2
+	
+	db.retry.point()
+	select	tpisg056.*
+	from	tpisg056 for update
+	where	tpisg056._index1 = {:i.cprj}
+	and	tpisg056.elem = "1"
+	selectdo
+		tpisg056.ibud = ibud
+		tpisg056.ctcm = ctcm
+		tpisg056.tcst = tcst 
+		tpisg056.varc = varc
+		tpisg056.cbac = cbac
+		tpisg056.upov = upov
+		tpisg056.cont = cont
+		tpisg056.cons = cons
+		tpisg056.warr = warr
+		tpisg056.tsht = tsht
+		tpisg056.stcs = stcs
+		tpisg056.stmc = stmc
+		tpisg056.niba = niba
+		tpisg056.ttch = ttch
+		tpisg056.cbas = cbas
+		tpisg056.ardc = ardc
+		tpisg056.ardi = ardi
+		db.update(ttpisg056,DB.RETRY)
+		commit.transaction()
+	endselect
+}
+
+function domain tcamnt get.initial.contract.amount.in.home.currency(domain tccprj i.cprj)
+{
+	domain	tcamnt	icah
+	
+	icah = 0.00
+	
+	select	tpisg007.rate,
+		tpisg007.apdt
+	from	tpisg007
+	where	tpisg007._index1 = {:i.cprj}
+	order by tpisg007.apdt asc
+	as set with 1 rows
+	selectdo
+		if tpisg007.rate > 0 then
+			icah = tpisg011.copr * tpisg007.rate
+		else
+			select	tppdm740.rate
+			from	tppdm740
+			where	tppdm740._index1 = {:tpisg011.cprj}
+			as set with 1 rows
+			selectdo
+				icah = tpisg011.copr * tppdm740.rate(1)
+			selectempty
+				icah = 0.00
+			endselect
+		endif
+	selectempty
+		select	tppdm740.rate
+		from	tppdm740
+		where	tppdm740._index1 = {:tpisg011.cprj}
+		as set with 1 rows
+		selectdo
+			icah = tpisg011.copr * tppdm740.rate(1)
+		selectempty
+			icah = 0.00
+		endselect
+	endselect
+	
+	return(icah)
+}
+
+function update.cost.incurred(domain tccprj i.cprj)
+{
+	select	tpisg056.niba
+	from	tpisg056
+	where	tpisg056._index1 = {:i.cprj}
+	and	tpisg056.elem = "1"
+	selectdo
+	endselect
+	
+	db.retry.point()
+	select	tpisg055.cinc,tpisg055.ctcm,tpisg055.tcst,tpisg055.cnhc,tpisg055.ctoh,tpisg055.eife
+	from	tpisg055 for update
+	where	tpisg055._index1 = {:i.cprj}
+	selectdo
+		tpisg055.cinc = tpisg055.cinc + tpisg056.niba
+		tpisg055.tcst = tpisg055.cinc + tpisg055.ctcm
+		tpisg055.ctoh = tpisg055.cnhc - tpisg055.tcst + tpisg055.eife + get.realised.export.incentive(i.cprj,"S013")
+		db.update(ttpisg055,DB.RETRY)
+		commit.transaction()
+	endselect
+}
+
+function domain	tcamnt get.shortfall.met.old.data(
+							domain	tccprj		i.cprj,
+							domain	tppdm.cspa	i.trto,
+							domain	tppdm.cspa	i.trfr
+											)
+{
+	domain	tcamnt	tram
+	
+	tram = 0.0
+	
+	select	sum(tpisg021.tram):tram
+	from	tpisg021
+	where	tpisg021._index1 = {:i.cprj}
+	and 	tpisg021.trto = :i.trto
+	and 	tpisg021.trfr = :i.trfr
+	selectdo
+	endselect
+	
+	return(tram)
+}
+
+function insert.provisions.element(	domain	tccprj 	i.cprj,
+					domain	tcorno	i.revn	)
+{
+	db.retry.point()
+	select	tpisg056.*
+	from	tpisg056 for update
+	where	tpisg056._index1 = {:i.cprj}
+	and	tpisg056.elem = "D001"
+	selectdo
+		tpisg056.ctcm = 0.0
+		db.update(ttpisg056,DB.RETRY)
+		commit.transaction()
+	selectempty
+		db.set.to.default(ttpisg056)
+		tpisg056.cprj = i.cprj
+		tpisg056.revn = i.revn
+		tpisg056.elem = "D001"
+		tpisg056.levl = 2
+		db.insert(ttpisg056,DB.RETRY)
+		commit.transaction()
+	endselect
+	
+	db.retry.point()
+	select	tpisg056.*
+	from	tpisg056 for update
+	where	tpisg056._index1 = {:i.cprj}
+	and	tpisg056.elem = "D002"
+	selectdo
+		tpisg056.ctcm = 0.0
+		db.update(ttpisg056,DB.RETRY)
+		commit.transaction()
+	selectempty
+		db.set.to.default(ttpisg056)
+		tpisg056.cprj = i.cprj
+		tpisg056.revn = i.revn
+		tpisg056.elem = "D002"
+		tpisg056.levl = 2
+		db.insert(ttpisg056,DB.RETRY)
+		commit.transaction()
+	endselect
+}
+											|27.05.19.Adarsh.en	
+											|ISGEC002025.sn
+function get.budgeted.ctoh(
+					domain	tccprj	i.cprj,
+				ref 	domain	tcamnt	ini.contingency
+									)
+{
+	ini.contingency = 0.00
+	domain	tcamnt		totl.bug
+	
+	select	tpisg007.rate,
+		tpisg007.apdt
+	from	tpisg007
+	where	tpisg007._index1 = {:i.cprj}
+	order by tpisg007.apdt asc
+	as set with 1 rows
+	selectdo
+		if tpisg007.rate > 0 then
+			
+			select 	tpisg008.totl									
+			from	tpisg008
+			where	tpisg008._index1 = {:i.cprj,"1.0"}
+			and	tpisg008.levl = 0
+			as set with 1 rows
+			selectdo
+				ini.contingency =  (tpisg007.rate * tpisg011.copr) - tpisg008.totl + tpisg082.budg	
+			selectempty
+				tpisg008.totl = 0
+				totl.bug = 0.00
+				select 	aa_tpisg012.totl:totl.bug
+				from	tpisg012	aa_tpisg012
+				where	aa_tpisg012._index1 = {:i.cprj}
+				and 	aa_tpisg012.levl = 0
+				as set with 1 rows
+				selectdo
+					ini.contingency =  (tpisg007.rate * tpisg011.copr) - totl.bug + tpisg082.budg
+				selectempty
+					ini.contingency = 0.00
+				endselect
+			endselect
+		else
+			select	tppdm740.rate
+			from	tppdm740
+			where	tppdm740._index1 = {:i.cprj}
+			as set with 1 rows
+			selectdo
+				select 	tpisg008.totl									
+				from	tpisg008
+				where	tpisg008._index1 = {:i.cprj,"1.0"}
+				and	tpisg008.levl = 0
+				as set with 1 rows
+				selectdo
+					ini.contingency = (tppdm740.rate(1) * tpisg011.copr) - tpisg008.totl + tpisg082.budg	
+				selectempty
+					tpisg008.totl = 0
+					totl.bug = 0.00
+					select 	aa_tpisg012.totl:totl.bug
+					from	tpisg012	aa_tpisg012
+					where	aa_tpisg012._index1 = {:i.cprj}
+					and 	aa_tpisg012.levl = 0
+					as set with 1 rows
+					selectdo
+						ini.contingency = (tppdm740.rate(1) * tpisg011.copr) - totl.bug + tpisg082.budg
+					selectempty
+						ini.contingency = 0.00
+					endselect
+				endselect
+			endselect
+			
+		endif
+	selectempty
+		select	tppdm740.rate
+		from	tppdm740
+		where	tppdm740._index1 = {:i.cprj}
+		as set with 1 rows
+		selectdo
+			tpisg008.totl = 0
+			totl.bug = 0.00
+			select 	aa_tpisg012.totl:totl.bug
+			from	tpisg012	aa_tpisg012
+			where	aa_tpisg012._index1 = {:i.cprj}
+			and 	aa_tpisg012.levl = 0
+			as set with 1 rows
+			selectdo
+				ini.contingency = (tppdm740.rate(1) * tpisg011.copr) - totl.bug + tpisg082.budg
+			selectempty
+				ini.contingency = 0.00
+			endselect
+		endselect
+	endselect
+}
+														|ISGEC002025.en
+function get.amount.not.present.in.tpppc271.211.215.275(domain tccprj i.cprj)
+{
+	select	tpppc271.fdoc
+	from	tpppc271
+	where	tpppc271._index1 = {:i.cprj}
+	and	tpppc271.ftty = :tfgld106.otyp
+	and	tpppc271.fdoc = :tfgld106.odoc
+	selectdo
+	selectempty
+		select	tpppc211.fdoc
+		from	tpppc211
+		where	tpppc211._index1 = {:i.cprj}
+		and	tpppc211.ftty = :tfgld106.otyp
+		and	tpppc211.fdoc = :tfgld106.odoc
+		selectdo
+		selectempty
+			select	tpppc275.fdoc
+			from	tpppc275
+			where	tpppc275._index1 = {:i.cprj}
+			and	tpppc275.ftty = :tfgld106.otyp
+			and	tpppc275.fdoc = :tfgld106.odoc
+			selectdo
+			selectempty
+				select	tpppc215.fdoc
+				from	tpppc215
+				where	tpppc215._index1 = {:i.cprj}
+				and	tpppc215.ftty = :tfgld106.otyp
+				and	tpppc215.fdoc = :tfgld106.odoc
+				selectdo
+				selectempty
+					if tfgld106.dbcr = tfgld.dbcr.debit then
+						niba.amnt.debit = niba.amnt.debit + amth
+					else
+						if tfgld106.dbcr = tfgld.dbcr.credit then
+							niba.amnt.credit = niba.amnt.credit + amth
+						endif
+					endif		
+				endselect
+			endselect
+		endselect
+	endselect
+}	
+														
+| function get.amount.for.missing.element()
+| {
+| 	select	tpppc271.fdoc
+| 	from	tpppc271
+| 	where	tpppc271._index1 = {:tpisg056.cprj}
+| 	and	tpppc271.ftty = :tfgld106.otyp
+| 	and	tpppc271.fdoc = :tfgld106.odoc
+| 	and	tpppc271.cspa(1;4) = :tpisg056.elem(1;4)
+| 	as set with 1 rows
+| 	selectdo
+| 		if tfgld106.dbcr = tfgld.dbcr.debit then
+| 			cbac.amth.tot = cbac.amth.tot + cbac.amth 
+| 		else	
+| 			if tfgld106.dbcr = tfgld.dbcr.credit then
+| 				cbac.amth.tot = cbac.amth.tot - cbac.amth 
+| 			endif
+| 		endif
+| 	selectempty
+| 		select	tpppc211.fdoc
+| 		from	tpppc211
+| 		where	tpppc211._index1 = {:tpisg056.cprj}
+| 		and	tpppc211.ftty = :tfgld106.otyp
+| 		and	tpppc211.fdoc = :tfgld106.odoc
+| 		and	tpppc211.cspa(1;4) = :tpisg056.elem(1;4)
+| 		as set with 1 rows
+| 		selectdo
+| 			if tfgld106.dbcr = tfgld.dbcr.debit then
+| 				cbac.amth.tot = cbac.amth.tot + cbac.amth 
+| 			else	
+| 				if tfgld106.dbcr = tfgld.dbcr.credit then
+| 					cbac.amth.tot = cbac.amth.tot - cbac.amth 
+| 				endif
+| 			endif
+| 		selectempty
+| 			select	tpppc275.fdoc
+| 			from	tpppc275
+| 			where	tpppc275._index1 = {:tpisg056.cprj}
+| 			and	tpppc275.cspa(1;4) = :tpisg056.elem(1;4)
+| 			and	tpppc275.ftty = :tfgld106.otyp
+| 			and	tpppc275.fdoc = :tfgld106.odoc
+| 			as set with 1 rows
+| 			selectdo
+| 				if tfgld106.dbcr = tfgld.dbcr.debit then
+| 					cbac.amth.tot = cbac.amth.tot + cbac.amth 
+| 				else	
+| 					if tfgld106.dbcr = tfgld.dbcr.credit then
+| 						cbac.amth.tot = cbac.amth.tot - cbac.amth 
+| 					endif
+| 				endif
+| 			selectempty
+| 				select	tpppc215.fdoc
+| 				from	tpppc215
+| 				where	tpppc215._index1 = {:tpisg056.cprj}
+| 				and	tpppc215.cspa(1;4) = :tpisg056.elem(1;4)
+| 				and	tpppc215.ftty = :tfgld106.otyp
+| 				and	tpppc215.fdoc = :tfgld106.odoc
+| 				as set with 1 rows
+| 				selectdo
+| 					if tfgld106.dbcr = tfgld.dbcr.debit then
+| 						cbac.amth.tot = cbac.amth.tot + cbac.amth 
+| 					else	
+| 						if tfgld106.dbcr = tfgld.dbcr.credit then
+| 							cbac.amth.tot = cbac.amth.tot - cbac.amth 
+| 						endif
+| 					endif
+| 				selectempty
+| 				endselect
+| 			endselect
+| 		endselect
+| 	endselect
+| }
+
+function get.amount.for.missing.element()
+{
+	select	tpisg059.cprj
+	from	tpisg059
+	where	tpisg059._index1 = {:tpisg069.otyp,:tpisg069.odoc,:tpisg069.olin}
+	and	tpisg059.cprj = :tpisg069.dim1
+	and	tpisg059.cspa(1;4) = :tpisg056.elem(1;4)
+	selectdo
+		if tpisg069.dbcr = tfgld.dbcr.debit then
+			cbac.amth.tot = cbac.amth.tot + tpisg069.amth 
+		else	
+			if tpisg069.dbcr = tfgld.dbcr.credit then
+				cbac.amth.tot = cbac.amth.tot - tpisg069.amth 
+			endif
+		endif
+	endselect
+}
+
+| function get.amount.for.missing.element.2()
+| {
+| 	select	tpppc271.fdoc
+| 	from	tpppc271
+| 	where	tpppc271._index1 = {:tpisg056.cprj}
+| 	and	tpppc271.ftty = :tfgld106.otyp
+| 	and	tpppc271.fdoc = :tfgld106.odoc
+| 	and	tpppc271.cspa = :tpisg056.elem
+| 	as set with 1 rows
+| 	selectdo
+| 		if tfgld106.dbcr = tfgld.dbcr.debit then
+| 			cbac.amth.tot = cbac.amth.tot + cbac.amth 
+| 		else	
+| 			if tfgld106.dbcr = tfgld.dbcr.credit then
+| 				cbac.amth.tot = cbac.amth.tot - cbac.amth 
+| 			endif
+| 		endif
+| 	selectempty
+| 		select	tpppc211.fdoc
+| 		from	tpppc211
+| 		where	tpppc211._index1 = {:tpisg056.cprj}
+| 		and	tpppc211.ftty = :tfgld106.otyp
+| 		and	tpppc211.fdoc = :tfgld106.odoc
+| 		and	tpppc211.cspa = :tpisg056.elem
+| 		as set with 1 rows
+| 		selectdo
+| 			if tfgld106.dbcr = tfgld.dbcr.debit then
+| 				cbac.amth.tot = cbac.amth.tot + cbac.amth 
+| 			else	
+| 				if tfgld106.dbcr = tfgld.dbcr.credit then
+| 					cbac.amth.tot = cbac.amth.tot - cbac.amth 
+| 				endif
+| 			endif
+| 		selectempty
+| 			select	tpppc275.fdoc
+| 			from	tpppc275
+| 			where	tpppc275._index1 = {:tpisg056.cprj}
+| 			and	tpppc275.cspa = :tpisg056.elem
+| 			and	tpppc275.ftty = :tfgld106.otyp
+| 			and	tpppc275.fdoc = :tfgld106.odoc
+| 			as set with 1 rows
+| 			selectdo
+| 				if tfgld106.dbcr = tfgld.dbcr.debit then
+| 					cbac.amth.tot = cbac.amth.tot + cbac.amth 
+| 				else	
+| 					if tfgld106.dbcr = tfgld.dbcr.credit then
+| 						cbac.amth.tot = cbac.amth.tot - cbac.amth 
+| 					endif
+| 				endif
+| 			selectempty
+| 				select	tpppc215.fdoc
+| 				from	tpppc215
+| 				where	tpppc215._index1 = {:tpisg056.cprj}
+| 				and	tpppc215.cspa = :tpisg056.elem
+| 				and	tpppc215.ftty = :tfgld106.otyp
+| 				and	tpppc215.fdoc = :tfgld106.odoc
+| 				as set with 1 rows
+| 				selectdo
+| 					if tfgld106.dbcr = tfgld.dbcr.debit then
+| 						cbac.amth.tot = cbac.amth.tot + cbac.amth 
+| 					else	
+| 						if tfgld106.dbcr = tfgld.dbcr.credit then
+| 							cbac.amth.tot = cbac.amth.tot - cbac.amth 
+| 						endif
+| 					endif
+| 				selectempty
+| 				endselect
+| 			endselect
+| 		endselect
+| 	endselect
+| }
+
+function get.amount.for.missing.element.2()
+{
+	select	tpisg059.cprj
+	from	tpisg059
+	where	tpisg059._index1 = {:tpisg069.otyp,:tpisg069.odoc,:tpisg069.olin}
+	and	tpisg059.cprj = :tpisg069.dim1
+	and	tpisg059.cspa = :tpisg056.elem
+	selectdo
+		if tpisg069.dbcr = tfgld.dbcr.debit then
+			cbac.amth.tot = cbac.amth.tot + tpisg069.amth 
+		else	
+			if tpisg069.dbcr = tfgld.dbcr.credit then
+				cbac.amth.tot = cbac.amth.tot - tpisg069.amth 
+			endif
+		endif
+	endselect
+	
+}
+
+function domain tcamnt get.data.from.tpisg008.and.tpisg012(	domain	tccprj    	i.cprj,
+								domain	tppdm.cspa	i.cspa	)	
+{
+	domain	tcamnt	ttch,tot.ttch.008,tot.ttch.012,tot.ttch
+	
+	ttch = 0
+	tot.ttch.008 = 0
+	tot.ttch.012 = 0
+	tot.ttch = 0
+	
+	select	tpisg007.cprj,
+		tpisg007.vers
+	from	tpisg007
+	where	tpisg007._index1 = {:i.cprj}
+	and	tpisg007.act1 = 70
+	selectdo
+		select	sum(tpisg008.ttch):ttch
+		from	tpisg008
+		where	tpisg008._index1 = {:tpisg007.cprj,:tpisg007.vers,:i.cspa} 
+		and 	tpisg008.ttch <> 0
+		selectdo
+		selectempty
+			ttch = 0
+		endselect
+		tot.ttch.008 = tot.ttch.008 + ttch
+	endselect
+	
+	select	tpisg011.cprj,
+		tpisg011.vers
+	from	tpisg011
+	where	tpisg011._index1 = {:i.cprj}
+	and	tpisg011.act1 = 70
+	selectdo
+		select	sum(tpisg012.ttch):ttch
+		from	tpisg012
+		where	tpisg012._index1 = {:tpisg011.cprj,:tpisg011.vers,:i.cspa} 
+		and 	tpisg012.ttch <> 0
+		selectdo
+		selectempty
+			ttch = 0
+		endselect
+		tot.ttch.012 = tot.ttch.012 + ttch
+	endselect	
+	
+	tot.ttch = tot.ttch.008 + tot.ttch.012
+	return(tot.ttch)
+}
+
+function domain tcamnt get.realised.export.incentive(	domain	tccprj		i.cprj,
+							domain	tcmcs.str4	i.slsh	)
+{
+	select	tpisg093.samt
+	from	tpisg093
+	where	tpisg093._index1 = {:i.cprj,:i.slsh}
+	selectdo
+	endselect
+	
+	return(tpisg093.samt)
+}
+
+function update.tpisg069.logictic.element(domain tccprj i.cprj)
+{
+	select	tpisg069.otyp,
+		tpisg069.odoc,
+		tpisg069.olin,
+		tpisg069.lcsp
+	from	tpisg069 for update
+	where	tpisg069._index2 = {:i.cprj}
+	and	tpisg069.iprj = 2
+	selectdo
+		select	tpisg059.cspa
+		from	tpisg059
+		where	tpisg059._index1 = {:tpisg069.otyp,:tpisg069.odoc,:tpisg069.olin}
+		and	tpisg059.cprj = :i.cprj
+		as set with 1 rows
+		selectdo
+			tpisg069.lcsp = tpisg059.cspa
+		selectempty
+			tpisg069.lcsp = ""
+		endselect
+		db.update(ttpisg069,DB.RETRY)
+		commit.transaction()
+	endselect
+	
+	
+}
+												|#Adarsh.17.12.19.sn
+function get.provisions.against.bills(		domain	tccprj		i.cprj,
+						domain	tcmcs.str4	i.chco,
+					ref	domain	tcamnt		o.pamt	)
+{
+	niba.amnt.credit = 0.0
+	niba.amnt.debit = 0.0
+	o.pamt = 0.0
+
+	select	tpisg314.chco
+	from	tpisg314
+	where	tpisg314._index1 = {:i.chco}
+	selectdo
+		select	tpisg315.leac
+		from	tpisg315
+		where	tpisg315._index1 = {:tpisg314.chco}
+		and 	tpisg315.prgl = 1						
+		selectdo
+			select	tpisg069.*
+			from	tpisg069
+			where	tpisg069._index2 = {:i.cprj}
+			and	tpisg069.leac = :tpisg315.leac
+			and	tpisg069.refr(1;8) <> "tpppc010" 
+			and	tpisg069.iprj <> 2
+			and	tpisg069.chco = :tpisg314.chco
+			selectdo
+				if tpisg069.dbcr = tfgld.dbcr.debit then
+					niba.amnt.debit = niba.amnt.debit + tpisg069.amth
+				else
+					if tpisg069.dbcr = tfgld.dbcr.credit then
+						niba.amnt.credit = niba.amnt.credit + tpisg069.amth
+					endif
+				endif		
+			endselect
+		endselect
+		
+		niba.amnt.credit = niba.amnt.credit * (-1)
+		o.pamt = niba.amnt.debit + niba.amnt.credit
+	endselect
+}
+												|#Adarsh.17.12.19.en

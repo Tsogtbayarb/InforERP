@@ -1,0 +1,761 @@
+|******************************************************************************
+|* tpisg317  0  VRC B61U a7 isg 
+|* DLL tpisg317
+|* merino1
+|* 19-04-16 [16:47]
+|******************************************************************************
+|* Script Type: DAL
+|******************************************************************************
+| ID: ISGEC002025, Arun Chauhan, Date- 16-04-2019
+| Onsite New Development
+|******************************************************************************
+                                                                                
+#include <bic_dal2>
+
+		table ttpisg317		|Sanction Due To Internal Reasons Header
+		table ttpisg318		|Sanction Sanction Due To Internal Reasons Line	
+		table ttpisg007		|Sanction History Header
+		table ttpisg008		|Sanction History Line
+		table ttpisg012		|Sanction Amendment Line
+		table ttpisg011		|Sanction Amendment Header 
+		
+		
+								
+|******************************function variable *******************************
+
+		domain	tcamnt		v.ardi
+		long 			c_ret,msg.flg,msg.flg1,msg.flg2
+		extern domain tcorno	v.max.vers.317
+|******************************* Function Senction *****************************
+
+function extern long before.open.object.set()
+{
+	
+
+	dal.field.depends.on("tpisg317.ciov",			|******* Change in Order Value
+					HOOK_IS_APPLICABLE + 
+					HOOK_IS_MANDATORY +
+					HOOK_IS_VALID ,   
+							"tpisg317.otyp",
+							"tpisg317.sprj")
+		
+	dal.field.depends.on("tpisg317.cict",			|******* Change in CTOH
+					HOOK_IS_APPLICABLE + 
+					HOOK_IS_MANDATORY +
+					HOOK_IS_VALID,   
+							"tpisg317.ctyp",
+							"tpisg317.sprj")
+		
+	dal.field.depends.on("tpisg317.netc",			|******* Net Change
+					HOOK_UPDATE +
+					HOOK_IS_VALID,  	
+							"tpisg317.ciov",
+							"tpisg317.cict",
+							"tpisg317.ctyp",
+							"tpisg317.otyp",
+							"tpisg317.styp")
+							
+	dal.field.depends.on("tpisg317.otyp",			|******* Change in Order type
+					HOOK_UPDATE,
+							"tpisg317.ciov",
+							"tpisg317.cict",
+							"tpisg317.ctyp",
+							"tpisg317.styp",
+							"tpisg317.sprj")
+							
+	return(0)
+}
+
+function extern long before.save.object(long type)
+{
+	on case type
+	case DAL_NEW:
+	case DAL_UPDATE:
+		
+		domain	tcamnt		avai.amnt
+		get.available.amount(
+					tpisg317.sprj,
+					tpisg317.cprj,
+					avai.amnt
+					)
+					
+		if (tpisg317.netc < 0) and etol(tpisg317.styp) = 2  then
+			dal.set.error.message("@ Net Change Cannot be Negative For Addition")
+			return(DALHOOKERROR)
+			else  if (tpisg317.netc > 0) and etol(tpisg317.styp) = 3  then
+				dal.set.error.message("@ Net Change Cannot be Positive For Reduction")
+				return(DALHOOKERROR)
+			endif
+		endif	
+		
+		
+		if tpisg317.netc > (avai.amnt) and etol(tpisg317.styp) = 2  and tpisg317.netc then
+			dal.set.error.message("@ Net Change Should Not be Greater Than Available Amount For Transfer - Rs. %d",(avai.amnt*-1))
+			return(DALHOOKERROR)
+		else
+			if tpisg317.pros = tcyesno.yes then
+				tpisg317.pros = tcyesno.no
+			endif
+		endif
+		
+		break
+	endcase
+		return(0)
+}
+
+|**************************** Field section *************************************
+
+|*****  Project
+function extern boolean tpisg317.cprj.is.mandatory()
+{
+    return(true)
+}
+
+|***** Target/Source Project
+function extern boolean tpisg317.sprj.is.mandatory()
+{
+    return(true)
+}
+
+function extern boolean tpisg317.sprj.is.valid()
+{
+	if tpisg317.sprj = tpisg317.cprj then
+		return(false)
+	endif
+	return(true)
+}
+
+|******* Change in Order Value
+function extern boolean tpisg317.ciov.is.applicable()
+{
+	if etol(tpisg317.otyp) = 1  and not isspace (tpisg317.sprj) then
+		return(false)
+	endif
+    return(true)
+}
+
+function extern boolean tpisg317.ciov.is.mandatory()
+{
+	if etol(tpisg317.otyp) <> 1 and tpisg317.ciov <= 0.00  then
+		dal.set.error.message("@ Incase Of Increase/Decrease Value Should Not Be Zero")
+		return(DALHOOKERROR)
+	endif
+    return(true)
+}
+
+function extern boolean tpisg317.ciov.is.valid()
+{	
+	if etol(tpisg317.otyp) <> 1 and tpisg317.ciov <= 0.00  then
+		return(false)
+	endif
+	return(true)
+}
+
+|****** Change in CTOH
+function extern boolean tpisg317.cict.is.applicable()
+{
+	if etol(tpisg317.ctyp) = 1 and not isspace (tpisg317.sprj) then
+		return(false)
+	endif
+	return(true)
+}
+
+function extern boolean tpisg317.cict.is.mandatory()
+{
+	if etol(tpisg317.otyp) <> 1 and tpisg317.cict < 0.00  then
+		dal.set.error.message("@ Incase Of Increase/Decrease Value Should Not Be Zero")
+		return(DALHOOKERROR)
+	endif
+	return(true)
+}
+
+function extern boolean tpisg317.cict.is.valid()
+{	
+	if etol(tpisg317.otyp) <> 1 and tpisg317.cict <=0.00  then
+		dal.set.error.message("@ Incase Of Increase/Decrease Value Should Not Be Zero")
+		return(DALHOOKERROR)
+	endif
+	return(true)
+}
+|***** Net Change
+
+
+
+function extern long tpisg317.netc.update()
+{
+	domain	tcamnt		tot.incr.valu,
+				tot.decr.valu,
+				netc
+				
+	tot.incr.valu = 0.00
+	tot.decr.valu = 0.00
+	netc = 0.00
+	
+	increase_decrease_value(
+				tot.incr.valu,
+				tot.decr.valu)
+	tpisg317.netc = (tot.incr.valu - tot.decr.valu)
+
+	if (tpisg317.netc < 0) and etol(tpisg317.styp) = 2  then
+		dal.set.error.message("@ Net Change Cannot be Negative For Addition")
+		return(DALHOOKERROR)
+	else  if (tpisg317.netc > 0) and etol(tpisg317.styp) = 3  then
+			dal.set.error.message("@ Net Change Cannot be Positive For Reduction")
+			return(DALHOOKERROR)
+		
+		endif
+	endif
+	
+	return(0)
+}
+
+|***** Order Value Type
+function extern void tpisg317.otyp.update()
+{
+	on case etol(tpisg317.styp)
+		case 1: 
+			tpisg317.otyp = tpchng.type.nochange
+			break
+		case 2:
+			tpisg317.otyp = tpchng.type.increase
+			break
+		case 3:
+			tpisg317.otyp = tpchng.type.decrease
+			break
+	endcase
+}
+ 
+
+
+|****** Form Command
+function extern boolean update.due.to.internal.is.allowed()		
+{
+	select	z_tpisg318.ctyp
+	from	tpisg318 	z_tpisg318
+	where	z_tpisg318._index1= {:tpisg317.cprj,:tpisg317.vers}
+	and	z_tpisg318.ctyp <> tpchng.type.nochange
+	as set with 1 rows
+	selectdo
+		return(true)		
+	endselect
+	return(false)
+}
+
+|********************************* Function Senction *******************************
+
+function increase_decrease_value(
+				ref	domain	tcamnt		otyp,	
+				ref	domain	tcamnt		ctyp	
+				)
+{
+
+	on case	 etol(tpisg317.otyp)
+	case 2:
+		on case etol(tpisg317.ctyp)
+		case 1:
+			otyp = 0.00
+			ctyp = 0.00
+		case 2:
+			otyp = tpisg317.ciov
+			ctyp = tpisg317.cict
+			break
+		case 3:
+			otyp = tpisg317.ciov
+			ctyp = tpisg317.cict * -1
+			break
+		endcase
+	break	
+	case 3:
+		on case etol(tpisg317.ctyp)
+		case 1: 				
+			otyp = 0.00
+			ctyp = 0.00
+		case 2:
+			otyp = tpisg317.ciov * -1
+			ctyp = tpisg317.cict
+			break
+		case 3:
+			otyp = tpisg317.ciov * -1
+			ctyp = tpisg317.cict * -1
+			break
+		endcase
+		break
+	endcase		
+}
+	 
+function get.available.amount(	
+				domain	tccprj		i.sprj,
+				domain	tccprj		i.cprj,
+			ref 	domain	tcamnt		o.avai.amnt
+				)
+{
+	
+	domain	tcamnt		o.avai.amnt.red,o.avai.amnt.add,
+				o.avai.amnt.red.curr,max.vers.317,
+				o.avai.amnt.add.curr
+	o.avai.amnt = 0
+	v.max.vers.317 = ""
+	max.vers.317 = 0.00
+	
+	get.max.version.from.history.from317(
+					i.sprj,
+					max.vers.317)
+					
+	v.max.vers.317 = str$(max.vers.317)
+	select	tpisg011.act1,
+		tpisg011.acti
+	from	tpisg011
+	where	tpisg011._index1 = {:i.sprj,:v.max.vers.317}
+	selectdo
+		if tpisg011.acti = tpisg.sanction.add.red.inter 
+			and tpisg011.act1 = tpisg.sanction.approved then
+			
+			select sum(aa_tpisg317.ciov):o.avai.amnt.red
+			from	tpisg317	aa_tpisg317
+			where	aa_tpisg317._index2 = {:i.sprj,:i.cprj,tpamen.type.reduction}
+			selectdo
+			selectempty
+				o.avai.amnt.red = 0.00
+			endselect
+		else
+			select sum(bb_tpisg317.ciov):o.avai.amnt.red
+			from	tpisg317	bb_tpisg317
+			where	bb_tpisg317._index2 = {:i.sprj,:i.cprj,tpamen.type.reduction}
+	 		and 	bb_tpisg317.vers <> :v.max.vers.317
+			selectdo
+			selectempty
+				o.avai.amnt.red = 0.00
+			endselect
+		endif
+	selectempty
+		select sum(bb_tpisg317.ciov):o.avai.amnt.red
+		from	tpisg317	bb_tpisg317
+		where	bb_tpisg317._index2 = {:i.sprj,:i.cprj,tpamen.type.reduction}
+		selectdo
+		selectempty
+			o.avai.amnt.red = 0.00
+		endselect
+	endselect
+	
+	select sum(dd_tpisg317.ciov):o.avai.amnt.add
+	from	tpisg317	dd_tpisg317
+	where	dd_tpisg317._index2 = {:i.cprj,:i.sprj,tpamen.type.addition}
+	and	dd_tpisg317.vers <> :tpisg317.vers
+	selectdo
+	selectempty
+		o.avai.amnt.add = 0.00
+	endselect
+
+	o.avai.amnt = o.avai.amnt.red - o.avai.amnt.add
+
+
+}
+
+
+function get.max.version.from.history.from317(
+					domain	tccprj		i.cprj,
+				ref	domain	tcamnt		max.vrs)
+{	
+
+	long	j,i
+	double	array(10000)
+	i = 0
+	j = 0
+	select	m_tpisg318.vers
+	from	tpisg318	m_tpisg318
+	where	m_tpisg318._index1 = {:i.cprj}
+	group by m_tpisg318.vers
+	selectdo
+		i = i + 1
+		array(i) = val(tpisg318.vers)
+	endselect
+
+	max.vrs = array(1)
+
+	for j = 2 to i
+		if array(j) > max.vrs then
+			max.vrs = array(j)
+		endif
+	endfor
+	
+
+	for j = 1 to i
+		array(j) = 0.00
+		array(i) = 0.00
+	endfor
+}
+|***** Form Command Calling From tpisg317m100
+function extern boolean update_in_sanction_control()
+{
+	if tpisg317.pros = tcyesno.no then
+		if Addition_Reduction_Due_To_Internal_Reasons(
+								tpisg317.cprj,
+								tpisg317.vers
+								) then
+			select	aa_tpisg317.pros 
+			from	tpisg317	aa_tpisg317 for update
+			where	aa_tpisg317._index1 = {:tpisg317.cprj,:tpisg317.vers}
+			and	aa_tpisg317.pros = tcyesno.no
+			selectdo
+				tpisg317.pros = tcyesno.yes
+				db.update(ttpisg317,db.retry)
+				commit.transaction()
+			endselect
+		else
+			return(DALHOOKERROR)
+			show.dal.messages(MSG.ALL)
+		endif
+	endif
+		
+	return(true)
+}
+
+function increase_decrease_tot_value(
+			domain	tccprj		i.cprj,
+			domain	tcorno		i.vers,
+		ref	domain	tcamnt		inc.valu,	
+		ref	domain	tcamnt		dec.valu	
+			)
+{
+	select	sum(a_tpisg318.valu):inc.valu
+	from	tpisg318 	a_tpisg318
+	where	a_tpisg318._index1= {:i.cprj,:i.vers}
+	and	a_tpisg318.ctyp = tpchng.type.increase	
+	selectdo
+	selectempty
+		inc.valu = 0.00
+	endselect
+	
+	select	sum(b_tpisg318.valu):dec.valu
+	from	tpisg318 	b_tpisg318
+	where	b_tpisg318._index1= {:i.cprj,:i.vers}
+	and	b_tpisg318.ctyp = tpchng.type.decrease	
+	selectdo
+	selectempty
+		dec.valu = 0.00
+	endselect
+	
+}
+
+
+function boolean Addition_Reduction_Due_To_Internal_Reasons(
+					domain	tccprj		i.cprj,		|Project
+					domain	tcorno		i.vers		|Version
+							)
+{
+	domain	tpisg.sanction		o.act1,o.acti
+	domain	tcorno			v.max.vers
+	double				max.vers
+	
+	o.acti = tpisgdll0011.Sanction_Header_Revision_Type(i.cprj,i.vers)
+	
+	o.act1 = tpisgdll0011.Sanction_Header_Approval_Status(i.cprj,i.vers)
+	
+	if o.acti = tpisg.sanction.add.red.inter and o.act1 = tpisg.sanction.free then
+		
+	max.vers = 0.00
+	v.max.vers = ""			
+	get.max.version.from.history(
+					tpisg317.cprj,
+					max.vers)
+	v.max.vers = str$(max.vers)
+	
+	
+	select	tpisg318.*
+	from	tpisg318
+	where	tpisg318._index1 = {:i.cprj,:i.vers}
+	selectdo
+		v.ardi = 0.00
+		select	g_tpisg012.ardi:v.ardi,
+			g_tpisg012.avai,
+| 			g_tpisg012.totl,
+| 			g_tpisg012.amnt,
+| 			g_tpisg012.ritb,
+			g_tpisg012.rfpr,
+			g_tpisg012.remk
+		from	tpisg012 g_tpisg012 for update
+		where	g_tpisg012._index1 = {:tpisg318.cprj,:tpisg318.vers,:tpisg318.elem}
+		and	g_tpisg012.levl = 2
+		and	g_tpisg012.ardi = 0.00 
+		selectdo
+							|******New Line Update On Level 2	
+			if etol(tpisg318.ctyp) = 2 then
+				tpisg012.avai = tpisg012.avai + tpisg318.valu
+| 				tpisg012.totl = tpisg012.totl + tpisg318.valu
+| 				tpisg012.amnt = tpisg012.amnt + tpisg318.valu
+				tpisg012.ardi = tpisg012.ardi + tpisg318.valu
+| 				tpisg012.ritb = tpisg012.ritb + tpisg318.valu
+				tpisg012.rfpr = tpisg318.rcod
+				tpisg012.remk = tpisg318.remk
+				else if etol(tpisg318.ctyp) = 3 then
+					tpisg012.avai = tpisg012.avai - tpisg318.valu
+| 					tpisg012.totl = tpisg012.totl - tpisg318.valu
+| 					tpisg012.amnt = tpisg012.amnt - tpisg318.valu
+					tpisg012.ardi = tpisg012.ardi - tpisg318.valu
+| 					tpisg012.ritb = tpisg012.ritb - tpisg318.valu
+					tpisg012.rfpr = tpisg318.rcod
+					tpisg012.remk = tpisg318.remk
+				endif
+			endif
+	
+			c_ret = db.update(ttpisg012, db.retry)
+			
+			if not c_ret then
+				commit.transaction()
+			else
+				return(DALHOOKERROR)
+			endif
+			
+		selectempty
+							|******* Old Line Update On Level 2
+			addition.reduction.old.line.update.on.level2(
+									tpisg318.cprj,
+									tpisg318.vers,
+									tpisg318.elem,
+									v.max.vers
+									)
+			msg.flg = 1
+		endselect
+	endselect
+	
+		addition.reduction.on.level1(
+						tpisg318.cprj,
+						tpisg318.vers,
+						v.max.vers)
+	
+		addition.reduction.on.level0(
+						tpisg318.cprj,
+						tpisg318.vers,
+						v.max.vers)
+		
+	endif
+	return(true)
+}												
+
+
+function boolean addition.reduction.old.line.update.on.level2(
+							domain	tccprj		i.cprj,		|Project
+							domain	tcorno		i.vers,		|Version
+							domain	tppdm.cspa	i.elem,		|Element
+							domain	tcorno		i.max.vers	|History Max Version
+							)
+{
+	
+	
+	select	a_tpisg008.avai,
+| 		a_tpisg008.totl,
+| 		a_tpisg008.amnt,
+| 		a_tpisg008.ritb,
+		a_tpisg008.cprj
+	from	tpisg008	 a_tpisg008 
+	where	a_tpisg008._index1 = {:i.cprj,:i.max.vers,:i.elem}
+	and	a_tpisg008.levl = 2
+	selectdo
+		select	l_tpisg012.ardi:v.ardi,
+			l_tpisg012.avai,
+| 			l_tpisg012.totl,
+| 			l_tpisg012.amnt,
+| 			l_tpisg012.ritb,
+			l_tpisg012.rfpr,
+			l_tpisg012.remk
+		from	tpisg012 l_tpisg012 for update
+		where	l_tpisg012._index1 = {:i.cprj,:i.vers,:i.elem}
+		and	l_tpisg012.levl = 2
+		and	l_tpisg012.ardi <> 0.00 
+		selectdo
+			if etol(tpisg318.ctyp) = 1 then
+					tpisg012.avai = tpisg008.avai 
+| 					tpisg012.totl = tpisg008.totl 
+| 					tpisg012.amnt = tpisg008.amnt
+| 					tpisg012.ritb = tpisg008.ritb
+					tpisg012.ardi = 0.00
+					tpisg012.rfpr = ""
+					tpisg012.remk = "" 
+				else if etol(tpisg318.ctyp) = 2 then
+					tpisg012.avai = tpisg008.avai + tpisg318.valu
+| 					tpisg012.totl = tpisg008.totl + tpisg318.valu
+| 					tpisg012.amnt = tpisg008.amnt + tpisg318.valu
+| 					tpisg012.ritb = tpisg008.ritb + tpisg318.valu
+					tpisg012.ardi = tpisg318.valu
+					tpisg012.rfpr = tpisg318.rcod
+					tpisg012.remk = tpisg318.remk
+					else if etol(tpisg318.ctyp) = 3 then
+						tpisg012.avai = tpisg008.avai - tpisg318.valu
+| 						tpisg012.totl = tpisg008.totl - tpisg318.valu
+| 						tpisg012.amnt = tpisg008.amnt - tpisg318.valu
+| 						tpisg012.ritb = tpisg008.ritb - tpisg318.valu
+						tpisg012.ardi = tpisg318.valu*-1
+						tpisg012.rfpr = tpisg318.rcod
+						tpisg012.remk = tpisg318.remk
+					endif
+				endif
+			endif
+		
+			c_ret = db.update(ttpisg012, db.retry)
+			
+			if not c_ret then
+				commit.transaction()
+			else
+				return(DALHOOKERROR)
+			endif
+	
+		endselect
+	endselect
+	return(true)
+
+}
+
+function boolean addition.reduction.on.level1(
+					domain	tccprj		i.cprj,		|Project
+					domain	tcorno		i.vers,		|Version
+					domain	tcorno		i.max.vers	|History Max Version
+					)
+{
+	domain	tcamnt		child.tot.valu
+	domain	tcamnt		child.inc.valu
+	domain	tcamnt		child.dec.valu
+	domain	tppdm.cspa	par.cspa
+	
+	
+	par.cspa = ""
+	
+	select	e_tpisg318.cspa:par.cspa
+	from	tpisg318 e_tpisg318
+	where	e_tpisg318._index1 = {:i.cprj,:i.vers}
+	group by e_tpisg318.cspa
+	selectdo
+		child.tot.valu = 0.00
+		child.inc.valu = 0.00
+		child.dec.valu = 0.00
+		
+		select	f_tpisg318.valu,
+			f_tpisg318.ctyp
+		from	tpisg318 f_tpisg318
+		where	f_tpisg318._index1 = {:i.cprj,:i.vers}
+		and 	f_tpisg318.cspa = :par.cspa
+		selectdo
+			if etol(tpisg318.ctyp) = 2 then
+				child.inc.valu = child.inc.valu + tpisg318.valu 
+				else if etol(tpisg318.ctyp) = 3 then
+					child.dec.valu = child.dec.valu + tpisg318.valu  
+				endif
+			endif
+		endselect
+		
+		child.tot.valu = child.inc.valu - child.dec.valu
+		
+		select	b_tpisg008.cspa,
+			b_tpisg008.avai,
+| 			b_tpisg008.totl,
+| 			b_tpisg008.aamt,
+| 			b_tpisg008.ritb,
+			b_tpisg008.vers,
+			b_tpisg008.cprj
+		from	tpisg008	 b_tpisg008 
+		where	b_tpisg008._index1 = {:i.cprj,:i.max.vers,:par.cspa}
+		and	b_tpisg008.levl = 1
+		as set with 1 rows
+		selectdo
+			select	m_tpisg012.cspa,
+				m_tpisg012.avai
+| 				m_tpisg012.totl,
+| 				m_tpisg012.aamt,
+| 				m_tpisg012.ritb
+			from	tpisg012 m_tpisg012 for update
+			where	m_tpisg012._index1 = {:i.cprj,:i.vers,:par.cspa}
+			and	m_tpisg012.levl = 1
+			as set with 1 rows
+			selectdo
+				tpisg012.avai = tpisg008.avai +	child.tot.valu
+| 				tpisg012.totl = tpisg008.totl + child.tot.valu
+| 				tpisg012.aamt = tpisg008.aamt + child.tot.valu
+| 				tpisg012.ritb = tpisg008.ritb + child.tot.valu
+
+				c_ret = db.update(ttpisg012, db.retry)
+				
+				if not c_ret then
+					commit.transaction()
+				else
+					return(DALHOOKERROR)
+				endif
+			endselect
+		endselect
+	endselect
+	return(true)
+}
+
+
+function boolean addition.reduction.on.level0(
+					domain	tccprj		i.cprj,		|Project
+					domain	tcorno		i.vers,		|Version
+					domain	tcorno		i.max.vers	|History Max Version
+					)
+{
+	select	c_tpisg008.avai
+| 		c_tpisg008.totl,
+| 		c_tpisg008.aamt,
+| 		c_tpisg008.ritb
+	from	tpisg008 c_tpisg008 
+	where	c_tpisg008._index1 = {:i.cprj,:i.max.vers}
+	and	c_tpisg008.levl = 0
+	as set with 1 rows	
+	selectdo
+		select	k_tpisg012.avai
+| 			k_tpisg012.totl,
+| 			k_tpisg012.aamt,
+| 			k_tpisg012.ritb
+		from	tpisg012 k_tpisg012 for update
+		where	k_tpisg012._index1 = {:i.cprj,:i.vers}
+		and	k_tpisg012.levl = 0
+		as set with 1 rows
+		selectdo
+			tpisg012.avai = tpisg008.avai + tpisg317.netc
+| 			tpisg012.totl = tpisg008.totl + tpisg317.netc
+| 			tpisg012.aamt = tpisg008.aamt + tpisg317.netc
+| 			tpisg012.ritb = tpisg008.ritb + tpisg317.netc
+			c_ret = db.update(ttpisg012, db.retry)
+			if not c_ret then
+				commit.transaction()
+			else
+				return(DALHOOKERROR)
+			endif
+		endselect
+	endselect
+	return(true)
+
+}
+
+function get.max.version.from.history(
+					domain	tccprj		i.cprj,
+				ref	domain	tcamnt		max.vrs)
+{	
+
+	long	j,i
+	double	array(10000)
+	i = 0
+	j = 0
+	select	tpisg007.vers
+	from	tpisg007
+	where	tpisg007._index1 = {:i.cprj}
+	group by tpisg007.vers
+	selectdo
+		i = i + 1
+		array(i) = val(tpisg007.vers)
+	endselect
+
+	max.vrs = array(1)
+
+	for j = 2 to i
+		if array(j) > max.vrs then
+			max.vrs = array(j)
+		endif
+	endfor
+	
+
+	for j = 1 to i
+		array(j) = 0.00
+		array(i) = 0.00
+	endfor
+}
+
+|********************************************* End Of Code *******************************************************

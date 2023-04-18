@@ -1,0 +1,223 @@
+|******************************************************************************
+|* tpisg318  0  VRC B61U a7 isg 
+|* Table tpisg318 DLL
+|* merino1
+|* 19-04-16 [12:18]
+|******************************************************************************
+|* Script Type: DAL
+|******************************************************************************
+|* ID: ISGEC002025, Arun Chauhan, Date- 16-04-2019,VRC B61U a7 isg
+|* Onsite New Development
+|******************************************************************************
+                                                                                
+#include <bic_dal2>
+		
+		table	ttpisg012
+		table	ttpisg318
+		table	ttpisg317
+
+
+|*********************** Function Section ************************************
+
+function extern long before.open.object.set()
+{
+dal.field.depends.on("tpisg318.valu",
+			HOOK_IS_APPLICABLE + 
+			HOOK_IS_VALID +
+			HOOK_IS_MANDATORY,   
+					"tpisg318.ctyp")
+		
+dal.field.depends.on("tpisg318.rcod",
+				HOOK_IS_APPLICABLE,  	
+					"tpisg318.ctyp")
+					
+					
+dal.field.depends.on("tpisg318.cspa",
+				HOOK_UPDATE +
+				HOOK_IS_VALID,
+					"tpisg318.elem")
+					
+dal.field.depends.on("tpisg318.remk",
+				HOOK_IS_APPLICABLE + 
+				HOOK_IS_MANDATORY,
+					"tpisg318.rcod")
+
+
+	return(0)
+}
+
+function extern long after.save.object(long type)
+{
+
+	on case type
+	case DAL_NEW:
+	case DAL_UPDATE:
+	case DAL_DESTROY:
+		select	aa_tpisg317.pros 
+		from	tpisg317 	aa_tpisg317 for update
+		where	aa_tpisg317._index1 = {:tpisg318.cprj,:tpisg318.vers}
+		and	aa_tpisg317.pros = tcyesno.yes
+		selectdo
+			tpisg317.pros = tcyesno.no
+			db.update(ttpisg317,db.retry)
+			commit.transaction()
+		endselect
+	endcase
+	return(0)
+}
+
+function extern long before.new.object()
+{
+	domain	tcpono			lino_no
+	
+	select	max(a_tpisg318.lino):lino_no
+	from	tpisg318  a_tpisg318
+	where	a_tpisg318._index1={:tpisg318.cprj,:tpisg318.vers}
+	selectdo
+		tpisg318.lino =  lino_no + 1
+	selectempty
+		tpisg318.lino = 1
+	endselect
+	return(0)
+}
+
+|************************* Field Section *************************************
+
+function extern boolean tpisg318.elem.is.valid(long mode)
+{
+	select 	tpisg012.elem
+	from	tpisg012
+	where	tpisg012._index1 = {:tpisg318.cprj,:tpisg318.vers,:tpisg318.elem}
+	and 	tpisg012.levl = 2
+	as set with 1 rows
+	selectdo
+	selectempty
+		dal.set.error.message("@ Sanction Amendment Is Allowed For L3 Elements Only")
+		return(DALHOOKERROR)
+	endselect
+	return(true)
+}
+
+function extern boolean tpisg318.rcod.is.mandatory()
+{
+	domain	tpisg.sanction	o.acti
+	
+	o.acti = tpisgdll0011.Sanction_Header_Revision_Type(tpisg318.cprj,tpisg318.vers)
+	
+	on case o.acti
+	case 	tpisg.sanction.add.red.inter:				
+		if (tpisg318.valu <> 0) then
+			dal.set.error.message("@ Reason Code is Mandatory for Addition/Reduction Due to Internal Reasons")
+			return(true)
+		endif
+		break							
+	endcase
+	
+	return(false)
+}
+
+
+function extern boolean tpisg318.rcod.is.applicable()
+{
+	if tpisg318.ctyp = tpchng.type.nochange then 
+		return(false)
+	endif
+	return(true)
+} 
+function extern boolean tpisg318.rcod.is.valid(long mode)
+{
+	select	tpisg003.reas
+	from	tpisg003
+	where	tpisg003._index1 = {110,:tpisg318.rcod}
+	selectdo
+	selectempty
+		dal.set.error.message("@Invalid Reason Code")
+		return(DALHOOKERROR)
+	endselect
+	
+	return(true)
+	
+}
+
+function extern boolean tpisg318.valu.is.applicable()
+{
+	if tpisg318.ctyp = tpchng.type.nochange then 
+		return(false)
+	endif
+	return(true)
+} 
+
+
+function extern boolean tpisg318.valu.is.mandatory()
+{
+	if tpisg318.ctyp <> tpchng.type.nochange and tpisg318.valu > 0 then 
+		return(true)
+	else
+		dal.set.error.message("@ In Case Of Increase/Decrease Value Should Be Greater than Zero")
+		return(DALHOOKERROR)
+	endif
+	return(true)
+} 
+
+function extern boolean tpisg318.valu.is.valid()
+{
+	if tpisg318.ctyp <> tpchng.type.nochange and tpisg318.valu > 0 then 
+		
+		if tpisg318.ctyp = tpchng.type.decrease then
+			select	tpisg012.amnt
+			from	tpisg012
+			where	tpisg012._index1 = {:tpisg318.cprj}
+			and 	tpisg012.elem = :tpisg318.elem
+			selectdo
+				if tpisg012.amnt >= tpisg318.valu then
+					return(true)
+				else
+					dal.set.error.message("@In Case Of Decrease, Value Cannot Be Greater than Undistributed Amount")
+					return(DALHOOKERROR)
+				endif
+			endselect
+		endif
+	else
+		dal.set.error.message("@ In Case Of Increase/Decrease Value Should Be Greater than Zero")
+		return(DALHOOKERROR)
+	endif
+	return(true)
+} 
+
+function extern void tpisg318.cspa.update()
+{
+
+	select 	tpisg012.cspa
+	from	tpisg012
+	where	tpisg012._index1 = {:tpisg318.cprj,:tpisg318.vers,:tpisg318.elem}
+	and 	tpisg012.levl = 2
+	as set with 1 rows
+	selectdo
+		tpisg318.cspa = tpisg012.cspa
+	selectempty
+		tpisg318.cspa = ""
+	endselect
+	
+
+}
+
+function extern boolean tpisg318.remk.is.applicable()
+{
+	if tpisg318.rcod <> "C11"  then 
+		return(false)
+	endif
+	return(true)
+} 
+
+function extern boolean tpisg318.remk.is.mandatory()
+{
+	if tpisg318.rcod = "C11"  then 
+		return(true)
+	endif
+	
+	return(false)
+}
+|****************************** Function Section ***********************************************
+
+
+

@@ -1,0 +1,330 @@
+|******************************************************************************
+|* tccom100ue  0  VRC B61U a7 isg 
+|* User Exit for tccom100
+|* merino1
+|* 16-02-29 [13:00]
+|******************************************************************************
+|* Script Type: Library
+|******************************************************************************
+|* ID ISGEC015086, Manish Manchanda, 2016-02-20
+|* Status dates to be defaulted on Buy-from, Ship-from, Invoice-from and Pay-to 
+|* sections
+|*
+|* ID GH217CR000, RAvi Kumar, 26-11-2019
+|* Supplier data change should not be allowed to estimation people
+|*
+|* GH410CR738, RAvi Kumar, 01-10-2020
+|* Flag in session "Business partner-tccom4500m000" for attachment
+|* 
+|* GH589CR916, RAvi Kumar, 23-06-2021
+|* Identification whether Supplier was timely IT compliant or not
+|******************************************************************************
+       
+	table	ttccom100	| Business Partners
+	table	ttccom120	| Buy-from Business Partners
+	table	ttccom121	| Ship-from Business Partners
+	table	ttccom122	| Invoice-from Business Partners
+	table	ttccom124	| Pay-to Business Partners
+	table	ttcisg012		|GH589CR916.a
+
+	domain	tcmcs.str30m	i.aflg
+#include <bic_dal>
+
+
+function extern long ue.before.before.save.object(long mode)
+{
+	domain	tclogn	curr.name
+	
+	curr.name = logname$
+	
+	on case mode
+	case DAL_NEW:
+		get.var(pid,"tccom100.cdf_aflg", i.aflg) 				|GH410CR738.a.s
+		if not isspace(i.aflg) then
+			if not check.msme.attac() then				
+				dal.set.error.message("@ Provide valid MSME attachment")
+				return(DALHOOKERROR)
+			endif
+		endif
+		break
+	case DAL_UPDATE:
+		get.var(pid,"tccom100.cdf_aflg", i.aflg) 			
+		if not isspace(i.aflg) then
+			if not check.msme.attac() then				
+				dal.set.error.message("@ Provide valid MSME Attachment")
+				return(DALHOOKERROR)
+			endif
+		endif							|GH410CR738.a.e
+| 		break
+		
+		if tccom100.bpid(1;3) = "SUP" then					|RAvi.a.s.GH217CR000
+			select	tcisg009.*
+			from	tcisg009
+			where	tcisg009._index1 = {:curr.name}
+			as set with 1 rows
+			selectdo
+			selectempty
+				dal.set.error.message("@** Changes in BP not allowed")
+				return(DALHOOKERROR)
+			endselect
+		endif									|RAvi.a.e.GH217CR000
+		break
+	endcase
+	return(0)
+}
+
+function extern long ue.after.before.save.object(long mode)
+{
+	on case mode
+	case DAL_NEW:
+							|#ISGEC015086.sn
+		if	check.project.type()	then
+			return(1)
+		endif
+							|#ISGEC015086.en
+		create.supplier.TDS()			|GH589CR916.a
+		break
+	case DAL_UPDATE:
+							|#ISGEC015086.sn
+		if	check.project.type()	then
+			return(1)
+		endif
+		if	check.option()	then
+			return(1)
+		endif
+		if	check.for.general()	then
+			return(1)
+		endif
+							|#ISGEC015086.en
+		break
+	endcase
+	return(0)
+}
+
+function extern long ue.before.after.save.object(long mode)
+{
+	on case mode
+	case DAL_NEW:
+		update.status.dates()		|#ISGEC015086.n
+		break
+	case DAL_UPDATE:
+		update.status.dates()		|#ISGEC015086.n
+		break
+	endcase
+	return(0)
+}
+
+function extern long ue.after.after.save.object(long mode)
+{
+	on case mode
+	case DAL_NEW:
+		break
+	case DAL_UPDATE:
+						|#ISGEC015086.sn
+		if	check.bp.item.group()	then
+			return(1)
+		endif
+						|#ISGEC015086.en
+		break
+	endcase
+	return(0)
+}
+
+function extern long ue.before.before.destroy.object()
+{
+	select	tcisg012.*					|GH589CR916.a.s
+	from	tcisg012 for update
+	where	tcisg012._index1 = {:tccom100.bpid}
+	as set with 1 rows
+	selectdo
+		db.delete(ttcisg012, db.retry)
+	endselect						|GH589CR916.a.e
+	return(0)
+}
+
+function extern long ue.after.before.destroy.object()
+{
+	return(0)
+}
+
+function extern long ue.before.after.destroy.object()
+{
+	return(0)
+}
+
+function extern long ue.after.after.destroy.object()
+{
+	return(0)
+}
+
+						|#ISGEC015086.sn
+function	domain	tcbool	check.project.type()
+{
+	domain	tcyesno	v.dome, v.aprj, v.prjs, v.gene
+	
+	get.var(pid,"tccom100.cdf_dome", v.dome)
+	get.var(pid,"tccom100.cdf_aprj", v.aprj)
+	get.var(pid,"tccom100.cdf_prjs", v.prjs)
+	get.var(pid,"tccom100.cdf_gene", v.gene)
+	
+	if	v.dome	=	tcyesno.yes	and
+		v.aprj	=	tcyesno.yes	then
+		dal.set.error.message("@Only one Project Type is allowed.")
+		return(true)
+	endif
+	if	v.prjs	=	tcyesno.yes	and
+		v.gene	=	tcyesno.yes	then
+		dal.set.error.message("@Only one Request Type is allowed.")
+		return(true)
+	endif
+	
+	
+	return(false)
+}
+
+function	domain	tcbool	check.option()
+{
+	domain	tcyesno	v.dome, v.aprj, v.prjs, v.gene
+	
+	get.var(pid,"tccom100.cdf_dome", v.dome)
+	get.var(pid,"tccom100.cdf_aprj", v.aprj)
+	get.var(pid,"tccom100.cdf_prjs", v.prjs)
+	get.var(pid,"tccom100.cdf_gene", v.gene)
+	
+	if	v.dome	=	tcyesno.no	and
+		v.aprj	=	tcyesno.no	then
+		dal.set.error.message("@One Project Type is to be selected.")
+		return(true)
+	endif
+	if	v.prjs	=	tcyesno.no	and
+		v.gene	=	tcyesno.no	then
+		dal.set.error.message("@One Request Type is to be selected.")
+		return(true)
+	endif
+	
+	return(false)
+}
+
+function	update.status.dates()
+{
+	domain	tcmcs.long	ret_val
+	
+	select	tccom120.stdt,
+		tccom120.endt
+	from	tccom120	for	update
+	where	tccom120._index1	=	{:tccom100.bpid}
+	selectdo
+		ret_val	=	dal.change.object("tccom120")
+		dal.set.field("tccom120.stdt",tccom100.stdt)
+		dal.set.field("tccom120.endt",tccom100.endt)
+		ret_val	=	dal.save.object("tccom120")
+	endselect
+	
+	select	tccom121.stdt,
+		tccom121.endt
+	from	tccom121	for	update
+	where	tccom121._index1	=	{:tccom100.bpid}
+	selectdo
+		ret_val	=	dal.change.object("tccom121")
+		dal.set.field("tccom121.stdt",tccom100.stdt)
+		dal.set.field("tccom121.endt",tccom100.endt)
+		ret_val	=	dal.save.object("tccom121")
+	endselect
+	
+	select	tccom122.stdt,
+		tccom122.endt
+	from	tccom122	for	update
+	where	tccom122._index1	=	{:tccom100.bpid}
+	selectdo
+		ret_val	=	dal.change.object("tccom122")
+		dal.set.field("tccom122.stdt",tccom100.stdt)
+		dal.set.field("tccom122.endt",tccom100.endt)
+		ret_val	=	dal.save.object("tccom122")
+	endselect
+	
+	select	tccom124.stdt,
+		tccom124.endt
+	from	tccom124	for	update
+	where	tccom124._index1	=	{:tccom100.bpid}
+	selectdo
+		ret_val	=	dal.change.object("tccom124")
+		dal.set.field("tccom124.stdt",tccom100.stdt)
+		dal.set.field("tccom124.endt",tccom100.endt)
+		ret_val	=	dal.save.object("tccom124")
+	endselect
+}
+
+function	domain	tcbool	check.bp.item.group()
+{
+	domain	tcyesno	v.prjs
+	
+	get.var(pid,"tccom100.cdf_prjs", v.prjs)
+	
+	if	v.prjs	=	tcyesno.yes	then
+		select	tcisg102.bpid,
+			tcisg102.cprj
+		from	tcisg102
+		where	tcisg102._index1	=	{:tccom100.bpid}
+		and	tcisg102.cprj		<>	""
+		as	set with 1 rows
+		selectdo
+		selectempty
+			dal.set.error.message("@Mandatory to maintain projects for supplier.")
+			return(true)
+		endselect
+	endif
+	return(false)
+}
+
+function	domain	tcbool	check.for.general()
+{
+	domain	tcyesno	v.dome, v.gene
+	
+	get.var(pid,"tccom100.cdf_dome", v.dome)
+	get.var(pid,"tccom100.cdf_gene", v.gene)
+	
+	
+	select	tcisg102.bpid,
+		tcisg102.cprj
+	from	tcisg102
+	where	tcisg102._index1	=	{:tccom100.bpid}
+	and	tcisg102.cprj		<>	""
+	as	set with 1 rows
+	selectdo
+		if	v.gene	=	tcyesno.yes	then
+			dal.set.error.message("@Please select correct option for Request Type.")
+			return(true)
+		endif
+	endselect
+
+	return(false)
+}
+						|#ISGEC015086.en
+						
+function boolean check.msme.attac()				|GH410CR738.a.s
+{
+	select	tcisg010.*
+	from	tcisg010
+	where	tcisg010.aflg = :i.aflg
+	as set with 1 rows
+	selectdo
+		return(true)
+	endselect
+	
+	return(false)
+}								|GH410CR738.a.e
+
+function create.supplier.TDS()					|GH589CR916.a.s
+{
+	tcisg012.bpid = tccom100.bpid
+	tcisg012.etds = tcyesno.yes
+	tcisg012.rcom = tcyesno.no
+	tcisg012.upon = logname$
+	tcisg012.updt = utc.num()
+	tcisg012.frby = ""
+	tcisg012.fron = 0
+	db.insert(ttcisg012, db.retry)
+}								|GH589CR916.a.e
+							
+
+

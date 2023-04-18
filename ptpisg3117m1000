@@ -1,0 +1,294 @@
+|******************************************************************************
+|* tpisg3177m100  0  VRC B61U a7 isg 
+|* Maintain Sanction Amendment
+|* merino1                       
+|* 2019-04-15
+|******************************************************************************
+|* Main table tpisg317 Sanction Amendment Header, Form Type 1
+|******************************************************************************
+|* ID: ISGEC002025, Arun Chauhan, Date- 17-04-2019,
+|* New Development
+|****************************** declaration section ***************************
+declaration:
+
+#include <bic_dam>
+
+	table   ttpisg317 
+	table   ttpisg318  
+	table   ttpisg011 
+
+
+	extern domain	tccprj		v.cprj
+	extern domain	tcorno		v.vers,v.max.vers
+	extern domain	tcmcs.str13	session.code
+	extern domain	tcamnt		avai.amnt,o.avai.amnt	
+	extern domain	tcmcs.str3	upsc
+	extern domain	tcdsca		cprj.dsca,sprj.dsca
+
+|****************************** program section ********************************
+before.program:
+	import("prog.name$",session.code)
+	if session.code = "tpisg0111m001" then
+		import("tpisg011.cprj",v.cprj)
+		import("tpisg011.vers",v.vers)
+	endif
+before.display.object:
+	disable.commands(add.set)
+	set.enum.values.for.field("tpisg317.styp",	
+							tpamen.type.reduction,
+							tpamen.type.addition)
+							
+	
+|****************************** Choice section **********************************
+choice.end.program:
+before.choice:
+	refresh.parent(-1)
+	
+choice.abort.program:
+before.choice:
+	refresh.parent(-1)
+	
+choice.update.due.to.internal:
+on.choice:
+	domain tcmcs.long	ret_val
+	if total.net.change() then
+		dal.start.business.method("tpisg317","update_in_sanction_control",ret_val)
+		if ret_val >= 0 then
+			message("Updation Successful")
+		else
+			message("Updation Failed")
+		endif
+	endif
+
+|****************************** field Section **********************************
+field.cprj.dsca:
+before.display:
+	
+	get.project.description(
+				tpisg317.cprj,
+				cprj.dsca
+				)
+
+field.sprj.dsca:
+before.display:
+	
+	get.project.description(
+				tpisg317.sprj,
+				sprj.dsca
+				)
+	
+field.avai.amnt:
+before.display:
+	if etol(tpisg317.styp) = 2 then
+		get.available.amount(
+					tpisg317.sprj,
+					tpisg317.cprj,
+					o.avai.amnt
+					)
+		avai.amnt = o.avai.amnt 
+	else
+		avai.amnt = 0.00
+	endif
+
+field.tpisg317.sprj:
+when.field.changes:
+	if etol(tpisg317.styp) = 2 then
+		get.available.amount(
+					tpisg317.sprj,
+					tpisg317.cprj,
+					o.avai.amnt
+					)
+		avai.amnt = (o.avai.amnt*-1) 
+	else
+		avai.amnt = 0.00
+	endif
+after.field:
+	display("avai.amnt")
+	
+
+|****************************** Group Section **********************************
+group.2:
+init.group:   
+	select	tpisg317.cprj,
+		tpisg317.vers
+	from	tpisg317
+	where	tpisg317._index1 = {:v.cprj,:v.vers}
+	as set with 1 rows
+	selectdo
+		execute(find.data)
+	selectempty
+		tpisg317.cprj = v.cprj
+		tpisg317.vers = v.vers
+	endselect
+	
+	
+|************************ Function Senction ****************************************
+functions:
+
+function get.project.description(
+				domain	tccprj		i.cprj,
+			ref 	domain	tcdsca		o.dsca
+				)
+{
+	select	tcmcs052.dsca:o.dsca
+	from	tcmcs052
+	where	tcmcs052._index1 = {:i.cprj}
+	selectdo
+	selectempty
+		o.dsca = ""
+	endselect
+
+}
+	
+	
+
+function boolean total.net.change()
+{
+	domain	tcamnt		tot.valu,incr.valu,decr.valu
+
+	tot.valu = 0
+	incr.valu = 0
+	decr.valu = 0
+	
+	increase_decrease_tot_value(
+					tpisg317.cprj,
+					tpisg317.vers,
+					incr.valu,
+					decr.valu
+					)
+					
+	tot.valu = incr.valu - decr.valu
+	if tpisg317.netc <> tot.valu then
+		message(" Total Change in Elements is not equal to Net Change in Project")
+		return(false)
+	endif
+	return(true)
+}
+
+function increase_decrease_tot_value(
+			domain	tccprj		i.cprj,
+			domain	tcorno		i.vers,
+		ref	domain	tcamnt		inc.valu,	
+		ref	domain	tcamnt		dec.valu	
+			)
+{
+	select	sum(a_tpisg318.valu):inc.valu
+	from	tpisg318 	a_tpisg318
+	where	a_tpisg318._index1= {:i.cprj,:i.vers}
+	and	a_tpisg318.ctyp = tpchng.type.increase	
+	selectdo
+	selectempty
+		inc.valu = 0.00
+	endselect
+	
+	select	sum(b_tpisg318.valu):dec.valu
+	from	tpisg318 	b_tpisg318
+	where	b_tpisg318._index1= {:i.cprj,:i.vers}
+	and	b_tpisg318.ctyp = tpchng.type.decrease	
+	selectdo
+	selectempty
+		dec.valu = 0.00
+	endselect
+	
+}
+
+function get.available.amount(	
+				domain	tccprj		i.sprj,
+				domain	tccprj		i.cprj,
+			ref 	domain	tcamnt		o.avai.amnt
+				)
+{
+	domain	tcamnt		o.avai.amnt.red,o.avai.amnt.add,
+				o.avai.amnt.red.curr,max.vers,
+				o.avai.amnt.add.curr
+	o.avai.amnt = 0
+	v.max.vers = ""
+	max.vers = 0.00
+	
+	get.max.version.from.history(
+					i.sprj,
+					max.vers)
+	v.max.vers = str$(max.vers)
+	
+	select	tpisg011.act1,
+		tpisg011.acti
+	from	tpisg011
+	where	tpisg011._index1 = {:i.sprj,:v.max.vers}
+	selectdo
+		if tpisg011.acti = tpisg.sanction.add.red.inter 
+			and tpisg011.act1 = tpisg.sanction.approved then
+			
+			select sum(aa_tpisg317.ciov):o.avai.amnt.red
+			from	tpisg317	aa_tpisg317
+			where	aa_tpisg317._index2 = {:i.sprj,:i.cprj,tpamen.type.reduction}
+			selectdo
+			selectempty
+				o.avai.amnt.red = 0.00
+			endselect
+		else
+			select sum(bb_tpisg317.ciov):o.avai.amnt.red
+			from	tpisg317	bb_tpisg317
+			where	bb_tpisg317._index2 = {:i.sprj,:i.cprj,tpamen.type.reduction}
+	 		and 	bb_tpisg317.vers <> :v.max.vers
+			selectdo
+			selectempty
+				o.avai.amnt.red = 0.00
+			endselect
+		endif
+		
+	selectempty
+		select sum(bb_tpisg317.ciov):o.avai.amnt.red
+		from	tpisg317	bb_tpisg317
+		where	bb_tpisg317._index2 = {:i.sprj,:i.cprj,tpamen.type.reduction}
+		selectdo
+		selectempty
+			o.avai.amnt.red = 0.00
+		endselect
+	endselect
+
+	select sum(dd_tpisg317.ciov):o.avai.amnt.add
+	from	tpisg317	dd_tpisg317
+	where	dd_tpisg317._index2 = {:i.cprj,:i.sprj,tpamen.type.addition}
+	and	dd_tpisg317.vers <> :tpisg317.vers
+	selectdo
+	selectempty
+		o.avai.amnt.add = 0.00
+	endselect
+
+	o.avai.amnt = o.avai.amnt.red  - (o.avai.amnt.add)
+}
+
+function get.max.version.from.history(
+					domain	tccprj		i.cprj,
+				ref	domain	tcamnt		max.vrs)
+{	
+
+	long	j,i
+	double	array(10000)
+	i = 0
+	j = 0
+	select	m_tpisg318.vers
+	from	tpisg318	m_tpisg318
+	where	m_tpisg318._index1 = {:i.cprj}
+	group by m_tpisg318.vers
+	selectdo
+		i = i + 1
+		array(i) = val(tpisg318.vers)
+	endselect
+
+	max.vrs = array(1)
+
+	for j = 2 to i
+		if array(j) > max.vrs then
+			max.vrs = array(j)
+		endif
+	endfor
+	
+
+	for j = 1 to i
+		array(j) = 0.00
+		array(i) = 0.00
+	endfor
+}
+|*******************************End Of Code ****************************************
+

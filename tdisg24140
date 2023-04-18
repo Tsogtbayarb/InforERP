@@ -1,0 +1,327 @@
+|******************************************************************************
+|* tdisg2414  0  VRC B61U a7 isg 
+|* Details of Orders Processed/To be Processed by Audit
+|* Utam Kumar Singh              
+|* 2021-10-08
+|******************************************************************************
+|* Main table tdisg214 , Form Type 4
+|******************************************************************************
+|* 
+|* GH670CR993.02022022, Utam kumar singh
+|* Filter for Auditable & Non-Auditable Orders to be added in Audit Dashboard Reports
+|****************************** declaration section ***************************
+declaration:
+
+  table		ttdisg214 | 
+  table		ttccom001
+  table		ttdmsl400
+  table		ttdpur400
+  table		ttdisg215
+  table		ttdmsl400
+  table		ttdisg088
+  table		ttdmsl500
+
+   extern	domain  tcorno		orno.f,orno.t    
+   extern  	domain  tccwoc		cwoc.f,cwoc.t	
+   extern	domain	tccprj		cprj.f,cprj.t
+   extern	domain	tcdate		updt.f,updt.t
+   extern	domain	tcyesno		amch		|GH670CR993.02022022.add
+   
+   string	snam(46),pdsc(45),apby(45),str(300), err.file(100), file.name(100), line3(2000), line4(2000)
+   long		ret2, stat.fp
+   
+   
+|*************** Include **************
+#include<bic_desktop>
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.cont.process:
+on.choice:
+   generate.file()
+
+|****************************** field section *********************************
+
+field.cwoc.f:
+check.input:
+	if not isspace(cwoc.f) then
+		select	tcmcs065.cwoc
+		from	tcmcs065
+		where	tcmcs065._index1 = {:cwoc.f}
+		selectdo
+		selectempty
+			message("Please Enter Valid Purchase Office.")
+			set.input.error("",e)
+		endselect
+	endif	
+	
+when.field.changes:
+	cwoc.t = cwoc.f
+
+| field.cwoc.t:
+| check.input:
+| 	select	tcmcs065.cwoc
+| 	from	tcmcs065
+| 	where	tcmcs065._index1 = {:cwoc.t}
+| 	selectdo
+| 	selectempty
+| 		message("Please Enter Valid Purchase Office.")
+| 		set.input.error("",e)
+| 	endselect
+	
+field.orno.f:
+check.input:
+	if not isspace(orno.f) then
+		select	tdpur400.orno
+		from	tdpur400
+		where	tdpur400._index1 = {:orno.f}
+		selectdo
+		selectempty
+			message("Please Enter Valid Purchase Order.")
+			set.input.error("",e)
+		endselect
+	endif	
+
+when.field.changes:
+	orno.t = orno.f
+
+| field.orno.t:
+| check.input:
+| 	select	tdpur400.orno
+| 	from	tdpur400
+| 	where	tdpur400._index1 = {:orno.t}
+| 	selectdo
+| 	selectempty
+| 		message("Please Enter Valid Purchase Order.")
+| 		set.input.error("",e)
+| 	endselect
+
+field.cprj.f:
+check.input:
+	if not isspace(cprj.f) then
+		select	tcmcs052.cprj
+		from	tcmcs052	
+		where	tcmcs052._index1 = {:cprj.f}
+		selectdo
+		selectempty
+			message("Please Enter Valid Project")
+			set.input.error("",e)
+		endselect
+	endif	
+	
+when.field.changes:
+	cprj.t = cprj.f	
+	
+| field.cprj.t:
+| check.input:
+| 	select	tcmcs052.cprj
+| 	from	tcmcs052	
+| 	where	tcmcs052._index1 = {:cprj.t}
+| 	selectdo
+| 	selectempty
+| 		message("Please Enter Valid Project")
+| 		set.input.error("",e)
+| 	endselect
+	
+|****************************** function section ******************************
+
+functions:
+
+function generate.file()
+{
+	open.file()
+	generate.header()
+	read.main.table()
+	close.file()
+}
+
+function open.file()
+{
+	err.file = bse.tmp.dir$() & str$(utc.num()) & ".xls"
+	
+	file.name = "c:\temp\" & str$(utc.num())  & ".xls"
+	
+	stat.fp = seq.open(err.file, "w+")
+	if stat.fp >0 then
+ 		seq.seek(0, 0, stat.fp)
+	endif
+}
+
+function close.file()
+{
+	seq.close(stat.fp)
+	ret2 = server2client(err.file,file.name,1)
+	ret2 = app_start(file.name,"c:","","","")
+}
+
+function	generate.header()
+{
+	line4 =	concat$("	",
+		sprintf$("Purchase Office"),					|1		
+		sprintf$("Purchase Order No"),					|2		
+		sprintf$("Purchase Order Date"),				|3		
+		sprintf$("Revision No."),					|4		
+		sprintf$("Revision Date"),					|5
+		sprintf$("Supplier Code"),					|6
+		sprintf$("Supplier Name"),					|7
+		sprintf$("Project Code"),					|8
+		sprintf$("Project Name"),					|9		
+		sprintf$("Item Description"),					|10
+		sprintf$("PO Value Basic (Rs. in Lakhs)"),			|11		
+		sprintf$("PO Value Gross (Rs. in Lakhs)"),			|12
+		sprintf$("Buyer Name"),						|13				
+		sprintf$("Date of Submission"),					|14		
+		sprintf$("Status"),						|15
+		sprintf$("Approved/ Rejected by(User ID)"),		  	|16
+		sprintf$("Approved/ Rejected by(Name)"),			|17
+		sprintf$("Approval/ Rejection Date"),		  		|18
+		sprintf$("Approval/ Rejection Remarks"),			|19
+		sprintf$("Ageing in Days"))			  		|20
+									
+	line4 = strip$(shiftl$(line4))		
+	seq.puts(line4, stat.fp)	
+}
+
+function read.main.table()
+{
+	select	tdisg214.*,tdpur400.*,tdmsl400.*
+	from	tdisg214,tdpur400,tdmsl400
+	where	tdisg214._index1 inrange {:orno.f} and {:orno.t}
+	and	tdisg214.cprj inrange {:cprj.f} and {:cprj.t}
+	and	tdpur400.cofc inrange {:cwoc.f} and {:cwoc.t}
+	and	tdmsl400.updt inrange {:updt.f} and {:updt.t}
+	and	tdisg214.orno refers to tdpur400
+	and	tdisg214._index1 refers to tdmsl400
+	order by tdisg214.orno,tdisg214.revn
+	selectdo
+| 		get.employee.name()  				|GH670CR993.02022022.cmnt.strt
+| 		get.remarks()
+| 		print.detail()					|GH670CR993.02022022.cmnt.end
+
+		if amch = tcyesno.yes then				|GH670CR993.02022022.add.strt
+			if tdisg214.revn = 0 then
+				if tdpur400.oamt < 500000 then
+					get.details()
+				endif	
+			else
+				if tdmsl400.amch = tcyesno.yes then
+					get.details()
+				endif		
+			endif
+		else
+			if tdisg214.revn = 0 then
+				if tdpur400.oamt >= 500000 then
+					get.details()
+				endif	
+			else
+				if tdmsl400.amch = tcyesno.no then
+					get.details()
+				endif		
+			endif
+		endif							|GH670CR993.02022022.add.end	
+	endselect	
+}
+
+function get.details()
+{
+	get.employee.name()  
+	get.remarks()
+	print.detail()
+}
+
+function	print.detail()
+{	
+	domain 	tcdate 		today, orderdate
+	domain 	tcmcs.long 	no.of.days
+	domain	tcmcs.str12	status
+		long 		lng.cdat, lng.ddta, lng.ctim, lng.dtim
+	
+	today = utc.to.local (utc.num(), lng.ddta, lng.dtim)
+	orderdate = utc.to.local (tdmsl400.updt, lng.cdat, lng.ctim)
+	no.of.days = lng.ddta - lng.cdat
+
+	if tdisg214.rvdt = 719163 then
+		tdisg214.rvdt = 0
+	endif
+
+	if (tdmsl400.work = tdmsl.work.yes and tdmsl400.apdt = 0) then
+		status = "Submitted"
+	else if (tdmsl400.work = tdmsl.work.yes and tdmsl400.apdt <> 0) then
+		status = "Re-Submitted"
+	else if (tdmsl400.work = tdmsl.work.completed) then
+		status = "Approved"
+	else if (tdmsl400.work = tdmsl.work.no and tdmsl400.apdt <> 0) then
+		status = "Rejected"
+	else
+		status = ""
+	endif
+	endif
+	endif
+	endif
+
+	line3 =	concat$("	",
+		sprintf$("%s", tdpur400.cofc),				|1
+		sprintf$("%s", tdisg214.orno),				|2
+		sprintf$("%D(%02d/%02m/%04Y)", tdisg214.podt),		|3
+		sprintf$("%d", tdisg214.revn),				|4
+		sprintf$("%D(%02d/%02m/%04Y)", tdisg214.rvdt),		|5
+		sprintf$("%s", tdisg214.scod),				|6
+		sprintf$("%s", tdisg214.snam),				|7
+		sprintf$("%s", tdisg214.cprj),				|8
+		sprintf$("%s", tdisg214.pdsc),				|9
+		sprintf$("%s", tdmsl500.refa),				|10
+		sprintf$("%f", tdisg214.bamt/100000),			|11
+		sprintf$("%f", tdisg214.tamt/100000),			|12
+		sprintf$("%s", tdisg214.buyr),				|13
+		sprintf$("%u(%02d/%02m/%04Y)", tdmsl400.updt),		|14
+		sprintf$("%s", status),					|15
+		sprintf$("%s", tdmsl400.apby),				|16
+		sprintf$("%s", tccom001.nama),				|17
+		sprintf$("%u(%02d/%02m/%04Y)", tdmsl400.apdt),		|18
+		sprintf$("%s", tdisg088.rema),				|19
+		sprintf$("%d", no.of.days))				|20
+		
+	
+		line3 = strip$(shiftl$(line3))
+		seq.puts(line3, stat.fp)
+}
+
+function	get.employee.name()
+{
+	select	tccom001.nama
+	from	tccom001
+	where	tccom001._index1 = {:tdmsl400.apby}
+	selectdo
+	selectempty
+		tccom001.nama = ""	
+	endselect	
+}
+
+function get.remarks()
+{
+	select	tdmsl500.refa
+	from	tdmsl500
+	where	tdmsl500._index1 = {:tdisg214.orno, :tdisg214.revn}
+	selectdo
+	selectempty
+		tdmsl500.refa = ""	
+	endselect	
+	
+	select	tdisg088.rema
+	from	tdisg088
+	where	tdisg088._index1 = {:tdisg214.orno, :tdisg214.revn}
+	and	tdisg088.rema <> ""
+	selectdo
+	selectempty
+		tdisg088.rema = ""	
+	endselect	
+}
+

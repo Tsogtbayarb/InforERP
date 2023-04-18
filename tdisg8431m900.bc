@@ -1,0 +1,120 @@
+|******************************************************************************
+|* tdisg8431m900  0  VRC B61U a7 isg 
+|* Billing Advice Status Report
+|* Ravi Kumar                    
+|* 2020-06-22
+|******************************************************************************
+|* Main table tdisg831 Billing Advice, Form Type 4
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttdisg831 | Billing Advice
+
+   extern  domain  tcyesno  foc.only, status.freeze, status.proc
+   extern  domain  tccom.bpid	bpid.f, bpid.t
+   extern  domain  tccprj	cprj.f, cprj.t
+   extern  domain  tcdate	date.f, date.t
+
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.cont.process:
+on.choice:
+   execute(print.data)
+
+choice.print.data:
+on.choice:
+   if rprt_open() then
+       read.main.table()
+       rprt_close()
+   else
+       choice.again()
+   endif
+
+
+|****************************** field section *********************************
+
+field.bpid.f:
+when.field.changes:
+   bpid.t = bpid.f
+   
+field.cprj.f:
+when.field.changes:
+   cprj.t = cprj.f
+   
+field.date.f:
+when.field.changes:
+   date.t = date.f
+
+
+|****************************** function section ******************************
+
+functions:
+
+function read.main.table()
+{
+	select	tdisg831.*,
+		tcmcs052.dsca,
+		tccom100.nama
+	from	tdisg831, tcmcs052, tccom100
+	where	tdisg831._index4 inrange {:cprj.f, :bpid.f} and {:cprj.t, :bpid.t}
+	and	tdisg831.crdt inrange {:date.f} and {:date.t}
+	and	tdisg831.cprj refers to tcmcs052
+	and	tdisg831.ofbp refers to tccom100
+	selectdo
+		if foc.only = tcyesno.yes then
+			if tdisg831.amti = 0 then
+				data.extract()
+			endif
+		else
+			if tdisg831.amti > 0 then
+				data.extract()
+			endif
+		endif
+	endselect
+}
+
+function data.extract()
+{
+	select	tpisg039.ityp,
+		tpisg039.idoc,
+		tpisg039.sidt
+	from	tpisg039
+	where	tpisg039._index1 = {:tdisg831.cprj, :tdisg831.ofbp}
+	and	tpisg039.edrn = :tdisg831.edrn
+	order by tpisg039.sidt desc
+	as set with 1 rows
+	selectdo
+		select	tppdm600.ncmp
+		from	tppdm600
+		where	tppdm600._index1 = {:tdisg831.cprj}
+		selectdo
+		endselect
+		
+		if status.freeze = tcyesno.yes then
+			if tdisg831.stat = tdisg.stat.freeze then
+				rprt_send()
+			endif
+		endif
+		
+		if status.proc = tcyesno.yes then
+			if tdisg831.stat = tdisg.stat.process then
+				rprt_send()
+			endif
+		endif
+		
+		if status.proc = tcyesno.no and status.freeze = tcyesno.no then
+			rprt_send()
+		endif
+	endselect
+}

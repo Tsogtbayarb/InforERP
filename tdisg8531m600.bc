@@ -1,0 +1,248 @@
+|******************************************************************************
+|* tdisg8531m600  0  VRC B61U a7 live
+|* Billing Advice (Accounts)
+|* Tools                         
+|* 2014-07-25
+|******************************************************************************
+|* Main table tdisg831 Billing Advice, Form Type 1
+|******************************************************************************
+|* ID: ISGEC001186, IT0327, Ritu Shrivastava, VRC B61U a7 isg, Dt. 20-12-2014
+|* Added invoice date
+
+|*ISGEC015018, Shilpa Janardanan, IT0289, 12/06/201
+|* Refereshing the sent to approval
+|*
+|* ISGEC015079, IT0417, Vishal Anand, Dt. 07-01-2016, VRC B61U a7 live
+|* Flag required for handling Free Issue to Vendor and FICH Billing Advises for Export Projects 
+|*
+|* ISGEC01085, Priya Jindal, 21/8/2018, VRC B61U a7 live
+|* Initialisation in Invoice Date
+|*
+|* ID: GH328CR622, RAvi Kumar, 01-06-2020
+|* New filters in Billing Advice Accounts
+|*
+|* ID GH369CR670, RAvi Kumar, 17-07-2020
+|* Add notes in Billing Advice
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttdisg831 | Billing Advice
+	table	ttcmcs052
+	table	ttpisg039
+	table	ttfacr200
+	
+	long ret_val
+	extern	domain	tcmcs.long	z
+	extern	domain	tfgld.ttyp		ityp.f
+	extern	domain	tfgld.docn		idoc.f
+	
+		domain	tfgld.ttyp		o.ityp
+		domain	tfgld.docn		o.idoc
+		domain	tcdate			o.idat
+		
+	extern domain  tfgld.date		indt.f			|#ISGEC001186.n
+	string		str_query(500)
+	
+#include <bic_dam>	
+#include<bic_desktop>
+|****************************** program section ********************************
+before.program:
+| 	str_query = "tdisg831.stat <> tdisg.stat.created and ((tdisg831.type = tdisg.type.domestic) or ((tdisg831.type = tdisg.type.export) and (tdisg831.bill = tcyesno.no)"	|#ISGEC015079.o
+| 	str_query = strip$(str_query) & " and tdisg831.edrn in (select tdisg832.edrn from tdisg832 where tdisg832.reas = 'FIV' or tdisg832.reas = 'FICH')))"		|#ISGEC015079.o
+| 	str_query = "tdisg831.stat <> tdisg.stat.created and tdisg831.type = tdisg.type.domestic"	|#ISGEC015079.n	|GH328CR622.com
+
+	str_query = "tdisg831.stat = tdisg.stat.freeze and tdisg831.type = tdisg.type.domestic"	|GH328CR622.a
+	query.extend.where(str_query)
+| 	set.synchronized.dialog("tdisg8131m600")
+| 	query.extend.where("tdisg831.stat = tdisg.stat.freeze and ((tdisg831.type = tdisg.type.domestic) or ((tdisg831.type = tdisg.type.export) and(tdisg831.bill = tcyesno.no )))")|#ISGEC015079.n
+| 	query.extend.where("tdisg831.stat = tdisg.stat.freeze and tdisg831.type = tdisg.type.export")| and(tdisg831.bill = tcyesno.no )))")|#ISGEC015079.n
+	dal.start.business.method("tdisg831","set.global.variable",ret_val,5)
+
+|****************************** group section **********************************
+before.display.object:
+	
+	if	tdisg831.stat = tdisg.stat.freeze and tdisg831.flag = 0 then
+		enable.commands("unfreeze")
+	else
+		disable.commands("unfreeze")
+	endif
+	
+								|GH328CR622.a.s
+form.all:
+init.form:
+	set.checked.command("created", 0)
+	set.checked.command("freezed", 1)	
+	set.checked.command("processed", 0)
+	set.checked.command("all.data", 0)
+								|GH328CR622.a.e	
+								
+								
+group.2:							|GH369CR670.a.s
+init.group:
+ret_val = create.extra.toolbar(
+		"notes",	"tcgen:activate")
+								|GH369CR670.a.e
+								
+|****************************** field section **********************************
+field.tcmcs052.dsca:
+before.display:
+	select	tcmcs052.dsca
+	from	tcmcs052
+	where	tcmcs052._index1 = {:tdisg831.cprj}
+	selectdo
+	selectempty
+		tcmcs052.dsca = ""
+	endselect
+field.ityp.f:
+before.display:
+	if tdisg831.stat = tdisg.stat.process and tdisg831.scmp <> 0 then
+		
+		select 	cisli205.ityp:ityp.f,
+			cisli205.idoc:idoc.f
+		from	cisli205
+		where	cisli205._index2 = {:tdisg831.scmp,:tdisg831.brid}
+		and	cisli205._compnr = :tdisg831.scmp
+		as set with 1 rows
+		selectdo
+		endselect
+	else
+		ityp.f = ""
+		idoc.f = 0
+	endif
+	
+field.indt.f:						|#ISGEC001186.sn
+before.display:
+	if tdisg831.scmp <> 0 then		|ISGEC01085.n
+		select tfacr200.docd:indt.f
+		from   tfacr200
+		where  tfacr200._index1 = {:ityp.f,:idoc.f}
+		and	tfacr200._compnr = :tdisg831.scmp	|ISGEC01085.n
+		as set with 1 rows
+		selectdo
+		selectempty			|ISGEC01085.sn
+			indt.f = 0	
+		endselect			
+	else
+		indt.f = 0
+	endif						|ISGEC01085.en
+							|#ISGEC001186.en
+	
+choice.unfreeze:
+on.choice:
+	dal.start.business.method("tdisg831","unfreeze.record",ret_val)
+	if ret_val <> 0 then
+		show.dal.messages(MSG.ALL)
+		abort.transaction()
+	else
+		commit.transaction()
+	endif
+	
+	tdisgdll0831.update.linked.ir.details(tdisg831.edrn,0)
+
+
+	
+choice.cont.update.invoice:
+on.choice:
+	if tdisg831.stat = tdisg.stat.process and tdisg831.scmp <> 0 then
+		
+		select 	cisli205.ityp:o.ityp,
+			cisli205.idoc:o.idoc,
+			cisli205.idat:o.idat
+		from	cisli205
+		where	cisli205._index2 = {:tdisg831.scmp,:tdisg831.brid}
+		and	cisli205._compnr = :tdisg831.scmp
+		as set with 1 rows
+		selectdo
+		endselect
+		
+		select 	tpisg039.ityp,
+			tpisg039.idoc,
+			tpisg039.sidt
+		from	tpisg039 for update
+		where	tpisg039._index2 = {:tdisg831.edrn}
+		selectdo
+			tpisg039.ityp = o.ityp
+			tpisg039.idoc = o.idoc
+			tpisg039.sidt = o.idat
+			db.update(ttpisg039,db.retry,e)
+		endselect
+		
+		commit.transaction()
+	endif
+functions:									|GH328CR622.a.s
+function extern created()
+{
+	query.extend.where("tdisg831.stat = tdisg.stat.created and tdisg831.type = tdisg.type.domestic", EXTEND_OVERWRITE)
+	rebuild.query()   
+	set.checked.command("created", 1)
+	set.checked.command("freezed", 0)	
+	set.checked.command("processed", 0)
+	set.checked.command("all.data", 0)
+}
+
+function extern freezed()
+{
+	query.extend.where("tdisg831.stat = tdisg.stat.freeze and tdisg831.type = tdisg.type.domestic", EXTEND_OVERWRITE)
+	rebuild.query()   
+	set.checked.command("created", 0)
+	set.checked.command("freezed", 1)	
+	set.checked.command("processed", 0)
+	set.checked.command("all.data", 0)
+}
+
+function extern processed()
+{
+	query.extend.where("tdisg831.stat = tdisg.stat.process and tdisg831.type = tdisg.type.domestic", EXTEND_OVERWRITE)
+	rebuild.query()   
+	set.checked.command("created", 0)
+	set.checked.command("freezed", 0)	
+	set.checked.command("processed", 1)
+	set.checked.command("all.data", 0)
+}
+
+function extern all.data()
+{
+	query.extend.where("(tdisg831.stat = tdisg.stat.created or tdisg831.stat = tdisg.stat.freeze or tdisg831.stat = tdisg.stat.process) and tdisg831.type = tdisg.type.domestic", EXTEND_OVERWRITE)
+	rebuild.query()   
+	set.checked.command("created", 0)
+	set.checked.command("freezed", 0)	
+	set.checked.command("processed", 0)
+	set.checked.command("all.data", 1)
+}											|GH328CR622.a.e
+
+function extern notes()
+{
+	domain	tcncmp			curr.comp
+	domain	tcmcs.str1		p.char, c.char
+	domain	tcmcs.str30		i.host	
+	domain	tclogn			o.user
+	domain	tcmcs.str50		pass.string, handle.string
+		string			open.link(200),sess.code(30)
+		
+	o.user = logname$
+	
+	i.host = hostname$()
+	i.host =  toupper$(i.host)
+	i.host = trim$(i.host)
+	
+	curr.comp = get.compnr()
+	p.char = ""
+	c.char = ""
+	handle.string = ""
+	handle.string =  "P_BA_" & str$(curr.comp)
+	
+	pass.string = trim$(tdisg831.edrn) 
+	
+	p.char = "n"
+
+	open.link = "chrome.exe --app=http://192.9.200.146/Attachment/Notes.aspx?handle=" & 			
+		trim$(handle.string) & "&Index=" & pass.string & "&user=" & trim$(o.user) &	
+		"&Em=" & "&Hd=" & pass.string & "&Tl=" & "Billing_Advice_No:" & pass.string &		
+		"_Project_Code:" & trim$(tdisg831.cprj)
+				
+	open.link = trim$(open.link)
+	
+	app_start(open.link, "", "", "", "")
+}
+
+												|GH369CR670.a.e

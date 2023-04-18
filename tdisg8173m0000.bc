@@ -1,0 +1,225 @@
+|******************************************************************************
+|* tdisg8173m000  0  VRC B61U a7 isg 
+|* FIV Against Sub-Contracting Order
+|* Installation User             
+|* 2015-11-03
+|******************************************************************************
+|* Main table tdisg873 FIV Against Sub-Contracting Order, Form Type 1
+|******************************************************************************
+|*
+|* ISGEC004024, Dharmendra, 03-11-2015, B61U a7 isg
+|*
+|* ID ISGEC018001, Dharmendra, 06-08-2018
+|*
+|* ID: ISGEC01170,Prasanna Bhuyan, 07-03-2019, VRC B61U a7 isg
+|* Form commands deleted and code commented as discussed with mamta mam
+|****************************** declaration section ***************************
+declaration:
+
+  table   	ttdisg873 | FIV Against Sub-Contracting Order
+  table		ttdisg831
+  table		twhinh312
+	table	ttdisg027
+	table	ttdisg832						|#ISGEC018001.sn
+	table	ttdpur401
+	table	twhinh312
+	extern	domain	tcqiv1	receipt.qnty, assign.qty, balance	
+	extern	domain	tcqiv1	total.receipt, total.balance		|#ISGEC018001.en
+								|#ISGEC019003.sn
+		domain	whinh.shpm	i.rcno
+		domain	tcorno		i.orno
+		domain	tcpono		i.pono
+		string			query.string(500)
+								|#ISGEC019003.en
+
+|****************************** program section ********************************
+
+before.program:
+								|#ISGEC019003.sn
+	import("tdisg832.rcno",i.rcno)
+	import("tdisg832.orno",i.orno)
+	import("tdisg832.pono",i.pono)
+	
+	query.string = ""
+	query.string = trim$(query.string) & " tdisg873.rcno in (select tdisg030.srcn " 
+	query.string = trim$(query.string) & " from tdisg030 where tdisg030.orno = " 
+					   & quoted.string(i.orno)
+	query.string = trim$(query.string) & " and tdisg030.pono = " & str$(i.pono)
+	query.string = trim$(query.string) & " and tdisg030.rcno = " & quoted.string(i.rcno) & ")"
+	query.extend.where(query.string)
+	
+								|#ISGEC019003.en
+
+before.display.object:
+	if tdisg873.frez = tcyesno.yes then
+		disable.commands("freeze")
+		select	tdisg831.stat
+		from	tdisg831
+		where	tdisg831._index1 = {:tdisg873.sdrn}
+		and	tdisg831.stat = tdisg.stat.created
+		selectdo
+			enable.commands("unfreeze")
+		selectempty
+			disable.commands("unfreeze")
+		endselect
+	else
+		enable.commands("freeze")
+		disable.commands("unfreeze")	
+	endif	
+
+
+|****************************** choice section ********************************
+| choice.freeze:				|#ISGEC01170.sn
+| on.choice:
+| 	on.main.table(freeze.records)
+| 	
+| choice.unfreeze:
+| on.choice:
+| 	on.main.table(unfreeze.records)		|#ISGEC01170.en
+	
+|****************************** field section **********************************
+							|#ISGEC018001.sn
+field.tdpur401.qoor:
+before.display:
+	select	tdisg832.orno, tdisg832.pono
+	from	tdisg832
+	where	tdisg832._index1 = {:tdisg873.sdrn, :tdisg873.scno, :tdisg873.scln}
+	selectdo
+		select	tdpur401.qoor, tdpur401.cuqp
+		from	tdpur401
+		where	tdpur401._index1 = {:tdisg832.orno, :tdisg832.pono}
+		as set with 1 rows
+		selectdo
+		selectempty
+			tdpur401.qoor = 0
+			tdpur401.cuqp = ""
+		endselect
+	selectempty
+		tdpur401.qoor = 0
+		tdpur401.cuqp = ""
+	endselect
+	
+field.total.receipt:
+before.display:
+	select	sum(tdpur406.qidl):total.receipt
+	from	tdpur406
+	where	tdpur406._index1 = {:tdisg832.orno, :tdisg832.pono}
+	selectdo
+	selectempty
+		total.receipt = 0
+	endselect
+	
+field.total.balance:
+before.display:
+	total.balance = tdpur401.qoor - total.receipt
+	
+field.whinh312.orno:
+before.display:
+	select	whinh312.orno, whinh312.pono, whinh312.item
+	from	whinh312
+	where	whinh312._index1 = {:tdisg873.rcno, :tdisg873.rcln}
+	selectdo
+	selectempty
+		whinh312.orno = ""
+		whinh312.pono = 0
+		whinh312.item = ""
+	endselect
+	
+field.receipt.qnty:
+before.display:
+	select	whinh312.qrcr:receipt.qnty
+	from	whinh312
+	where	whinh312._index1 = {:tdisg873.rcno, :tdisg873.rcln}
+	selectdo
+	selectempty
+		receipt.qnty = 0
+	endselect	
+	
+field.assign.qty:
+before.display:
+	select	tdisg027.aqty:assign.qty
+	from	tdisg027
+	where	tdisg027._index1 = {:tdisg873.edrn, :tdisg873.rcno, :tdisg873.rcln}
+	selectdo
+	selectempty
+		assign.qty = 0
+	endselect
+	
+field.balance:
+before.display:
+	balance = receipt.qnty - assign.qty	
+							|#ISGEC018001.en
+|****************************** function section **********************************
+
+functions:
+
+function freeze.records()
+{
+	domain	tcqiv1	receipt.qty
+	
+	db.retry.point()	
+
+	select	isg832.qnty:receipt.qty
+	from	tdisg832 isg832
+	where	isg832._index1 = {:tdisg873.edrn, :tdisg873.rcno, :tdisg873.rcln}
+	selectdo
+	selectempty
+		receipt.qty = 0 
+	endselect
+	
+	select	tdisg873.*
+	from	tdisg873 for update
+	where	tdisg873._index1 = {:tdisg873.sdrn, :tdisg873.scno, :tdisg873.scln}
+| 	where	tdisg873._index2 = {:tdisg873.edrn, :tdisg873.rcno, :tdisg873.rcln}
+	selectdo
+| 		tdisg873.qnty = tdisg873.qnty + tdisg873.issu
+		tdisg873.qnty = tdisg873.issu + get.issu()
+| 		tdisg873.balc = tdisg873.balc - tdisg873.issu
+		tdisg873.balc = receipt.qty - tdisg873.issu - get.issu()
+		tdisg873.frez = tcyesno.yes
+		db.update(ttdisg873, db.retry)
+	endselect
+	commit.transaction()
+}
+
+function unfreeze.records()
+{
+	domain	tcqiv1	i.issu
+	domain	tcorno	i.sdrn
+	
+	db.retry.point()
+		
+	i.issu	=	tdisg873.issu
+	i.sdrn	=	tdisg873.sdrn
+	
+	select	tdisg873.*
+	from	tdisg873 for update
+	where	tdisg873._index1 = {:tdisg873.sdrn, :tdisg873.scno, :tdisg873.scln}
+| 	where	tdisg873._index2 = {:tdisg873.edrn, :tdisg873.rcno, :tdisg873.rcln}
+	selectdo
+| 		tdisg873.qnty = tdisg873.qnty - tdisg873.issu
+		tdisg873.qnty = tdisg873.qnty - i.issu
+| 		tdisg873.balc = tdisg873.balc + tdisg873.issu
+		tdisg873.balc = tdisg873.balc + i.issu
+		if	i.sdrn	=	tdisg873.sdrn	then	
+			tdisg873.frez = tcyesno.no
+		endif
+		db.update(ttdisg873, db.retry)
+	endselect
+	commit.transaction()		
+}
+
+function	domain	tcqiv1	get.issu()
+{
+	domain	tcqiv1	i.issu
+	
+	select	sum(tdisg873.issu):i.issu
+	from	tdisg873 
+	where	tdisg873._index2 = {:tdisg873.edrn, :tdisg873.rcno, :tdisg873.rcln}
+	and	tdisg873.sdrn	<> :tdisg873.sdrn
+	selectdo
+	selectempty
+		i.issu	=	0
+	endselect
+	return(i.issu)
+}

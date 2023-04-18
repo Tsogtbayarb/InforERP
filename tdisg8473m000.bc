@@ -1,0 +1,217 @@
+|******************************************************************************
+|* tdisg  0  VRC B61U a7 live
+|* Free issue to Vendors
+|* Ravi Kumar           
+|* 14-09-2020
+|******************************************************************************
+|* Main table ttdisg873 Item Release Line, Form Type 4
+|******************************************************************************
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttdisg873 
+	table	ttdisg832 
+	table	ttcmcs052 
+	table	ttdisg831 
+	table	ttdisg026 
+	table	twhinh310 
+	
+	extern	domain	tccprj	cprj.f, cprj.t
+	extern	domain	tfgld.date	date.f, date.t
+	extern	domain	tcdate		utc.date.f, utc.date.t
+	long		dd, mm, yy, dd2, mm2, yy2	
+
+	extern	domain	tcpono	s.no
+	extern	domain	tcdate	linked.bill.date
+	
+	string		err.file(100), file.name(100), line3(3000), line4(3000)
+		domain	tfgld.docn	packing.slip
+	long		ret2, stat.fp
+
+|**************** Form Variables ********************
+	
+|*************** Include **************
+#include<bic_desktop>	
+
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+choice.cont.process:
+on.choice:
+	generate.file()
+
+|****************************** field section *********************************
+field.cprj.f:
+when.field.changes:
+	cprj.t = cprj.f
+	
+field.date.f:
+when.field.changes:
+	date.t = date.f
+
+|****************************** function section ******************************
+functions:
+
+function generate.file()
+{
+	open.file()
+	generate.header()
+	read.main.table()
+	close.file()
+}
+
+function read.main.table()
+{
+	s.no = 0 
+	dd = 0 
+	mm = 0
+	yy = 0
+	dd2 = 0
+	mm2 = 0
+	yy2 = 0
+	num.to.date(date.f, yy, mm, dd)
+	num.to.date(date.t, yy2, mm2, dd2)
+	
+	utc.date.f = date.to.utc(yy, mm, dd, 5, 30, 0)
+	utc.date.t = date.to.utc(yy2, mm2, dd2, 24, 59, 59)
+	
+| 	select	tdisg831.*
+| 	from	tdisg831
+| 		select	tdisg873.*
+| 		from	tdisg873
+| 		where	tdisg873._index2 = {"DBA006775"}
+| 		selectdo
+			select	tdisg873.*,
+				tdisg831.edrn,
+				tdisg831.cprj,
+				tdisg831.crdt,
+				tdisg026.date
+			from	tdisg831, tdisg873, tdisg026
+			where	tdisg026.dech = tdisg873.edrn
+			and	tdisg831.edrn  = tdisg873.sdrn
+			and	tdisg831.cprj inrange :cprj.f and :cprj.t
+			and	tdisg026.date inrange :utc.date.f and :utc.date.t
+			order by tdisg831.cprj
+			selectdo
+				select	tdisg832.*
+				from	tdisg832
+				where	tdisg832._index1 = {:tdisg831.edrn, :tdisg873.scno, :tdisg873.scln}
+				selectdo
+					Initialize_Variables()
+					s.no = s.no + 1
+					
+| 					select	tdisg831.dcno,
+| 						tdisg831.dcdt,
+| 						tdisg831.cprj
+| 					from	tdisg831
+| 					where	tdisg831._index1  = {:tdisg832.edrn}
+| 					as set with 1 rows
+| 					selectdo
+| 					selectempty
+| 					endselect
+					
+					select	tcmcs052.dsca
+					from	tcmcs052
+					where	tcmcs052._index1 = {:tdisg831.cprj}
+					as set with 1 rows
+					selectdo
+					selectempty
+						tcmcs052.dsca = ""
+					endselect
+					
+| 					select	tdisg831.crdt:linked.bill.date
+| 					from	tdisg831
+| 					where	tdisg831._index1 = {:tdisg873.sdrn}
+| 					as set with 1 rows
+| 					selectdo
+| 					endselect
+
+| 					select	tdisg026.date
+| 					from	tdisg026
+| 					where	tdisg026._index1 = {:tdisg873.edrn}
+| 					selectdo
+| 					endselect
+					
+					select	whinh310.crdt
+					from	whinh310
+					where	whinh310._index1 = {:tdisg873.rcno}
+					as set with 1 rows
+					selectdo
+					endselect
+					
+					print.detail()
+				endselect
+			endselect
+| 		endselect
+| 	endselect
+}
+
+
+function	generate.header()
+{
+	line4 =	concat$("	",
+| 		sprintf$("S no."),					|1		
+		sprintf$("Project Code"),					|2		
+		sprintf$("Project Name"),				|3		
+		sprintf$("Delivery Challan no"),			|4		
+		sprintf$("Delivery Challan Date"),					|5		
+		sprintf$("Linked DBA/ EBA"),				|6
+		sprintf$("Linked DBA/EBA Date"),				|7
+		sprintf$("Linked Receipt Number"),				|7
+		sprintf$("Linked Receipt Date"))				|7
+| 		sprintf$("Issue Qty"))				|7
+		
+	line4 = strip$(shiftl$(line4))		
+	seq.puts(line4, stat.fp)	
+}
+
+function	print.detail()
+{	
+	line3 =	concat$("	",
+| 		sprintf$("%s", s.no),					|1
+		sprintf$("%s", trim$(tdisg831.cprj)),				|2				
+		sprintf$("%s", trim$(tcmcs052.dsca)),				|3				
+		sprintf$("%s", tdisg873.edrn),				|4				
+		sprintf$("%s", sprintf$("%u(%02d/%02m/%04Y)", tdisg026.date)),				|5				
+		sprintf$("%s", tdisg873.sdrn),				|6
+		sprintf$("%s", sprintf$("%u(%02d/%02m/%04Y)", tdisg831.crdt)),
+| 		sprintf$("%s", tdisg873.edrn)				|7
+| 		sprintf$("%s", tdisg873.worn),				|7
+| 		sprintf$("%s", tdisg873.issu))			|7
+		sprintf$("%s", tdisg873.rcno),			|7
+		sprintf$("%s", sprintf$("%u(%02d/%02m/%04Y)", whinh310.crdt)))			|7
+		
+		line3 = strip$(shiftl$(line3))
+		seq.puts(line3, stat.fp)
+}	
+
+function Initialize_Variables()
+{
+	linked.bill.date = 0		|1
+}
+
+
+function open.file()
+{
+	err.file = bse.tmp.dir$() & str$(utc.num()) & ".xls"
+	
+	file.name = "c:\temp\" & str$(utc.num())  & ".xls"
+	
+	stat.fp = seq.open(err.file, "w+")
+	if stat.fp >0 then
+ 		seq.seek(0, 0, stat.fp)
+	endif
+}
+
+function close.file()
+{
+	seq.close(stat.fp)
+	ret2 = server2client(err.file,file.name,1)
+	ret2 = app_start(file.name,"c:","","","")
+}				
