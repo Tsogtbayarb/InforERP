@@ -1,0 +1,208 @@
+|******************************************************************************
+|* tfisg1251m000  0  VRC B61U a7 isg 
+|* Email Alert for bank gurantee expiry
+|* merino1                       
+|* 2015-12-02
+|******************************************************************************
+|* Form Type 4
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+	table	ttfisg151
+	table	ttccom001
+	table	tbpmdm001
+	table	ttdpur400
+	
+
+	extern domain	tfgld.date	curr.date,date.f,date.t,date.f1,date.t1,e.date
+	long	exp.day,flag,yy,mm,dd,h,m,s
+	
+#include <bic_cmf>
+#include <bic_dam>
+#pragma used dll ottdllbw 
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+	
+|****************************** choice section ********************************
+choice.process:
+on.choice:
+	advance_bank_gurantee_expire()
+	performance_bank_gurantee_expire() 
+	
+	
+|****************************** function section ********************************
+functions:
+
+function  long advance_bank_gurantee_expire()
+{
+	flag = 0
+	curr.date = date.num()
+	date.f = curr.date + 15
+	date.t = curr.date + 30
+	select tfisg151.*
+	from	tfisg151
+	where	tfisg151._index2 inrange {:date.f} and {:date.t}
+	and 	tfisg151.type(1;1) = "A"
+	selectdo
+		exp.day = tfisg151.edte - curr.date
+		flag = 1
+		utc.to.date(tfisg151.mwdt,yy,mm,dd,h,m,s)
+		e.date = date.to.num(yy,mm,dd)
+		if send.email.alert(tfisg151.bgno,e.date,tfisg151.orno,exp.day,flag) <> 0 then
+			return(DALHOOKERROR)	
+		endif
+	endselect	
+	return(0)
+}
+
+function  long performance_bank_gurantee_expire()
+{
+	flag = 0
+	curr.date = date.num()
+	date.t1 = curr.date + 30
+	select tfisg151.*
+	from	tfisg151
+	where	tfisg151._index2 = {:date.t1}
+	and	tfisg151.type(1;1) = "P"
+	selectdo
+		flag = 2
+		if send.email.alert(tfisg151.bgno,tfisg151.mwdt,tfisg151.orno,0,flag) <> 0 then
+			return(DALHOOKERROR)	
+		endif
+	endselect	
+	return(0)
+}
+
+function long send.email.alert(domain	tcmcs.str9	i.bgno,
+				domain	tfgld.date	i.mdat,
+				domain	tcorno		i.orno,
+				long	i.exp.day,
+				long	i.flag
+				)
+{
+	string tmp.file(200),line(500)
+	long fp
+	long    message.ID
+        long    to.ID
+        long    attachment.ID
+        long    ret
+        long stat       |Variable to hold return values
+	string del.date(15)
+	
+        del.date = sprintf$("%D(%02d/%02m/%04Y)",i.mdat)
+	select	tdpur400.ccon
+	from	tdpur400
+	where	tdpur400._index1 = {:i.orno}
+	selectdo
+		select 	bpmdm001.mail,tccom001.nama 
+		from 	tccom001,bpmdm001
+		where 	tccom001._index1 = {:tdpur400.ccon}
+		and	tccom001.emno refers to bpmdm001
+		as set with 1 rows
+		selectdo
+		selectempty
+			dal.set.error.message("@ Email ID for user " & tdpur400.ccon & " Not maintained")
+			return(1)
+		endselect
+	endselect	
+	
+	tmp.file = creat.tmp.file$(bse.tmp.dir$())
+	fp = seq.open(tmp.file,"w+")
+	if fp <=0 then
+		dal.set.error.message("@ Temp file can not be created")
+		return(1)
+	endif
+	
+	if flag = 1 then
+		line = ""
+		line = " Dear,"&chr$(13)&chr$(10)
+		line = strip$(line) & "      " & "Advance BG No. " & i.bgno & " from supplier " & strip$(tccom001.nama) & "," &chr$(13)&chr$(10)
+		line = strip$(line) & "      " & "is going to expire in next " & str$(i.exp.day) & " days. " & chr$(13)&chr$(10)
+		line = strip$(line) & "      " & "Materials Delivery date as per PO no. " & i.orno  & " is " & del.date &"." &chr$(13)&chr$(10)
+		line = strip$(line) & "      " & "Please arrange to get the BG Expiry date extended." & chr$(13)&chr$(10)
+		line = strip$(line) & ""
+		line = strip$(line) & ""
+		line = strip$(line) & "Regards"& chr$(13)&chr$(10)
+		line = strip$(line) & "Baan Support"
+		seq.write(line,len(line),fp)
+		
+		ret = seq.close(fp)
+		
+		|******* Email Header
+		message.ID = cmf.create()
+		line = " Advance Bank Guarantee " & i.bgno & " Expiry Alert "
+		ret = cmf.setClass(message.ID, "CMF.NOTE.EMAIL")
+		ret = cmf.setSubject(message.ID,line)
+		
+	else if flag = 2 then
+		line = ""
+		line = " Dear,"&chr$(13)&chr$(10)
+		line = strip$(line) & "      " & "Performance BG No. " & i.bgno & " from supplier " & strip$(tccom001.nama) & "," &chr$(13)&chr$(10)
+		line = strip$(line) & "      " & "is going to expire in next " & "30 days. " & chr$(13)&chr$(10)
+		line = strip$(line) & "      " & "Equipment Warranty date as per PO no. " & i.orno  & " is " & del.date &"." &chr$(13)&chr$(10)
+		line = strip$(line) & "      " & "Please take necessary action if BG expiry date is to be extended. " & chr$(13)&chr$(10)
+		line = strip$(line) & ""
+		line = strip$(line) & ""
+		line = strip$(line) & "Regards"& chr$(13)&chr$(10)
+		line = strip$(line) & "Baan Support"
+		seq.write(line,len(line),fp)
+		
+		ret = seq.close(fp)
+		
+		|******* Email Header
+		message.ID = cmf.create()
+		line = " Performance Bank Guarantee " & i.bgno & " Expiry Alert "
+		ret = cmf.setClass(message.ID, "CMF.NOTE.EMAIL")
+		ret = cmf.setSubject(message.ID,line)
+	endif	
+	endif	
+		
+	|******** from ID
+	to.ID = cmf.createRecipient(message.ID, ttcmf.role.from)  
+	ret = cmf.setRecipientName(to.ID,"Baan Support")
+	ret = cmf.setRecipientAddress(to.ID, "baansupport@isgec.co.in")	
+	ret = cmf.setRecipientType(to.ID, "SMTP")
+ 
+	|******** to ID
+	
+	to.ID = cmf.createRecipient(message.ID, ttcmf.role.to)  
+	ret = cmf.setRecipientName(to.ID,tccom001.nama)
+	ret = cmf.setRecipientAddress(to.ID, "bpmdm001.mail")	
+	ret = cmf.setRecipientResponsibility(to.ID, "TRUE")		
+	ret = cmf.setRecipientType(to.ID, "SMTP")
+		
+	
+	|********* Mail Body
+	attachment.ID = cmf.createAttachment(message.ID)
+	ret = cmf.setAttachmentBody(attachment.ID,ttyeno.yes)
+	ret = cmf.setAttachmentMIME(attachment.ID,"text/plain")                       
+	ret = cmf.setAttachmentFileName(attachment.ID,tmp.file,"abc.txt")
+
+
+	|*********  Send mail
+        if message.ID <>0 then
+                stat = cmf.startService("SMTP",2)
+                if stat<>0 then
+                        dal.set.error.message("@ Message could not be sent "&
+                                "(Infor ERP Enterprise eMessage Connector"&
+                                " service did not start)")
+                        return(1)
+                endif
+                stat = cmf.send(message.ID,"SMTP")
+                if stat<>0 then
+                        dal.set.error.message("@ Message could not be sent "& "(Infor ERP Enterprise eMessage Connector "&
+                                "service refused message)")
+                        cmf.stopService("SMTP",2)
+                        return(1)
+                endif
+                stat = cmf.stopService("SMTP",2)
+        endif
+	return(0)
+}

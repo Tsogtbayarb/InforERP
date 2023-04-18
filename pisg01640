@@ -1,0 +1,222 @@
+|******************************************************************************
+|* tpisg0164  0  VRC B61U a7 isg 
+|* QAP Master
+|* Installation user             
+|* 2015-01-15
+|******************************************************************************
+|* Main table tpisg064 QAP Master, Form Type 1
+|******************************************************************************
+|* ISGEC001142, Ankit Sharma,IT0302, 15-01-2015,B61U a7 isg                                                                                
+|******************************************************************************
+|*IDENT ISGEC01059,Sandhyarani,IT0375, Dt. 21-02-2015
+|*Modification on active and expire button
+|******************************************************************************
+|*IDENT ISGEC01085, Mani sharma , IT0376, Dt. 12.03.2015 VRC B61U a7 isg
+|* change item to item group   
+|*******************************************************************************
+|* IDENT ISGEC01092, Mani sharma, IT0376, Dt. 17.03.2015 VRC B61U a7 isg
+|* Modification
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttpisg064 | QAP Master
+	table	ttcibd001
+	table	ttppdm600
+	table	ttcmcs050
+	table   ttcmcs023
+	table   ttcmcs052
+	
+	string	str(300),str1
+	extern domain	tcdsca	dsca
+	extern domain 	tcrono revn.new						|#ISGEC01059.n
+	extern domain  tcdsca desc						|ISGEC01085.n
+	extern domain  tcrono  rev.var
+	extern domain   tcpono pono.var
+|****************************** program section ********************************
+before.program:
+	pono.var = 0
+	
+|****************************** choice section**********************************			|#ISGEC01059.sn
+
+choice.active:
+on.choice:
+	update.rev()
+	update.active()
+	
+choice.expire:
+on.choice:
+	update.expire()				|#ISGEC01059.en
+
+|****************************** field section ********************************			
+
+| choice.add.set:							|#ISGEC01059.sn
+| before.choice:
+| 	set.synchronized.dialog("tpisg0164m000") 			|to open the same session in detail format |#ISGEC01059.en
+
+
+field.all:
+before.input:
+	attr.dorp = 1
+	
+field.tpisg064.cprj:
+before.zoom:
+	str1	=	str$(etol(tcemm.enty.project))
+	str	="tppdm600.cprj in(select tcemm110.enid from tcemm110 where tcemm110._index2 = '"&tpisg064.eunt&"'"
+	str	=	str &"and tcemm110.enty = "&str1&")"
+	query.extend.where.in.zoom(str)
+	
+field.dsca:
+before.field:
+	select	tcmcs052.dsca
+	from	tcmcs052
+	where	tcmcs052._index1 = {:tpisg064.cprj}
+	selectdo
+		dsca = tcmcs052.dsca
+	endselect	
+field.desc:							|ISGEC01085.sn
+before.display:
+	select tcmcs023.dsca
+	from    tcmcs023
+	where   tcmcs023._index1 = {:tpisg064.item}
+	selectdo
+		desc = tcmcs023.dsca
+	selectempty
+		desc = ""
+	endselect						|ISGEC01085.en
+	
+| field.tpisg064.eunt:
+| before.field:
+| 	if (tpisg064.stat = tpisg.status.active) or (tpisg064.stat = tpisg.status.expire) then
+| 		disable.commands("tpisg0164m000",modify.set)
+| 		disable.fields("tpisg064.dsca",actual.occ)
+| 		disable.commands("active")
+| 		disable.commands("expire")
+| 		refresh.all.occs()
+| 	else
+| 		enable.commands("tpisg0164m000",modify.set)
+| 		enable.commands("active")
+| 		enable.commands("expire")
+| 	endif
+| 	
+field.tpisg064.dsca:
+before.field:
+	if not isspace(tpisg064.item) then
+| 		select	tcibd001.dsca						|ISGEC01085.so
+| 		from	tcibd001
+| 		where	tcibd001._index1 = {:tpisg064.item}
+| 		selectdo
+| 			tpisg064.dsca = tcibd001.dsca
+| 		endselect
+											|ISGEC01085.eo
+	if pono.var = 0 then										
+		select tcmcs023.dsca						|ISGEC01085.sn
+		from    tcmcs023
+		where   tcmcs023._index1 = {:tpisg064.item}
+		selectdo
+			tpisg064.dsca = tcmcs023.dsca
+			pono.var = 1
+		selectempty
+			tpisg064.dsca = ""
+		endselect							|ISGEC01085.en
+	endif
+	endif
+
+field.tpisg064.item:											|#ISGEC01059.sn
+before.field:
+| 	if update.status = add.set then							|ISGEC01092.so
+| 		select	max(tpisg064.revn):revn.new
+| 		from	tpisg064
+| 		where	tpisg064._index1 = {:tpisg064.eunt,:tpisg064.cprj,:tpisg064.qapn}
+| 		and	tpisg064.item = :tpisg064.item
+| 		selectdo
+| 			revn.new = revn.new + 1
+| 			disable.fields("tpisg064.type",actual.occ)				|ISGEC01085.n
+| 		selectempty
+| 			revn.new = 0	
+| 		endselect
+| 		tpisg064.stat = tpisg.status.created
+| 		tpisg064.revn = revn.new						|ISGEC01092.eo	
+| 			
+| 	endif												|#ISGEC01059.en
+	
+	
+|****************************** group section **********************************
+|****************************** function section **********************************
+
+functions:										|#ISGEC01059.sn
+
+function update.expire()
+{	
+	select	tpisg064.stat,tpisg064.revn:rev.var
+	from	tpisg064 for update
+	where	tpisg064._index1 = {:tpisg064.eunt,:tpisg064.cprj,:tpisg064.qapn}
+	and	tpisg064.item = :tpisg064.item 
+	selectdo
+		tpisg064.stat = tpisg.status.expire
+		db.update(ttpisg064, db.retry)
+		commit.transaction()
+		insert.new()
+	endselect
+	
+	refresh.parent(-1)
+}
+
+function update.rev()
+{	
+	tpisg064.revn = 0
+	select	tpisg064.revn,tpisg064.stat
+	from	tpisg064 for update
+	where	tpisg064._index1 = {:tpisg064.eunt,:tpisg064.cprj,:tpisg064.qapn}
+	and	tpisg064.item = :tpisg064.item 
+	selectdo
+		tpisg064.stat = tpisg.status.expire
+		db.update(ttpisg064,db.retry)
+		commit.transaction()
+	endselect
+}
+function update.active()
+{	
+	select	tpisg064.stat
+	from	tpisg064 for update
+	where	tpisg064._index1 = {:tpisg064.eunt,:tpisg064.cprj,:tpisg064.qapn}
+	and	tpisg064.item = :tpisg064.item 
+	and	tpisg064.revn = :tpisg064.revn
+	selectdo
+		tpisg064.stat = tpisg.status.active
+		db.update(ttpisg064, db.retry)
+		commit.transaction()
+	endselect
+		
+}												|#ISGEC01059.en
+
+
+function insert.new()
+{
+
+	select tpisg064.*
+	from    tpisg064
+	where   tpisg064._index1 = {:tpisg064.eunt,:tpisg064.cprj,:tpisg064.qapn,:tpisg064.item}
+	selectdo
+		
+		tpisg064.eunt = tpisg064.eunt
+		tpisg064.cprj = tpisg064.cprj
+		tpisg064.qapn = tpisg064.qapn
+		tpisg064.item = tpisg064.item
+		tpisg064.revn = rev.var + 1
+		tpisg064.date = date.num()
+		tpisg064.dsca = tpisg064.dsca
+		tpisg064.bpid = tpisg064.bpid
+		tpisg064.text = tpisg064.text
+		tpisg064.stat = tpisg.status.created
+		tpisg064.type = tpisg064.type
+		
+		db.insert(ttpisg064,db.skip.dupl,e)
+		if  e = 0 then
+			commit.transaction()
+		else
+			abort.transaction()
+		endif	
+	endselect
+	execute(find.data)
+	disable.fields("tpisg064.type",actual.occ)
+}

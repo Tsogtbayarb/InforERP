@@ -1,0 +1,758 @@
+|******************************************************************************
+|* tfisg1202m000  0  VRC B61U a7 coa 
+|* Upload Journal Voucher Data
+|* MSL Tools                     
+|* 2014-06-07
+|******************************************************************************
+|* Main table tfisg102 , Form Type 4
+|******************************************************************************
+|* IDENT KOSO01005 , Ritu Sharma, IT0303 , 07-06-2014, VRC B61U a7 coa                                                                        
+|****************************** declaration section ***************************
+declaration:
+| 	table   ttfmsl102 			|#KOSO01005.o 							
+	table   ttfisg102  			|#KOSO01005.n
+	table	ttfgld008
+	table	ttfgld010
+	table	ttccom100
+	table	ttcmcs037
+	table	ttfgld011
+	table	ttfgld017
+
+#pragma used dll ottstpapihand
+#pragma used dll ottdllbw 
+#pragma nowarnings 
+#include<bic_dam>
+#include "itfmsldll0032"
+|***********  FORM FIELDS *******************
+	extern 	domain 	tcmcs.str100		f.file.path
+	extern	domain	tfgld.date		edat.l
+	extern	domain	tfgld.ttyp		ttyp.f
+	extern	domain	tfgld.year		o.year
+	extern 	domain	tfgld.btno		o.btno
+	extern	domain	tfgld.prod		o.prod
+	extern	domain	tfgld.docn		o.docn
+	extern	domain	tcccur			i.ccur
+	long form.command	
+	long ret_val,e.log
+|********** File Read/Write Variables ***************
+
+	long 	read.file.pointer
+	long	error.file.pointer
+	string	server.read.file(100)
+	string	server.error.file(100)
+
+
+	string data.str(1000),error.msg(1000),error.str(5000),v.str(13)
+	
+	extern 	domain 	tccom.bpid		temp.bpid		|Business Partner
+	extern 	domain	tfgld.leac		temp.leac		|Ledger Account
+	extern	domain	tfgld.dimx		temp.dim1		|Dimension 1
+	extern	domain	tfgld.dimx		temp.dim2		|Dimension 2
+	extern	domain	tfgld.dimx		temp.dim3		|Dimension 3
+	extern	domain	tfgld.dimx		temp.dim4		|Dimension 4
+	extern	domain	tccvat			temp.cvat		|Tax Code
+	long					temp.vtyp		|Tax Origin
+	extern	domain	tfgld.refc		temp.refr		|Reference
+	long					temp.dbcr		|Debit/Credit
+	extern	domain	tfgld.amnt		temp.amnt
+	extern domain	tfgld.year		temp.year		|Salary Year		|#KOSO01005.sn
+	extern domain 	tfgld.prod		temp.fprd		|Salary Month
+	extern domain 	tcncmp			temp.cono		|Company code
+	extern	domain	tfgld.dimx		temp.dim5		|Dimension 5
+	long					serial.no		|Serial Number	
+	extern	domain	tfgld.amnt		tot.debit		
+	extern	domain	tfgld.amnt		tot.credit
+	extern	domain	tcccur			temp.ccur		|Currency
+	extern	domain	tfgld.docn		get.docn
+	long					temp.serial.no		|Currency
+	long					comp.no,flag					|#KOSO01005.en
+	
+	
+	string error(100) 
+|******** Choice Section ****************************
+
+choice.work_in_progress:
+on.choice:
+	mess("tigenstring", 0, "Select The File . . .")
+	if seq.open.dialog.local( false, "", "","Text Files(*.txt)|*.txt|All File(*.*)|*.*", f.file.path ) > 0 then
+		mess("tigenstring", 0, "Success . . .")
+	else
+		mess("tigenstring", 0, "Cancelled . . .")
+	endif
+	
+		display.all()	
+choice.cont.validate:
+on.choice:
+	comp.no = get.compnr()			|#KOSO01005.n
+	initialize()
+	form.command = 1
+	read.write.file()
+	
+choice.cont.generate:
+before.choice:					|#KOSO01005.sn
+	if flag then			
+		choice.again()
+	else
+		if	isspace(i.ccur)	then
+			message("Please Specify Currency")
+			choice.again()
+		endif	
+	endif					|#KOSO01005.en
+on.choice:
+	form.command = 2
+	
+	error = tfisgdll0042.Create.Transaction.Batch(
+				ttyp.f,			| Transaction Type
+				0,			| Year
+				edat.l,			| Payment Date
+				"Financial Batch",	| Remarks
+				o.btno,			| Batch No.
+				o.year,			| Year Ref
+				o.prod)			| Period
+	if not isspace(error) then
+		message("%s",error)
+		choice.again()
+	else
+| 		o.docn = 13
+		select	tfgld017.seri:o.docn
+		from	tfgld017
+		where	tfgld017._index1 = {:ttyp.f}
+		selectdo
+		selectempty
+			o.docn = 0	
+		endselect
+		
+		if o.docn <> 0 then
+			Process_JV(ttyp.f,o.btno,o.year,o.docn)
+		endif	
+	endif
+	read.write.file()
+after.choice:
+	message("Batch No. %d Generated ",o.btno)
+	mess("tdisas0101",0)	
+
+|*************************************** field section ******************************
+field.ttyp.f:
+before.zoom:
+	v.str = "tfgld1115m000"
+	query.extend.where.in.zoom("tfgld011.ses1 =" & quoted.string(v.str))
+	
+|*************************************** function section ******************************
+functions:	
+function read.write.file()
+{
+
+	string	 format(50)
+	domain	tfgld.lino o.lino
+	
+	domain	tcmcs.long	cnt.rec
+	
+	cnt.rec = 0
+|	1 - Business Partner
+|	2 - Ledger Acount
+|	3 - Dimension 1
+|	4 - Dimension 2
+|	5 - Dimension 3
+|	6 - Dimension 4
+|	7 - Tax Code
+|	8 - Tax Origin
+|	9 - Transaction Reference
+|	10- Debit/Credit
+|	11- Amount
+|		  1   2  3  4  5  6  7  8  9 10	11 12 13 14
+| 	format = "%s|%s|%s|%s|%s|%s|%s|%d|%s|%d|%f"
+	format = "%d|%d|%d|%s|%s|%s|%s|%s|%s|%s|%f|%d|%s|%s"
+	|************  Read File ***********************
+	server.read.file = creat.tmp.file$(bse.tmp.dir$())
+| 	if client2server(f.file.path, server.read.file, false, false, true) = 0 then
+	if client2server(f.file.path, server.read.file, 1) = 0 then
+		mess("tigenstring", 0, "File Copy to server:tmp successful !")
+		read.file.pointer = seq.open(server.read.file, "r")
+		if read.file.pointer then
+			mess("tigenstring", 0, "Update in Progress . . .")
+	|************ Open Error File ********************
+			server.error.file = creat.tmp.file$(bse.tmp.dir$())
+			error.file.pointer = seq.open(server.error.file, "w")
+			if error.file.pointer then
+			else
+				message("Error in File Opening")
+				exit()
+			endif	
+			while seq.gets(data.str,400,read.file.pointer) >= 0
+
+				string.scan(data.str,format,						|#KOSO01005.sn
+						temp.cono,		|Company code
+						temp.year,		|Salary Year
+						temp.fprd,		|Salary month
+						temp.leac,		|Ledger Account
+						temp.dim1,		|Dimension 1
+						temp.dim2,		|Dimension 2
+						temp.dim3,		|Dimension 3
+						temp.dim4,		|Dimension 4
+						temp.dim5,		|Dimension 5
+| 						temp.ccur,		|Currency
+						temp.amnt,		|Amount
+						temp.dbcr,		|Debit/Credit
+						temp.refr,		|Reference					
+						temp.bpid)		|BPID				|#KOSO01005.en
+
+				cnt.rec = cnt.rec + 1
+				
+				mess("tfisg001005", 0, cnt.rec)
+				|Line %1$d Update in Progress . . .
+				
+				error.str = strip$(data.str)		
+				if form.command = 1 then		
+					error.msg = validate_data()
+					
+					if ltoe(temp.dbcr) = tfgld.dbcr.debit then			|#KOSO01005.sn
+						tot.debit = tot.debit + temp.amnt
+					else
+						tot.credit = tot.credit + temp.amnt
+					endif								|#KOSO01005.en
+					
+					if not isspace(error.msg) then
+						error.str = strip$(error.str) & "|" & strip$(error.msg)
+					endif
+| 					if	not isspace(error.msg) then
+| 						e.log = 1
+| 					else	
+| 						flag = 1
+| 					endif	
+					
+				else
+| 					o.docn = 13
+					|Strat JV Process
+					
+					if o.docn then
+						insert.to.tfisg102(temp.cono,		|Company code		|#KOSO01005.sn
+								   temp.year,		|Salary Year
+								   temp.fprd,		|Salary month
+								   temp.leac,		|Ledger Account
+								   temp.dim1,		|Dimension 1
+								   temp.dim2,		|Dimension 2
+								   temp.dim3,		|Dimension 3
+								   temp.dim4,		|Dimension 4
+								   temp.dim5,		|Dimension 5
+								   temp.ccur,		|Tax Code
+								   temp.amnt,		|Tax Origin
+								   temp.dbcr,		|Debit/Credit
+								   temp.refr,		|Reference
+								   temp.bpid,		|BP ID
+								   temp.serial.no)		|Line number
+								   
+						get.records.to.create.lines(	temp.cono,		|Company code		|#KOSO01005.sn
+										temp.year,		|Salary Year
+										temp.fprd,		|Salary month
+										temp.serial.no)		|Serial no.					|#KOSO01005.n
+					endif
+				endif	
+				
+| 				if not e.log then
+| 				else
+| 					seq.puts(error.str,error.file.pointer)	
+| 				endif		
+| 				
+| 				if	 not flag then
+				seq.puts(error.str,error.file.pointer)
+| 				endif	
+			endwhile
+			if form.command = 1 then							|#KOSO01005.sn
+				if tot.debit <> tot.credit then
+					if not isspace(error.str) then
+						error.str = strip$(error.str) & "|" & "Debit and credit do not match."
+					else
+						error.str = "Debit And Credit Amounts do not match."
+					endif
+					flag = 1	
+				endif
+			else
+				commit.transaction()	
+			endif										|#KOSO01005.en
+		endif
+	else 
+		|Error in copy file to server
+	endif
+
+	stpapi.end.session("tfgld1115m000")
+	stpapi.end.session("tfgld1101m100")
+	seq.close(read.file.pointer)
+	seq.close(error.file.pointer)
+	ret_val = server2client(server.error.file,"",true)
+}
+
+
+function string validate_data()
+{
+	string error(500),error1(500)
+	
+	error = ""
+	
+	if temp.cono <> comp.no then					|#KOSO01005.sn
+		
+		select	tfgld015.ttyp
+		from	tfgld015
+		where	tfgld015._index1 = {:comp.no,:temp.cono,:ttyp.f}
+		as set with 1 rows
+		selectdo
+		selectempty
+			error = strip$(error) & "Inter Company relation not defined,"
+		endselect	
+	endif								|#KOSO01005.eo
+	
+	select	tfgld008.leac, tfgld008.inta 				|#KOSO01005.n
+	from	tfgld008
+	where	tfgld008._index1 = {:temp.leac}
+	and	tfgld008.subl = 0
+	selectdo
+		if tfgld008.inta = tcyesno.yes then			|#KOSO01005.sn
+			select tfgld048.jouv
+			from	tfgld048
+			where	tfgld048._index1 = {:temp.leac}
+			and	tfgld048.jouv = tcyesno.yes
+			selectdo
+			selectempty
+				error = strip$(error) & "Integration account is blocked for manual posting"
+			endselect
+		endif							|#KOSO01005.en
+		
+	selectempty
+		error = strip$(error) & "Ledger Account Not Found or Not Of Sub Level Zero,"
+	endselect
+	
+											|#KOSO01005.sn 
+	|Check for Ledger account
+	select	tfgld008.leac,tfgld008.blbp,
+		tfgld008.iprj,tfgld008.ifas,
+		tfgld008.bloc
+	from	tfgld008
+	where	tfgld008._index1 = {:temp.leac}
+	and	tfgld008.subl = 0
+	selectdo		
+		if tfgld008.ifas <> tfgld.ifas.not.applicable then
+			error = strip$(error) & "Fixed Asset should not ne applicable for the Ledger Account"
+		endif
+		
+		if tfgld008.iprj <> tfgld.intr.not.applicable then
+			error = strip$(error) & "Operation Management Integration should not be applicable for the Ledger Account"
+		endif
+		
+		if tfgld008.bloc <> tfgld.bloc.free then
+			error = strip$(error) & "Ledger should be free"
+		endif
+	endselect									|#KOSO01005.en
+	
+	
+	|Check Dimension 1
+	
+	LEDGER_DIMENSION(temp.leac,1)
+	if	itfmsldll0032.check_dimension_is_mandatory(result.dopt) and isspace(temp.dim1) then
+		|Write error message
+		
+		error = strip$(shiftl$(error)) & "Dimension 1 is Mandatory"
+	else
+		if not itfmsldll0032.check.dimension(1,temp.dim1) and (not isspace(temp.dim1)) then
+			error  = strip$(error) & "Dimension 1 is not valid"
+		endif	
+	endif
+	
+	LEDGER_DIMENSION(temp.leac,2)
+	if	itfmsldll0032.check_dimension_is_mandatory(result.dopt) and isspace(temp.dim2) then
+		|Write error message
+		
+		error = strip$(shiftl$(error)) & "Dimension 2 is Mandatory"
+	else
+		if not itfmsldll0032.check.dimension(2,temp.dim2) and (not isspace(temp.dim2)) then
+			error  = strip$(error) & "Dimension 2 is not valid"
+		endif
+	endif
+	
+	LEDGER_DIMENSION(temp.leac,3)
+	if	itfmsldll0032.check_dimension_is_mandatory(result.dopt) and isspace(temp.dim3) then
+		|Write error message
+		
+		error = strip$(shiftl$(error)) & "Dimension 3 is Mandatory"
+	else
+		if not itfmsldll0032.check.dimension(3,temp.dim3) and (not isspace(temp.dim3)) then
+			error  = strip$(error) & "Dimension 3 is not valid"
+		endif
+	endif
+	
+	LEDGER_DIMENSION(temp.leac,4)
+	if	itfmsldll0032.check_dimension_is_mandatory(result.dopt) and isspace(temp.dim4) then
+		|Write error message
+		
+		error = strip$(shiftl$(error)) & "Dimension 4 is Mandatory"
+	else
+		if not itfmsldll0032.check.dimension(4,temp.dim4) and (not isspace(temp.dim4)) then
+			error  = strip$(error) & "Dimension 4 is not valid"
+		endif
+	endif
+	
+	LEDGER_DIMENSION(temp.leac,5)
+	if	itfmsldll0032.check_dimension_is_mandatory(result.dopt) and isspace(temp.dim5) then
+		|Write error message
+		
+		error = strip$(shiftl$(error)) & "Dimension 5 is Mandatory"
+	else
+		if not itfmsldll0032.check.dimension(5,temp.dim5) and (not isspace(temp.dim5)) then
+			error  = strip$(error) & "Dimension 5 is not valid"
+		endif
+	endif
+	
+| 	|Check Tax Code
+	if not isspace(temp.cvat) then
+		select	tcmcs037.cvat
+		from	tcmcs037
+		where	tcmcs037._index1 = {:temp.cvat}
+		as set with 1 rows
+		selectdo
+		selectempty
+			error = strip$(error) & "Tax Code not Found,"
+		endselect
+	endif	
+	
+							|#KOSO01005.sn 
+	|Check for BP
+	select	tfgld008.leac,tfgld008.blbp,
+		tfgld008.iprj,tfgld008.ifas,
+		tfgld008.bloc
+	from	tfgld008
+	where	tfgld008._index1 = {:temp.leac}
+	and	tfgld008.subl = 0
+	selectdo
+		if tfgld008.blbp = tcyesno.yes then
+			if isspace(temp.bpid) then
+				error = strip$(error) & "Business Partner is mandatory"
+			endif
+		endif
+	endselect
+	
+	if not isspace(error) then			
+		flag = 1
+	endif						
+							|#KOSO01005.en
+							
+	return(error)
+}
+
+|**********  Create JV Header
+function Process_JV
+			(
+				domain	tfgld.ttyp	i.ttyp,		|Transaction Type
+				domain	tfgld.btno	i.btno,		|Batch Number
+				domain	tfgld.year	i.year,		|Fiscal Year
+			ref	domain	tfgld.docn	o.docn	
+			)
+{
+
+	string 	error.msg(100),temp.docn(10)
+	long ret_val
+	
+	stpapi.put.field("tfgld1101m100", "tfgld101.year", str$(i.year))			
+	stpapi.put.field("tfgld1101m100", "tfgld101.btno", str$(i.btno))			
+	stpapi.put.field("tfgld1101m100", "tfgld101.ttyp", i.ttyp)		|#ISG001013.n
+	ret_val = stpapi.find("tfgld1101m100", error.msg)
+	if ret_val = 1 then
+		ret_val = stpapi.mark("tfgld1101m100", error.msg)
+		if ret_val then
+			stpapi.handle.subproc("tfgld1101m100","tfgld1115m000", "add")
+			stpapi.form.command("tfgld1101m100",5,"enter.transactions",error.msg)
+		endif
+	endif
+
+	stpapi.put.field("tfgld1115m000","tfgld102.ttyp",i.ttyp)
+	stpapi.put.field("tfgld1115m000","tfgld102.docn",str$(o.docn))
+	stpapi.put.field("tfgld1115m000","ccur.f",i.ccur)	|#GT.27062014.n
+	ret_val = stpapi.change.view("tfgld1115m000", error.msg)
+	stpapi.get.field("tfgld1115m000","tfgld102.docn",temp.docn)
+	
+}
+
+
+function string create.lines(
+				domain	tccom.bpid	i.bpid,		|Business Partner
+				domain	tfgld.leac	i.leac,		|Ledger Account
+				domain	tfgld.dimx	i.dim1,		|Dimension 1
+				domain	tfgld.dimx	i.dim2,		|Dimension 2
+				domain	tfgld.dimx	i.dim3,		|Dimension 3
+				domain	tfgld.dimx	i.dim4,		|Dimension 4
+				domain	tccvat		i.cvat,		|Tax Code
+				domain	tfgld.vtyp	i.vtyp,		|Tax Origin
+				domain	tfgld.refc	i.refr,		|Transaction Reference
+				domain	tfgld.dbcr	i.dbcr,		|Debit/Credit
+				domain	tfgld.amnt	i.amount,	|Net Amount
+			ref 	domain	tfgld.lino	o.lino
+			)
+{
+	long ret_val
+	string error.msg(500) ,temp.lino(4),error1(100)
+	
+	if not isspace(i.bpid) then
+		stpapi.put.field("tfgld1115m000","tfgld102.bpid",i.bpid)
+	endif
+	
+	if not isspace(i.leac) then
+		stpapi.put.field("tfgld1115m000","tfgld102.leac",i.leac)
+	endif
+	
+	if not isspace(i.dim1) then
+		stpapi.put.field("tfgld1115m000","tfgld102.dim1",i.dim1)
+	endif
+	
+	if not isspace(i.dim2) then
+		stpapi.put.field("tfgld1115m000","tfgld102.dim2",i.dim2)
+	endif
+	
+	if not isspace(i.dim3) then
+		stpapi.put.field("tfgld1115m000","tfgld102.dim3",i.dim3)
+	endif
+	
+	if not isspace(i.dim4) then
+		stpapi.put.field("tfgld1115m000","tfgld102.dim4",i.dim4)
+	endif
+	
+	if not isspace(i.cvat) then
+		stpapi.put.field("tfgld1115m000","tfgld102.cvat",i.cvat)
+	endif
+	
+	if i.vtyp <> empty then
+		stpapi.put.field("tfgld1115m000","tfgld102.vtyp",str$(etol(i.vtyp)))
+	endif
+	
+	if not isspace(i.refr) then
+		stpapi.put.field("tfgld1115m000","tfgld102.refr",i.refr)
+	endif
+	
+	if i.dbcr <> empty then
+		stpapi.put.field("tfgld1115m000","tfgld102.dbcr",str$(etol(i.dbcr)))
+	endif
+	
+	if i.amount <> 0 then
+		stpapi.put.field("tfgld1115m000","tfgld102.amnt",str$(i.amount))
+	endif
+	
+	ret_val = stpapi.insert("tfgld1115m000",true,error.msg)
+	if ret_val = 1 then
+		stpapi.get.field("tfgld1115m000","tfgld102.lino",temp.lino)
+		o.lino = lval(temp.lino)
+	else
+		stpapi.recover("tfgld1115m000",error1)
+	endif
+	
+	
+	return(error.msg)
+}
+
+
+function insert.to.tfisg102(	domain tcncmp		i.temp.cono,		|Company code		|#KOSO01005.sn
+				domain tfgld.year	i.temp.year,		|Salary Year
+				domain tfgld.prod	i.temp.fprd,		|Salary month
+				domain tfgld.leac	i.temp.leac,		|Ledger Account
+				domain tfgld.dimx	i.temp.dim1,		|Dimension 1
+				domain tfgld.dimx	i.temp.dim2,		|Dimension 2
+				domain tfgld.dimx	i.temp.dim3,		|Dimension 3
+				domain tfgld.dimx	i.temp.dim4,		|Dimension 4
+				domain tfgld.dimx	i.temp.dim5,		|Dimension 5
+				domain tcccur		i.temp.ccur,		|Tax Code
+				domain tfgld.amnt	i.temp.amnt,		|Tax Origin
+				long			i.temp.dbcr,		|Debit/Credit
+				domain tfgld.refc	i.temp.refr,		|Reference
+				domain tccom.bpid	i.temp.bpid,		|BP ID
+			ref 	domain	tfgld.lino	o.temp.serial.no)	|Line number
+{
+	long ret.val 
+	
+	select tfisg102.sern:serial.no
+	from	tfisg102
+	where	tfisg102._index1 = {:i.temp.cono,:i.temp.year,:i.temp.fprd}
+	selectdo
+	endselect
+	
+	serial.no = serial.no + 1
+	
+	tfisg102.sern =	serial.no		|Company code
+	tfisg102.cono =	i.temp.cono		|Company code
+	tfisg102.year =	i.temp.year		|Salary Year
+	tfisg102.fprd =	i.temp.fprd		|Salary month
+	tfisg102.leac =	i.temp.leac		|Ledger Account
+	tfisg102.dim1 =	i.temp.dim1		|Dimension 1
+	tfisg102.dim2 =	i.temp.dim2		|Dimension 2
+	tfisg102.dim3 =	i.temp.dim3		|Dimension 3
+	tfisg102.dim4 =	i.temp.dim4		|Dimension 4
+	tfisg102.dim5 =	i.temp.dim5		|Dimension 5
+	tfisg102.ccur =	i.temp.ccur		|Tax Code
+	tfisg102.amnt =	i.temp.amnt		|Tax Origin
+	tfisg102.dbcr =	ltoe(i.temp.dbcr)	|Debit/Credit
+	tfisg102.refr =	i.temp.refr
+	tfisg102.bpid = i.temp.bpid		|BP ID
+	ret.val = db.insert(ttfisg102,db.retry,db.skip.dupl)
+	
+	o.temp.serial.no = serial.no
+}	
+function get.records.to.create.lines(	domain tcncmp		i.temp.cono,		|Company code		
+					domain tfgld.year	i.temp.year,		|Salary Year
+					domain tfgld.prod	i.temp.fprd,
+					long 			i.temp.serial.no)
+{
+	domain tcpono o.line.no
+	select tfisg102.* from	tfisg102
+	where	tfisg102._index1 = {:i.temp.cono,:i.temp.year,:i.temp.fprd,:i.temp.serial.no}
+	selectdo
+		error.msg = create.lines.JV(	tfisg102.cono,		|Company code
+						temp.cono,		|Target Company
+						tfisg102.year,		|Salary Year
+						tfisg102.fprd,		|Salary month
+						tfisg102.leac,		|Ledger Account
+						tfisg102.dim1,		|Dimension 1
+						tfisg102.dim2,		|Dimension 2
+						tfisg102.dim3,		|Dimension 3
+						tfisg102.dim4,		|Dimension 4
+						tfisg102.dim5,		|Dimension 5
+| 						tfisg102.ccur,		|Tax Code	|#GT.27062014.o
+						tfisg102.amnt,		|Tax Origin
+						tfisg102.dbcr,		|Debit/Credit
+						tfisg102.refr,
+						tfisg102.bpid,
+						o.line.no)
+		if not isspace(error.msg) then
+			error.str = strip$(error.str) & "|" &  strip$(error.msg)
+		else
+			error.str = strip$(error.str) & "|" & str$(get.docn) & "-" &  str$(o.line.no)
+			update.table.tfisg102(	tfisg102.cono,		|Company code
+						tfisg102.year,		|Salary Year
+						tfisg102.fprd,
+						i.temp.serial.no,
+| 						o.docn,
+						get.docn,
+						o.line.no,
+						ttyp.f	)
+		endif	
+	endselect	
+}
+
+function string create.lines.JV(	domain tcncmp		i.temp.cono,		|Company code
+					domain tcncmp		i.temp.tcom,		|Target Company
+					domain tfgld.year	i.temp.year,		|Salary Year
+					domain tfgld.prod	i.temp.fprd,		|Salary month
+					domain tfgld.leac	i.temp.leac,		|Ledger Account
+					domain tfgld.dimx	i.temp.dim1,		|Dimension 1
+					domain tfgld.dimx	i.temp.dim2,		|Dimension 2
+					domain tfgld.dimx	i.temp.dim3,		|Dimension 3
+					domain tfgld.dimx	i.temp.dim4,		|Dimension 4
+					domain tfgld.dimx	i.temp.dim5,		|Dimension 5
+| 					domain tcccur		i.temp.ccur,		|Tax Code	|#GT.27062014.o
+					domain tfgld.amnt	i.temp.amnt,		|Tax Origin
+					domain tfgld.dbcr	i.temp.dbcr,		|Debit/Credit
+					domain tfgld.refc	i.temp.refr,		|Reference
+					domain tccom.bpid	i.temp.bpid,		|BP ID
+				ref 	domain	tfgld.lino	o.lino)			|Line number
+{
+	long ret_val
+	string error.msg(500) ,temp.lino(4),error1(100),inp.docn(8)
+	domain tccom.bpid	i.bpid
+	domain	tccvat		i.cvat			
+	domain	tfgld.vtyp	i.vtyp
+	
+	if i.temp.cono <> 0 then
+		stpapi.put.field("tfgld1115m000","tfgld102.cono",str$(i.temp.cono))
+	endif
+	
+	if i.temp.tcom <> 0 then
+		stpapi.put.field("tfgld1115m000","tfgld102.tcom",str$(i.temp.tcom))
+	endif
+	
+	i.bpid = " "
+
+	if not isspace(i.bpid) then
+		stpapi.put.field("tfgld1115m000","tfgld102.bpid",i.temp.bpid)
+	endif
+	
+	if not isspace(i.temp.leac) then
+		stpapi.put.field("tfgld1115m000","tfgld102.leac",i.temp.leac)
+	endif 
+	
+	if not isspace(i.temp.dim1) then
+		stpapi.put.field("tfgld1115m000","tfgld102.dim1",i.temp.dim1)
+	endif
+	
+	if not isspace(i.temp.dim2) then
+		stpapi.put.field("tfgld1115m000","tfgld102.dim2",i.temp.dim2)
+	endif
+	
+	if not isspace(i.temp.dim3) then
+		stpapi.put.field("tfgld1115m000","tfgld102.dim3",i.temp.dim3)
+	endif
+	
+	if not isspace(i.temp.dim4) then
+		stpapi.put.field("tfgld1115m000","tfgld102.dim4",i.temp.dim4)
+	endif
+	
+	if not isspace(i.temp.dim5) then
+		stpapi.put.field("tfgld1115m000","tfgld102.dim5",i.temp.dim5)
+	endif
+	
+	if i.vtyp <> empty then
+		stpapi.put.field("tfgld1115m000","tfgld102.vtyp",str$(etol(i.vtyp)))
+	endif
+						|GT.27062014.so
+| 	if not isspace(i.temp.ccur) then
+| 		stpapi.put.field("tfgld1115m000","tfgld102.ccur",i.temp.ccur)
+| 	endif
+						|GT.27062014.eo
+	if not isspace(i.temp.refr) then
+		stpapi.put.field("tfgld1115m000","tfgld102.refr",i.temp.refr)
+	endif
+	
+	if i.temp.dbcr <> empty then
+		stpapi.put.field("tfgld1115m000","tfgld102.dbcr",str$(etol(i.temp.dbcr)))
+	endif
+	
+	if i.temp.amnt <> 0 then
+		stpapi.put.field("tfgld1115m000","tfgld102.amnt",str$(i.temp.amnt))
+	endif
+	
+	ret_val = stpapi.insert("tfgld1115m000",true,error.msg)
+	if ret_val = 1 then
+		stpapi.get.field("tfgld1115m000","tfgld102.lino",temp.lino)
+		stpapi.get.field("tfgld1115m000","tfgld102.docn",inp.docn)	|GT
+		o.lino = lval(temp.lino)
+		get.docn = lval(inp.docn)
+	else
+		stpapi.recover("tfgld1115m000",error1)
+	endif
+	
+	
+	return(error.msg)
+
+}
+
+function initialize()
+{
+	tot.debit = 0.00
+	tot.credit = 0.00
+	serial.no = 0
+	flag = 0
+}		
+
+function update.table.tfisg102(domain tcncmp		i.cono,		|Company code		
+				domain tfgld.year	i.year,		|Salary Year
+				domain tfgld.prod	i.fprd,		|Salary Month
+				long 			i.serial.no,
+				domain	tfgld.docn	i.docn,
+				domain tcpono 		i.line.no,
+				domain	tfgld.ttyp	i.ttyp				)
+{		
+	select	tfisg102.btno, 
+		tfisg102.docn, 
+		tfisg102.lino 
+	from	tfisg102 for update
+	where	tfisg102._index1 = {:i.cono,:i.year,:i.fprd,:i.serial.no}
+	selectdo
+		tfisg102.btno = o.btno
+		tfisg102.docn = i.docn
+		tfisg102.lino = i.line.no
+		tfisg102.ttyp = i.ttyp
+		db.update(ttfisg102,db.retry)
+	endselect
+}

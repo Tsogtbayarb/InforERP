@@ -1,0 +1,154 @@
+|******************************************************************************
+|* dmisg1414m001  0  VRC B61U a7 isg 
+|* Revised Document List
+|* Installation user             
+|* 2015-01-15
+|******************************************************************************
+|* Main table dmisg114 DCR, Form Type 4
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+  table   tdmisg114 | DCR
+  table   tdmisg115
+  table   ttpptc100
+  table   tdmisg001
+
+	extern  domain  tccprj           cprj.f    fixed
+	extern  domain  tccprj           cprj.t    fixed
+	extern  domain  tcccty           catg.f    fixed
+	extern  domain  tcccty           catg.t    fixed
+	extern	domain	tcdate		date.f, date.t
+   
+   string 	line(1048)
+long ret2
+long stat.fp
+string err.file(100)
+string file.name(100)
+#pragma used dll ottdllbw
+
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** field section *********************************
+field.cprj.f:
+when.field.changes:
+   cprj.t = cprj.f
+
+field.catg.f:
+when.field.changes:
+	catg.t = catg.f
+	
+field.date.f:
+when.field.changes:
+   date.t = date.f
+
+|****************************** choice section ********************************
+choice.cont.generate:
+on.choice:
+	generate.file()
+
+|****************************** function section ******************************
+
+functions:
+function extern generate.file()
+{
+	err.file = bse.tmp.dir$() & str$(utc.num()) & ".xls"
+	
+	file.name = "c:\temp\" & str$(utc.num())  & ".xls"
+	
+	stat.fp = seq.open(err.file, "w+")
+	if stat.fp >0 then
+ 		seq.seek(0, 0, stat.fp)
+	endif
+
+	generate.header()
+	
+	read.main.table()
+	
+	seq.close(stat.fp)
+	ret2 = server2client(err.file,file.name,1)
+	ret2 = app_start(file.name,"c:","","","")
+}
+
+function generate.header()
+{
+	line = concat$("	",
+			sprintf$("Project ID"),
+			sprintf$("Element ID"),
+			sprintf$("Element Description"),
+			sprintf$("Document Number"),
+			sprintf$("Document Revision"),
+			sprintf$("Document Title"),
+			sprintf$("Responsible Department"),
+			sprintf$("Changes to be Implemented"),
+			sprintf$("DCR No."),
+			sprintf$("DCR Description"),
+			sprintf$("DCR Category"),
+			sprintf$("DCR Approval Date"))
+			
+	line = strip$(shiftl$(line))
+
+	seq.puts(line,stat.fp)
+}
+
+
+function read.main.table()
+{
+	select	dmisg114.*
+	from	dmisg114
+	where	dmisg114._index2 inrange {:cprj.f} and {:cprj.t}
+	and	dmisg114.stat = dmisg.dcr.approved
+	and	dmisg114.appt between :date.f and :date.t
+	selectdo
+		select 	tpptc100.desc
+		from	tpptc100
+		where	tpptc100._index1 = {:dmisg114.cprj, :dmisg114.cspa}
+		selectdo
+		selectempty
+			tpptc100.desc = ""
+		endselect
+		
+		select 	dmisg115.*
+		from	dmisg115
+		where	dmisg115._index1 = {:dmisg114.dcrn}
+		and	dmisg115.catg inrange :catg.f and :catg.t
+		selectdo
+			select 	dmisg001.dttl, dmisg001.resp
+			from	dmisg001
+			where	dmisg001._index1 = {:dmisg115.docd, :dmisg115.revn}
+			selectdo
+			selectempty
+				dmisg001.dttl = ""
+				dmisg001.resp = ""
+			endselect
+			
+			line = ""
+			line = concat$("	",
+					sprintf$("%s",dmisg114.cprj),
+					sprintf$("%s",dmisg114.cspa),
+					sprintf$("%s",tpptc100.desc),
+					sprintf$("%s",dmisg115.docd),
+					sprintf$("%s",dmisg115.revn),
+					sprintf$("%s",dmisg001.dttl),
+					sprintf$("%s",dmisg001.resp),
+					sprintf$("%s",dmisg115.remk),
+					sprintf$("%s",dmisg114.dcrn),
+					sprintf$("%s",dmisg114.dsca),
+					sprintf$("%s","'" & dmisg115.catg),
+					sprintf$("%d",dmisg114.appt))
+			line = strip$(shiftl$(line))
+			seq.puts(line,stat.fp)
+		endselect
+	endselect
+	
+
+}
+

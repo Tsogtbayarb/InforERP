@@ -1,0 +1,198 @@
+|******************************************************************************
+|* tfisg1155m000  0  VRC B61U a7 live
+|* Maintain Discripent Supplier Document Return
+|* Installation user             
+|* 2014-11-04
+|******************************************************************************
+|* Main table tfisg155 Discripent Supplier Document Return, Form Type 1
+|******************************************************************************
+|* ISGEC001159, IT0352, Abhishek Singh , 21/02/2015
+|* Alert to buyer on creation of discrepant document in his name                                                                           
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttfisg155 | Discripent Supplier Document Return
+
+	extern	domain	tcyesno		var.txta
+	
+											|#ISGEC001159.sn
+	#include               <bic_cmf>
+	#pragma used dll ottdllbw 
+	table	ttccom001
+	table	tbpmdm001
+	table	ttccom100
+	table	ttdpur400
+	table	ttfisg154
+	table	ttfisg001
+											|#ISGEC001159.en
+|****************************** program section ********************************
+
+choice.send.mail:									|#ISGEC001159.sn
+before.choice:
+	if isspace(tfisg155.orno) then
+		message("Mail cannot be send as Purchase Order field is blank")
+		choice.again()
+	endif		
+on.choice:
+	if send.email.alert() then
+		message("Sending Email Failed")
+	endif										|#ISGEC001159.en					
+	
+|****************************** group section **********************************
+|****************************** field section **********************************
+field.var.txta:
+before.display:
+	var.txta = tfisg155.txta <> 0 ? tcyesno.yes : tcyesno.no
+
+	
+field.tfisg155.irno:
+before.zoom:
+	query.extend.where.in.zoom("tfacp100.stin <> tfacp.stin.copied")
+	
+|***************************** function section ********************************
+functions:
+
+function long send.email.alert()					|*ISGEC001159.sn
+{
+	string tmp.file(200),line(500)
+	long fp,srno
+	domain tcemno	emno.code
+	domain	tfgld.user	user.code
+	
+	long    message.ID
+        long    to.ID
+        long    attachment.ID
+        long    ret
+
+        domain ttcmf.prov service       
+                        |Infor ERP Enterprise eMessage Connector service for 
+                        |transporting messages
+        long stat       |Variable to hold return values
+        long mid        |CMF message id
+	
+	tmp.file = creat.tmp.file$(bse.tmp.dir$())
+	fp = seq.open(tmp.file,"w+")
+	if fp <=0 then
+		message("Temp file can not be created")
+		return(1)
+	endif
+
+	select	tfisg001.*
+	from	tfisg001
+	where	tfisg001._index1 = {:tfisg155.irno}
+	selectdo
+	endselect
+	
+	select	tdpur400.otbp,tdpur400.ccon
+	from	tdpur400
+	where	tdpur400._index1 = {:tfisg155.orno}
+	selectdo
+	endselect
+	
+	select	tccom100.nama
+	from	tccom100
+	where	tccom100._index1 = {:tdpur400.otbp}
+	selectdo
+	endselect
+	
+	select	tccom001.nama
+	from	tccom001
+	where	tccom001._index1 = {:tdpur400.ccon}
+	selectdo
+	endselect
+	
+	line = ""
+	line = strip$(line) & "Receipt No. " & tfisg001.rcno & " made against your purchase order no. " & tfisg155.orno |& chr$(13) & chr$(10)
+	| seq.write(line,len(line),fp)
+	
+	line = strip$(line) & " issued on supplier " & strip$(shiftl$(tccom100.nama)) & " has got on hold due to discrepancy " & chr$(13) & chr$(10)
+	seq.write(line,len(line),fp)
+	
+	srno = 0
+	select	tfisg156.reas,tfisg154.dsca
+	from	tfisg156,tfisg154
+	where	tfisg156._index1 = {:tfisg155.irno}
+	and	tfisg156.reas refers to tfisg154
+	selectdo
+		srno = srno + 1
+		line = str$(srno) & ") " & tfisg154.dsca & chr$(13) & chr$(10)
+		seq.write(line,len(line),fp)
+	endselect
+	
+	line = "Please take immediate action to resolve the discrepancy to facilitate receipt confirmation." & chr$(13) & chr$(10)
+	seq.write(line,len(line),fp)
+	
+	ret = seq.close(fp)
+	
+	user.code = logname$
+	select 	bpmdm001.mail,tccom001.nama 
+	from 	tccom001,bpmdm001
+	where 	tccom001._index4 = {:user.code}
+	and	tccom001.emno refers to bpmdm001
+	as set with 1 rows
+	selectdo
+	selectempty
+		bpmdm001.mail = ""
+	endselect
+	
+	if isspace(bpmdm001.mail) then
+		message("Email ID for user " & user.code & " Not maintained")
+		return(1)
+	endif		
+	|******* Email Header
+        message.ID = cmf.create()
+	line = "ALERT : DISCREPANT DOCUMENT " & str$(tfisg155.irno) 
+        ret = cmf.setClass(message.ID, "CMF.NOTE.EMAIL")
+        ret = cmf.setSubject(message.ID,line)
+	
+	|******** from ID
+	to.ID = cmf.createRecipient(message.ID, ttcmf.role.from)  
+	ret = cmf.setRecipientName(to.ID,tccom001.nama)
+        ret = cmf.setRecipientAddress(to.ID, bpmdm001.mail)	
+	ret = cmf.setRecipientType(to.ID, "SMTP")
+ 
+	|******** to ID
+	select 	bpmdm001.mail,tccom001.nama 
+	from 	tccom001,bpmdm001
+	where 	bpmdm001._index1 = {:tdpur400.ccon}
+	and	tccom001.emno refers to bpmdm001
+	and	bpmdm001.mail <> ""
+	selectdo
+		to.ID = cmf.createRecipient(message.ID, ttcmf.role.to)  
+		ret = cmf.setRecipientName(to.ID,tccom001.nama)
+		ret = cmf.setRecipientAddress(to.ID, bpmdm001.mail)	
+		ret = cmf.setRecipientResponsibility(to.ID, "TRUE")		
+		ret = cmf.setRecipientType(to.ID, "SMTP")
+	selectempty
+		message("Email ID for lead buyer not maintained" )
+		return(1)
+	endselect
+	
+	|********* Mail Body
+	attachment.ID = cmf.createAttachment(message.ID)
+	ret = cmf.setAttachmentBody(attachment.ID,ttyeno.yes)
+	ret = cmf.setAttachmentMIME(attachment.ID,"text/plain")                       
+	ret = cmf.setAttachmentFileName(attachment.ID,tmp.file,"abc.txt")
+
+
+	|*********  Send mail
+        if message.ID <>0 then
+                stat = cmf.startService("SMTP",2)
+                if stat<>0 then
+                        message("Message could not be sent "&
+                                "(Infor ERP Enterprise eMessage Connector"&
+                                " service did not start)")
+                        return(1)
+                endif
+                stat = cmf.send(message.ID,"SMTP")
+                if stat<>0 then
+                        message("Message could not be sent "& "(Infor ERP Enterprise eMessage Connector "&
+                                "service refused message)")
+                        cmf.stopService("SMTP",2)
+                        return(1)
+                endif
+                stat = cmf.stopService("SMTP",2)
+        endif
+	return(0)
+}
+									|* ISGEC001159.en

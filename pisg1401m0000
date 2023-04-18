@@ -1,0 +1,126 @@
+|******************************************************************************
+|* tfisg1401m000  0  VRC B61U a7 live
+|* Print Payment Advice Status against P.Invoice
+|* Installation user             
+|* 2014-12-22
+|******************************************************************************
+|* Main table tfcmg101 Payment/Trade Notes Payable Advice, Form Type 4
+|******************************************************************************
+|* IDENT ISGEC0108 ,Mani sharma , 23-12-2014                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttfcmg101 | Payment/Trade Notes Payable Advice
+  table   ttfmsl020
+  extern domain tccprj 	 cprj.f, cprj.t
+  extern domain tcorno 	 adrq.f,adrq.t,orno.f,orno.t
+  extern domain tcdate  	 date.f, date.t,v.odat.t,v.odat.f
+  extern domain tccom.bpid      bpid.f,bpid.t  
+  extern domain tfoption        optn.f,optn.t
+  extern domain tcyesno         chek.f,chek.t
+  extern domain tcpono          pono
+  extern domain tcncmp         i.current.company 
+|****************************** program section ********************************
+before.program:
+	i.current.company = get.compnr()
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.cont.process:
+on.choice:
+   execute(print.data)
+
+choice.print.data:
+on.choice:
+   if rprt_open() then
+       read.main.table()
+       rprt_close()
+   else
+       choice.again()
+   endif
+
+
+|****************************** field section *********************************
+
+field.cprj.f:
+when.field.changes:
+   cprj.t = cprj.f
+
+field.adrq.f:
+when.field.changes:
+   adrq.t = adrq.f
+
+field.date.f:
+when.field.changes:
+   date.t = date.f
+
+field.bpid.f:
+when.field.changes:
+   bpid.t = bpid.f
+
+field.optn.f:
+when.field.changes:
+   optn.t = optn.f
+
+| field.chek.f:
+| when.field.changes:
+|    chek.t = chek.f
+
+field.orno.f:
+when.field.changes:
+   orno.t = orno.f
+
+|****************************** function section ******************************
+
+functions:
+
+function read.main.table()
+{	
+	get.date.utc(date.f, 00, 00, 00, v.odat.f)
+	get.date.utc(date.t, 23, 59, 59, v.odat.t)
+	
+	select tfmsl020.*,tccom100.nama
+	from   tfmsl020,tccom100
+	where  tfmsl020.comp = {:i.current.company}
+	and    tfmsl020.adrq inrange {:adrq.f} and {:adrq.t}
+	and    tfmsl020.rqdt inrange {:v.odat.f} and {:v.odat.t}
+	and    tfmsl020.orno inrange {:orno.f} and {:orno.t}
+	and    tfmsl020.optn inrange {:optn.f} and {:optn.t}
+	and    tfmsl020.bpid inrange {:bpid.f} and {:bpid.t}
+	and    tfmsl020.cprj inrange {:cprj.f} and {:cprj.t} 
+	and    tfmsl020.bpid refers to tccom100
+	selectdo
+		if chek.f = tcyesno.yes then
+			if tfmsl020.stat <> tfmsl.lc.stat.proc then
+				rprt_send()
+			endif
+		else 
+			if tfmsl020.stat = tfmsl.lc.stat.proc then
+			rprt_send()
+			endif	
+		endif
+	endselect
+}
+
+function get.date.utc(
+		domain	tcdate	i.date,
+		long		i.hh,
+		long		i.mn,
+		long		i.ss,
+	ref	domain	tcdate	o.date
+			)
+{
+	long	dd, mm, yy, hh, mn, ss
+	
+	utc.to.date(i.date, yy , mm, dd, hh, mn, ss)
+	o.date = date.to.utc(yy, mm, dd, i.hh, i.mn, i.ss)
+	if	o.date < 0	then
+		o.date = 0
+	endif
+}	

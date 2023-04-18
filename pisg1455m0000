@@ -1,0 +1,223 @@
+|******************************************************************************
+|* tfisg1455m000  0  VRC B61U a7 live
+|* Print Discripent Supplier Docuemnt Return
+|* Installation user             
+|* 2014-11-04
+|******************************************************************************
+|* Main table tfisg155 Discripent Supplier Document Return, Form Type 4
+|******************************************************************************
+|* ID: ISGEC001163, IT0327, Ritu Shrivastava, Dt. 24-02-2015
+|* Modification to print all the IR number whether the receipt is linked or unlinked
+|*
+|ID: ISGEC002016 , IT0352 , Abhishek singh , Dt. 17-06-2015
+|IR against which Receipt has been Confirmed, should not reflect in the report
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttfisg155 | Discripent Supplier Document Return
+	table	ttfisg156
+	table	ttfisg154
+	table	ttdpur400
+	table	ttccom100
+	table	ttccom001
+	table	ttfacp100
+	table	ttdpur406
+	table	twhinh310
+	table	twhinh312
+	table	ttfisg001
+	|****************** Form Variables ****************
+	extern	domain	tfgld.docn	irno.f
+	extern	domain	tfgld.docn	irno.t
+	extern	domain	tcdate		irdt.f
+	extern	domain	tcdate		irdt.t
+	extern	domain	tcemno		buyr.f
+	extern	domain	tcemno		buyr.t
+	extern	domain	tcemno		user.f
+	extern	domain	tcemno		user.t
+	extern	domain	tccom.bpid	bpid.f
+	extern	domain	tccom.bpid	bpid.t
+	extern	domain	tccprj		cprj.f
+	extern	domain	tccprj		cprj.t
+	extern	domain	tcccty		reas.f
+	extern	domain	tcccty		reas.t
+	extern	domain	tcyesno		txta.yn
+	
+	|******************* Script Variables ****************
+	extern	domain	tcdate		v.irdt.f
+	extern	domain	tcdate		v.irdt.t
+	extern	domain	tfgld.docn	prv.irno
+	extern domain  tcorno		v.pono			|#ISGEC001163.n
+	
+	|******************* Report Variables *******************
+	extern	domain	tcdate		rep.irdt
+	extern	domain	tccprj		rep.cprj
+	extern	domain	tfgld.amnt	tot.amnt
+
+	long 	prnt.data
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+	get.screen.defaults()
+
+|****************************** choice section ********************************
+choice.print.data:
+on.choice:
+	if	rprt_open() then
+		read.main.table()
+		rprt_close()
+	else
+		choice.again()
+	endif
+
+
+|****************************** field section *********************************
+field.irno.f:
+when.field.changes:
+	irno.t = irno.f
+
+before.zoom:
+	query.extend.where.in.zoom("tfacp100.stin = tfacp.stin.open")
+
+field.irno.t:
+before.zoom:
+	query.extend.where.in.zoom("tfacp100.stin = tfacp.stin.open")
+	
+field.irdt.f:
+when.field.changes:
+	irdt.t = irdt.f
+	
+field.bpid.f:
+when.field.changes:
+	bpid.t = bpid.f
+	
+field.user.f:
+when.field.changes:
+	user.t = user.f
+	
+field.buyr.f:
+when.field.changes:
+	buyr.t = buyr.f
+	
+field.cprj.f:
+when.field.changes:
+	cprj.t = cprj.f
+	
+field.reas.f:
+when.field.changes:
+	reas.t = reas.f
+|****************************** function section ******************************
+
+functions:
+
+function read.main.table()
+{
+	get.date.utc(irdt.f, 00, 00, 00, v.irdt.f)
+	get.date.utc(irdt.t, 23, 59, 59, v.irdt.t)
+	
+	prv.irno = 0
+	tot.amnt = 0
+	select	tfisg155.*, tfacp100.*, tdpur400.otbp, tccom100.nama,		
+		tccom001.nama							
+	from	tfisg155, tfacp100, tdpur400, tccom100, tccom001 		
+	where	tfisg155._index1 inrange {:irno.f}	and	{:irno.t}
+	and	tfisg155.irno refers to tfacp100
+	and	tfacp100.cdf_irdt inrange :v.irdt.f	and	:v.irdt.t
+	and	tfacp100.cdf_cprj inrange :cprj.f	and	:cprj.t
+	and	tfacp100.cdf_pono refers to tdpur400				
+	and	tdpur400._index4 inrange {:buyr.f}	and	{:buyr.t}	
+	and	tdpur400._index2 inrange {:bpid.f}	and	{:bpid.t}	
+	and	tfisg155.user inrange :user.f	and	:user.t
+	and	tdpur400.otbp refers to tccom100 Unref Clear			
+	and	tdpur400.ccon refers to tccom001 Unref Clear			
+	order by tfisg155._index1
+	selectdo
+		rep.irdt = 0
+		prnt.data = 0
+		rep.cprj = ""
+		get.var(pid, "tfacp100.cdf_irdt", rep.irdt)
+		get.var(pid, "tfacp100.cdf_cprj", rep.cprj)
+		
+		get.var(pid, "tfacp100.cdf_pono", v.pono)		
+				
+		select	tfisg156.*, tfisg154.dsca
+		from	tfisg156, tfisg154
+		where	tfisg156._index1 inrange {:tfisg155.irno, :reas.f}
+					and	{:tfisg155.irno, :reas.t}
+		and	tfisg156.reas refers to tfisg154
+		selectdo
+			select	tfisg001.rcno						|#ISGEC002016.sn
+			from	tfisg001
+			where	tfisg001._index1 = {:tfisg155.irno}
+			selectdo
+				select	whinh310.stat
+				from	whinh310
+				where	whinh310._index1 = {:tfisg001.rcno}
+				and	whinh310.stat = whinh.rhst.confirmed
+				selectdo
+					prnt.data = 1
+				selectempty
+					select	tdpur406.conf
+					from	tdpur406
+					where 	tdpur406._index2 = {:tfisg001.rcno}
+					and	tdpur406.conf = tcyesno.yes
+					selectdo
+						prnt.data = 1
+					endselect
+				endselect		
+			endselect							|#ISGEC002016.en
+				
+			if prnt.data = 0 then	
+				select	whinh310.stat
+				from	whinh312, whinh310
+				where	whinh312.psno = :1
+				and	whinh312.rcno refers to whinh310
+				and	whinh310.stat <> whinh.rhst.confirmed
+				as set with 1 rows
+				wherebind(1, str$(tfisg155.irno))
+				selectdo
+					if	prv.irno <> tfisg155.irno	then
+						tot.amnt = tot.amnt + tfacp100.amth(1)
+						prv.irno = tfisg155.irno
+					endif	
+	| 				rprt_send()				|#ISGEC001163.o
+				selectempty
+					select	tdpur406.conf
+					from	tdpur406
+					where	tdpur406.dino = :1
+					and	tdpur406.conf = tcyesno.no
+					as set with 1 rows
+					wherebind(1, str$(tfisg155.irno))
+					selectdo
+						if	prv.irno <> tfisg155.irno	then
+							tot.amnt = tot.amnt + tfacp100.amth(1)
+							prv.irno = tfisg155.irno
+						endif	
+	| 					rprt_send()			|#ISGEC001163.o
+					endselect
+				endselect
+				rprt_send()		|#ISGEC001163.n
+			endif	
+		endselect
+	endselect
+}
+
+function get.date.utc(
+		domain	tcdate	i.date,
+		long		i.hh,
+		long		i.mn,
+		long		i.ss,
+	ref	domain	tcdate	o.date
+			)
+{
+	long	dd, mm, yy, hh, mn, ss
+	
+	utc.to.date(i.date, yy , mm, dd, hh, mn, ss)
+	o.date = date.to.utc(yy, mm, dd, i.hh, i.mn, i.ss)
+	if	o.date < 0	then
+		o.date = 0
+	endif
+}	

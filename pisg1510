@@ -1,0 +1,307 @@
+|******************************************************************************
+|* tfisg151  0  VRC B61U a7 live
+|* DAL2 for tfisg151
+|* baan
+|* 14-11-01 [16:50]
+|******************************************************************************
+|* Script Type: DAL
+|******************************************************************************
+|* ID ISGEC015039 ,Ankit Sharma,27-11-2015       VRC B61U a7 isg      
+|* Modification for BG Functionality                                                                             
+|******************** Includes
+	#include <bic_dal2>
+	#include "itcmcs2000"	|* DAL(-GUI) Support Defines
+
+|*************** Table declaration ******************
+	table	ttfisg151
+	table	ttfisg300					|#ISGEC015039.sn
+	table	ttcmcs050
+	table	ttcmcs051						
+	table	ttdpur400						
+	table	ttdpur401						
+	
+	extern domain	tcseri	seri				
+	extern domain	tcdate	ddte			
+	extern domain	tccwoc	cofc
+	extern domain	tfgld.date	mdat
+	
+	long yr,mt,dy,hh,mm,ss					|#ISGEC015039.en
+|****************************** object hooks **********************************
+
+function extern boolean method.is.allowed(
+			long		i.method)
+{
+	on case i.method
+		case DAL_NEW:
+		if not new.method.is.allowed() then
+			dal.set.error.message("@Cannot insert a record.")	
+			return(false)
+		endif
+		break
+	case DAL_UPDATE:
+		if not update.method.is.allowed() then
+			dal.set.error.message("@Cannot modify this record.")
+			return(false)
+		endif
+		break
+	case DAL_DESTROY:
+| 		if not destroy.method.is.allowed() then				|#ISGEC015039.so
+| 			dal.set.error.message("@Cannot delete this record.")	|#ISGEC015039.eo
+			return(false)			
+| 		endif								|#ISGEC015039.o			
+		break
+	endcase
+
+	return(true)
+}
+
+function extern long before.open.object.set()
+{
+	read.parameters()
+	define.field.dependencies()
+	return(0)
+}
+
+function extern long before.save.object(long type)
+{
+	on case type
+	case DAL_NEW :
+		
+| 		select	tdpur400.cofc:cofc						|#ISGEC015039.sn
+| 		from	tdpur400
+| 		where	tdpur400._index1 = {:tfisg151.orno}
+| 		selectdo
+| 			tfisg151.cwoc = cofc
+| 		endselect	
+
+		select	tdpur401.ddta:ddte
+		from	tdpur401
+		where	tdpur401._index1  = {:tfisg151.orno}
+		order by tdpur401.ddta desc
+		as set with 1 rows
+		selectdo
+			tfisg151.mdat = ddte
+		endselect
+		
+		utc.to.date(tfisg151.mdat,yr,mt,dy,hh,mm,ss)
+		mdat = date.to.num(yr,mt,dy)
+		if tfisg151.edte < mdat and tfisg151.type(1;1) = "A" then
+			dal.set.error.message("@Expiry of Advance Bank Guarantee is earlier than Material Delivery date")
+			return(DALHOOKERROR)
+		endif
+		
+		if tfisg151.edte < tfisg151.mwdt and tfisg151.type(1;1) = "P" then
+			dal.set.error.message("@Expiry of Performance Bank Guarantee is earlier than Material Warranty Expiry date")
+			return(DALHOOKERROR)
+		endif
+		
+		
+| 		if tfisg151.cwoc = tfisg300.dep1 then						
+| 			seri = tfisg300.ser1
+| 		else if	 tfisg151.cwoc = tfisg300.dep2 then
+| 			 seri = tfisg300.ser2	
+| 		else if	 tfisg151.cwoc = tfisg300.dep3 then
+| 			 seri = tfisg300.ser3
+| 		else if	 tfisg151.cwoc = tfisg300.dep4 then
+| 			 seri = tfisg300.ser4
+| 		else if	 tfisg151.cwoc = tfisg300.dep5 then
+| 			 seri = tfisg300.ser5	 
+| 		else if	 tfisg151.cwoc = tfisg300.dep6 then
+| 			 seri = tfisg300.ser6
+| 		endif
+| 		endif
+| 		endif
+| 		endif
+| 		endif
+| 		endif
+		
+		select	tcmcs050.ffno from tcmcs050 for update
+		where	tcmcs050._index1 = {:tfisg300.nrgr,:tfisg151.bgno}
+		and     tcmcs050.blck = tcyesno.no
+		as set with 1 rows
+		selectdo
+			tfisg151.bgno = tfisg151.bgno(1;tcmcs051.lngt) & sprintf$("%@999999@",tcmcs050.ffno)
+			tcmcs050.ffno = tcmcs050.ffno + 1
+			db.update(ttcmcs050,db.retry)
+		endselect							
+										
+										|#ISGEC015039.en
+		break
+	case DAL_UPDATE:
+
+		select	tdpur401.ddta:ddte
+		from	tdpur401
+		where	tdpur401._index1  = {:tfisg151.orno}
+		order by tdpur401.ddta desc
+		as set with 1 rows
+		selectdo
+			tfisg151.mdat = ddte
+		endselect
+		
+		tfisg151.edte = tfisg151.edat				|#ISGEC015039.n
+		break
+	ENDCASE
+	return(0)
+}
+
+function extern long set.object.defaults()
+{
+	return(0)
+}
+
+function extern long before.new.object()
+{		
+| 	tfisg151.bgno= ""
+	return(0)
+}
+
+function extern long before.get.object()
+{
+	return(0)
+}
+
+function extern long after.get.object()
+{
+	
+	return(0)
+}
+
+function long read.parameters()
+{
+	return(0)
+}
+
+|**** Dependencies Section ****************************************************
+
+function void define.field.dependencies()
+{
+	|* Initialize field relations.
+	dal.init.field.dependencies()
+	
+	dal.field.depends.on("tfisg151.edte", HOOK_IS_VALID,
+						"tfisg151.idte")
+						
+	dal.field.depends.on("tfisg151.orno", HOOK_IS_VALID,
+						"tfisg151.bpid")
+	|* Add direct dependent fields.
+	|* Please keep the fields in alphabetical order.
+
+	dal.finalize.field.dependencies()
+}
+
+function boolean new.method.is.allowed()
+{
+	return(true)
+}
+
+function boolean update.method.is.allowed()
+{
+	return(true)
+}
+function boolean destroy.method.is.allowed()
+{
+			long		delete.allowed
+
+	with.old.object.values.do(	deleting_allowed,
+					delete.allowed)	|* ref
+	if not delete.allowed then
+		return(false)
+	endif
+
+	return(true)
+}
+
+function void deleting_allowed(
+	ref		long		o.delete.allowed)
+{
+	o.delete.allowed = true
+}
+
+|**************** Expiry Date *******************
+function extern boolean tfisg151.edte.is.valid(long	type)
+{
+	if	tfisg151.edte < tfisg151.idte	then
+		dal.set.error.message("@Expiry Date Cannot be less than Issue Date")
+		return(false)
+	endif	
+	return(true)
+}
+
+|**************** PO Number *******************
+function extern boolean tfisg151.orno.is.valid(long	type)
+{
+	select	tdpur400.orno
+	from	tdpur400
+	where	tdpur400._index2 = {:tfisg151.bpid, :tfisg151.orno}
+	selectdo
+	selectempty	
+		dal.set.error.message("@Select PO of Supplier %s", tfisg151.bpid)
+		return(false)
+	endselect
+	
+	select 	tdpur401.cprj
+	from	tdpur401	
+	where	tdpur401._index1 = {:tfisg151.orno}
+	as set with 1 rows
+	selectdo
+		if tfisg151.cprj <> tdpur401.cprj then
+			dal.set.error.message("@Please enter a valid Project code")
+			return(DALHOOKERROR)
+		endif
+	endselect
+	return(true)
+}
+
+|**************** divison code *******************					|#ISGEC015039.sn
+function extern boolean tfisg151.eunt.is.mandatory(long	type)
+{
+	if not isspace(tfisg151.eunt)then
+		return(false)
+	endif	
+	return(true)
+}
+
+function extern boolean tfisg151.bgno.is.valid(long	type)
+{
+	on case type
+	case DAL_NEW:
+		select	tcmcs050.seri
+		from	tcmcs050
+		where	tcmcs050._index1 = {:tfisg300.nrgr,:tfisg151.bgno}
+		selectdo
+		selectempty
+			return(false)	
+		endselect
+	break
+	endcase	
+	return(true)
+}
+
+|**************** Material Warranty Expiry Date *******************
+function extern boolean tfisg151.mwdt.is.mandatory(long	type)
+{
+	if not isspace(tfisg151.mwdt) and tfisg151.type(1;1) <> "P" then
+		return(false)
+	endif	
+	return(true)
+}
+
+function extern boolean tfisg151.bgno.is.mandatory(long	type)
+{
+	on case type
+	case DAL_NEW:
+		if not isspace(tfisg151.bgno) then
+			return(false)
+		endif	
+	break
+	endcase	
+	return(true)
+}											
+| function extern boolean tfisg151.bgno.is.derived()
+| {
+| 	if len(tfisg151.bgno) <> 9 then
+| 		return(false)
+| 	endif
+| 	return(true)
+| }											|#ISGEC015039.en
+

@@ -1,0 +1,297 @@
+|******************************************************************************
+|* dmisg1134m500  0  VRC B61U a7 isg 
+|* Send Vendor Document for Technical Clearance
+|* Installation user             
+|* 2015-02-02
+|******************************************************************************
+|* Main table dmisg134 Receive Vendor Document, Form Type 1
+|******************************************************************************
+|* ISGEC004004, IT0047, Dharmendra, Dt. 30-01-2015, B61U a7 isg                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+  table   tdmisg134 | Receive Vendor Document
+  table   tdmisg136
+  table		tdmisg128
+  table		ttpmsl000
+  table		tdmisg131
+  table		ttcmcs050
+  table		tdmisg121
+  table		tdmisg135
+  table		tdmisg132
+  extern	domain	tcorno	order.no.post
+#include <bic_dam>
+
+|****************************** program section ********************************
+before.program:
+	order.no.post = ""
+	query.extend.where("dmisg134.orno <> " & quoted.string(order.no.post))
+
+before.display.object:
+	if dmisg134.stat = dmisg.receipt.submitted then
+		enable.fields("dmisg134.sent", actual.occ)
+	else
+		disable.fields("dmisg134.sent", actual.occ)
+	endif
+
+|****************************** choice section **********************************
+choice.process.4:
+on.choice:
+	do.selection(false, send_records)
+
+choice.comment.sub:
+on.choice:
+	on.main.table(change_status_comment)
+	
+choice.technically:
+on.choice:
+	on.main.table(change_status_technically)
+	
+choice.closed:
+on.choice:
+	on.main.table(change_status_closed)
+	
+
+choice.generate.tran:
+before.choice:
+	if not isspace(dmisg134.trno) then
+		message("Transmittal ID %s already generated.", dmisg134.trno)
+		choice.again()
+	endif
+	if isspace(dmisg134.bpid) then
+		message("Vendor is blank for this receipt.")
+		choice.again()
+	endif
+
+	if isspace(dmisg134.cprj) then
+		message("Project is blank for this receipt")
+		choice.again()	
+	endif
+	
+	if not check_document_status() then
+		choice.again()
+	endif	
+
+on.choice:
+	read.parameters()
+	generate.transmittal()
+	on.main.table(update_transmittal)
+|****************************** function section **********************************
+functions:
+
+function send_records()
+{
+	domain tcsern i, found
+	
+	i = 0
+	found = 0
+	
+	select	dmisg134.*
+	from	dmisg134 for update
+	where	dmisg134._index1 = {:dmisg134.rcno, :dmisg134.revn}
+	selectdo
+		if dmisg134.stat = dmisg.receipt.linked then
+			for i = 1 to 7
+				if dmisg134.sent(i) = tcyesno.yes then
+					insert_dmisg136(i)
+					found = i
+				endif	
+			endfor
+			if found then
+				dmisg134.suer = logname$
+				dmisg134.sdat = utc.num()
+				dmisg134.stat = dmisg.receipt.evaluation
+				db.update(tdmisg134, db.retry)
+			else
+				message("Not any Engineering department selected for Receipt No. %s and Revision %s", dmisg134.rcno, dmisg134.revn)	
+			endif
+		else
+			message("Receipt No. %s and Revision %s not in  Document Linked Status", dmisg134.rcno, dmisg134.revn)
+		endif
+	endselect
+	commit.transaction()
+
+
+}
+
+function insert_dmisg136(domain tcsern i.engi)
+{
+	domain dmisg.eng engineering
+	
+	on case i.engi
+	case 1:
+		engineering = dmisg.eng.mechanical
+		break
+	case 2:
+		engineering = dmisg.eng.structure
+		break
+	case 3:
+		engineering = dmisg.eng.piping
+		break
+	case 4:
+		engineering = dmisg.eng.process
+		break
+	case 5:
+		engineering = dmisg.eng.ci
+		break
+	case 6:
+		engineering = dmisg.eng.electrical
+		break
+	case 7:
+		engineering = dmisg.eng.others
+		break
+	endcase
+	
+	select	dmisg136.*
+	from	dmisg136 for update
+	where	dmisg136._index1 = {:dmisg134.rcno, :dmisg134.revn, :engineering}
+	selectdo
+	selectempty
+		dmisg136.rcno = dmisg134.rcno
+		dmisg136.revn = dmisg134.revn
+		dmisg136.engi = engineering
+		db.insert(tdmisg136, db.retry)
+	endselect
+	
+}
+
+
+function change_status_comment()
+{
+	select	dmisg134.stat
+	from	dmisg134 for update
+	where	dmisg134._index1 = {:dmisg134.rcno, :dmisg134.revn}
+	selectdo
+		dmisg134.stat = dmisg.receipt.comment
+		db.update(tdmisg134, db.retry)
+		commit.transaction()
+	endselect
+
+}
+
+function change_status_technically()
+{
+	select	dmisg134.stat
+	from	dmisg134 for update
+	where	dmisg134._index1 = {:dmisg134.rcno, :dmisg134.revn}
+	selectdo
+		dmisg134.stat = dmisg.receipt.cleared
+		db.update(tdmisg134, db.retry)
+		commit.transaction()
+	endselect
+
+}
+
+function change_status_closed()
+{
+	select	dmisg134.stat
+	from	dmisg134 for update
+	where	dmisg134._index1 = {:dmisg134.rcno, :dmisg134.revn}
+	selectdo
+		dmisg134.stat = dmisg.receipt.closed
+		db.update(tdmisg134, db.retry)
+		commit.transaction()
+	endselect
+
+}
+
+function long read.parameters()
+{
+	tcmcs.dll0095.read.parm("tpmsl000")
+	return(0)
+}
+
+function generate.transmittal()
+{
+	long ret
+	select	tcmcs050.seri
+	from	tcmcs050
+	where	tcmcs050._index1 = {:tpmsl000.tran}
+	as set with 1 rows
+	selectdo
+	endselect
+	
+	dmisg131.tran = tcmcs050.seri
+	
+	tcmcs.dll0050.check.and.generate.order.number(
+		3, dmisg131.tran, tpmsl000.tran, 
+		9, dmisg131.tran)
+		
+	dmisg131.type = dmisg.tran.typ.vendor
+	dmisg131.ofbp = dmisg134.bpid
+	dmisg131.vadr = dmisg128.cadr
+	dmisg131.dprj = dmisg134.cprj
+	dmisg131.user = logname$
+	dmisg131.date = utc.num()
+	db.insert(tdmisg131, db.retry)
+	
+	select	dmisg135.idoc, dmisg135.irev
+	from	dmisg135
+	where	dmisg135._index1 = {:dmisg134.rcno, :dmisg134.revn}
+	selectdo
+		dmisg132.tran = dmisg131.tran
+		dmisg132.docn = dmisg135.idoc
+		dmisg132.revn = dmisg135.irev
+		db.insert(tdmisg132, db.retry)
+	endselect
+	commit.transaction()	
+
+}
+
+function boolean check_document_status()
+{
+	select	dmisg128.cadr
+	from	dmisg128
+	where	dmisg128._index1 = {:dmisg134.bpid}
+	as set with 1 rows
+	selectdo
+		if isspace(dmisg128.cadr) then
+			message("Address is blank for this Vendor.")
+			return(false)
+		endif	
+	selectempty
+		message("Address Not maintained for this Vendor.")
+		return(false)
+	endselect
+
+
+	select	dmisg135.idoc, dmisg135.irev
+	from	dmisg135
+	where	dmisg135._index1 = {:dmisg134.rcno, :dmisg134.revn}
+	selectdo
+		if isspace(dmisg135.idoc) then
+			message("Document is blank against this receipt.")
+			return(false)
+		else
+			select	dmisg121.rele
+			from	dmisg121
+			where	dmisg121._index1 = {:dmisg135.idoc, :dmisg135.irev}
+			and	dmisg121.rele = tcyesno.yes
+			selectdo
+			selectempty
+				message("Document %s not released.", dmisg135.idoc)
+				return(false)
+			endselect
+		endif	
+	selectempty
+		message("No Document found against this Receipt No.")
+		return(false)
+	endselect
+	
+	return(true)
+}
+
+function update_transmittal()
+{
+	select	dmisg134.trno, dmisg134.stat
+	from	dmisg134 for update
+	where	dmisg134._index1 = {:dmisg134.rcno, :dmisg134.revn}
+	selectdo
+		dmisg134.trno = dmisg131.tran
+		dmisg134.stat = dmisg.receipt.issued
+		db.update(tdmisg134, db.retry)
+		commit.transaction()
+	endselect
+
+}
+

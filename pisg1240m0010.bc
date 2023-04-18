@@ -1,0 +1,311 @@
+|******************************************************************************
+|* tdisg1240m001  0  VRC B61U a7 isg 
+|* Update Revised\Finish Date In PMDL
+|* merino1                       
+|* 2018-05-24
+|******************************************************************************
+|* Form Type 4
+|******************************************************************************
+|* ID: ISGEC01065, Bharti Garg, 24-05-2018
+|* New Development 
+|****************************** declaration section ***************************
+declaration:
+#include <bic_desktop>
+#include<bic_dam>
+#pragma used dll ottdllbw 
+	
+	table	tdmisg140
+	table	tdmisg182
+	table	ttdisg208	
+	
+	extern domain 	tcmcs.str100	file.path
+	extern 	domain	tcdate 		start.date, end.date, curr.date,temp.start,temp.end
+	extern domain	tcmcs.str100	rssd, rsfd
+	extern domain	tclogn		updated_by
+		domain	tcpono		ct_project
+	
+	string	dayno(2),monthno(2), yearno(4),line(1500), server.file(150),error1(50), 
+		error(50),pcod(9),cprj(9),uidn(25), docn(32)
+		
+	long	year, month, day, hh,mm,ss,stat.fp,ret,ret1,ret2,rt1, dayno1, monthno1, 
+		yearno1,pono, brp_id,i,ret.val, count_records, flag, monthno2, dayno2, yearno2
+		
+
+
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|***************************** choice section ***********************************
+choice.browse.file:
+on.choice:
+	mess("tigenstring", 0, "Select The File . . .")
+	if seq.open.dialog.local( false, "", "","Text Files(*.txt)|*.txt|All File(*.*)|*.*", file.path ) > 0 then
+| 	if seq.open.dialog.local( false, "", "","CSV Files(*.csv)|*.csv|All File(*.*)|*.*", file.path ) > 0 then
+                mess("tigenstring", 0, "Success . . .")
+	else
+                mess("tigenstring", 0, "Cancelled . . .")
+	endif
+	display.all()         
+
+choice.update.file: 
+before.choice:
+	delete.record.from.tdisg208()
+	
+on.choice:
+	|server.file = bse.dir$() & str$(utc.num()) & ".txt"
+	
+	server.file= creat.tmp.file$( bse.tmp.dir$() )
+	ret2 = client2server(file.path,server.file,1)
+	stat.fp = seq.open(server.file, "r+")
+	
+	process.file()
+	
+	message("Process Complete", file.path)
+	
+	seq.close(stat.fp)
+
+| 	spool.open("rtdisg240801000",spool.device,0)
+	brp_id = brp.open("rtdisg240801000","D",0)
+	read.main.table()
+	brp.close(brp_id)
+| 	spool.close()
+
+	
+	
+
+|***************************** functions **************************************
+
+functions:
+
+function process.file()
+{
+	if stat.fp>0 then
+		read.file()
+	endif
+}
+
+function read.file()
+{
+	flag = 0
+	ct_project = 0
+	while (seq.gets(line,3000,stat.fp)>=0)
+| 		ret = string.scan(line,"%s|%s|%s|%s|%s",pcod,cprj,uidn,rssd,rsfd)
+		ret = string.scan(line,"%s,%s,%s,%s,%s",pcod,cprj,docn,rssd,rsfd)
+		flag = flag+1
+		error1 = ""
+		
+		if not CheckCTProject() then						|#Sahil.Sharma.19.02.2019.n
+			ct_project = 1
+			if flag >= 2 then
+				get.date()
+				if monthno1 <= 12 and monthno2 <= 12 then
+					insert.record.dmisg140()
+				else 
+					error1 = "Date Format Is Wrong"
+					insert.record.tdisg208()
+				endif
+			endif
+		endif
+	endwhile
+}
+												|#Sahil.Sharma.19.02.2019.sn
+function long CheckCTProject()
+{
+	select	tpisg220.frez
+	from	tpisg220
+	where	tpisg220._index1 = {:cprj, :pcod}
+	and	tpisg220.frez = tcyesno.yes
+	as set with 1 rows
+	selectdo
+		return(1)
+	endselect
+	
+	return(0)
+}
+												|#Sahil.Sharma.19.02.2019.en
+
+function get.date()
+{
+	curr.date = utc.num()
+	
+	dayno = rssd(1;2)
+	dayno1 = lval(dayno)
+	monthno = rssd(4;2)
+	monthno1 = lval(monthno)
+	yearno = rssd(7;4)
+	yearno1 = lval(yearno)
+	utc.to.date(curr.date, year, month, day,hh,mm,ss)
+	start.date = date.to.utc(yearno1, monthno1, dayno1, hh,mm,ss)
+	
+	dayno = rsfd(1;2)
+	dayno2 = lval(dayno)
+	monthno = rsfd(4;2)
+	monthno2 = lval(monthno)
+	yearno = rsfd(7;4)
+	yearno2 = lval(yearno)
+	utc.to.date(curr.date, year, month, day,hh,mm,ss)
+	end.date = date.to.utc(yearno2, monthno2, dayno2, hh,mm,ss)
+	
+}
+
+function insert.record.dmisg140()
+{
+	error1 = ""
+	select	dmisg140.*
+	from	dmisg140		for update
+| 	where	dmisg140._index1 = {:pcod, :cprj, :uidn}
+	where	dmisg140._index1 = {:pcod, :cprj}
+	and	dmisg140.docn    = {:docn} 
+| 	and	dmisg140.acdt <> 0 
+	selectdo
+		if dmisg140.acdt = 0 and start.date > 0 then
+			temp.start = start.date
+			temp.end = end.date
+			dal.change.object("dmisg140")
+			dal.set.field("dmisg140.rssd",start.date)
+			dal.set.field("dmisg140.rsfd",end.date)
+			ret1 = dal.save.object("dmisg140",e)
+			if ret1 = 0 then
+				commit.transaction()
+				update.history.table()
+			else	
+				error = ""
+				rt1 = dal.count.error.messages()
+				
+				for i = rt1 to 1 step -1
+				    ret.val = dal.get.error.message(error1)
+				    error = strip$(error) & "," & strip$(error1) 
+				    message("%s",error1)
+				endfor
+				insert.record.tdisg208()
+				show.dal.messages(MSG.ALL)
+				abort.transaction()
+			endif	
+| 			update.history.table()
+		else
+			if dmisg140.acdt <> 0 and start.date = 0 then
+				error1 = "Actual Date Is Present and Start Date Is Blank"
+			else 
+				if dmisg140.acdt <> 0 then
+					error1 = "Actual date Is Present"
+				else
+					error1 = "Start Date Is Blank"
+				endif
+			endif
+			insert.record.tdisg208()
+		endif
+	selectempty
+		error1 = "Record Not Found"
+		insert.record.tdisg208()	
+	endselect
+}
+
+function update.history.table()
+{
+| 	serial_number = 0
+	updated_by = logname$
+	select	max(dmisg182.srno):pono
+	from	dmisg182
+| 	where	dmisg182._index1 = {:pcod,:cprj,:uidn}
+	where	dmisg182._index1 = {:pcod,:cprj,:dmisg140.uidn}
+	selectdo
+	endselect
+	
+	pono = pono + 1
+	select	dmisg182.*
+	from	dmisg182			|for update
+| 	where	dmisg182._index1 = {:pcod,:cprj,:uidn,:pono}
+	where	dmisg182._index1 = {:pcod,:cprj,:dmisg140.uidn,:pono}
+	selectdo
+	selectempty	
+		dal.new.object("dmisg182")
+		dal.set.field("dmisg182.pcod", pcod)
+		dal.set.field("dmisg182.cprj", cprj)
+		dal.set.field("dmisg182.uidn", dmisg140.uidn)
+		dal.set.field("dmisg182.srno", pono)
+		dal.set.field("dmisg182.acdt",temp.start )
+		dal.set.field("dmisg182.acdt.n", start.date)
+		dal.set.field("dmisg182.oscd", dmisg140.oscd)
+		dal.set.field("dmisg182.oscd.n", dmisg140.oscd)
+		dal.set.field("dmisg182.updt", utc.num())
+		dal.set.field("dmisg182.upby", updated_by)
+		dal.set.field("dmisg182.rsfd", temp.end)
+		dal.set.field("dmisg182.rsfd.n", end.date)
+		ret1 = dal.save.object("dmisg182",e)
+		if ret1 = 0 then
+			commit.transaction()
+		else	
+			error = ""
+			rt1 = dal.count.error.messages()
+				
+			for i = rt1 to 1 step -1
+				ret.val = dal.get.error.message(error)
+				error = strip$(error) & "," & strip$(error) 
+				message("%s",error)
+			endfor
+			show.dal.messages(MSG.ALL)
+			abort.transaction()
+		endif
+	endselect
+}
+
+function insert.record.tdisg208()
+{
+	select	tdisg208.*
+	from	tdisg208
+	where	tdisg208._index1 = {:pcod,:cprj,:dmisg140.uidn}
+	selectdo
+	selectempty
+		dal.new.object("tdisg208")
+		dal.set.field("tdisg208.pcod",pcod)
+		dal.set.field("tdisg208.proj", cprj)
+		dal.set.field("tdisg208.uidn", dmisg140.uidn)
+		dal.set.field("tdisg208.rson", error1)
+		ret = dal.save.object("tdisg208",e)
+		if ret = 0 then
+			commit.transaction()
+		else
+			abort.transaction()
+		endif
+	endselect
+}
+
+function read.main.table()
+{
+	select	tdisg208.*
+	from	tdisg208
+| 	where	tdisg208._index1 = {:pcod, :cprj,:dmisg140.uidn}
+	selectdo
+		brp.ready(brp_id)
+	endselect
+}
+
+function delete.record.from.tdisg208()
+{
+	db.retry.point()
+	select	count(*):count_records
+	from	tdisg208
+	selectdo
+		if count_records >0 then
+			select	tdisg208.*
+			from	tdisg208		for update
+			selectdo
+				db.delete(ttdisg208,db.retry,e)
+				if e = 0 then
+					commit.transaction()
+				else
+					abort.transaction()
+				endif
+			endselect
+		endif
+	endselect
+}
+
+
+

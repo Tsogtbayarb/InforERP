@@ -1,0 +1,132 @@
+|******************************************************************************
+|* tdisg207  0  VRC B61U a7 isg 
+|* DAL for Holiday Master
+|* baan
+|* 15-03-30 [12:21]
+|******************************************************************************
+|* Script Type: DAL
+|******************************************************************************
+                                                                                
+#include <bic_dal2>
+table  ttdisg207
+table  ttccom120
+table  ttdipu010
+
+function extern long before.open.object.set()
+{
+	dal.field.depends.on("tdisg207.date",HOOK_UPDATE,"tdisg207.chek")
+	dal.field.depends.on("tdisg207.bpid",HOOK_UPDATE,"tdisg207.bpid")
+	
+	return(0)
+}
+
+function extern long before.save.object(long type)
+{
+	if update.bp.status() then
+		return(DALHOOKERROR)
+	endif
+	refresh.parent(-1)
+	return(0)
+}
+
+function extern long after.save.object(long type)
+{
+	return (0)
+}
+function extern tdisg207.date.update(long mode)
+{
+	if tdisg207.chek = tcyesno.yes then
+		tdisg207.date = date.num()
+	endif
+}
+
+function extern boolean tdisg207.bpid.is.derived(long mode)
+{
+	if tdisg207.bpid  = "" then
+		return(false)
+	endif
+	return(true)
+}
+
+
+
+function long update.bp.status()
+{
+	long ret_val
+	
+	select tccom120.bpst,tccom120.endt
+	from   tccom120 for update
+	where  tccom120._index1 = {:tdisg207.bpid}
+	selectdo
+		if tccom120.bpst = tccom.prst.active then
+			check.bp.item(tdisg207.bpid)
+			dal.change.object("tccom120")
+			dal.set.field("tccom120.bpst",tccom.prst.inactive)
+			ret_val = dal.save.object("tccom120")
+			if ret_val <> 0 then
+				return(DALHOOKERROR)
+			endif	
+		else	
+			if tdisg207.chek = tcyesno.no then
+				app.bp.item(tdisg207.bpid)
+				dal.change.object("tccom120")
+				dal.set.field("tccom120.bpst",tccom.prst.active)
+				dal.set.field("tccom120.stdt",utc.num())
+				ret_val = dal.save.object("tccom120")
+				if ret_val <> 0 then
+					return (DALHOOKERROR)
+				endif
+			endif
+		endif	
+	endselect
+
+	return(0)
+}
+
+
+function long check.bp.item(domain tccom.bpid in.bp)
+{
+
+	long ret_val
+	
+	select tdipu010.sfbp,tdipu010.ibps,tdipu010.citg
+	from    tdipu010 for update
+	where   tdipu010._index2 = {:in.bp}
+	selectdo
+		if tdipu010.ibps =  tdipu.ibps.approved  then
+			dal.change.object("tdipu010")
+			dal.set.field("tdipu010.ibps",tdipu.ibps.blocked)
+			ret_val = dal.save.object("tdipu010")
+			if ret_val <> 0 then
+				return (DALHOOKERROR)
+			endif
+		endif	
+	endselect
+			
+	return (0)	
+}
+
+
+function long app.bp.item(domain tccom.bpid i.bp)
+{
+
+	long ret_val 
+	
+	select tdipu010.sfbp,tdipu010.ibps
+	from    tdipu010 for update
+	where   tdipu010._index2 = {:i.bp}
+	selectdo
+		if  tdipu010.ibps =  tdipu.ibps.blocked  then
+			dal.change.object("tdipu010")
+			dal.set.field("tdipu010.ibps",tdipu.ibps.approved)
+			ret_val = dal.save.object("tdipu010")
+			if ret_val <> 0 then
+				return (DALHOOKERROR)
+			endif
+		endif	
+	endselect
+	
+	return (0)	
+
+
+}

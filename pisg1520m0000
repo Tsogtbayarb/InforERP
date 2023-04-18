@@ -1,0 +1,123 @@
+|******************************************************************************
+|* dmisg1520m000  0  VRC B61U a7 live
+|* Display Document Revision
+|* Installation user             
+|* 2014-07-10
+|******************************************************************************
+|* Main table dmdoc120 Document Revisions, Form Type 1
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+	table	tdmdoc120 | Document Revisions
+	table	tdmisg011 
+	
+	|***************** Zoom Variable ************
+	extern	domain	dmdoc.revv	zoom.revm
+	
+	|***************** Global Variable *********
+	extern	domain	tcorno		gbl.issu
+	|***************** Script Variable *********
+	extern	domain	tcmcs.str16	progname
+	extern	domain	tccprj		im.cprj
+	extern	domain	tfgld.user	im.issu
+	extern	domain	tcemno		im.isto
+	extern	domain	tcbool		im.proj
+	
+		string		query.str(100)
+
+	|****************** Include 
+	#include <bic_dam>
+|****************************** program section ********************************
+before.program:
+	import("prog.name$", progname)
+	
+	on case progname
+		case "dmisg0111m000":
+			import("dmisg011.cprj", im.cprj)
+			import("dmisg011.issu", im.issu)
+			import("dmisg011.isto", im.isto)
+			import("proj.draw", im.proj)
+			set.query()
+			break
+	ENDCASE		
+
+|****************************** group section **********************************
+|****************************** choice section **********************************
+choice.end.program:
+before.choice:
+	if	progname = "dmisg0111m000"	then
+		if	im.proj	then
+			update.document()
+			export("gbl.issu", dmisg011.issu)
+			refresh.parent(-1)
+		endif	
+	endif	
+	
+|****************************** zoom section **********************************
+zoom.from.all:
+on.exit:
+	export("zoom.revm", dmdoc120.revm)
+
+|***************************** Function Section **************
+functions:
+
+function set.query()
+{
+	query.str = ""
+}
+
+function update.document()
+{
+	do.selection(true, insert.document, dmdoc120.dcid, dmdoc120.revm)
+}
+
+function insert.document(domain dmdoc.docid	i.dcid,
+			domain	dmdoc.revv	i.revi)
+{
+	long	ret.val,  rt1, k, ret_val
+	domain	tcpono	tmp.srno
+	string	error1(100)
+	
+	dal.new.object("dmisg011")
+	dal.set.field("dmisg011.cprj", im.cprj)
+	dal.set.field("dmisg011.issu", im.issu)
+	dal.set.field("dmisg011.isto", im.isto)
+	get.serial.no(im.cprj, im.issu, im.isto, tmp.srno)
+	dal.set.field("dmisg011.srno", tmp.srno)
+	dal.set.field("dmisg011.docn", i.dcid)
+	dal.set.field("dmisg011.revi", i.revi)
+	dal.set.field("dmisg011.nprt", 5)
+	dal.set.field("dmisg011.prpb", logname$)
+	dal.set.field("dmisg011.prdt", utc.num())
+	ret.val = dal.save.object("dmisg011")
+	if	ret.val = 0	then
+		if	len(trim$(im.issu)) <> 9	then
+			im.issu = dmisg011.issu
+		endif	
+		commit.transaction()
+	else
+		error1 = ""
+		rt1 = dal.count.error.messages()
+		for k = rt1 to 1 step -1
+			ret_val = dal.get.error.message(error1)
+		endfor
+		abort.transaction()
+	endif	
+}			
+
+function get.serial.no(domain	tccprj		t.cprj,
+			domain	tfgld.user	t.issu,
+			domain	tcemno		t.isto,
+		ref	domain	tcpono		t.srno)
+{
+	select	max(a_dmisg011.srno):t.srno
+	from	dmisg011 a_dmisg011
+	where	a_dmisg011._index1 = {:t.cprj, :t.issu, :t.isto}
+	selectdo
+	selectempty
+		t.srno = 0
+	endselect
+	t.srno = t.srno + 1	
+}

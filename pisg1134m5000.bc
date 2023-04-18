@@ -1,0 +1,859 @@
+|******************************************************************************
+|* dmisg1134m500  0  VRC B61U a7 isg 
+|* Send Vendor Document for Technical Clearance
+|* Installation user             
+|* 2015-02-02
+|******************************************************************************
+|* Main table dmisg134 Receive Vendor Document, Form Type 1
+|******************************************************************************
+|* ISGEC004004, IT0047, Dharmendra, Dt. 30-01-2015, B61U a7 isg
+|*
+|* ISGEC004020, IT0047, Dharmendra, Dt. 07-10-2015, B61U a7 isg
+|*
+|* ISGEC004021, IT0047, Dharmendra, Dt. 12-10-2015, B61U a7 isg
+|*
+|* ID ISGEC016005, Manish Manchanda, 2016-07-29
+|* Modifications new session added
+|*
+|* ISGEC016008, IT0302, Ankit Sharma, Dt. 01-09-2016, B61U a7 isg
+|* update new field in table dmisg136
+|*
+|* ID: ISGEC016016, Mudit Sharma, 2016-10-21, B61U a7 isg
+|* Updation in Status field, after Generate Transmittal
+|*
+|* ISGEC017002, Manish Manchanda, 2017-01-10
+|* Modifications - Mail Alert
+|*
+|* ISGEC017003, Kuldeep Sharma, 2017-02-23
+|* Freeze Specific commands based on Receipt status
+|*
+|* ISGEC017007, Manish Manchanda, 2017-03-03
+|* Modifications - closed option to be disabled when status technically cleared 
+|* and comments submitted
+|*
+|* ID : GSTLIVE01021, IT0386, Saurabh Dubey, 29 November 2017, VRC B61U a7 isg
+|* URL Related Logic
+|*
+|* ID : ISGECMOD001, IT0386, Saurabh Dubey, 07 December 2017, VRC B61U a7 isg
+|* Check for Technical Clearance and Comment Submitted
+|*
+|* ID : ISGEC0166,IT0479,Anadi Shankar,21-06-2018, VRC B61U a7 isg
+|* Insertion Of Data On Table "tpisg229" and "tpisg230".
+|*
+|* ID: ISGEC01096, Priya Jindal, 11/8/2018
+|* Check For Owner
+|
+|******************************************************************************
+|* ID: ISGEC01122, Prasanna Bhuyan, VRC B61U a7 isg, 19/11/2018
+|* Modifications 
+|****************************** declaration section ***************************
+declaration:
+#include               <bic_cmf>
+  table   tdmisg134 | Receive Vendor Document
+  table   tdmisg136
+  table		tdmisg128
+  table		ttpmsl000
+  table		tdmisg131
+  table		ttcmcs050
+  table		tdmisg121
+  table		tdmisg135
+  table		tdmisg132
+    table	tdmisg133
+     table	tdmisg231					|#ISGEC01122.n
+  table		tbpmdm001
+  table		ttccom001
+  table		ttcmcs050
+  table		ttpisg235
+  table		ttpisg230
+  table		ttdisg002
+  table		tdmisg130		|ISGEC01096.n
+  table		tdmisg164		|ISGEC01096.n
+  table		tdmisg140
+  table		ttpisg220
+  
+  
+  
+  
+  table		ttpisg229
+  table		ttdpur401
+  extern	domain	tcorno	order.no.post
+  extern	domain	tcnama		appr.name, user.name
+  extern domain tcmcs.str50 return.session			|#ISGEC016016.n 
+
+  	domain	tcmcs.long	ret_val				|#ISGEC017002.n
+		string		open.link(200)	|#GSTLIVE01021.n
+		
+	domain	tcdate		var.trdt			|#Anadi.sn 31-05-2018 
+	domain	tcmcs.str50	var.bohd
+	domain	tcmcs.long	v.count,v.dsno
+	domain	tcwght		v.wght
+	domain	tcmcs.str100	var.indv			|#Anadi.en 31-05-2018 
+	domain	tfgld.user	user
+	long srno
+	domain	tcqsl1	var.qnty					|#Anadi.n 31-07-2018
+	domain	tcmcs.long	var.sern, flag, count.adct, v.count1
+	domain	tcperc		var.perc
+				
+	
+	string		owner_1(4),owner(12)		|ISGEC01096.n
+	
+#include <bic_dam>
+#include<bic_desktop>
+
+|****************************** program section ********************************
+before.program:
+	order.no.post = ""
+	query.extend.where("dmisg134.orno <> " & quoted.string(order.no.post))
+
+before.display.object:
+	if dmisg134.stat = dmisg.receipt.submitted then
+		enable.fields("dmisg134.sent", actual.occ)
+	else
+		disable.fields("dmisg134.sent", actual.occ)
+	endif
+							|#ISGEC017003.sn
+	if 	dmisg134.stat = dmisg.receipt.comment or 
+		dmisg134.stat = dmisg.receipt.cleared or
+		dmisg134.stat = dmisg.receipt.closed then
+| 		disable.commands("comment.sub","technically")					|#ISGEC017007.o
+		disable.commands("comment.sub","technically","link.process","closed")		|#ISGEC017007.n
+	else
+| 		enable.commands("comment.sub","technically")					|#ISGEC017007.o
+		enable.commands("comment.sub","technically","link.process","closed")		|#ISGEC017007.n
+	endif
+							|#ISGEC017003.en
+							
+	tcisgdll0100.get.user.name(dmisg134.appr, appr.name)
+	tcisgdll0100.get.user.name(dmisg134.user, user.name)
+	display("appr.name")
+	display("user.name")						
+|****************************** choice section **********************************
+choice.process.4:
+on.choice:
+	do.selection(false, send_records)		|#ISGEC004020.o
+| 	send_records()					|#ISGEC004020.n
+	if e = 0 then							|#ISGEC0166.sn
+		var.bohd = "CT_POSTORDERDRGSUBMIT"
+		insert.tpisg229.data()				
+		var.bohd = ""
+	endif								|#ISGEC0166.en
+choice.comment.sub:
+before.choice:					|#ISGEC004020.sn
+	if ask.enum("dmchm0004", tcyesno.no) = tcyesno.no then
+		choice.again()
+	endif
+						|#ISGEC004020.en
+	if not documents.linked.against.receipt() then	|#ISGECMOD001.sn
+		choice.again()
+	endif						|#ISGECMOD001.en
+	
+	if not user.is.authorised() then		|ISGEC01096.sn
+		message("You are not allowed to perform this for this receipt since You are not the owner of this item") 
+		choice.again()		
+	endif						|ISGEC01096.en
+	
+on.choice:
+	on.main.table(change_status_comment)
+	
+choice.technically:
+before.choice:					|#ISGEC004020.sn
+	if ask.enum("dmchm0004", tcyesno.no) = tcyesno.no then
+		choice.again()
+	endif
+						|#ISGEC004020.en
+	if not documents.linked.against.receipt() then	|#ISGECMOD001.sn
+		choice.again()
+	endif						|#ISGECMOD001.en					
+						
+	if not user.is.authorised() then		|ISGEC01096.sn
+		message("You are not allowed to perform this for this receipt since You are not the owner of this item") 
+		choice.again()		
+	endif						|ISGEC01096.en
+	
+						
+on.choice:
+	on.main.table(change_status_technically)
+	
+	if e=0 then								|#ISGEC0166.sn
+		var.bohd = "CT_POSTORDERDRGAPPROVAL"
+		insert.tpisg229.data()
+		var.bohd = ""
+	endif									|#ISGEC0166.en
+	
+choice.closed:
+before.choice:
+	if ask.enum("dmchm0004", tcyesno.no) = tcyesno.no then
+		choice.again()
+	endif
+						|#ISGEC004020.en
+	if not user.is.authorised() then		|ISGEC01096.sn
+		message("You are not allowed to perform this for this receipt since You are not the owner of this item") 
+		choice.again()		
+	endif						|ISGEC01096.en
+						
+on.choice:
+	on.main.table(change_status_closed)
+	
+
+choice.generate.tran:
+before.choice:
+							|#ISGEC004020.sn
+	if ask.enum("dmchm0004", tcyesno.no) = tcyesno.no then
+		choice.again()
+	endif
+							|#ISGEC004020.en
+							|#ISGEC016016.sn
+	select	tcmcs050.nrgr
+	from	tcmcs050
+	where	tcmcs050._index1 = {"TRN"}
+	as set with 1 rows
+	selectdo
+		return.session = start.session(MODAL,"tcisg0550m000","dmisg1134m500","tcmcs050.seri")
+	endselect
+							|#ISGEC016016.en							
+	if not isspace(dmisg134.trno) then
+		message("Transmittal ID %s already generated.", dmisg134.trno)
+		choice.again()
+	endif
+	if isspace(dmisg134.bpid) then
+		message("Vendor is blank for this receipt.")
+		choice.again()
+	endif
+
+	if isspace(dmisg134.cprj) then
+		message("Project is blank for this receipt")
+		choice.again()	
+	endif
+	
+	if not check_document_status() then
+		choice.again()
+	endif	
+
+	if not user.is.authorised() then		|ISGEC01096.sn
+		message("You are not allowed to perform this for this receipt since You are not the owner of this item") 
+		choice.again()		
+	endif						|ISGEC01096.en
+	
+
+on.choice:
+	read.parameters()
+	generate.transmittal()
+	on.main.table(update_transmittal)
+	
+							|#ISGEC016005.sn
+choice.link.process:
+on.choice:
+	start.synchronized.child("dmisg1135m100", "dmisg134.rcno", "dmisg135.rcno", "dmisg134.revn", "dmisg135.revn")
+							
+							|#ISGEC016005.en
+		|#GSTLIVE01021.sn					
+	if not user.is.authorised() then		|ISGEC01096.sn
+		message("You are not allowed to perform this for this receipt since You are not the owner of this item") 
+		choice.again()		
+	endif						|ISGEC01096.en
+			
+choice.dmisg1535m000:
+before.choice:
+	if dmisg134.atch = "J" then
+		open.link = 	"chrome.exe --app=http://192.9.200.146/VendorDocument/VendorDocument.aspx?" & 
+				"ReceiptNo=" & dmisg134.rcno & "&RevisionNo=" & dmisg134.revn
+		open.link = trim$(open.link)
+		
+		app_start(open.link, "", "", "", "")
+		
+		choice.again()
+	endif
+		|#GSTLIVE01021.en
+|****************************** function section **********************************
+functions:
+
+function send_records()
+{
+	domain tcsern i, found
+	
+	i = 0
+	found = 0
+	
+	select	dmisg134.*
+	from	dmisg134 for update
+	where	dmisg134._index1 = {:dmisg134.rcno, :dmisg134.revn}
+	selectdo
+| 		if dmisg134.stat = dmisg.receipt.linked then			|#ISGEC004020.o
+		if dmisg134.stat = dmisg.receipt.submitted then		|#ISGEC004020.n
+			for i = 1 to 7
+				if dmisg134.sent(i) = tcyesno.yes then
+					insert_dmisg136(i)
+					found = i
+				endif	
+			endfor
+			if found then
+				dmisg134.suer = logname$
+				dmisg134.sdat = utc.num()
+				dmisg134.stat = dmisg.receipt.evaluation
+				db.update(tdmisg134, db.retry,e)
+				send.email.alert()				|#ISGEC004021.n
+			else
+				message("Not any Engineering department selected for Receipt No. %s and Revision %s", dmisg134.rcno, dmisg134.revn)	
+			endif
+		else
+			message("Receipt No. %s and Revision %s not in  Document Submitted Status", dmisg134.rcno, dmisg134.revn)
+		endif
+	endselect
+	commit.transaction()
+
+
+}
+
+function insert_dmisg136(domain tcsern i.engi)
+{
+	domain dmisg.eng engineering
+	
+	on case i.engi
+	case 1:
+		engineering = dmisg.eng.mechanical
+		break
+	case 2:
+		engineering = dmisg.eng.structure
+		break
+	case 3:
+		engineering = dmisg.eng.piping
+		break
+	case 4:
+		engineering = dmisg.eng.process
+		break
+	case 5:
+		engineering = dmisg.eng.ci
+		break
+	case 6:
+		engineering = dmisg.eng.electrical
+		break
+	case 7:
+		engineering = dmisg.eng.others
+		break
+	endcase
+	
+	select	dmisg136.*
+	from	dmisg136 for update
+	where	dmisg136._index1 = {:dmisg134.rcno, :dmisg134.revn, :engineering}
+	selectdo
+	selectempty
+		dmisg136.rcno = dmisg134.rcno
+		dmisg136.revn = dmisg134.revn
+		dmisg136.engi = engineering
+		dmisg136.cprj = dmisg134.cprj				|#ISGEC016008.sn
+		dmisg136.item = dmisg134.item
+		dmisg136.bpid = dmisg134.bpid
+		dmisg136.orno = dmisg134.orno
+		dmisg136.pono = dmisg134.pono
+		dmisg136.nama = dmisg134.nama				|# ISGEC016008.en
+		db.insert(tdmisg136, db.retry)
+	endselect
+	
+}
+
+
+function change_status_comment()
+{
+	select	dmisg134.stat
+	from	dmisg134 for update
+	where	dmisg134._index1 = {:dmisg134.rcno, :dmisg134.revn}
+	selectdo
+		dmisg134.stat = dmisg.receipt.comment
+		dmisg134.appr = logname$
+		dmisg134.adat = utc.num()
+		db.update(tdmisg134, db.retry)
+		commit.transaction()
+	endselect
+	dal.start.business.method("dmisg134","generate.mail.alert", ret_val)			|#ISGEC017002.n
+}
+
+function change_status_technically()
+{
+	select	dmisg134.stat
+	from	dmisg134 for update
+	where	dmisg134._index1 = {:dmisg134.rcno, :dmisg134.revn}
+	selectdo
+		dmisg134.stat = dmisg.receipt.cleared
+		dmisg134.appr = logname$
+		dmisg134.adat = utc.num()
+		db.update(tdmisg134, db.retry,e)
+		commit.transaction()
+	endselect
+	dal.start.business.method("dmisg134","generate.mail.alert", ret_val)			|#ISGEC017002.n
+}
+
+function change_status_closed()
+{
+	select	dmisg134.stat
+	from	dmisg134 for update
+	where	dmisg134._index1 = {:dmisg134.rcno, :dmisg134.revn}
+	selectdo
+		dmisg134.stat = dmisg.receipt.closed
+		db.update(tdmisg134, db.retry)
+		commit.transaction()
+	endselect
+
+}
+
+function long read.parameters()
+{
+	tcmcs.dll0095.read.parm("tpmsl000")
+	return(0)
+}
+
+function generate.transmittal()
+{
+	long ret
+	select	tcmcs050.seri
+	from	tcmcs050
+	where	tcmcs050._index1 = {:tpmsl000.tran}
+	as set with 1 rows
+	selectdo
+	endselect
+	
+| 	dmisg131.tran = tcmcs050.seri					|#ISGEC016016.o
+	dmisg131.tran = return.session					|#ISGEC016016.n
+	
+	tcmcs.dll0050.check.and.generate.order.number(
+		3, dmisg131.tran, tpmsl000.tran, 
+		9, dmisg131.tran)
+		
+	dmisg131.type = dmisg.tran.typ.vendor
+	dmisg131.ofbp = dmisg134.bpid
+	dmisg131.vadr = dmisg128.cadr
+	dmisg131.dprj = dmisg134.cprj
+	dmisg131.user = logname$
+	dmisg131.date = utc.num()
+	db.insert(tdmisg131, db.retry)
+	
+	select	dmisg135.idoc, dmisg135.irev
+	from	dmisg135
+	where	dmisg135._index1 = {:dmisg134.rcno, :dmisg134.revn}
+	selectdo
+		dmisg132.tran = dmisg131.tran
+		dmisg132.docn = dmisg135.idoc
+		dmisg132.revn = dmisg135.irev
+| 		db.insert(tdmisg132, db.retry)
+		db.insert(tdmisg132, db.skip.dupl)
+	endselect
+	commit.transaction()	
+
+}
+
+function boolean check_document_status()
+{
+	select	dmisg128.cadr
+	from	dmisg128
+	where	dmisg128._index1 = {:dmisg134.bpid}
+	as set with 1 rows
+	selectdo
+		if isspace(dmisg128.cadr) then
+			message("Address is blank for this Vendor.")
+			return(false)
+		endif	
+	selectempty
+		message("Address Not maintained for this Vendor.")
+		return(false)
+	endselect
+
+
+	select	dmisg135.idoc, dmisg135.irev
+	from	dmisg135
+	where	dmisg135._index1 = {:dmisg134.rcno, :dmisg134.revn}
+	selectdo
+		if isspace(dmisg135.idoc) then
+			message("Document is blank against this receipt.")
+			return(false)
+		else
+			select	dmisg121.rele
+			from	dmisg121
+			where	dmisg121._index1 = {:dmisg135.idoc, :dmisg135.irev}
+			and	dmisg121.rele = tcyesno.yes
+			selectdo
+			selectempty
+				message("Document %s not released.", dmisg135.idoc)
+				return(false)
+			endselect
+		endif	
+	selectempty
+		message("No Document found against this Receipt No.")
+		return(false)
+	endselect
+	
+	return(true)
+}
+				|#ISGECMOD001.sn
+function boolean documents.linked.against.receipt()
+{
+	domain	dmdoc.docid	temp.docd, temp.ven.docd
+	domain	dmdoc.revv	temp.revn
+		
+	temp.docd = ""
+	temp.revn = ""
+	temp.ven.docd = ""
+	
+	select	dmisg135.docn:temp.ven.docd,
+	 	dmisg135.idoc:temp.docd,
+		dmisg135.irev:temp.revn
+	from	dmisg135
+	where	dmisg135._index1 = {:dmisg134.rcno, :dmisg134.revn}
+	selectdo
+		if isspace(temp.docd) or isspace(temp.revn) then
+			message("Isgec Document ID/Revision is Blank Against Receipt %s and Vendor Document %s.", dmisg134.rcno, temp.ven.docd)
+			return(false)
+		endif	
+	selectempty
+		message("No Document found against this Receipt No %s", dmisg134.rcno)
+		return(false)
+	endselect
+	return(true)
+}				|#ISGECMOD001.en
+
+function update_transmittal()
+{
+	select	dmisg134.trno, dmisg134.stat
+	from	dmisg134 for update
+	where	dmisg134._index1 = {:dmisg134.rcno, :dmisg134.revn}
+	selectdo
+		dmisg134.trno = dmisg131.tran
+| 		dmisg134.stat = dmisg.receipt.issued				|#ISGEC016016.o
+		db.update(tdmisg134, db.retry)
+		commit.transaction()
+	endselect
+
+}
+
+
+								|#ISGEC004021.sn
+function send.email.alert()
+{
+	domain	tcnama	nama			|#ISGEC01122.n
+	string tmp.file(200),line(500)
+	long fp
+	
+	long    message.ID
+        long    to.ID
+        long    attachment.ID
+        long    ret
+	long stat 
+	
+	tmp.file = creat.tmp.file$(bse.tmp.dir$())
+	fp = seq.open(tmp.file,"w+")
+	if fp <=0 then
+		message("Temp file can not be created")
+	endif
+
+	line = ""
+	line = strip$(line) & "Receipt No. " & dmisg134.rcno
+	line = strip$(line) & " has been sent for approval" & chr$(13)&chr$(10)
+
+	seq.write(line,len(line),fp)
+	ret = seq.close(fp)
+
+	select 	bpmdm001.mail,tccom001.nama 
+	from 	tccom001,bpmdm001
+	where 	tccom001._index4 = {:dmisg134.suer}
+	and	tccom001.emno refers to bpmdm001
+	as set with 1 rows
+	selectdo
+	selectempty
+		bpmdm001.mail = ""
+	endselect
+
+	if isspace(bpmdm001.mail) then
+		message("Email ID for user " & dmisg134.suer & " Not maintained")
+	endif		
+	
+	|******* Email Header
+        message.ID = cmf.create()
+	line = "Approve " & "Receipt " & dmisg134.rcno
+	
+	ret = cmf.setClass(message.ID, "CMF.NOTE.EMAIL")
+        ret = cmf.setSubject(message.ID,line)
+	
+	|******** from ID
+	to.ID = cmf.createRecipient(message.ID, ttcmf.role.from)  
+	ret = cmf.setRecipientName(to.ID,tccom001.nama)
+        ret = cmf.setRecipientAddress(to.ID, bpmdm001.mail)	
+	ret = cmf.setRecipientType(to.ID, "SMTP")
+ 
+	|******** to ID
+	select	dmisg133.*
+	from	dmisg133
+	where	dmisg133.eunt = :dmisg134.eunt
+	and	dmisg133.cprj = :dmisg134.cprj
+	selectdo
+		select 	bpmdm001.mail,tccom001.nama 
+		from 	tccom001,bpmdm001
+		where 	tccom001._index4 = {:dmisg133.logn}
+		and	tccom001.emno refers to bpmdm001
+		and	bpmdm001.mail <> ""
+		selectdo
+			to.ID = cmf.createRecipient(message.ID, ttcmf.role.to)  
+			ret = cmf.setRecipientName(to.ID,tccom001.nama)
+			ret = cmf.setRecipientAddress(to.ID, bpmdm001.mail)	
+			ret = cmf.setRecipientResponsibility(to.ID, "TRUE")		
+			ret = cmf.setRecipientType(to.ID, "SMTP")
+		selectempty
+		endselect
+	endselect
+	
+	select	dmisg231.mail,dmisg231.emno,						|#ISGEC01122.sn
+		tccom001.nama:nama				
+	from	dmisg231, dmisg136, tccom001
+	where	dmisg231._index1 = {dmisg136.cprj}
+	and	dmisg231.emno	refers	to tccom001	UNREF CLEAR
+	as set with 1 rows
+	selectdo
+		to.ID = cmf.createRecipient(message.ID, ttcmf.role.to)  
+		ret = cmf.setRecipientName(to.ID,nama)
+		ret = cmf.setRecipientAddress(to.ID, dmisg231.mail)	
+		ret = cmf.setRecipientResponsibility(to.ID, "TRUE")		
+		ret = cmf.setRecipientType(to.ID, "SMTP")
+	endselect									|#ISGEC01122.en
+	
+	|********* Mail Body
+	attachment.ID = cmf.createAttachment(message.ID)
+	ret = cmf.setAttachmentBody(attachment.ID,ttyeno.yes)
+	ret = cmf.setAttachmentMIME(attachment.ID,"text/plain")                       
+	ret = cmf.setAttachmentFileName(attachment.ID,tmp.file,"abc.txt")
+
+
+	|*********  Send mail
+        if message.ID <>0 then
+                stat = cmf.startService("SMTP",2)
+                if stat <> 0 then
+                        message("Message could not be sent "&
+                                "(Infor ERP Enterprise eMessage Connector"&
+                                " service did not start)")
+		endif
+			
+                stat = cmf.send(message.ID,"SMTP")
+                if stat<>0 then
+                        message("Message could not be sent "& "(Infor ERP Enterprise eMessage Connector "&
+                                "service refused message)")
+                        cmf.stopService("SMTP",2)
+                endif
+                stat = cmf.stopService("SMTP",2)
+        endif	
+}
+					
+						|#ISGEC004021.en
+
+
+function insert.tpisg229.data()								|#ISGEC0166.sn
+{
+
+			
+	var.trdt = utc.num()
+	var.indv = dmisg134.rcno &"_"& str$(dmisg134.revn)
+	srno = 1
+	
+	get.project.element()
+	
+	
+	user = logname$
+	if user(1;1) = "0" then
+		user = str$(lval(user))
+	endif
+	
+	select tpisg229.*
+	from	tpisg229
+	where	tpisg229._index1 = {:var.trdt,:var.bohd,:var.indv,:srno}
+	selectdo
+	selectempty
+		tpisg229.trdt = var.trdt
+		tpisg229.bohd = var.bohd
+		tpisg229.indv = var.indv
+		tpisg229.proj = dmisg134.cprj
+		tpisg229.elem = tdpur401.cspa
+		
+		tpisg229.srno = 1
+		tpisg229.user = toupper$(user)
+
+		db.insert(ttpisg229,db.skip.dupl,e)
+		
+		if e= 0  then
+			commit.transaction()
+		else
+			abort.transaction()
+		endif
+		
+	endselect
+	
+	select	count(tdisg002.docn):v.count,
+		sum(tdisg002.wght):v.wght
+	from	tdisg002 
+	where	tdisg002._index1 = {:dmisg134.orno,:dmisg134.pono}
+	group by tdisg002.docn
+	selectdo
+	endselect
+
+	
+	select tpisg230.*
+	from	tpisg230 
+	where	tpisg230._index1 = {:var.trdt,:var.bohd,:var.indv,:srno}
+	selectdo
+	selectempty
+		tpisg230.trdt = var.trdt
+		tpisg230.bohd = var.bohd
+		tpisg230.indv = var.indv
+		tpisg230.srno = srno
+		
+		tpisg230.dsno = get.last.serial.num()
+		tpisg230.proj = tpisg229.proj
+		tpisg230.elem = tpisg229.elem
+		tpisg230.dwno = get.docn()
+		tpisg230.wght = v.wght
+		tpisg230.pitc = v.count
+		
+		db.insert(ttpisg230,db.skip.dupl,e)
+		if e = 0 then
+			commit.transaction()
+		endif
+	endselect
+
+	select	tdisg002.quom,
+		sum(tdisg002.qnty):var.qnty
+	from	tdisg002 
+	where	tdisg002._index1 = {:dmisg134.orno,:dmisg134.pono}
+	group by tdisg002.quom
+	selectdo
+		select	tpisg235.*
+		from	tpisg235
+		where	tpisg235._index1 = {:var.trdt,:var.bohd,:var.indv,:srno}
+		selectdo
+		selectempty
+			tpisg235.trdt = var.trdt
+			tpisg235.bohd = var.bohd
+			tpisg235.indv = var.indv
+			tpisg235.srno = srno
+			tpisg235.sern = get.last.unit.serial.number()
+			tpisg235.cuni = tdisg002.quom
+			tpisg235.qnty = var.qnty
+			
+			db.insert(ttpisg235,db.skip.dupl,e)
+			if e = 0 then
+				commit.transaction()
+			else
+				abort.transaction()
+			endif
+		endselect
+		
+	endselect
+
+}
+
+function domain tcmcs.long get.last.unit.serial.number()
+{
+
+	select	tpisg235.sern
+	from	tpisg235
+	order by tpisg235.sern desc
+	as set with 1 rows
+	selectdo
+		var.sern = tpisg235.sern + 1
+	selectempty
+		var.sern = 0
+	endselect
+	
+	return(var.sern)
+}
+
+function get.project.element()
+{
+	select	tdpur401.cspa
+	from	tdpur401	
+	where	tdpur401._index1= {:dmisg134.orno, :dmisg134.pono}
+	selectdo
+	selectempty
+		tdpur401.cspa = ""
+	endselect
+
+}
+
+
+function domain dmdoc.docid get.docn()
+{
+	select	tdisg002.docn
+	from	tdisg002 
+	where	tdisg002._index1 = {:dmisg134.orno,:dmisg134.pono}
+	selectdo
+	endselect
+
+	return(tdisg002.docn)
+}
+
+function domain tcmcs.long get.last.serial.num()
+{
+	select	tpisg230.dsno:v.dsno
+	from	tpisg230
+	order by tpisg230.dsno desc
+	as set with 1 rows
+	selectdo
+		v.dsno = v.dsno + 1
+	selectempty
+		v.dsno = 1
+	endselect
+
+	return(v.dsno)
+}														|#ISGEC0166.en
+
+function boolean user.is.authorised()		|ISGEC01096.sn
+{
+	domain	tclogn	curr.user
+	curr.user = logname$
+	
+	select	dmisg130.*
+	from	dmisg130
+	where	dmisg130._index1 = {:curr.user}
+	selectdo
+	endselect
+
+	select	dmisg164.*
+	from	dmisg164
+	where	dmisg164.item =:dmisg134.item
+	as set with 1 rows
+	selectdo
+| 		owner = enum.descr$("dmisg.eng", dmisg164.ownr ,"2")
+| 		owner_1 = toupper$(owner(1;3))
+		
+		on case etol(dmisg164.ownr)
+		case 1:
+			owner_1 = "MEC"
+			break
+		case 2:
+			owner_1 = "STR"
+			break
+		case 3:
+			owner_1 = "PIP"
+			break
+		case 4:
+			owner_1 = "PRC"
+			break
+		case 5:
+			owner_1 = "C&I"
+			break
+		case 6:
+			owner_1 = "ELE"
+			break
+		case 7:
+			owner_1 = "QLY"
+			break
+		case 8:
+			owner_1 = "PRJ"
+			break
+		endcase
+		
+| 		if trim$(dmisg130.eunt) = trim$(dmisg164.eunt) and trim$(dmisg130.dept) = trim$(dmisg164.ownr) then
+| 		if trim$(dmisg134.item) = trim$(dmisg164.item) and trim$(dmisg130.dept) = trim$(dmisg164.ownr) then
+| 		if trim$(dmisg134.item) = trim$(dmisg164.item) and trim$(dmisg130.dept) = trim$(owner_1) then
+		if trim$(dmisg134.item) = trim$(dmisg164.item) and trim$(dmisg130.dept) = owner_1 then
+			return(true)
+		else
+			return(false)
+		endif
+	endselect	
+	return(true)
+
+}						|ISGEC01096.en

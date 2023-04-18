@@ -1,0 +1,149 @@
+|******************************************************************************
+|* tfisg1406m001  0  VRC B61U a7 live
+|* Print Trial Balance(Customized)
+|* Installation user             
+|* 2014-10-04
+|******************************************************************************
+|* Main table tfgld106 Finalized Transactions, Form Type 4
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttfgld106 | Finalized Transactions
+  table   ttfgld005
+  table   ttfgld008
+  table   ttfgld203
+  table   ttfgld201
+
+   extern  domain  tfgld.year       fyer
+   extern  domain  tfgld.prod       fprd
+   extern  domain  tfgld.subl       subl.f
+   extern  domain  tfgld.subl       subl.t
+   extern  domain  tcyesno	     prnt.zbal
+   extern  domain  tfgld.actp       atyp
+   extern  domain  tfgld.date	     tdat
+   extern  domain  tfgld.amnt       debit
+   extern  domain  tfgld.amnt       credit
+   extern  domain  tfgld.amnt       v.fobh
+   long vcomp
+
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.cont.process:
+on.choice:
+   execute(print.data)
+
+choice.print.data:
+on.choice:
+   if rprt_open() then
+       read.main.table()
+       rprt_close()
+   else
+       choice.again()
+   endif
+
+
+|****************************** field section *********************************
+
+field.subl.f:
+when.field.changes:
+   subl.t = subl.f
+   
+field.fprd:
+before.zoom:
+	tfgld005.year = fyer
+
+|****************************** function section ******************************
+
+functions:
+
+function read.main.table()
+{
+	domain	tfgld.amnt	leacdbamt
+	domain	tfgld.amnt	leaccramt
+	domain	tfgld.amnt	leacbal
+	
+	vcomp = get.compnr()
+	select tfgld008.leac, tfgld008.pseq,tfgld008.desc, tfgld008.dbcr, tfgld008.atyp
+	from tfgld008
+	where tfgld008.subl between :subl.f and :subl.t
+	order by tfgld008._index3
+	selectdo
+		debit = 0
+		credit = 0
+		leacbal = 0
+		leacdbamt = 0
+		leaccramt = 0 
+| 		tfgld203.fobh(1) = 0
+		v.fobh = 0
+		
+		if atyp <> tfgld.actp.all then
+			if atyp = tfgld.actp.balance then
+				if tfgld008.atyp <> tfgld.atyp.balance then 
+					continue
+				endif
+			else
+				if atyp = tfgld.actp.profitloss then
+					if tfgld008.atyp <> tfgld.atyp.profitloss then 
+						continue
+					endif
+				else
+					if atyp = tfgld.actp.intercompany then
+						if tfgld008.atyp <> tfgld.atyp.intercompany then 
+							continue
+						endif
+					endif
+				endif
+			endif
+		endif
+		 
+		select	tfgld203.fobh
+		from	tfgld203
+		where   tfgld203.cono = :vcomp
+		and	tfgld203.year = :fyer
+		and	tfgld203.leac = :tfgld008.leac
+		selectdo
+			v.fobh = v.fobh + tfgld203.fobh(1)
+		endselect
+
+		select	tfgld201.fdah, 
+			tfgld201.fcah
+		from	tfgld201
+		where  tfgld201.cono = :vcomp
+		and	tfgld201.ptyp = tfgld.ptyp.financial
+		and	tfgld201.year = :fyer
+		and	tfgld201.prno <= :fprd
+		and	tfgld201.leac = :tfgld008.leac
+		selectdo
+			leacdbamt = leacdbamt + tfgld201.fdah(1)
+			leaccramt = leaccramt + tfgld201.fcah(1)
+		endselect
+
+		leacbal = v.fobh + (leacdbamt - leaccramt)
+| 		leacbal = v.fobh + (leaccramt - leacdbamt)
+		if leacbal <> 0 then
+			if tfgld008.dbcr =  tfgld.dbcr.debit then
+				debit = leacbal
+			else
+				credit = -1 * leacbal
+			endif
+		
+			rprt_send()
+		else
+			if prnt.zbal = tcyesno.yes then
+				rprt_send()
+			endif
+		endif	
+	endselect
+
+}

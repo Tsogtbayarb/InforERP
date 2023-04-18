@@ -1,0 +1,591 @@
+|******************************************************************************
+|* tfisg1410m000  0  VRC B61U a7 isg 
+|* Print Vat Report
+|* Installation user             
+|* 2015-01-30
+|******************************************************************************
+|* Main table tfgld110 Tax Analysis, Form Type 4
+|******************************************************************************
+|*IDENT ISGEC01043, Gokul Chaurasia, IT0388, 30/01/2015 VRC B61U a7 isg
+|****************************** declaration section ***************************
+|* ID: PATCH001049,	Sujeet Kumar,		2015-03-13
+|* Script Cleaned and Rewritten by sujeet.
+|*
+|* ID ISGEC01047, Ritu Sharma, 2015-06-06, VRC B61U a7 isg
+|* Modifications for excel file type
+|
+|*ID : 6746, Mani sharma, 2015-06-12, VRC B61U a7 isg 
+|*Modification to print data
+|****************************** declaration section ***************************
+declaration:
+
+table		ttfgld110 	| Tax Analysis
+table		ttcmcs052
+table   	ttccom120
+					
+table	ttfacp936
+table	ttfgld110
+table	ttfgld107
+table	ttfacp200
+table	ttccom100
+table	ttfacp251
+table	ttcmcs143
+table	ttcmcs032
+table	ttcmcs036
+table	ttdpur401
+table	ttdpur406
+
+					
+					
+
+extern	domain		tccprj	     		cprj.f
+extern	domain		tccprj	     		cprj.t
+extern	domain		tcmcs.cste		cste.f	fixed
+extern	domain		tftfboth		i.nftr
+extern	domain  	tccom.bpid	     	otbp.f
+extern	domain  	tccom.bpid	     	otbp.t
+extern	domain  	tfgld.prod	     	prno.f
+extern	domain  	tfgld.prod	     	prno.t
+extern	domain  	tfgld.year       	year.f
+extern	domain  	tfgld.year       	year.t
+   
+| 	domain  tctax.txnb	     t.csto
+	domain	tcncmp		curr.comp
+	domain	tcmcs.cste	bp.cste
+	
+	domain	tcamnt	o.exc.amnt,tot.exc.amnt
+	domain	tcamnt	o.cst.amnt,tot.cst.amnt
+	domain	tcamnt	o.ser.amnt,tot.ser.amnt
+	domain	tcamnt	o.vat.amnt,tot.vat.amnt
+	domain	tcmcs.str8	receipt_source
+	
+	domain	tcamnt		tot.receipt.amnt
+	domain	tcamnt		receipt.amnt
+	
+	domain	tcamnt	o.lcam
+	domain	tcamnt	tot.landed.cost
+
+
+|******************************* File Handling ********************************		
+						
+	long				file_pointer		
+ 	domain	tcmcs.str100m		temp.file		
+	domain	tcmcs.str100m		error	
+
+	domain	tcpvat			tax.rate
+	domain	tcamnt			excise.amnt
+	domain	tcamnt			vat.passed
+	long exitCode 
+	
+	#include <bic_desktop>			|#ISGEC01047.n
+	
+#define EXCISABLE_TAX_CATEGORY	(tcmcs036.indt.l = tctax.indt.l.bed 
+^ or 	tcmcs036.indt.l = tctax.indt.l.e.cess.excise 
+^ or	tcmcs036.indt.l = tctax.indt.l.hse.cess.excise)
+	
+						
+|****************************** program section ********************************
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+				|#PATCH001021.sn
+choice.cont.generate:
+before.choice:
+	if not tfisgdll9999.create.file(file_pointer,temp.file,error) then
+		message("%s",error)
+		choice.again()
+	endif
+on.choice:
+	tfisgdll9999.create.file.header(file_pointer,asc("	"),
+			"Supplier",		|1
+			"Supplier Name",	|2
+			"Address",		|3
+			"TIN",			|4
+			"CST",			|5
+			"Tax Invoice",		|6
+			"Invoice Date",		|7
+			"Item",			|8
+			"Quantity",		|9
+			"Unit",			|10
+			"Basic Amount",		|11
+			"Excise Duty",		|12
+			"Other Charges",	|14
+			"Taxable Value of Goods",|15
+			"Tax Code",		|16
+			"Tax Rate",		|17
+			"Tax Ledger",		|18
+			"VAT Claimed",		|19
+			"VAT Passed",		|19.1
+			"Difference Any",	|20
+			"Tax Invoice Amount",	|21
+			"PTR No.",		|22
+			"PTR Amount",		|23
+			"STR No.")		|24
+			
+	read.main.table1()
+	tfisgdll9999.close.file(file_pointer,temp.file)
+										
+		
+| 	app_start(temp.file,"","","","")				|#ISGEC01047.en
+| 	start.application.local(temp.file,0,exitCode)				|#ISGEC01047.en
+				|#PATCH001021.en
+|****************************** field section *********************************
+
+field.cprj.f:
+when.field.changes:
+   cprj.t = cprj.f
+   
+field.otbp.f:
+when.field.changes:
+   otbp.t = otbp.f
+   
+field.prno.f:
+when.field.changes:
+   prno.t = prno.f
+   
+field.year.f:
+when.field.changes:
+   year.t = year.f
+
+   
+field.cste.f:
+before.zoom:
+	tcmcs143.ccty = "IN"	
+|****************************** function section ******************************
+
+functions:
+
+
+						|#PATCH001021.sn
+function read.main.table1()
+{
+	
+	
+	boolean		o.found
+	boolean		receipt_found
+	domain	tcpvat		o.pvat
+	domain	tccvat		o.cvat
+	domain	tfgld.leac	o.leac
+	
+	
+	curr.comp = get.compnr()
+	
+	select 	tfacp200.*,
+		tccom100.nama,
+		tccom100.cadr
+	from	tfacp200,tccom100
+	where	tfacp200._index2 inrange {:otbp.f} and {:otbp.t}
+	and	tfacp200.year = :year.f 
+	and	tfacp200.prod inrange :prno.f and :prno.t
+	and	tfacp200.ifbp refers to tccom100
+	and	tfacp200.docn = 0
+	and	(tfacp200.tpay = tfacp.tpay.invoice  or tfacp200.tpay = tfacp.tpay.credit)
+	selectdo
+		
+		select 	tccom100.cadr
+		from	tccom100
+		where	tccom100._index1 = {:tfacp200.ifbp}
+		as set with 1 rows
+		selectdo
+		endselect
+		
+		tot.exc.amnt = 0
+		tot.cst.amnt = 0
+		tot.ser.amnt = 0
+		tot.vat.amnt = 0
+		tot.landed.cost = 0
+		excise.amnt = 0
+		vat.passed = 0
+		tot.receipt.amnt = 0
+		
+		tfacp251.rcno = ""
+		tfacp251.rseq = 0
+		
+		
+		select 	tfacp251.icom,
+			tfacp251.ityp,
+			tfacp251.idoc,
+			tfacp251.rcno,
+			tfacp251.rseq
+		from	tfacp251,tdpur401
+		where	tfacp251._index1 = {:curr.comp,:tfacp200.ttyp,:tfacp200.ninv}
+		and	tfacp251.otyp = tfacp.otyp.purchase
+		and	tdpur401._index1 = {tfacp251.orno,tfacp251.pono,tfacp251.sqnb}
+		and	tdpur401.cprj inrange :cprj.f and :cprj.t
+		group by tfacp251.icom,tfacp251.ityp,tfacp251.idoc,tfacp251.rcno,tfacp251.rseq
+		selectdo
+			receipt_found = true
+			
+			
+			o.exc.amnt = 0
+			o.cst.amnt = 0
+			o.ser.amnt = 0
+			o.vat.amnt = 0
+			receipt.amnt = 0
+			
+			receipt_source = whisgdll0312.receipt.source(tfacp251.rcno,tfacp251.rseq)
+			
+			receipt.amnt = whisgdll0312.receipt.amount(tfacp251.rcno,tfacp251.rseq)
+			
+			if receipt.amnt = 0 then
+				select 	tfacp251.iamt:receipt.amnt
+				from	tfacp251
+				where	tfacp251._index1 = {:tfacp251.icom,:tfacp251.ityp,:tfacp251.idoc}
+				and	tfacp251.otyp = tfacp.otyp.purchase
+				and	tfacp251.rcno = :tfacp251.rcno
+				and	tfacp251.rseq = :tfacp251.rseq
+				as set with 1 rows
+				selectdo
+				endselect
+			endif	
+					
+			tot.receipt.amnt = tot.receipt.amnt + receipt.amnt
+			
+			if not whisgdll0312.get.tax.from.whinh936.1(tfacp251.rcno,tfacp251.rseq,"IN",cste.f,
+					o.exc.amnt,o.cst.amnt,o.ser.amnt,o.vat.amnt) then
+				if not whisgdll0312.get.tax.from.tfacp935(tfacp251.rcno,tfacp251.rseq,
+					cste.f,o.exc.amnt,o.vat.amnt) then
+				endif
+			endif
+			
+			
+			tot.exc.amnt = tot.exc.amnt + o.exc.amnt 
+			tot.cst.amnt = tot.cst.amnt + o.cst.amnt
+			tot.ser.amnt = tot.ser.amnt + o.ser.amnt
+			tot.vat.amnt = tot.vat.amnt + o.vat.amnt
+		
+			whisgdll0312.Calculate.LandedCost.Amount(tfacp251.rcno,tfacp251.rseq,receipt.amnt,o.lcam)
+			tot.landed.cost = tot.landed.cost + o.lcam
+			
+		selectempty
+			receipt_found = false
+		endselect
+		
+		if not receipt_found then
+			continue
+		endif
+		
+
+		tdpur406.qiap = 0
+		tdpur401.item = ""
+		tdpur401.cuqp = ""
+		
+		select 	tdpur406.qiap,
+			tdpur401.item,
+			tdpur401.cuqp
+		from	tdpur406,tdpur401
+		where	tdpur406._index2 = {:tfacp251.rcno,:tfacp251.rseq}
+		and	tdpur401._index1 = {tdpur406.orno,tdpur406.pono,tdpur406.sqnb}
+		as set with 1 rows
+		selectdo
+		selectempty
+			tdpur406.qiap = 0
+			tdpur401.item = ""
+			tdpur401.cuqp = ""
+		endselect
+		
+
+			o.cvat = ""
+			o.pvat = 0
+			o.leac = ""
+			excise.amnt = 0
+			vat.passed = 0
+			
+			on case i.nftr
+			case	tftfboth.no:
+				get.non.finalized.tax.data(tfacp251.icom,tfacp251.ityp,tfacp251.idoc,
+						cste.f,o.pvat,o.cvat,o.leac)
+				break
+			case	tftfboth.yes:
+				get.finalized.tax.data(tfacp251.icom,tfacp251.ityp,tfacp251.idoc,
+						cste.f,o.pvat,o.cvat,o.leac)
+				break
+			case	tftfboth.both:
+				get.non.finalized.tax.data(tfacp251.icom,tfacp251.ityp,tfacp251.idoc,
+						cste.f,o.pvat,o.cvat,o.leac)
+				get.finalized.tax.data(tfacp251.icom,tfacp251.ityp,tfacp251.idoc,
+						cste.f,o.pvat,o.cvat,o.leac)
+				break
+			endcase
+		
+		
+			
+		if vat.passed = 0 then
+			continue
+		endif
+		
+
+		tfisgdll9999.create.detail.line(file_pointer,asc("	"),
+			tfacp200.ifbp,		|"Supplier,"		|1
+			tccom100.nama,		|"Supplier Name",	|2
+			strip$(tccom.dll4032.get.address.line1(tccom100.cadr)) &
+| 			" " & strip$(tccom.dll4032.get.address.line1(tccom100.cadr )),			|"Address",		|3	|#ISGEC01047.o
+			" " & strip$(tccom.dll4032.get.address.line1(tccom100.cadr ))	&		|"Address",		|3	|#ISGEC01047.sn
+			" " & strip$(tccom.dll4032.get.address.line2(tccom100.cadr ))	&	
+			" " & strip$(tccom.dll4032.get.address.line3(tccom100.cadr ))  &
+			" " & strip$(tccom.dll4032.get.address.line4(tccom100.cadr ))	&		
+			" " & strip$(tccom.dll4032.get.address.line5(tccom100.cadr ))	&		
+			" " & strip$(tccom.dll4032.get.address.line6(tccom100.cadr )),							|#ISGEC01047.en		
+			get.supplier.registration.no(tfacp200.ifbp,tctax.catg.l.vat),	|"TIN",			|4
+			get.supplier.registration.no(tfacp200.ifbp,tctax.catg.l.cst),	|"CST",			|5
+			tfacp200.isup,		|"Tax Invoice",		|6
+			sprintf$("%D(%02d-%02m-%04Y)",tfacp200.docd),|"Invoice Date",		|7
+			tdpur401.item,			|"Item",			|8
+			tdpur406.qiap,			|"Quantity",		|9
+			tdpur401.cuqp,			|"Unit",			|10
+			tot.receipt.amnt,	|"Basic Amount",	|11
+			tot.exc.amnt,		|"Excise Duty		|12	|From Logistic Table
+			tot.landed.cost,	|"Other Charges",	|14
+			(tot.receipt.amnt + tot.exc.amnt + tot.landed.cost ),	|"Taxable Value of Goods",|15
+			o.cvat,			|"Tax Code",		|16
+			o.pvat,			|"Tax Rate",		|17
+			o.leac,			|"Tax Ledger",		|18
+			tot.vat.amnt,		|"VAT Claimed",		|19
+			vat.passed,		|"VAT Passed",		|19.1
+			(tot.vat.amnt - vat.passed),			|"Difference Any",	|20
+			(tot.receipt.amnt + tot.exc.amnt + tot.landed.cost ) + vat.passed, |"Tax Invoice Amount",	|21
+			tfacp200.ttyp & "/" & str$(tfacp200.ninv),	|"PTR No.",		|22
+			tfacp200.amth(1),	|"PTR Amount",		|23
+			get.invoice.number.against.receipt(tfacp251.rcno,tfacp251.rseq))	|"STR No.")		|24
+
+	endselect
+	
+}
+
+
+
+
+
+
+
+
+
+
+
+|******************
+
+
+
+function domain tctax.txnb get.supplier.registration.no
+			(
+				domain	tccom.bpid	i.bpid,
+				domain	tctax.catg.l	i.catg.l
+			)
+{
+	domain	tctax.txnb	o.tctax400.fovn
+	
+	select 	tctax400.fovn:o.tctax400.fovn
+	from	tctax400
+	where	tctax400._index1 = {:i.bpid}
+	and	tctax400.catg.l = :i.catg.l
+	as set with 1 rows
+	selectdo
+	selectempty
+		o.tctax400.fovn = ""
+	endselect
+	
+	
+	return(o.tctax400.fovn)
+}
+
+
+
+
+function get.non.finalized.tax.data
+			(
+				domain	tcncmp		i.icom,		|Company 
+				domain	tfgld.ttyp	i.ityp,		|Transaction Type
+				domain	tfgld.docn	i.idoc,		|Document Number
+				domain	tcmcs.cste	i.cste,		|State
+			ref 	domain	tcpvat		o.pvat,		|Tax Rate
+			ref 	domain	tccvat		o.cvat,		|Tax Code
+			ref 	domain	tfgld.leac	o.leac		|Tax Ledger
+			
+			)		
+		
+{		
+		select 	tfgld107.ccty,
+			tfgld107.cvat,
+			tfgld107.vamh,
+			tfgld107.vlac,
+			tcmcs036.indt.l
+		from	tfgld107,tcmcs036,tcisg020
+		where	tfgld107._index1 ={:i.icom,:i.ityp,:i.idoc}
+		and	tcmcs036._index1 = {tfgld107.ccty,tfgld107.cvat}
+		and	tcisg020.cmbb = {tfgld107.ccty,tfgld107.cvat}
+		selectdo
+			if validate.tax.code.against.state(tfgld107.ccty,i.cste,tfgld107.cvat) then
+				o.pvat = get.tax.rate1(tfgld107.ccty,tfgld107.cvat)
+				o.cvat = tfgld107.cvat
+				o.leac = tfgld107.vlac
+				calculate.tax.amount(tfgld107.cvat,tcmcs036.indt.l,o.pvat,tfgld107.vamh(1))		|ISGEC01051.n
+| 				calculate.tax.amount(tfgld107.cvat,tcmcs036.indt.l,tax.rate,tfgld107.vamh(1))		|ISGEC01051.o
+			endif
+		endselect
+}
+
+function boolean validate.tax.code.against.state
+			(
+				domain	tcccty		i.ccty,
+				domain	tcmcs.cste	i.cste,
+				domain	tccvat		i.cvat
+			)
+{
+	domain	tcmcs.cste	o.cste
+	select 	tcisg020.cste:o.cste
+	from	tcisg020
+	where 	tcisg020._index1 = {:i.ccty,:i.cste,:i.cvat}
+	as set with 1 rows
+	selectdo
+	selectempty
+		return(false)
+	endselect
+	
+	return(true)
+}
+
+function get.finalized.tax.data
+			(
+				domain	tcncmp		i.icom,		|Company 
+				domain	tfgld.ttyp	i.ityp,		|Transaction Type
+				domain	tfgld.docn	i.idoc,		|Document Number
+				domain	tcmcs.cste	i.cste,		|State
+			ref 	domain	tcpvat		o.pvat,		|Tax Rate
+			ref 	domain	tccvat		o.cvat,		|Tax Code
+			ref 	domain	tfgld.leac	o.leac		|Tax Ledger
+			)
+{		
+	select 	tfgld110.ccty,
+		tfgld110.cvat,
+		tfgld110.vamh,
+		tfgld110.vlac,
+		tcmcs036.indt.l
+	from	tfgld110,tcmcs036,tcisg020
+	where	tfgld110._index1 = {:i.icom,:i.ityp,:i.idoc}
+	and	tfgld110.c001 refers to tcmcs036
+	and	tfgld110.c001 refers to tcisg020
+	selectdo
+		if validate.tax.code.against.state(tfgld110.ccty,i.cste,tfgld110.cvat) then
+			o.pvat = get.tax.rate1(tfgld110.ccty,tfgld110.cvat)
+			o.cvat = tfgld110.cvat
+			o.leac = tfgld110.vlac
+			calculate.tax.amount(tfgld110.cvat,tcmcs036.indt.l,o.pvat,tfgld110.vamh(1))			|ISGEC01051.n
+| 			calculate.tax.amount(tfgld110.cvat,tcmcs036.indt.l,tax.rate,tfgld110.vamh(1))			|ISGEC01051.o
+		endif
+		
+	endselect
+}		
+
+
+function domain tcpvat get.tax.rate1
+			(
+				domain	tcccty		i.ccty,
+				domain	tccvat		i.cvat
+			)
+{
+	select	tcmcs032.pvat
+	from	tcmcs032
+	where	tcmcs032._index1 = {:i.ccty,:i.cvat}
+	as set with 1 rows
+	selectdo
+	selectempty
+		tcmcs032.pvat = 0
+	endselect
+	
+	return(tcmcs032.pvat)
+}
+
+
+
+function calculate.tax.amount
+			(
+				domain	tccvat		i.cvat,
+				domain	tctax.indt.l 	i.indt.l,
+				domain	tcpvat 		i.tax.rate,
+				domain	tfgld.amnt	i.amnt
+			)
+{
+
+	
+	
+	
+	on case	i.indt.l
+	case	tctax.indt.l.bed:		|Basic Excise Duty
+		excise.amnt = excise.amnt + i.amnt
+		
+		break
+	case	tctax.indt.l.e.cess.excise:	|Educational Cess on Excise
+		excise.amnt = excise.amnt + i.amnt
+		break
+	case	tctax.indt.l.hse.cess.excise:	|Secondary And Higher Ecess on Excise
+		excise.amnt = excise.amnt + i.amnt
+		break
+	case	tctax.indt.l.bcd:		|Basic Custom Duty
+		break
+	case	tctax.indt.l.e.cess.customs:	|Educational Cess on Customs
+		break
+	case	tctax.indt.l.hse.cess.custom:	|Secondary and Higher Ecess On Customs
+		break
+	case	tctax.indt.l.cvd:		|Countervailing Duty
+		break
+	case	tctax.indt.l.adc:		|Additional Duty of Customs
+		break
+	case	tctax.indt.l.service:		|Service Tax
+		break
+	case	tctax.indt.l.e.cess.service:	|Educational Cess on Service
+		break
+	case	tctax.indt.l.hse.cess.servic:	|Secondary and Higher Ecess on Service
+		break
+
+	case	tctax.indt.l.cst:		|Central Sales Tax
+		
+		break
+	case	tctax.indt.l.vat:		|VAT
+	case	tctax.indt.l.lst:		|Local Sales Tax
+	case	tctax.indt.l.n.a:		|Not Applicalbe
+		vat.passed = vat.passed + i.amnt
+
+		break
+	endcase
+	
+}
+
+function string get.invoice.number.against.receipt
+					(
+						domain	whinh.shpm	i.rcno,
+						domain	tcpono		i.rcln
+					)
+{
+	domain	tcmcs.str15	i.document
+	domain	tfgld.ttyp	o.tpisg039.ityp
+	domain	tfgld.docn	o.tpisg039.idoc
+	
+	o.tpisg039.ityp = ""
+	o.tpisg039.idoc = 0
+	
+	select 	tpisg039.ityp:o.tpisg039.ityp,
+		tpisg039.idoc:o.tpisg039.idoc
+	from	tpisg039
+	where	tpisg039.rcno = :i.rcno
+	and	tpisg039.rcln = :i.rcln
+	as set with 1 rows
+	selectdo
+	endselect
+	
+	if o.tpisg039.idoc <> 0 then
+		i.document = o.tpisg039.ityp & "/" & str$(o.tpisg039.idoc)
+	else
+		i.document = ""
+	endif
+	
+	
+	return(i.document)
+	
+	
+}
+							

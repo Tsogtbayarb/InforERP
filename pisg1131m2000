@@ -1,0 +1,72 @@
+|******************************************************************************
+|* dmisg1131m200  0  VRC B61U a7 isg 
+|* Transmittal Issue
+|* Installation user             
+|* 2015-01-29
+|******************************************************************************
+|* Main table dmisg131 Transmittal Creation and Submission for Approval, Form Type 1
+|******************************************************************************
+|* ISGEC004004, IT0047, Dharmendra, Dt. 30-01-2015, B61U a7 isg                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+	table   tdmisg131 | Transmittal Creation and Submission for Approval
+	table   tdmisg132
+	string	query.string(500)
+	extern	domain tcdsca	sending
+	extern	domain tcdsca	submission
+	extern	domain	tcdsca	sent
+	extern	domain 	tcpono	tran.print, serial
+	extern	domain	tcnama	transmittal
+
+
+|****************************** program section ********************************
+before.program:
+	query.string = ""
+	
+	query.string = "dmisg131.dprj in (select dmisg129.cprj from dmisg129 where dmisg129._index3 = :logname$)"
+	query.string = strip$(query.string) & " and dmisg131.type in (select dmisg129.tran from dmisg129 where dmisg129._index3 = :logname$)"
+	query.string = strip$(query.string) & " and dmisg131.stat = dmisg.doc.rec.underiss"
+	query.extend.where(query.string)
+
+choice.print.data:
+on.choice:
+	if rprt_open() then						
+		tdisgdll831rep_transmittal(dmisg131.tran)
+		rprt_close()
+	else
+		choice.again()
+	endif
+
+|****************************** function section **********************************
+functions:
+
+function extern process()
+{
+	select	dmisg131.*	
+	from	dmisg131 for update
+	where	dmisg131._index2 = {dmisg.doc.rec.underiss}
+	and	(dmisg131.iisu = tcyesno.yes or dmisg131.retn = tcyesno.yes)
+	selectdo
+		if dmisg131.iisu = tcyesno.yes then
+			dmisg131.isdt = utc.num()
+			dmisg131.isby = logname$
+			dmisg131.stat = dmisg.doc.rec.issued
+			db.update(tdmisg131, db.retry)
+		else
+			dmisg131.stat = dmisg.doc.rec.returned
+			db.update(tdmisg131, db.retry)
+		endif
+		
+		select 	dmisg132.issu
+		from	dmisg132 for update
+		where	dmisg132._index1 = {:dmisg131.tran}
+		selectdo
+			dmisg132.issu = tcyesno.yes
+			db.update(tdmisg132, db.retry)
+		endselect
+		
+	endselect
+	commit.transaction()
+}
+

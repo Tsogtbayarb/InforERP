@@ -1,0 +1,483 @@
+|******************************************************************************
+|* tfisg1402m001  0  VRC B61U a7 live
+|* Print Non-finalized Transactions by Ledger (Nonfinalized)
+|* Installation user             
+|* 2014-10-04
+|******************************************************************************
+|* Main table tfgld102 Non-Finalized Transactions, Form Type 4
+|******************************************************************************
+|* ID: ISGECDV001076, Ritu Shrivastava, 04-10-2014  
+|* ID: PATCH001017,	Sujeet Kumar,	2015-03-13
+|* Script Cleaned, New Logic is added as per Mr. Deepak Rawat
+|*
+|****************************** declaration section ***************************
+declaration:
+                         
+	table	ttfgld102 | Non-Finalized Transactions
+	table	ttfgld100
+	table	ttfgld005
+	table	ttfgld004
+	table	ttfgld008
+	table	ttfgld107
+	table	ttcmcs002
+	table	ttcmcs036
+	table	ttfgld004
+	table	ttfacp000
+                                                                 
+                                                                             
+   extern  domain  tcncmp           ncmp.f
+   extern  domain  tcncmp           ncmp.t
+   extern  domain  tfgld.year       fyer.f
+   extern  domain  tfgld.year       fyer.t
+   extern  domain  tfgld.prod       fprd.f
+   extern  domain  tfgld.prod       fprd.t
+   extern  domain  tfgld.btno       btno.f
+   extern  domain  tfgld.btno       btno.t
+   extern  domain  tfgld.ttyp       ttyp.f    fixed
+   extern  domain  tfgld.ttyp       ttyp.t    fixed
+   extern  domain  tfgld.docn       docn.f
+   extern  domain  tfgld.docn       docn.t
+   extern  domain  tfgld.leac       leac.f	fixed
+   extern  domain  tfgld.leac       leac.t	fixed
+      
+   
+	extern	domain	tfgld.leac		rep.leac
+	extern	domain	tfgld.dbcr		rep.dbcr
+	extern	domain	tfgld.amnt		rep.amnt
+	extern	domain	tfgld.amnt		rep.amth
+	extern	domain	tfgld.desc		rep.desc
+	extern	domain	tcncmp			rep.ncmp
+	extern	domain	tfgld.btno		rep.btno
+	extern	domain	tcccur			rep.ccur
+	long brp_id
+
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+| choice.cont.process:
+| on.choice:
+|    execute(print.data)
+
+
+choice.cont.print:
+on.choice:
+	brp_id = brp.open("rtfisg140211010",spool.device,1)
+	read.main.table()
+       
+	brp.close(brp_id)
+
+|****************************** field section *********************************
+
+field.ncmp.f:
+when.field.changes:
+   ncmp.t = ncmp.f
+
+field.fyer.f:
+when.field.changes:
+   fyer.t = fyer.f
+
+field.fprd.f:
+when.field.changes:
+   fprd.t = fprd.f
+   
+before.zoom:
+	tfgld005.year = fyer.f
+	
+field.fprd.t:
+before.zoom:
+	tfgld005.year = fyer.t
+   
+field.btno.f:
+when.field.changes:
+   btno.t = btno.f
+
+before.zoom:
+	tfgld100.year = fyer.f
+	query.extend.where.in.zoom("tfgld100.stat not in (tfgld.bstt.term,tfgld.bstt.deleted)")	
+
+field.btno.t:
+before.zoom:
+	tfgld100.year = fyer.t
+	query.extend.where.in.zoom("tfgld100.stat not in (tfgld.bstt.term,tfgld.bstt.deleted)")
+	
+field.ttyp.f:
+when.field.changes:
+   ttyp.t = ttyp.f
+
+field.docn.f:
+when.field.changes:
+   docn.t = docn.f
+   
+before.zoom:
+	query.extend.where.in.zoom("tfgld018.ttyp = " & quoted.string(ttyp.f))
+	
+field.docn.t:
+before.zoom:
+	query.extend.where.in.zoom("tfgld018.ttyp = " & quoted.string(ttyp.t))
+
+field.leac.f:
+when.field.changes:
+   leac.t = leac.f
+
+|****************************** function section ******************************
+
+functions:
+
+
+
+
+function read.main.table()
+{
+	domain	tfgld.ttyp	hold.ttyp			|#237617.sn
+	domain	tfgld.docn	hold.docn			|#237617.en
+	
+	extern	domain	tfgld.sdes    	fyer.ydsc   	|Fin. year description
+	extern	domain	tfgld.sdes    	ryer.ydsc   	|Rep. year description
+	extern	domain	tfgld.sdes    	vyer.ydsc   	|Vat  year description
+	domain	tfgld.amnt 	a.total
+	string error.message(100)
+	
+	boolean skip.record
+
+	hold.ttyp = ""						|#237617.sn
+	hold.docn = 0
+
+	select 	tfgld102.*,
+		tfgld008.desc
+	from	tfgld102,tfgld008
+	where	tfgld102._index1 inrange {:ncmp.f,:fyer.f,:btno.f,:ttyp.f,:docn.f} 
+		and {:ncmp.t,:fyer.t,:btno.t,:ttyp.t,:docn.t}
+	and    	tfgld102.fprd between :fprd.f and :fprd.t
+	and	tfgld102.leac refers to tfgld008
+	and	tfgld102.srno <> 99			
+	order by tfgld102._index1
+	selectdo
+		if hold.ttyp <> tfgld102.ttyp or	
+			hold.docn <> tfgld102.docn then
+			hold.ttyp = tfgld102.ttyp
+			hold.docn = tfgld102.docn
+		endif
+
+		
+
+		select	tfgld100.*,
+			tfyer.ydsc:fyer.ydsc,
+			tryer.ydsc:ryer.ydsc,
+			tvyer.ydsc:vyer.ydsc
+		from	tfgld100,
+			tfgld006 tfyer,
+			tfgld006 tryer,
+			tfgld006 tvyer
+		where	tfgld100._index1 = {	:tfgld102.year,
+						:tfgld102.btno }
+		and	tfgld100.stat <> tfgld.bstt.term
+		and	tfyer._index1 = {:tfgld102.fyer}
+		and	tryer._index1 = {:tfgld102.ryer}
+		and	tvyer._index1 = {:tfgld102.vyer}
+		and	tfgld100._compnr = :tfgld102.cono
+		and 	tfyer._compnr = :tfgld102.cono
+		and 	tryer._compnr = :tfgld102.cono
+		and 	tvyer._compnr = :tfgld102.cono
+		as set with 1 rows
+		selectdo
+			skip.record = false
+		selectempty
+			skip.record = true
+		endselect
+
+		if skip.record then
+			continue
+		endif
+		
+		tfgld.dll6001.get.company.parameters(
+					get.compnr(),
+					error.message)
+		
+
+
+		if tfgld102.srno <= 6  or
+			update.mode.real.time(tfgld102.ttyp)  or 
+			tfgld102.leac = tfgld004.roda or
+			tfgld102.leac = tfgld004.roca or
+			isspace(tfgld102.ccty)       or
+			opening.balance()  then
+			
+			
+			
+
+			if tfgld102.dbcr = tfgld.dbcr.debit then
+					a.total =
+						tfgld102.amth(1)
+			else
+				a.total =
+				       	-tfgld102.amth(1)
+			endif
+
+			assign.report.variable(
+					tfgld102.cono,
+					tfgld102.leac,
+					tfgld102.dbcr,
+					tfgld102.amnt,
+					tfgld102.amth(1),
+					tfgld008.desc,
+					tfgld102.btno,
+					tfgld102.ccur)
+	
+			if not update.mode.real.time(tfgld102.ttyp) then
+
+				if not isspace(tfgld102.cvat) and tfgld102.srno = 0 then
+					if tfgld102.cont = tcyesno.yes then
+						if tfgld102.dbcr = tfgld.dbcr.debit then
+							tfgld102.dbcr =  tfgld.dbcr.credit
+						else
+							tfgld102.dbcr = tfgld.dbcr.debit
+						endif
+					endif
+					interim.tax.table(tfgld102.cono,tfgld102.ttyp,tfgld102.docn,
+							tfgld102.lino,tfgld102.serl,tfgld102.dbcr)
+				endif
+			endif
+		endif	
+		
+	endselect
+}
+
+
+function interim.tax.table
+			(
+				domain	tcncmp		i.cono,		|Company
+				domain	tfgld.ttyp	i.ttyp,		|Transactin Type
+				domain	tfgld.docn	i.docn,		|Document
+				domain	tfgld.lino	i.lino,		|Line
+				domain	tfgld.serl	i.serl,		|Sequence No.
+				domain	tfgld.dbcr	i.dbcr		|Debit/Credit
+			)
+{
+	domain	tfgld.dbcr	tmp.dbcr
+	domain	tfgld.dbcr	hold.dbcr
+	tmp.dbcr = i.dbcr
+	hold.dbcr = i.dbcr
+	
+	boolean		continue.boolean			
+	domain	tfgld.ttyp	save.corr.transaction.type	
+	domain	tfcmg.tran	save.type.of.trans
+	domain	tcyesno		save.control.account
+	domain	tfgld.catg	save.trans.cat
+	domain	tcyesno		save.withholding.tax
+	domain	tfcmg.tcsh	save.type.of.cash		
+
+	continue.boolean = false				
+
+	save.corr.transaction.type = tfgld102.ctyp		
+	save.type.of.trans	   = tfgld102.tran
+	save.control.account 	   = tfgld102.cont
+	save.trans.cat 		   = tfgld102.catg
+	save.withholding.tax 	   = tfgld102.wtsc
+	save.type.of.cash 	   = tfgld102.tcsh		
+	
+	
+	select 	tfacp000.ttap
+	from	tfacp000
+	where	tfacp000._index1 = {0}
+	as set with 1 rows
+	selectdo
+	endselect
+	
+	
+	select 	tfgld107.*,
+		tfgld008.*
+	from	tfgld107,tfgld008
+	where	tfgld107._index1 = {:i.cono,:i.ttyp,:i.docn,:i.lino,:i.serl,:tfgld102.ccty}
+	and (tfgld107.ttyp <> :tfacp000.ttap or
+				:tfgld102.vamt <> 0)
+	and	tfgld107.vlac refers to tfgld008
+	selectdo
+		
+		select	tcmcs036.ccty, tcmcs036.cvat, tcmcs036.ntax
+		from	tcmcs036						
+		where	tcmcs036._index1 = {	:tfgld107.ccty,
+						:tfgld107.cvat}
+								
+		as set with 1 rows
+		selectdo
+			if tcmcs036.ntax = tcyesno.yes then
+				continue.boolean = true
+			endif
+		endselect
+		
+		
+		if tfacp.dll0055.tax.code.is.on.payments(
+			   tfgld102.cono,
+			   tfgld107.ccty,
+			   tfgld107.cvat) then
+			if ( not withholding.on.advance.assignm(
+					tfgld102.cono,
+					save.corr.transaction.type,
+					save.type.of.trans,
+					save.control.account,
+					save.trans.cat,
+					save.withholding.tax,
+					save.type.of.cash) and
+			     (tfgld107.ktax = tcktax.income.tax or
+			      tfgld107.ktax = tcktax.social.contrib)) or
+			   ( tfgld107.ktax = tcktax.social.cont.exp ) then
+				continue.boolean = true
+				break
+			endif
+		endif
+
+		if continue.boolean then
+			continue
+		endif						
+
+		tfgld102.dbcr = hold.dbcr			
+		if tfgld107.cont = tcyesno.yes then
+			if hold.dbcr = tfgld.dbcr.debit then
+				tfgld102.dbcr = tfgld.dbcr.credit
+			else
+				tfgld102.dbcr = tfgld.dbcr.debit
+			endif
+		endif
+
+
+		if ( not withholding.on.advance.assignm(
+				tfgld102.cono,
+				save.corr.transaction.type,
+				save.type.of.trans,
+				save.control.account,
+				save.trans.cat,
+				save.withholding.tax,
+				save.type.of.cash) and
+		     (tfgld107.ktax = tcktax.income.tax or
+		      tfgld107.ktax = tcktax.social.contrib)) or
+		   ( tfgld107.ktax = tcktax.social.cont.exp ) then
+		   
+			if hold.dbcr = tfgld.dbcr.debit then
+				tfgld102.dbcr = tfgld.dbcr.credit
+			else
+				tfgld102.dbcr = tfgld.dbcr.debit
+			endif
+		endif						
+
+		assign.report.variable(	i.cono,
+					tfgld107.vlac,
+					tfgld102.dbcr,
+					tfgld107.vamt,
+					tfgld107.vamh(1),
+					tfgld008.desc,
+					tfgld102.btno,
+					tfgld102.ccur)	
+	endselect
+}
+
+function assign.report.variable
+			(
+				domain	tcncmp		i.ncmp,
+				domain	tfgld.leac	i.leac,
+				domain	tfgld.dbcr	i.dbcr,
+				domain	tfgld.amnt	i.amnt,
+				domain	tfgld.amnt	i.amth,
+				domain	tfgld.desc	i.desc,
+				domain	tfgld.btno	i.btno,
+				domain	tcccur		i.ccur
+			)
+{
+	rep.ncmp = i.ncmp
+	rep.leac = i.leac
+	rep.dbcr = i.dbcr
+	rep.amnt = i.amnt
+	rep.amth = i.amth
+	rep.desc = i.desc	
+	rep.btno = i.btno
+	rep.ccur = i.ccur
+
+	if i.leac >= leac.f and i.leac <= leac.t then
+		brp.ready(brp_id)
+	endif
+	
+}
+
+
+function boolean withholding.on.advance.assignm(
+		domain	tcncmp		i.company,
+		domain	tfgld.ttyp	i.correction.transaction.type,
+		domain	tfcmg.tran	i.type.of.trans,
+		domain	tcyesno		i.control.account,
+		domain	tfgld.catg	i.trans.category,
+		domain	tcyesno		i.withholding.tax,
+		domain	tfcmg.tcsh	i.type.of.cash)
+{
+	if not tfcmg.dll8000.withholding.tax.for.advance.payments(
+			false,
+			i.company,
+			0) then
+		return(false)
+	endif
+	if ( i.type.of.trans = tfcmg.tran.advance.paym or
+	     ( i.control.account = tcyesno.yes and
+	       i.trans.category = tfgld.catg.cash and
+	       i.withholding.tax = tcyesno.yes and
+	       i.type.of.cash = tfcmg.tcsh.ssgn) ) then	
+		return(true)
+	endif
+
+	|* Advance Payment created by reconcilaition?
+	if i.type.of.trans = tfcmg.tran.reconc.suppl and
+	   i.withholding.tax = tcyesno.yes and
+	   isspace(i.correction.transaction.type) then 	
+		return(true)
+	endif
+
+	return(false)
+}								
+	  
+
+function boolean update.mode.real.time(
+				domain	tfgld.ttyp 	i.trans.type fixed)
+
+{
+		domain	tfgld.hmod	dummy.update.mode
+	static	domain	tfgld.ttyp	hold.ttyp		fixed
+	static	boolean			hold.return.value
+
+	if hold.ttyp = i.trans.type then
+		return(hold.return.value)
+	endif
+
+	hold.ttyp = i.trans.type
+	hold.return.value = false
+
+	select	tfgld011.hmod:dummy.update.mode
+	from	tfgld011
+	where	tfgld011._index1 = { :i.trans.type }
+	and	tfgld011.hmod = tfgld.hmod.real.time
+	as set with 1 rows
+	selectdo
+		hold.return.value = true
+	endselect
+
+	return(hold.return.value)
+}								
+
+
+function boolean opening.balance()
+{
+	select	tfgld011.ttyp
+	from	tfgld011
+	where	tfgld011._index1 = { :tfgld102.ttyp }
+	and	tfgld011.catg    = tfgld.catg.opening.bal
+	as set with 1 rows
+	selectdo
+		return(true)
+	endselect
+
+	return(false)
+}

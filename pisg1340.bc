@@ -1,0 +1,865 @@
+|******************************************************************************
+|* dmisg134  0  VRC B61U a7 isg 
+|* DAL 2 for dmisg134
+|* baan
+|* 15-01-31 [12:11]
+|******************************************************************************
+|* Script Type: DAL
+|******************************************************************************
+|* ISGEC004020, IT0047, Dharmendra, Dt. 07-10-2015, B61U a7 isg
+|*
+|* ISGEC016014, Mudit Sharma, 10-10-2016, VRC B61U a7 isg 
+|* Modification in logic of form command of dmisg1134m500
+|*
+|* ISGEC017002, Manish Manchanda, 2017-01-05
+|* Modifications - mail alert send to the originator on specific status change.
+|*
+|******************************************************************************
+|* ID : ISGECMOD003, IT0386, Saurabh Dubey, 15 December 2017, VRC B61U a7 isg
+|* Modifications for Auto Allocation of Vendor Documents 
+|******************************************************************************
+|* ID : ISGECMOD008, IT0386, Saurabh Dubey, 22 January 2017, VRC B61U a7 isg
+|* Indent field added and further Logic Assigned 
+|*
+|* ID: ISGECMOD011, Gokul Chaurasia, 13-02-2018, VRC B61U a7 isg
+|* Vendor Name to Check
+|*
+|* ID: ISGECMOD024, Atul Ojha, 12-04-2018, VRC B61U a7 isg
+|* Change in logic for Division update 
+|*
+|*ID:ISGEC0163,Anadi Shankar,22-05-2018,VRC B61U a7 isg
+|*Document Visible In All. 
+|*
+|* ID: ISGEC01100, Sahil Sharma, VRC B61U a7 isg
+|* PMDL Updated (dmisg140)
+|******************************************************************************
+|* ID: ISGEC01122, Prasanna Bhuyan, VRC B61U a7 isg, 19/11/2018
+|* Modifications
+|*
+|* ID: ISGEC01147,Bharti Garg, VRC B61U a7 isg, 27-12-2018
+|* Changes . 
+|*
+|* ID: ISGEC01163, Sahil Sharma, VRC B61U a7 isg, 19-02-2019
+|* Pre and Post order deletion functionality
+|*
+|******************************************************************************
+
+        table	tdmisg134
+	table	ttcmcs050
+	table	ttpmsl000 	
+	table	tdmisg121
+	table	ttccom001
+	table	ttcmcs065
+	table	ttcemm030
+	table	tdmisg131
+	table	ttdpur400				|#ISGEC017002.n
+	table	ttdpur401				|#ISGEC017002.n
+	table	ttcibd001				|#ISGEC017002.n
+	table	tbpmdm001				|#ISGEC017002.n
+	table	ttppdm600				|#ISGECMOD024.n	
+	table	ttpisg220
+	table	tdmisg140
+	table	ttdisg002
+	table	ttpisg230
+	table	ttpisg229
+	table	ttpisg235
+	table	tdmisg134
+	table	tdmisg231				|#ISGEC01122.n
+	
+	extern	domain	tclogn	login.user		|#ISGEC004020.sn
+	domain	tfgld.sess calling.prog,parent.prog
+	extern	domain	tcpono	length			|#ISGEC004020.en
+	domain	dmisg.receipt	old.stat		|#ISGEC017002.n
+	extern	domain	tcmail	i.send.from, i.send.to	|#ISGEC017002.n
+	extern	domain	tcmcs.str300m	i.subject	|#ISGEC017002.n
+	extern	string	i.message(1000)			|#ISGEC017002.n	
+	
+	
+	domain	tcrqno	v.rqno
+	domain	tcpono	v.rqln
+	domain	tcmcs.st150m	b.iref, var.iref
+	domain	tcmcs.str50	var.bohd
+	domain	tcpono		i.wfid, count.wfid, flag
+	domain	tcperc		i.cpgv, var.perc, i.numv, v.count1, count.adct
+	domain	tcsess		sess.code, calling.prog.new, calling.prog.new1
+	domain	tcdate		var.trdt			
+	domain	tcmcs.str100	var.indv
+	long srno
+	
+	domain	tcmcs.long	ret_val	
+	domain	tcmcs.long	v.count,v.dsno
+	domain	tcwght		v.wght
+	domain	tcqsl1		var.qnty					
+	domain	tcmcs.long	var.sern
+	domain	dmdoc.docid	get.docid
+	#include <bic_dal2>
+	#include "itcmcs2000"	|* DAL(-GUI) Support Defines
+
+								|#ISGEC017002.sn
+	#include "idmisg00001"	| Mail Alert 			
+	#include<bic_cmf>					
+								|#ISGEC017002.en
+	#define	PRE_ORDER_SESSION "dmisg1134m000"	|#ISGECMOD003.n
+	#pragma used dll otdpurdll2001		|#ISGECMOD008.n
+	
+function extern long before.open.object.set()
+{
+	login.user = logname$
+	length = len(login.user)
+	login.user = strip$(login.user) & string.set$(" ", 16-length)
+	get.var(pid,"prog.name$",calling.prog)
+	get.var(parent, "prog.name$",parent.prog)				|#ISGECMOD024.n
+						|#ISGECMOD008.sn
+	if trim$(calling.prog) = "dmisg1134m000" then
+		dal.field.depends.on("dmisg134.item",	HOOK_IS_DERIVED + HOOK_UPDATE, 
+								"dmisg134.rqno", "dmisg134.rqln")
+	endif	
+						|#ISGECMOD008.en
+	read.parameters()
+	return(0)
+}
+
+function extern boolean method.is.allowed(
+			long		i.method)
+{
+	on case i.method
+	case DAL_UPDATE:
+		on case calling.prog
+		case "dmisg1134m000":
+		case "dmisg1134m400":		
+			if find.lines() then
+				return(false)
+			endif
+			
+			if dmisg134.stat <> dmisg.receipt.submitted then
+				return(false)
+			endif
+			break
+		case "dmisg1134m100":						|#ISGEC01147.sn	
+		case "dmisg1134m500":
+			if get.values.for.curr.user() then
+				return(true)
+			else
+				return(false)
+			endif
+			break							
+		
+		endcase
+	case DAL_NEW:											
+	case DAL_DESTROY:
+		on case calling.prog
+		case "dmisg1134m100":	
+		case "dmisg1134m500":
+			if get.values.for.curr.user() then
+				return(true)
+			else
+				return(false)
+			endif
+			break							|#ISGEC01147.en
+		endcase
+		
+										|#ISGEC01163.sn
+		on case calling.prog
+		case "dmisg1534m000":
+		case "dmisg1534m100":
+			if dmisg134.stat = ltoe(1) then
+				return(true)
+			else
+				return(false)
+			endif
+			break
+		endcase
+										|#ISGEC01163.en
+	endcase
+
+	return(true)
+}
+
+function extern long after.get.object(long type)
+{
+| 	domain tcemm.grid user.division		|#ISGEC01147.o
+| 	user.division = get.user.division()					|#ISGECMOD024.o
+										
+										|#ISGECMOD024.sn
+| 	on case calling.prog 		|#ISGEC01147.so	
+| 	case "dmisg1134m100" : 
+| 	case "dmisg1134m500" :		|#ISGEC01147.eo	
+| 		user.division = filter.records()				|#ISGECMOD024.en	
+| 		if user.division <> dmisg134.eunt then				|#ISGEC0163.so
+| 			return(DALHOOKERROR)
+| 		endif		|#ISGEC01147.so								|#ISGEC0163.eo
+| 		break		|#ISGEC01147.eo								|#ISGECMOD024.sn		
+| 	endcase								|#ISGECMOD024.en
+	
+	return(0)
+
+}
+
+
+function extern long before.save.object(long type)
+{
+					|#ISGECMOD003.sn
+	if record.exists.earlier.on.combination() then
+		return(DALHOOKERROR)
+	endif				|#ISGECMOD003.en
+	
+	on case type
+	case DAL_NEW:
+		on case calling.prog
+		case "dmisg1134m000":
+			if isspace(dmisg134.bpid) and isspace(dmisg134.nama) then
+				dal.set.error.message("@Vendor ID OR Vendor name is required.")
+				return(DALHOOKERROR)
+			endif
+			break
+		endcase
+		
+		if  tcmcs.dll0050.check.and.generate.order.number(
+				3, dmisg134.rcno, tpmsl000.rcno, 
+				9, dmisg134.rcno) then
+			return(DALHOOKERROR)
+		endif
+		dmisg134.revn = "00"
+		dmisg134.user = logname$
+		dmisg134.date = utc.num()
+		dmisg134.eunt = get.user.division()
+		if isspace(dmisg134.eunt) then
+			dal.set.error.message("@Division not found for this user.")
+			return(DALHOOKERROR)
+		endif
+		break
+	endcase	
+									|#ISGEC017002.sn
+		on	case	calling.prog
+			case	"dmisg1134m100":
+			case	"dmisg1134m500":
+				if dmisg134.stat = dmisg.receipt.cleared then
+					calc.perc.and.insert.tpisg220.data()
+				endif
+				generate.mail.alert()	
+		endcase
+									|#ISGEC017002.en	
+	return(0)
+}
+
+
+function long read.parameters()
+{
+	RETIFNOK(tcmcs.dll0095.read.parm("tpmsl000"))
+	return(0)
+}
+
+function extern long before.new.object()
+{	
+	on case calling.prog
+	case "dmisg1134m000":
+		dmisg134.rcno = tpmsl000.ser1
+		break
+	case "dmisg1134m400":
+		dmisg134.rcno = tpmsl000.ser2
+		break
+	endcase
+	return(0)
+}
+
+function extern boolean process.is.allowed()
+{
+	if calling.prog = "dmisg1134m000" then
+		if dmisg134.stat = dmisg.receipt.comment then
+			return(true)
+		endif
+	endif	
+	return(false)
+
+}
+
+function extern boolean forward.receipt.is.allowed()
+{
+	if dmisg134.stat = dmisg.receipt.submitted then
+		return(true)
+	endif
+	return(false)
+
+}
+
+function extern boolean process.1.is.allowed()
+{
+	if calling.prog = "dmisg1134m100" then
+		if dmisg134.stat = dmisg.receipt.submitted then
+			return(true)
+		endif
+	endif	
+	return(false)
+
+}
+
+function extern boolean process.4.is.allowed()
+{
+	if calling.prog = "dmisg1134m500" then
+		if dmisg134.stat = dmisg.receipt.submitted then
+			return(true)
+		endif
+	endif	
+	return(false)
+
+}
+
+function extern boolean dmisg1134m300.is.allowed()
+{
+	long	flg.val
+	
+	flg.val = 0
+	
+	on case calling.prog
+		case "dmisg1134m000":
+		case "dmisg1134m100":
+		case "dmisg1134m500":
+		case "dmisg1134m400":
+		case "dmisg1534m000":
+		case "dmisg1534m100":
+			if dmisg134.stat <> dmisg.receipt.submitted then
+				flg.val = 1
+			endif
+			break
+	endcase
+		
+	if flg.val then
+		return(true)
+	endif
+	return(false)
+
+}
+
+function extern boolean dmisg1536m000.is.allowed()
+{
+	long	flg.val
+	
+	flg.val = 0
+	
+	on case calling.prog
+		case "dmisg1134m000":
+		case "dmisg1134m100":
+		case "dmisg1134m500":
+		case "dmisg1134m400":
+		case "dmisg1534m000":
+		case "dmisg1534m100":
+			if dmisg134.stat <> dmisg.receipt.submitted then
+				flg.val = 1
+			endif
+			break
+	endcase
+		
+	if flg.val then
+		return(true)
+	endif
+	return(false)
+
+}
+
+function extern boolean process.3.is.allowed()
+{
+	if calling.prog = "dmisg1134m400" then
+		if dmisg134.stat = dmisg.receipt.issued then
+| 		if dmisg134.stat = dmisg.receipt.issued or dmisg134.stat = dmisg.receipt.comment then
+			if not isspace(dmisg134.trno) then
+				select	dmisg131.tran
+				from	dmisg131
+				where	dmisg131._index1 = {:dmisg134.trno}
+				and	dmisg131.stat = dmisg.doc.rec.issued
+				selectdo
+					return(true)
+				endselect
+			endif	
+		endif
+	endif	
+	return(false)
+
+}
+
+function extern boolean generate.tran.is.allowed()
+{
+	if calling.prog = "dmisg1134m500" then
+| 		if dmisg134.stat = dmisg.receipt.comment  then |or dmisg134.stat = dmisg.receipt.cleared then
+		if dmisg134.stat = dmisg.receipt.comment  or dmisg134.stat = dmisg.receipt.cleared then		|#ISGEC016014.n	
+			return(true)
+		endif
+	endif
+	return(false)	
+
+}
+						|#ISGEC004020.sn
+function extern boolean comment.sub.is.allowed()
+{
+	long i
+	if calling.prog = "dmisg1134m100"  or calling.prog = "dmisg1134m500" then
+		if dmisg134.stat = dmisg.receipt.closed then
+			return(false)
+		endif
+		
+		for i = 1 to 7
+			if dmisg134.rece(i) = tcyesno.yes or dmisg134.subm(i) = tcyesno.yes then
+				return(true)
+			endif	
+		endfor
+	endif
+	
+| 	if dmisg134.stat = dmisg.receipt.linked then
+| 		
+| 	endif
+	return(false)	
+}
+
+function extern boolean technically.is.allowed()
+{
+	long i
+	if calling.prog = "dmisg1134m100"  or calling.prog = "dmisg1134m500" then
+		if dmisg134.stat = dmisg.receipt.closed then
+			return(false)
+		endif
+		
+		for i = 1 to 7
+			if dmisg134.rece(i) = tcyesno.yes or dmisg134.subm(i) = tcyesno.yes then
+				return(true)
+			endif	
+		endfor
+	endif
+	
+| 	if dmisg134.stat = dmisg.receipt.linked then
+| 		
+| 	endif
+	return(false)	
+}
+
+						|#ISGEC004020.en
+function extern boolean dmisg134.rcno.is.valid()
+{
+	on case calling.prog
+	case "dmisg1134m000":
+		if trim$(dmisg134.rcno) <> trim$(tpmsl000.ser1) then
+			return(false)
+		endif
+		break
+	case "dmisg1134m400":
+		if trim$(dmisg134.rcno) <> trim$(tpmsl000.ser2) then
+			return(false)
+		endif	
+		break
+	endcase
+	
+	return(true)
+
+}
+					|#ISGECMOD008.sn
+function extern boolean dmisg134.rqln.is.valid()
+{	
+	domain	tcrqno	h.rqno, l.rqno
+	
+	if trim$(calling.prog) = PRE_ORDER_SESSION then
+		select	tdpur200.rqno:h.rqno
+		from	tdpur200
+		where	tdpur200._index5 = {tdpur.rqst.converted, :dmisg134.rqno} or tdpur200._index5 = {tdpur.rqst.approved, :dmisg134.rqno}
+		selectdo
+			select	tdpur201.rqno:l.rqno
+			from	tdpur201
+			where	tdpur201._index1 = {:dmisg134.rqno, :dmisg134.rqln}
+			selectdo
+			selectempty
+				dal.set.error.message("@Please Select Valid Requistion/Line No...")
+				return(false)
+			endselect
+		selectempty
+			dal.set.error.message("@Please Select Valid Requistion/Line No...")
+			return(false)
+		endselect	
+	endif
+	
+	return(true)
+}
+
+									|#Atul.15.03.2018.so	
+| function extern boolean dmisg134.item.is.derived()
+| {
+| 	domain	tcrqno	v.rqno
+| 	
+| 	if trim$(calling.prog) = PRE_ORDER_SESSION then
+| 		return(true)
+| 	endif
+| 	
+| 	return(false)
+| }
+									|#Atul.15.03.2018.eo	
+
+function extern void dmisg134.item.update()
+{
+	
+	if trim$(calling.prog) = PRE_ORDER_SESSION then
+		select	tdpur201.item:dmisg134.item
+		from	tdpur201
+		where	tdpur201._index1 = {:dmisg134.rqno, :dmisg134.rqln}
+		selectdo
+		selectempty
+			dmisg134.item = ""
+		endselect
+	endif
+	
+}
+					|#ISGECMOD008.en
+
+function boolean find.lines()
+{
+	select	dmisg135.*
+	from	dmisg135
+	where	dmisg135._index1 = {:dmisg134.rcno}
+	as set with 1 rows
+	selectdo
+		return(true)
+	endselect
+	return(false)
+
+}
+
+function extern boolean dmisg134.cprj.is.mandatory()
+{
+	if calling.prog = "dmisg1134m000" then
+		return(true)
+	endif	
+	
+	return(false)
+}
+
+function extern boolean dmisg134.item.is.mandatory()
+{
+	if calling.prog = "dmisg1134m000" then
+		return(true)
+	endif	
+	
+	return(false)
+}
+
+function extern boolean dmisg134.orno.is.mandatory()
+{
+	if calling.prog = "dmisg1134m400" then
+		return(true)
+	endif	
+	
+	return(false)
+}
+
+function extern boolean dmisg134.pono.is.mandatory()
+{
+	if calling.prog = "dmisg1134m400" then
+		return(true)
+	endif	
+	
+	return(false)
+}
+						|#Atul.15.03.2018.so	
+						|#ISGECMOD008.sn
+| function extern boolean dmisg134.rqno.is.mandatory()
+| {
+| 	if calling.prog = PRE_ORDER_SESSION then
+| 		return(true)
+| 	endif	
+| 	
+| 	return(false)
+| }
+
+| function extern boolean dmisg134.rqln.is.mandatory()
+| {
+| 	if calling.prog = PRE_ORDER_SESSION then
+| 		return(true)
+| 	endif		
+| 	
+| 	return(false)
+| }
+						|#ISGECMOD008.en
+						|#Atul.15.03.2018.eo
+						
+function extern boolean dmisg134.pono.is.valid()
+{
+	on case calling.prog
+	case "dmisg1134m400":
+		select	tdpur401.cprj
+		from	tdpur401
+		where	tdpur401._index1 = {:dmisg134.orno, :dmisg134.pono}
+		selectdo
+		selectempty
+			return(false)
+		endselect
+		break
+	endcase
+	
+	return(true)
+
+}
+
+
+| function extern boolean dmisg134.sent.is.readonly(1)
+| {
+| 	if dmisg114.stat <> dmisg.receipt.submitted then
+| 		return(true)
+| 	endif
+| 	
+| 	return(false)
+| }
+
+function domain tcemm.grid get.user.division()
+{
+	domain tcemm.grid division
+	
+	division = ""
+| 	select	tccom001.cwoc							|#ISGECMOD024.so
+| 	from	tccom001
+| 	where	tccom001._index4 = {:login.user}
+| 	selectdo
+| 		if not isspace(tccom001.cwoc) then
+| 			select	tcmcs065.comp, tcmcs065.ccal
+| 			from	tcmcs065
+| 			where	tcmcs065._index1 = {:tccom001.cwoc}
+| 			selectdo
+| 				select	tcemm030.eunt
+| 				from	tcemm030
+| 				where	tcemm030.fcmp = :tcmcs065.comp
+| 				and	tcemm030.ccal = :tcmcs065.ccal
+| 				as set with 1 rows
+| 				selectdo
+| 					division = tcemm030.eunt
+| 				selectempty
+| 					
+| 				endselect	
+| 			endselect
+| 		else
+| 	
+| 		endif
+| 	endselect								|#ISGECMOD024.eo
+
+										|#ISGECMOS024.sn
+	select	tppdm600.ncmp
+	from	tppdm600
+	where	tppdm600._index1 = {:dmisg134.cprj}
+	selectdo
+		select	tcemm030.eunt
+		from	tcemm030
+		where	tcemm030.fcmp = :tppdm600.ncmp
+		as set with 1 rows
+		selectdo
+			division = tcemm030.eunt
+		selectempty
+			division = ""
+		endselect	
+	endselect	
+										|#ISGECMOD024.en
+	return(division)
+
+}
+
+										|#ISGECMOD024.sn
+function domain tcemm.grid filter.records()
+{
+	domain tcemm.grid filter.division
+	
+	filter.division = ""
+	select	tccom001.cwoc							
+	from	tccom001
+	where	tccom001._index4 = {:login.user}
+	selectdo
+		if not isspace(tccom001.cwoc) then
+			select	tcmcs065.comp, tcmcs065.ccal
+			from	tcmcs065
+			where	tcmcs065._index1 = {:tccom001.cwoc}
+			selectdo
+				select	tcemm030.eunt
+				from	tcemm030
+				where	tcemm030.fcmp = :tcmcs065.comp
+				and	tcemm030.ccal = :tcmcs065.ccal
+				as set with 1 rows
+				selectdo
+					filter.division = tcemm030.eunt
+				selectempty
+					
+				endselect	
+			endselect
+		else
+	
+		endif
+	endselect	
+	
+	return(filter.division)
+}
+										|#ISGECMOD024.en
+		
+										|#ISGEC017002.sn
+function	extern	generate.mail.alert()										
+{		
+	if	dmisg134.stat	=	dmisg.receipt.comment	or
+		dmisg134.stat	=	dmisg.receipt.cleared	then		
+		select	tdpur401.item,
+			tdpur401.cspa,
+			tdpur401.cprj,
+			tdpur400.ccon,
+			tcibd001.dsca
+		from	tdpur401, tcibd001, tdpur400
+		where	tdpur401._index1	=		{:dmisg134.orno,:dmisg134.pono}
+		and	tdpur401.item		refers	to	tcibd001
+		and	tdpur401.orno		refers	to	tdpur400
+		as	set with 1 rows
+		selectdo
+		selectempty
+			tdpur401.item	=	""
+			tdpur401.cspa	=	""
+			tdpur401.cprj	=	""
+			tcibd001.dsca	=	""
+			dmisg134.orno	=	"---------"
+		endselect
+		
+		on	case	calling.prog
+			case	"dmisg1134m100":
+			i.subject	=	"Pre Order "&dmisg134.orno&", Receipt No. "&dmisg134.rcno&" is "&enum.descr$("dmisg.receipt",dmisg134.stat)
+			break
+			case	"dmisg1134m500":
+			i.subject	=	"Post Order "&dmisg134.orno&", Receipt No. "&dmisg134.rcno&" is "&enum.descr$("dmisg.receipt",dmisg134.stat)
+			break
+		endcase
+		i.message	=	"RECEIPT NO: "&dmisg134.rcno
+		i.message	=	i.message&"^"&"REVISION NO: "&trim$(dmisg134.revn)
+		i.message	=	i.message&"^"&"PROJECT ID & DESCRIPTION: "&trim$(dmisg134.cprj)&" / "&trim$(tdpur401.cprj)
+		i.message	=	i.message&"^"&"SUPPLIER ID & NAME: "&trim$(dmisg134.bpid)&" "&trim$(dmisg134.nama)
+		i.message	=	i.message&"^"&"ELEMENT ID: "&trim$(tdpur401.cspa)
+		i.message	=	i.message&"^"&"LOT ITEM: "&trim$(dmisg134.item)	
+		i.message	=	i.message&"^"&"PO NUMBER: "&dmisg134.orno
+		i.message	=	i.message&"^"&"PO POSITION: "&str$(dmisg134.pono)
+		i.message	=	i.message&"^"&"LINE ITEM CODE & DESCRIPTION: "&trim$(tdpur401.item)&" "&trim$(tcibd001.dsca)
+		i.message	=	i.message&"^"&"DOCUMENT CATEGORY: "&str$(dmisg134.docn)
+
+		dmisg00001.send.mail.alert(
+						get.employee(logname$),
+						get.employee(dmisg134.user)
+						)
+		dmisg00001.send.mail.alert(
+						get.employee(logname$),
+						tdpur400.ccon
+						)
+						
+		select	dmisg231.mail,dmisg231.emno						|#ISGEC01122.sn
+		from	dmisg231
+		where	dmisg231._index1 = {:dmisg134.cprj}
+| 		as set with 1 rows
+		selectdo
+			dmisg00001.send.mail.alert(
+						get.employee(logname$),
+						dmisg231.emno
+						)
+		endselect									|#ISGEC01122.en
+	endif						
+}
+
+
+
+
+
+
+
+function	domain	tcemno	get.employee(domain	tclogn	v.logn)
+{
+	select	tccom001.emno
+	from	tccom001
+	where	tccom001._index4	=	{:v.logn}
+	as	set with 1 rows
+	selectdo
+	selectempty
+		tccom001.emno	=	""
+	endselect
+	return(tccom001.emno)
+}
+										|#ISGEC017002.en
+										
+						|#ISGECMOD003.sn
+function long record.exists.earlier.on.combination()
+{
+	domain	dmdoc.revv	v.rcno.revn
+	domain	whinh.shpm	v.rcno
+	domain	tcnama		v.nama
+	domain	tccom.bpid	v.bpid
+	 	boolean		found.flag
+		string		err.mess(150)
+		
+	err.mess = ""
+	found.flag = false	
+	
+	if trim$(calling.prog) = PRE_ORDER_SESSION then		
+		select	dmisg134.rcno:v.rcno,
+		 	dmisg134.revn:v.rcno.revn,
+			dmisg134.bpid:v.bpid,
+			dmisg134.nama:v.nama,
+			dmisg134.rqno:v.rqno,
+			dmisg134.rqln:v.rqln
+		from	dmisg134
+		where	dmisg134._index2 = {:dmisg134.cprj}
+		and	dmisg134.item = :dmisg134.item
+		and	dmisg134.rqno = :dmisg134.rqno			|#Anadi.n
+		order by dmisg134.rcno, dmisg134.revn desc
+		selectdo
+			if isspace(v.bpid) then	|* If BP code not present			
+							|#ISGECMOD011.so
+| 				if toupper$(trim$(dmisg134.bpid)) = toupper$(trim$(v.bpid)) then 	|* Same Name combination Exists
+							|#ISGECMOD011.eo
+							|#ISGECMOD011.sn
+				if toupper$(trim$(dmisg134.nama)) = toupper$(trim$(v.nama)) then 	|* Same Name combination Exists |#Anadi.so
+| 							|#ISGECMOD011.en
+					found.flag = true						
+				endif
+			else
+				if dmisg134.bpid = v.bpid then			
+					found.flag = true
+				endif						
+			endif													
+			
+			
+			if found.flag then
+				err.mess = 	"Receipt " & v.rcno & " Rev. " & trim$(v.rcno.revn) & " " &
+						"Alraedy Exists on the combination of Project, Item and Business Partner...."
+				dal.set.error.message("@%s", err.mess)
+				return(1)
+			endif
+		endselect	
+	endif	
+	return(0)
+}
+				|#ISGECMOD003.en										
+
+function extern calc.perc.and.insert.tpisg220.data()						|#ISGEC01100.sn
+{
+	domain	dmdoc.docid	i.docn
+	domain	tcdate		chk.date
+	
+	chk.date = date.to.utc(2000,01,01,00,00,00)
+	count.wfid = 0
+	select	admisg167.docn:i.docn, bdmisg140.iref:b.iref
+	from	dmisg167 admisg167, dmisg140 bdmisg140
+	where	admisg167._index1 = {:dmisg134.pwfd}
+	and	bdmisg140.docn = admisg167.docn
+	selectdo
+		select	dmisg140.prdt 
+		from	dmisg140	for update
+		where	dmisg140.docn = :i.docn
+		and 	dmisg140.iref =:b.iref
+		selectdo
+			if (dmisg140.prdt = 0) or (dmisg140.prdt < chk.date) then
+				dmisg140.prdt = utc.num()
+				db.update(tdmisg140, db.retry, e)
+			endif
+		endselect
+	endselect
+}
+
+function extern boolean get.values.for.curr.user()			|#ISGEC01147.sn
+{
+	select	dmisg133.logn,dmisg133.cprj
+	from	dmisg133
+	where	dmisg133._index1 = {:login.user,:dmisg134.cprj}
+	selectdo
+		return(true)
+	endselect
+	return(false)
+}								|#ISGEC01147.en
+

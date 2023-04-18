@@ -1,0 +1,238 @@
+|******************************************************************************
+|* tdisg204  0  VRC B61U a7 live
+|* DAL
+|* tools1
+|* 14-07-22 [10:58]
+|******************************************************************************
+|* Script Type: DAL
+|******************************************************************************
+|* ISGEC001132, IT0205, Arjit Gupta, VRC B61U a7 isg, Dt. 25-11-2014
+|* If any Order is freezed than it cannot be add with any of the Criteria.
+|******************************************************************************
+|* PATCH002022, Mani sharma , IT0376, VRC B61U a7 isg  Dt. 31-03-2015
+|* IF rate is less than 5 , then put that supplier on holiday
+|******************************************************************************
+	
+	table	ttdisg204
+	table	ttdpur400
+	table	ttccom001
+        table   ttccom120
+	table   ttdisg207
+	
+	extern domain	tclogn	user.v
+	extern domain	tdtype	type.old
+	long flag,ret_val
+	
+#include <bic_dal2>
+
+
+
+function extern long before.open.object.set()
+{
+	dal.field.depends.on("tdisg204.orno",
+				HOOK_IS_VALID, "tdisg204.type",
+					"tdisg204.code")
+	dal.field.depends.on("tdisg204.supp", HOOK_UPDATE, "tdisg204.orno")
+	dal.field.depends.on("tdisg204.user", HOOK_UPDATE, "tdisg204.orno")
+	dal.field.depends.on("tdisg204.date", HOOK_UPDATE, "tdisg204.orno")
+	return(0)
+}
+
+function extern long before.save.object(long type)
+{
+
+	return(0)
+}
+
+
+| ************************ Fields Hook*******************************************
+
+function extern tdisg204.supp.update()
+{
+	select	tdpur400.otbp
+	from	tdpur400
+	where	tdpur400._index1  ={:tdisg204.orno}
+	selectdo
+		tdisg204.supp = tdpur400.otbp
+	endselect
+	
+}
+
+function extern tdisg204.user.update()
+{
+	user.v = logname$
+	select	tccom001.*
+	from	tccom001
+	where	tccom001._index4 = {:user.v}
+	selectdo
+		tdisg204.user = tccom001.emno
+	endselect
+}
+
+function extern tdisg204.date.update()
+{
+	tdisg204.date = date.num()
+}
+
+function extern boolean tdisg204.orno.is.valid(long mode)
+{
+	if	check.order.status(tdisg204.orno)	then
+		select	tdisg204.orno
+		from	tdisg204
+		where	tdisg204._index2 = {:tdisg204.orno}
+		and	tdisg204.type <> :tdisg204.type
+		selectdo
+			dal.set.error.message("@Order Already Attach With Another Order Type")
+			return(dalhookerror)
+		endselect
+							|#ISGEC001132.sn
+		on case mode
+			case DAL_NEW:
+				if	Order_Freezed(tdisg204.orno)	then
+					dal.set.error.message("@Vendor Rating Already Freezed")
+					return(DALHOOKERROR)
+				endif
+				break
+		ENDCASE		
+							|#ISGEC001132.en
+	else
+		dal.set.error.message("@Order Status must not be Created, Modified or Cancelled")
+		return(DALHOOKERROR)
+	endif
+	return(true)
+}
+
+function extern boolean tdisg204.rate.is.readonly()
+{
+| 	select	tdisg204.*
+| 	from	tdisg204
+| 	where	tdisg204._index2 = {:tdisg204.orno,:tdisg204.type}
+| 	and	tdisg204.frez = tcyesno.yes
+| 	selectdo
+| 		flag = 1
+| 	selectempty
+| 		flag = 0 
+| 	endselect
+	if tdisg204.frez = tcyesno.yes then
+		return(true)
+	else
+		return(false)
+	endif
+	return(true)
+}
+
+|*************** Internal Function ***********************
+
+function boolean check.order.status(domain	tcorno	i.orno)
+{
+	domain	tcorno	t.orno
+	
+	select	a_tdpur400.orno:t.orno
+	from	tdpur400 a_tdpur400
+	where	a_tdpur400._index1 = {:i.orno}
+	and	a_tdpur400.hdst not in (tdpur.hdst.created, tdpur.hdst.cancelled, tdpur.hdst.modified)
+	selectdo
+		return(true)
+	endselect
+	
+	return(false)
+}
+
+						|#ISGEC001132.sn
+function boolean Order_Freezed(
+			domain	tcorno	in.orno
+				)
+{
+	domain	tcyesno		t.frez
+	
+	t.frez = empty
+	select	fz_tdisg204.frez:t.frez
+	from	tdisg204 fz_tdisg204
+	where	fz_tdisg204._index2 = {:in.orno}
+	and	fz_tdisg204.frez = tcyesno.yes
+	as set with 1 rows
+	selectdo
+		return(true)
+	endselect
+	return(false)
+}
+						|#ISGEC001132.en
+
+
+function extern long check.holiday.criteria()					|PATCH002022.sn
+{	
+	domain tcpono rate.var
+	select tdisg204.rate:rate.var
+	from   tdisg204
+	where  tdisg204._index1 = {:tdisg204.type}
+	and     tdisg204.code = "002"
+	and     tdisg204.orno = :tdisg204.orno
+	selectdo
+		if rate.var < 5 then
+			put.on.holiday(tdisg204.supp)
+			if ret_val <> 0 then
+				return (DALHOOKERROR)
+			else
+				commit.transaction()
+			endif	
+		endif	
+	endselect	
+ return (0)	
+}
+
+function extern  long put.on.holiday(domain	tccom.bpid	in.bpid)
+{
+	long ret_val 
+	
+	select tdisg207.bpid,tdisg207.chek,tdisg207.proc,tdisg207.date
+	from   tdisg207 for update
+	where  tdisg207._index1 = {:in.bpid}
+	selectdo
+		dal.change.object("tdisg207")
+		dal.set.field("tdisg207.chek",tcyesno.yes)
+		dal.set.field("tdisg207.proc",tdprocess.vend.rate)
+		ret_val = dal.save.object("tdisg207")
+		if ret_val <> 0 then
+			return (DALHOOKERROR)
+		endif
+		
+		select tccom120.bpst
+		from    tccom120 for update
+		where   tccom120._index1 = {:tdisg207.bpid}
+		selectdo
+			if tccom120.bpst = tccom.prst.active then
+				dal.change.object("tccom120")
+				dal.set.field("tccom120.bpst",tccom.prst.inactive)
+				ret_val = dal.save.object("tccom120")
+				if ret_val <> 0 then 
+					return (DALHOOKERROR)
+				endif
+			endif	
+		endselect
+	selectempty
+		dal.new.object("tdisg207")
+		dal.set.field("tdisg207.bpid",tdisg204.supp)
+		dal.set.field("tdisg207.chek",tcyesno.yes)
+		dal.set.field("tdisg207.proc",tdprocess.vend.rate)
+		dal.set.field("tdisg207.date",date.num())
+		ret_val = dal.save.object("tdisg207")
+		if ret_val <> 0 then
+			return (DALHOOKERROR)
+		endif
+		
+		select tccom120.bpst
+		from    tccom120 for update
+		where   tccom120._index1 = {:tdisg207.bpid}
+		selectdo
+			if tccom120.bpst = tccom.prst.active then
+				dal.change.object("tccom120")
+				dal.set.field("tccom120.bpst",tccom.prst.inactive)
+				ret_val = dal.save.object("tccom120")
+				if ret_val <> 0 then 
+					return (DALHOOKERROR)
+				endif
+			endif	
+		endselect
+	endselect	
+	return (0)		
+}											|PATCH002022.en

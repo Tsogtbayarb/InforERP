@@ -1,0 +1,136 @@
+|******************************************************************************
+|* dmisg1134m400  0  VRC B61U a7 isg 
+|* Receive Vendor Document
+|* Installation user             
+|* 2015-02-02
+|******************************************************************************
+|* Main table dmisg134 Receive Vendor Document, Form Type 1
+|******************************************************************************
+|* ISGEC004004, IT0047, Dharmendra, Dt. 30-01-2015, B61U a7 isg                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+  table   tdmisg134 | Receive Vendor Document
+  table   ttcmcs050
+  table   ttpmsl000
+  table   ttcmcs052
+  table   ttdpur401
+  
+  extern	domain	tcpono	revision.no
+  extern	domain	whinh.shpm	old.receipt
+  extern	domain	dmdoc.revv	old.revision, new.revision
+  extern	domain	tcorno	order.no.post
+
+
+|****************************** program section ********************************
+before.program:
+	order.no.post = ""
+	query.extend.where("dmisg134.orno <> " & quoted.string(order.no.post))
+
+	read.parameters()
+
+|****************************** choice section **********************************
+choice.process.3:
+on.choice:
+	copy_receipt()
+|****************************** field section **********************************
+field.dmisg134.rcno:
+before.zoom:
+	tcmcs050.nrgr = tpmsl000.rcno
+
+field.tcmcs052.dsca:
+before.display:
+	select	tcmcs052.dsca
+	from	tcmcs052
+	where	tcmcs052._index1 = {:dmisg134.cprj}
+	selectdo
+	selectempty
+		tcmcs052.dsca = ""
+	endselect
+	
+field.dmisg134.orno:
+when.field.changes:
+	if dmisg134.pono <> 0 then
+		get.po.details()
+	endif	
+	
+field.dmisg134.pono:
+before.zoom:
+	tdpur401.orno = dmisg134.orno
+	
+when.field.changes:
+	get.po.details()
+	
+|****************************** function section **********************************
+functions:
+
+function read.parameters()
+{
+	tcmcs.dll0095.read.parm("tpmsl000")
+}
+
+function copy_receipt()
+{
+	long i
+	if dmisg134.stat = dmisg.receipt.issued then
+		old.receipt = dmisg134.rcno
+		old.revision = dmisg134.revn
+		
+		revision.no = val(dmisg134.revn)
+		revision.no = revision.no + 1
+		new.revision = "0" & str$(revision.no)
+		
+		dmisg134.rcno = dmisg134.rcno
+		dmisg134.revn = new.revision
+		dmisg134.cprj = dmisg134.cprj
+		dmisg134.item = dmisg134.item
+		dmisg134.bpid = dmisg134.bpid
+		dmisg134.nama = dmisg134.nama
+		dmisg134.stat = dmisg.receipt.submitted
+		dmisg134.user = logname$
+		dmisg134.date = utc.num()
+		dmisg134.suer = ""
+		dmisg134.sdat = 0
+		dmisg134.appr = ""
+		dmisg134.adat = 0
+		dmisg134.orno = ""
+		dmisg134.pono = 0
+		dmisg134.trno = ""
+		
+		for i = 1 to 7
+			dmisg134.sent(i) = tcyesno.no
+			dmisg134.rece(i) = tcyesno.no
+			dmisg134.subm(i) = tcyesno.no
+		endfor
+
+		db.insert(tdmisg134, db.retry)
+		
+		select	dmisg134.stat
+		from	dmisg134 for update
+		where	dmisg134._index1 = {:old.receipt, :old.revision}
+		selectdo
+			dmisg134.stat = dmisg.receipt.superseded
+			db.update(tdmisg134, db.retry)
+		endselect
+		
+		commit.transaction()
+		
+		dmisg134.rcno = dmisg134.rcno
+		dmisg134.revn = new.revision
+		execute(find.data)
+	endif
+
+}
+
+function get.po.details()
+{
+	select	tdpur401.cprj, tdpur401.item, tdpur401.otbp
+	from	tdpur401
+	where	tdpur401._index1 = {:dmisg134.orno, :dmisg134.pono}
+	selectdo
+		dmisg134.cprj = tdpur401.cprj
+		dmisg134.item = tdpur401.item
+		dmisg134.bpid = tdpur401.otbp
+	endselect
+	
+}

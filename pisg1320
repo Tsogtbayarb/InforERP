@@ -1,0 +1,173 @@
+|******************************************************************************
+|* dmisg132  0  VRC B61U a7 isg 
+|* DAL 2 for dmisg132
+|* baan
+|* 15-01-30 [12:36]
+|******************************************************************************
+|* Script Type: DAL
+|******************************************************************************
+|* ISGEC004004, IT0047, Dharmendra, Dt. 30-01-2015, B61U a7 isg
+|*
+|* ISGEC004011, IT0047, Dharmendra, Dt. 20-02-2015, B61U a7 isg
+|******************************************************************************
+        table	tdmisg132
+	table	tdmisg121
+	table	tdmisg130
+	table	tdmisg131
+	extern	domain	tclogn	login.user	
+	extern	domain	tcpono	length
+	extern	domain	tcorno	transmittal.no	
+	#include <bic_dal2>
+
+
+function extern long before.open.object.set()
+{
+	select 	dmisg130.*
+	from	dmisg130
+	where	dmisg130._index1 = {:logname$}
+	selectdo
+	endselect
+	
+	login.user = logname$
+	length = len(login.user)
+	login.user = strip$(login.user) & string.set$(" ", 16-length)
+	return(0)
+}
+
+function extern boolean method.is.allowed(long type)
+{
+	domain	tfgld.sess calling.prog
+	
+	select	dmisg131.*
+	from	dmisg131
+	where	dmisg131._index1 = {:dmisg132.tran}
+	selectdo
+	endselect
+	
+	on case type
+	case	DAL_NEW :			|# ISGEC004011.sn
+		if calling.prog = "dmisg1132m000" then
+			if dmisg131.stat = dmisg.doc.rec.free then
+				return(true)
+			else
+				return(false)
+			endif	
+		else
+
+		endif
+		break				|# ISGEC004011.en	
+	case	DAL_UPDATE :
+		if dmisg131.user <> login.user then
+			return(false)
+		endif
+		
+		get.var(pid,"prog.name$",calling.prog)
+		
+		if calling.prog = "dmisg1132m000" then
+			if dmisg131.stat = dmisg.doc.rec.free or dmisg131.stat = dmisg.doc.rec.returned then
+				return(true)
+			else
+				return(false)
+			endif	
+		else
+
+		endif
+		break
+	case	DAL_DESTROY :
+		if dmisg131.user <> login.user then
+			return(false)
+		endif
+		
+		get.var(pid,"prog.name$",calling.prog)
+		
+		if calling.prog = "dmisg1132m000" then
+			if dmisg131.stat = dmisg.doc.rec.free or dmisg131.stat = dmisg.doc.rec.returned then
+				return(true)
+			else
+				return(false)
+			endif	
+		else
+
+		endif
+		break	
+	endcase
+	
+	return(true)
+
+}
+
+function extern long before.save.object(long type)
+{
+	return(0)
+}
+
+function extern boolean dmisg132.docn.is.valid()
+{
+	select	dmisg131.dprj
+	from	dmisg131
+	where	dmisg131._index1 = {:dmisg132.tran}
+	selectdo
+	endselect
+
+	select	dmisg121.docn
+	from	dmisg121
+	where	dmisg121._index1 = {:dmisg132.docn}
+	and	dmisg121.rele = tcyesno.yes
+	and	dmisg121.bloc = tcyesno.no
+	and	dmisg121.cprj = :dmisg131.dprj
+	and	dmisg121.resp = :dmisg130.dept
+	and	dmisg121.eunt = :dmisg130.eunt
+	selectdo
+	selectempty
+		return(false)
+	endselect
+	
+	select 	dmisg121.revn
+	from	dmisg121
+	where	dmisg121._index1 = {:dmisg132.docn}
+	order by dmisg121.revn desc
+	as set with 1 rows
+	selectdo
+	endselect	
+
+	select	isg132.tran:transmittal.no
+	from	dmisg132 isg132
+	where	isg132._index2 = {:dmisg132.docn, :dmisg121.revn}
+	and	isg132.stid in (select dmisg123.stid from dmisg123 where dmisg123.appr = tcyesno.yes)
+	selectdo
+		dal.set.error.message("dmisg00002", transmittal.no)
+		return(false)	
+	endselect
+	
+	return(true)
+
+}
+
+function extern boolean dmisg132.docn.is.mandatory()
+{
+	return(true)
+}
+
+function extern boolean dmisg132.revn.is.valid()
+{
+	select	dmisg131.dprj
+	from	dmisg131
+	where	dmisg131._index1 = {:dmisg132.tran}
+	selectdo
+	endselect
+
+	select	dmisg121.docn
+	from	dmisg121
+	where	dmisg121._index1 = {:dmisg132.docn, :dmisg132.revn}
+	and	dmisg121.rele = tcyesno.yes
+	and	dmisg121.bloc = tcyesno.no
+	and	dmisg121.cprj = :dmisg131.dprj
+	and	dmisg121.resp = :dmisg130.dept
+	and	dmisg121.eunt = :dmisg130.eunt
+	selectdo
+	selectempty
+		return(false)
+	endselect
+	return(true)
+
+}

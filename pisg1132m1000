@@ -1,0 +1,107 @@
+|******************************************************************************
+|* dmisg1132m100  0  VRC B61U a7 isg 
+|* Receive Documents sent for Approval
+|* Installation user             
+|* 2015-01-30
+|******************************************************************************
+|* Main table dmisg132 Transmittal Lines, Form Type 1
+|******************************************************************************
+|* ISGEC004004, IT0047, Dharmendra, Dt. 30-01-2015, B61U a7 isg                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+  table   tdmisg132 | Transmittal Lines
+  table   tdmisg121
+  table   tdmisg131
+  string 	query.string(400)
+
+|****************************** program section ********************************
+before.program:
+	query.string = ""
+	query.string = "dmisg132.stid in (select dmisg123.stid from dmisg123 where dmisg123.appr = tcyesno.yes)"
+	query.string = strip$(query.string) & " and dmisg132.revd = tcyesno.no"
+	query.string = strip$(query.string) & " and dmisg132.issu = tcyesno.yes"
+	
+	query.extend.where(query.string)
+
+|****************************** choice section **********************************
+choice.process:
+before.choice:
+	check_all_inputs()
+	
+on.choice:
+	receive_records()
+|****************************** function section **********************************
+functions:
+
+function check_all_inputs()
+{
+	select	dmisg132.*
+	from	dmisg132 for update
+	where	dmisg132.revd = tcyesno.no
+	and	(dmisg132.recc = tcyesno.yes or dmisg132.lock = tcyesno.yes)
+	selectdo
+		if isspace(dmisg132.recv) then
+			message("Receive Status can't be blank.")
+			choice.again()
+		endif
+
+		if isspace(dmisg132.refr) then
+			message("Reference No. can't be blank.")
+			choice.again()
+		endif
+	selectempty
+		message("No records to receive.")
+		choice.again()		
+	endselect
+}
+
+function receive_records()
+{
+	select	dmisg132.*
+	from	dmisg132 for update
+	where	dmisg132.revd = tcyesno.no
+	and	(dmisg132.recc = tcyesno.yes or dmisg132.lock = tcyesno.yes)
+	selectdo
+		dmisg132.revd = tcyesno.yes
+		if dmisg132.lock = tcyesno.yes then
+			select 	dmisg121.bloc
+			from	dmisg121 for update
+			where	dmisg121._index1 = {:dmisg132.docn, :dmisg132.revn}
+			selectdo
+				dmisg121.bloc = tcyesno.yes
+				db.update(tdmisg121, db.retry)
+			endselect
+		endif	
+		db.update(tdmisg132, db.retry)
+		
+		select 	isg132.tran
+		from	dmisg132 isg132
+		where	isg132._index1 = {:dmisg132.tran}
+		and	isg132.recc = tcyesno.no
+		and	isg132.stid in (select dmisg123.stid from dmisg123 where dmisg123.appr = tcyesno.yes)
+		as set with 1 rows
+		selectdo
+			select	dmisg131.stat
+			from	dmisg131 for update
+			where	dmisg131._index1 = {:dmisg132.tran}
+			selectdo
+				dmisg131.stat = dmisg.doc.rec.partial
+				db.update(tdmisg131, db.retry)
+			endselect
+		selectempty
+			select	dmisg131.stat
+			from	dmisg131 for update
+			where	dmisg131._index1 = {:dmisg132.tran}
+			selectdo
+				dmisg131.stat = dmisg.doc.rec.received
+				db.update(tdmisg131, db.retry)
+			endselect
+		endselect
+	endselect
+	commit.transaction()
+	message("Process Complete...")
+
+}
+
+

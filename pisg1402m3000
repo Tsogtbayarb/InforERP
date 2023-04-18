@@ -1,0 +1,1478 @@
+|******************************************************************************
+|* tfisg1402m300  0  VRC B61U a7 isg 
+|* Print Voucher [Detail] - New
+|* Installation User             
+|* 2015-03-24
+|******************************************************************************
+|* Form Type 4
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttfgld102
+	table	ttfgld004
+	table	ttfgld008
+	table	ttfacp000
+	table	ttfgld107
+	table	ttcmcs036
+	
+	table	ttfgld001
+	table	ttfgld106
+	table	ttccom000
+	table	ttfcmg401
+	table	ttfcmg101
+	
+	
+
+|****************************** Form Variables ********************************
+	extern  domain  tfgld.btno       	btno.f
+	extern  domain  tfgld.btno       	btno.t
+	extern  domain  tcncmp           	comp.f
+	extern  domain  tcncmp           	comp.t
+	extern  domain  tfgld.docn       	docn.f
+	extern  domain  tfgld.docn       	docn.t
+	extern  domain  tfgld.ttyp       	ttyp.f    fixed
+	extern  domain  tfgld.ttyp       	ttyp.t    fixed
+	extern  domain  tfgld.year       	year.f
+	extern  domain  tcyesno		prnt.rprt
+	
+	
+	domain	tcncmp	cono.g	
+
+|****************************** report variables section ********************************
+
+	extern	domain	tcnama			rep.comp.desc
+	extern	domain	tfgld.ttyp		rep.ttyp
+	extern	domain	tfgld.docn		rep.docn
+	extern	domain	tfgld.date		rep.dcdt
+	extern	domain	tfgld.leac		rep.leac
+	extern	domain	tfgld.dbcr		rep.dbcr
+	extern	domain	tfgld.amnt		rep.amnt
+	extern	domain	tfgld.amnt		rep.amth
+	extern	domain	tfgld.desc		rep.desc
+	extern	domain	tcncmp			rep.ncmp
+	extern	domain	tfgld.btno		rep.btno
+	extern	domain	tcccur			rep.ccur
+	extern	domain	tcmcs.str15		rep.document
+	extern	domain	tcmcs.str15		rep.voucher
+	extern	domain	tcncmp			rep.cono
+	extern	domain	tfgld.dimx		rep.dim1
+	extern	domain	tfgld.dimx		rep.dim2
+	extern	domain	tfgld.dimx		rep.dim3
+	extern	domain	tfgld.dimx		rep.dim4
+	extern	domain	tfgld.dimx		rep.dim5
+	extern	domain	tfgld.desc		rep.dim1.dsca
+	extern	domain	tfgld.desc		rep.dim2.dsca
+	extern	domain	tfgld.desc		rep.dim3.dsca
+	extern	domain	tfgld.desc		rep.dim4.dsca
+	extern	domain	tfgld.desc		rep.dim5.dsca
+	extern	domain	tccom.bpid		rep.bpid
+	extern	domain	tcnama			rep.bp.nama
+	extern	domain	tfgld.refr		rep.refr
+	extern	domain	tfgld.year		rep.fyer
+	extern	domain	tfgld.year		rep.vyer
+	extern	domain	tfgld.prod		rep.fprd
+	extern	domain	tfgld.prod		rep.vprd
+	extern	domain	tctxtn			rep.txta
+	
+	extern	domain	tcorno			rep.orno
+	extern	domain	tccprj			rep.cprj
+	extern	domain	tfacp.isup		rep.cinv
+	
+	extern	domain	tfgld.btno		rep.btno1
+	extern	domain	tfgld.amnt		rep.amth1
+	extern	domain	tfcmg.cheq		rep.cheq
+	extern	domain	tfgld.ttyp		rep.sales.ttyp
+	extern	domain	tfgld.docn		rep.sales.docn
+	extern	domain	tcdsca			rep.biln
+	extern	domain	tcnama			rep.created.by
+	extern	domain	tcnama			rep.fin.by
+	extern	domain	tcmcs.str15		rep.type
+	
+	extern	domain	tcmcs.str15		rep.fis.dsca
+	extern	domain	tcmcs.str15		rep.tax.dsca
+	
+	|Integration Report Additional Variable	
+	extern	domain	tcitem		rep.item
+	extern	domain	tppdm.cspa	rep.cspa
+	extern	domain	tcdsca		rep.cspa.dsca
+	extern	domain	tfgld.amnt	rep.amnt
+	
+	extern	domain	tfacp.isup	rep.isup
+
+	
+	
+	long brp_id
+
+|****************************** program section ********************************
+before.program:
+	comp.f = get.compnr()
+	comp.t = comp.f
+	
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.cont.process:
+on.choice:
+   execute(print.data)
+
+choice.print.data:
+on.choice:
+   if rprt_open() then
+       read.main.table()
+       read.main.table1()
+       rprt_close()
+   else
+       choice.again()
+   endif
+
+
+|****************************** field section *********************************
+| field.comp.f:
+| when.field.changes:
+| 	comp.t = comp.f
+field.btno.f:
+when.field.changes:
+	btno.t = btno.f
+
+field.ttyp.f:
+when.field.changes:
+	ttyp.t = ttyp.f
+
+field.docn.f:
+when.field.changes:
+	docn.t = docn.f
+	
+
+|****************************** function section ******************************
+
+functions:
+
+function read.main.table()
+{
+	domain	tfgld.ttyp	hold.ttyp			
+	domain	tfgld.docn	hold.docn			
+	
+	extern	domain	tfgld.sdes    	fyer.ydsc   	|Fin. year description
+	extern	domain	tfgld.sdes    	ryer.ydsc   	|Rep. year description
+	extern	domain	tfgld.sdes    	vyer.ydsc   	|Vat  year description
+	domain	tfgld.amnt 	a.total
+	string error.message(100)
+	
+	boolean skip.record
+
+	hold.ttyp = ""						
+	hold.docn = 0
+	
+	
+
+	select 	tfgld102.*,
+		tfgld008.desc
+	from	tfgld102,tfgld008
+	where	tfgld102._index1 inrange {:comp.f,:year.f,:btno.f,:ttyp.f,:docn.f} 
+		and {:comp.f,:year.f,:btno.t,:ttyp.t,:docn.t}
+	and	tfgld102.leac refers to tfgld008
+| 	and	tfgld102.lino = 12
+	and	tfgld102.srno <> 99			
+	order by tfgld102._index1
+	selectdo
+		if hold.ttyp <> tfgld102.ttyp or	
+			hold.docn <> tfgld102.docn then
+			hold.ttyp = tfgld102.ttyp
+			hold.docn = tfgld102.docn
+		endif
+
+		
+
+		select	tfgld100.*,
+			tfyer.ydsc:fyer.ydsc,
+			tryer.ydsc:ryer.ydsc,
+			tvyer.ydsc:vyer.ydsc
+		from	tfgld100,
+			tfgld006 tfyer,
+			tfgld006 tryer,
+			tfgld006 tvyer
+		where	tfgld100._index1 = {	:tfgld102.year,
+						:tfgld102.btno }
+		and	tfgld100.stat <> tfgld.bstt.term
+		and	tfyer._index1 = {:tfgld102.fyer}
+		and	tryer._index1 = {:tfgld102.ryer}
+		and	tvyer._index1 = {:tfgld102.vyer}
+		and	tfgld100._compnr = :tfgld102.cono
+		and 	tfyer._compnr = :tfgld102.cono
+		and 	tryer._compnr = :tfgld102.cono
+		and 	tvyer._compnr = :tfgld102.cono
+		as set with 1 rows
+		selectdo
+			skip.record = false
+		selectempty
+			skip.record = true
+		endselect
+
+		if skip.record then
+			continue
+		endif
+		
+		tfgld.dll6001.get.company.parameters(
+					get.compnr(),
+					error.message)
+		
+
+
+		if tfgld102.srno <= 6  or
+			update.mode.real.time(tfgld102.ttyp)  or 
+			tfgld102.leac = tfgld004.roda or
+			tfgld102.leac = tfgld004.roca or
+			isspace(tfgld102.ccty)       or
+			opening.balance()  then
+			
+			
+			
+
+			if tfgld102.dbcr = tfgld.dbcr.debit then
+					a.total =
+						tfgld102.amth(1)
+			else
+				a.total =
+				       	-tfgld102.amth(1)
+			endif
+
+			assign.report.variable(
+				tfgld102.ttyp,		|Transaction Type
+				tfgld102.docn,		|Document Number
+				tfgld102.lino,		|Line Number
+				tfgld102.dcdt,		|Document Date
+				tfgld102.cono,		|Company
+				tfgld102.tcom,		|Target Company
+				tfgld102.btno,		|Batch Number
+				tfgld102.fyer,		|Fiscal Year
+				tfgld102.fprd,		|Fiscal Period
+				tfgld102.vyer,		|Tax Year
+				tfgld102.vprd,		|Tax Period
+				tfgld102.ccur,		|Currency
+				tfgld102.leac,		|Ledger Account
+				tfgld008.desc,		|Ledger Description
+				tfgld102.dim1,		|Dimension1
+				tfgld102.dim2,		|Dimension2
+				tfgld102.dim3,		|Dimension3
+				tfgld102.dim4,		|Dimension4
+				tfgld102.dim5,		|Dimension5
+				tfgld102.dbcr,		|Debit/Credit
+				tfgld102.amnt,		|Amount
+				tfgld102.amth(1),	|Amount in HC
+				tfgld102.refr,		|Reference
+				tfgld102.bpid,		|Business Partner
+				tfgld102.txta,		|Text		
+				tfgld102.catg,		|Transaction Category
+				tfgld102.tran,		|Type of Transaction 
+				tfgld102.tcsh,		|Type of Cash Transaction 
+				tfgld102.ctyp,
+				tfgld102.cdoc,
+				0,
+				1)
+	
+			if not update.mode.real.time(tfgld102.ttyp) then
+
+				if not isspace(tfgld102.cvat) and tfgld102.srno = 0 then
+					if tfgld102.cont = tcyesno.yes then
+						if tfgld102.dbcr = tfgld.dbcr.debit then
+							tfgld102.dbcr =  tfgld.dbcr.credit
+						else
+							tfgld102.dbcr = tfgld.dbcr.debit
+						endif
+					endif
+					interim.tax.table(tfgld102.cono,tfgld102.ttyp,tfgld102.docn,
+							tfgld102.lino,tfgld102.serl,tfgld102.dbcr)
+				endif
+			endif
+		endif	
+		
+	endselect
+}
+
+
+function interim.tax.table
+			(
+				domain	tcncmp		i.cono,		|Company
+				domain	tfgld.ttyp	i.ttyp,		|Transactin Type
+				domain	tfgld.docn	i.docn,		|Document
+				domain	tfgld.lino	i.lino,		|Line
+				domain	tfgld.serl	i.serl,		|Sequence No.
+				domain	tfgld.dbcr	i.dbcr		|Debit/Credit
+			)
+{
+	domain	tfgld.dbcr	tmp.dbcr
+	domain	tfgld.dbcr	hold.dbcr
+	tmp.dbcr = i.dbcr
+	hold.dbcr = i.dbcr
+	
+	boolean		continue.boolean			
+	domain	tfgld.ttyp	save.corr.transaction.type	
+	domain	tfcmg.tran	save.type.of.trans
+	domain	tcyesno		save.control.account
+	domain	tfgld.catg	save.trans.cat
+	domain	tcyesno		save.withholding.tax
+	domain	tfcmg.tcsh	save.type.of.cash		
+
+	continue.boolean = false				
+
+	save.corr.transaction.type = tfgld102.ctyp		
+	save.type.of.trans	   = tfgld102.tran
+	save.control.account 	   = tfgld102.cont
+	save.trans.cat 		   = tfgld102.catg
+	save.withholding.tax 	   = tfgld102.wtsc
+	save.type.of.cash 	   = tfgld102.tcsh		
+	
+	
+	select 	tfacp000.ttap
+	from	tfacp000
+	where	tfacp000._index1 = {0}
+	as set with 1 rows
+	selectdo
+	endselect
+	
+	
+	select 	tfgld107.*,
+		tfgld008.*
+	from	tfgld107,tfgld008
+	where	tfgld107._index1 = {:i.cono,:i.ttyp,:i.docn,:i.lino,:i.serl,:tfgld102.ccty}
+	and (tfgld107.ttyp <> :tfacp000.ttap or
+				:tfgld102.vamt <> 0)
+	and	tfgld107.vlac refers to tfgld008
+	selectdo
+		
+		select	tcmcs036.ccty, tcmcs036.cvat, tcmcs036.ntax
+		from	tcmcs036						
+		where	tcmcs036._index1 = {	:tfgld107.ccty,
+						:tfgld107.cvat}
+								
+		as set with 1 rows
+		selectdo
+			if tcmcs036.ntax = tcyesno.yes then
+				continue.boolean = true
+			endif
+		endselect
+		
+		
+		if tfacp.dll0055.tax.code.is.on.payments(
+			   tfgld102.cono,
+			   tfgld107.ccty,
+			   tfgld107.cvat) then
+			if ( not withholding.on.advance.assignm(
+					tfgld102.cono,
+					save.corr.transaction.type,
+					save.type.of.trans,
+					save.control.account,
+					save.trans.cat,
+					save.withholding.tax,
+					save.type.of.cash) and
+			     (tfgld107.ktax = tcktax.income.tax or
+			      tfgld107.ktax = tcktax.social.contrib)) or
+			   ( tfgld107.ktax = tcktax.social.cont.exp ) then
+				continue.boolean = true
+				break
+			endif
+		endif
+
+		if continue.boolean then
+			continue
+		endif						
+
+		tfgld102.dbcr = hold.dbcr			
+		if tfgld107.cont = tcyesno.yes then
+			if hold.dbcr = tfgld.dbcr.debit then
+				tfgld102.dbcr = tfgld.dbcr.credit
+			else
+				tfgld102.dbcr = tfgld.dbcr.debit
+			endif
+		endif
+
+
+		if ( not withholding.on.advance.assignm(
+				tfgld102.cono,
+				save.corr.transaction.type,
+				save.type.of.trans,
+				save.control.account,
+				save.trans.cat,
+				save.withholding.tax,
+				save.type.of.cash) and
+		     (tfgld107.ktax = tcktax.income.tax or
+		      tfgld107.ktax = tcktax.social.contrib)) or
+		   ( tfgld107.ktax = tcktax.social.cont.exp ) then
+		   
+			if hold.dbcr = tfgld.dbcr.debit then
+				tfgld102.dbcr = tfgld.dbcr.credit
+			else
+				tfgld102.dbcr = tfgld.dbcr.debit
+			endif
+		endif						
+
+		assign.report.variable(
+				i.ttyp,			|Transaction Type
+				i.docn,			|Document Number
+				i.lino,			|Line Number
+				tfgld102.dcdt,		|Document Date
+				i.cono,			|Company
+				tfgld107.tcom,		|Target Company
+				tfgld107.btno,		|Batch Number
+				tfgld102.fyer,		|Fiscal Year
+				tfgld102.fprd,		|Fiscal Period
+				tfgld102.vyer,		|Tax Year
+				tfgld102.vprd,		|Tax Period
+				tfgld107.ccur,		|Currency
+				tfgld107.vlac,		|Ledger Account
+				tfgld008.desc,		|Ledger Description
+				tfgld107.dim1,		|Dimension1
+				tfgld107.dim2,		|Dimension2
+				tfgld107.dim3,		|Dimension3
+				tfgld107.dim4,		|Dimension4
+				tfgld107.dim5,		|Dimension5
+				tfgld102.dbcr,		|Debit/Credit
+				tfgld107.vamt,		|Amount
+				tfgld107.vamh(1),	|Amount in HC
+				"",			|Reference
+				"",			|Business Partner
+				0,			|Text	
+				empty,			|Category
+				empty,			|Type of Cash Transaction
+				empty,
+				"",
+				0,
+				0,
+				1)
+
+	endselect
+}
+
+function domain tfgld.sdes get.period.description
+				(
+					domain	tfgld.year	i.year,
+					domain	tfgld.prod	i.prod
+				)
+{
+	domain	tfgld.sdes	o.desc
+	o.desc = ""
+	select 	tfgld005.desc:o.desc
+	from	tfgld005
+	where	tfgld005._index1 = {tfgld.ptyp.financial,:i.year,:i.prod}
+	as set with 1 rows
+	selectdo
+	endselect
+	
+	return(o.desc)
+}
+
+function assign.report.variable
+			(
+				domain	tfgld.ttyp	i.ttyp,		|Transaction Type	1
+				domain	tfgld.docn	i.docn,		|Document Number	2
+				domain	tfgld.lino	i.lino,		|Line Number		3
+				domain	tfgld.date	i.dcdt,		|Document Date		4
+				domain	tcncmp		i.cono,		|Company		5	
+				domain	tcncmp		i.ncmp,		|Target Company		6
+				domain	tfgld.btno	i.btno,		|Batch Number		7
+				domain	tfgld.year	i.fyer,		|Fiscal Year		8
+				domain	tfgld.prod	i.fprd,		|Fiscal Period		9
+				domain	tfgld.year	i.vyer,		|Tax Year		10
+				domain	tfgld.prod	i.vprd,		|Tax Period		11
+				domain	tcccur		i.ccur,		|Currency		12
+				domain	tfgld.leac	i.leac,		|Ledger Account		13
+				domain	tfgld.desc	i.desc,		|Ledger Description	14	
+				domain	tfgld.dimx	i.dim1,		|Dimension1		15
+				domain	tfgld.dimx	i.dim2,		|Dimension2		16
+				domain	tfgld.dimx	i.dim3,		|Dimension3		17
+				domain	tfgld.dimx	i.dim4,		|Dimension4		18
+				domain	tfgld.dimx	i.dim5,		|Dimension5		19
+				domain	tfgld.dbcr	i.dbcr,		|Debit/Credit		20
+				domain	tfgld.amnt	i.amnt,		|Amount			21
+				domain	tfgld.amnt	i.amth,		|Amount in HC		22
+				domain	tfgld.refr	i.refr,		|Reference		23
+				domain	tccom.bpid	i.bpid,		|Business Partner	24	
+				domain	tctxtn		i.txta,		|Text			25
+				domain	tfgld.catg	i.catg,		|Transaction Category	26
+				domain	tfcmg.tran	i.tran,		|Type of Transaction 	27
+				domain	tfcmg.tcsh	i.tcsh,		|Type of Cash Transaction 28
+				domain	tfgld.ttyp	i.ctyp,		|Correction Type	29	
+				domain	tfgld.docn	i.cdoc,		|Correction Document	30
+				domain	tfgld.trun	i.trun,		|Finalized Run Number	31
+				domain	tcpono		i.type,		|Source			32
+				...					|			33
+			)
+{
+
+	domain	tfgld.ttyp	o.tdoc
+        domain	tfgld.docn	o.pdoc
+        domain	tfgld.lino	o.scom
+        domain	tfgld.lino	o.line
+	domain	tcncmp		inter.company
+	
+	
+	if get.argc() = 33 then
+		inter.company = get.long.arg(33)
+		rep.ncmp = i.ncmp
+		i.ncmp = inter.company
+	else
+		rep.ncmp = i.ncmp
+	endif
+	
+	rep.comp.desc = read.company.description(i.cono)
+        
+	rep.ttyp = i.ttyp
+	rep.docn = i.docn
+	rep.dcdt = i.dcdt
+	rep.cono = i.cono
+	
+	rep.btno = i.btno
+	rep.fyer = i.fyer
+	rep.fprd = i.fprd
+	rep.vyer = i.vyer
+	rep.vprd = i.vprd
+	rep.ccur = i.ccur
+	rep.leac = i.leac
+	rep.desc = i.desc	
+	rep.dim1 = i.dim1
+	rep.dim1.dsca = get.dimension(1,rep.dim1)
+	rep.dim2 = i.dim2
+	rep.dim2.dsca = get.dimension(2,rep.dim2)
+	rep.dim3 = i.dim3
+	rep.dim3.dsca = get.dimension(3,rep.dim3)
+	rep.dim4 = i.dim4
+	rep.dim4.dsca = get.dimension(4,rep.dim4)
+	rep.dim5 = i.dim5
+	rep.dim5.dsca = get.dimension(5,rep.dim5)
+	rep.dbcr = i.dbcr
+	rep.amnt = i.amnt
+	rep.amth = i.amth
+	rep.refr = i.refr
+	rep.bpid = i.bpid
+	rep.bp.nama = get.bp.nama(rep.bpid)
+	rep.txta = i.txta
+	rep.document = i.ttyp & "\" & str$(i.docn)
+	if i.cdoc <> 0 then
+		rep.voucher = i.ctyp & "\" & str$(i.cdoc)
+	else
+		rep.voucher = ""
+	endif
+
+
+	if i.type = 1 then
+		rep.type = "Non-Finalized"
+	endif
+	
+	if i.type = 2 then
+		rep.type = "Finalized"
+	endif
+	
+	
+	rep.fis.dsca = toupper$(strip$(get.period.description(i.fyer,i.fprd)))
+	rep.tax.dsca = toupper$(strip$(get.period.description(i.vyer,i.vprd)))
+	
+	rep.fis.dsca = strip$(rep.fis.dsca(1;3)) & "-" & str$(i.fyer)  
+	rep.tax.dsca = strip$(rep.tax.dsca(1;3)) & "-" & str$(i.vyer)
+	
+	
+	rep.btno1 = 0
+	rep.amth1 = 0
+	
+	rep.isup = ""
+	if not tfisg.dll1402.get.payment.batch.from.composed.payment(
+		i.ncmp,i.ttyp,i.docn,rep.btno1,rep.amth1) then
+		if not tfisg.dll1402.get.payment.batch.from.composed.direct.debit(
+			i.ncmp,i.ttyp,i.docn,rep.btno1,rep.amth1) then
+		else
+			select 	tfcmg401.tadv
+			from	tfcmg401
+			where	tfcmg401._index1 = {:rep.btno1}
+			selectdo
+				on case tfcmg401.tadv
+				case	tfcmg.dbdv.purinv:
+				case	tfcmg.dbdv.purcred:
+				case	tfcmg.dbdv.slsinv:
+				case	tfcmg.dbdv.slscred:
+					break
+				default:
+					rep.isup = enum.descr$("tfcmg.dbdv",tfcmg401.tadv)
+				endcase
+			endselect
+		endif
+	else
+		if i.catg = tfgld.catg.cash then
+			select 	tfcmg101.tadv
+			from	tfcmg101
+			where	tfcmg101._index1 = {:rep.btno1}
+			selectdo
+				on case	tfcmg101.tadv
+				case	tfcmg.tadv.purinv:
+				case	tfcmg.tadv.purcred:
+				case	tfcmg.tadv.slsinv:
+				case	tfcmg.tadv.slscred:
+					break
+				default:	
+					rep.isup = enum.descr$("tfcmg.tadv",tfcmg101.tadv)
+				endcase
+			endselect
+		endif
+		
+	endif
+	
+	rep.cheq = ""
+	
+	if not tfisg.dll1402.get.cheque.number(i.ncmp,i.ttyp,i.docn,rep.cheq) then
+	endif
+
+	rep.sales.ttyp = ""
+	rep.sales.docn = 0
+	
+		
+	if not tfisg.dll1402.get.sales.invoice.from.ir(
+		i.ncmp,i.ttyp,i.docn,rep.sales.ttyp,rep.sales.docn) then
+	endif
+	
+	rep.biln = ""
+	
+	
+	if rep.sales.docn <> 0 then
+| 		if not tfisg.dll1402.get.bill.of.ladding(i.ncmp,i.ttyp,i.docn,rep.biln) then
+		if not tfisg.dll1402.get.bill.of.ladding(i.ncmp,rep.sales.ttyp,rep.sales.docn,rep.biln) then
+		endif
+	endif
+	rep.created.by = ""
+	rep.fin.by = ""
+	
+	rep.created.by = tfisg.dll1402.get.batch.created.by(i.ncmp,i.fyer,i.btno)
+	rep.fin.by = tfisg.dll1402.get.batch.finilized(i.ncmp,i.fyer,i.trun)
+		
+	rep.cprj = ""
+	rep.orno = ""
+	rep.cinv = ""
+	
+
+	
+	on case i.catg
+	case	tfgld.catg.cash :
+		
+		on case	i.tran 
+			case	tfcmg.tran.advance.paym:
+			case	tfcmg.tran.unalloc.paym:
+				|Priority 1 - tfmsl020
+				if not tfisg.dll1402.get.purchase.project.from.advance.request(
+					i.ncmp,i.ttyp,i.docn,i.lino,rep.orno,rep.cprj) then
+					|Priority 2 - tfacp200
+					if not tfisg.dll1402.get.purchase.project.from.open.item.purchase(
+						i.ncmp,i.ttyp,i.docn,i.lino,rep.orno,rep.cprj) then
+						|Priority 3 - tfmsl037	
+					endif
+				endif
+					
+			break
+			case	empty :
+				on case	i.tcsh
+					case	tfcmg.tcsh.ssgn.ant:
+						|Priority 1 - tfmsl020
+						if not tfisg.dll1402.get.purchase.project.from.advance.request(
+							i.ncmp,i.ttyp,i.docn,i.lino,rep.orno,rep.cprj) then
+						else
+							|Cash Flow
+						endif
+					break
+					case	tfcmg.tcsh.cntr.ant:
+					case	tfcmg.tcsh.cash.ant:
+					case	tfcmg.tcsh.cntr:
+						
+						|Priority 1 - tfisg001
+						if not tfisg.dll1402.get.purchase.project.from.ir.details(
+| 							i.cono,i.ctyp,i.cdoc,rep.orno,rep.cprj) then
+							i.ncmp,i.ctyp,i.cdoc,rep.orno,rep.cprj) then
+							|Priority 2 - tfacp100	
+							if not tfisg.dll1402.get.purchase.project.from.received.purchase.invoice(
+									i.ncmp,i.ctyp,i.cdoc,rep.orno,rep.cprj) then
+								|Priority 3 - tfacp200
+								if not tfisg.dll1402.get.purchase.project.from.open.item.purchase(
+									i.ncmp,i.ctyp,i.cdoc,0,rep.orno,rep.cprj) then	
+									
+									|Priority 4 - cisli235
+									if not tfisg.dll1402.get.project.from.sales.invoice.details(
+										i.cono,i.ncmp,i.ctyp,i.cdoc,rep.cprj) then
+										|Priority 2 - tfacr200
+										if not tfisg.dll1402.get.project.from.open.item.sales(
+											i.ncmp,i.ctyp,i.cdoc,0,rep.cprj) then
+											|Priority 3 - tfmsl037
+										endif
+									endif
+								endif
+							endif
+						endif
+						|* Commercial Invoice against Export
+						
+						if not tfisg.dll1402.get.commercial.invoice.from.billing.advice(
+							i.cono,i.ctyp,i.cdoc,rep.cinv) then
+						|* Supplier Invoice Number against pruchase
+							if not tfisg.dll1402.get.commercial.invoice.from.open.item.purchase(
+								i.ncmp,i.ctyp,i.cdoc,rep.cinv) then
+							endif
+							
+						endif	
+
+					break
+					case	tfcmg.tcsh.ssgn:
+						o.line = 0
+						if tfisg.dll1402.get.main.document.line.against.linking.document(
+							i.ncmp,i.ttyp,i.docn,i.ctyp,i.cdoc,i.bpid,o.line) then
+							|Priority 1 - tfmsl020
+							if not tfisg.dll1402.get.purchase.project.from.advance.request(
+								i.ncmp,i.ctyp,i.cdoc,o.line,rep.orno,rep.cprj) then
+								|Priority 2 - tfacp200
+								if not tfisg.dll1402.get.purchase.project.from.open.item.purchase(
+									i.ncmp,i.ctyp,i.cdoc,o.line,rep.orno,rep.cprj) then
+									|Priority 3 - tfmsl037	
+								endif
+							endif
+						else
+							|Priority 1 - tfacr200
+							if not tfisg.dll1402.get.project.from.open.item.sales(
+								i.ncmp,i.ctyp,i.cdoc,1,rep.cprj) then
+								|Priority 2 - tfmsl037
+							endif
+						endif
+						
+				
+					break
+					case	tfcmg.tcsh.intr:
+					case	tfcmg.tcsh.cdif:
+						|Priority 1 - cisli235
+						if not tfisg.dll1402.get.project.from.sales.invoice.details(
+							i.cono,i.ncmp,i.ctyp,i.cdoc,rep.cprj) then
+							|Priority 2 - tfacr200
+							if not tfisg.dll1402.get.project.from.open.item.sales(
+								i.ncmp,i.ctyp,i.cdoc,0,rep.cprj) then
+								|Priority 3 - tfmsl037
+							endif
+						endif
+						
+						|* Commercial Invoice against Export
+						
+						if not tfisg.dll1402.get.commercial.invoice.from.billing.advice(
+							i.cono,i.ctyp,i.cdoc,rep.cinv) then
+						endif
+					break
+					case	tfcmg.tcsh.empty:
+						
+
+					break
+					
+				endcase
+				
+			break
+				
+			case	tfcmg.tran.reconc.suppl:
+				
+				on case i.tcsh
+					case	tfcmg.tcsh.cash:
+					case	tfcmg.tcsh.cntr:
+					case	tfcmg.tcsh.cash.ant:
+					case	tfcmg.tcsh.cntr.ant:
+						|Priority 1 - tfisg001
+						if not tfisg.dll1402.get.purchase.project.from.ir.details(
+							i.cono,i.ctyp,i.cdoc,rep.orno,rep.cprj) then
+							|Priority 2 - tfacp100	
+							if not tfisg.dll1402.get.purchase.project.from.received.purchase.invoice(
+									i.ncmp,i.ctyp,i.cdoc,rep.orno,rep.cprj) then
+								|Priority 3 - tfacp200
+								if not tfisg.dll1402.get.purchase.project.from.open.item.purchase(
+									i.ncmp,i.ctyp,i.cdoc,0,rep.orno,rep.cprj) then	
+									|Priority 4 - tfmsl037
+								endif
+							endif
+						endif	
+						|* Supplier Invoice Number against pruchase
+						if not tfisg.dll1402.get.commercial.invoice.from.open.item.purchase(
+							i.ncmp,i.ctyp,i.cdoc,rep.cinv) then
+						endif
+
+					break
+					
+					default:
+						|Have to discuss once
+						|Priority 1 - tfmsl020
+						if not tfisg.dll1402.get.purchase.project.from.advance.request(
+									i.ncmp,i.ttyp,i.docn,i.lino,rep.orno,rep.cprj) then
+						
+							if tfisg.dll1402.get.anticipated.document.against.clearing.document(
+								i.ncmp,i.ttyp,i.docn,i.lino,o.tdoc,o.pdoc,o.scom) then
+								
+								if not tfisg.dll1402.get.purchase.project.from.advance.request(
+									i.ncmp,o.tdoc,o.pdoc,o.scom,rep.orno,rep.cprj) then
+									|Priority 2 - tfacp200
+									if not tfisg.dll1402.get.purchase.project.from.open.item.purchase(
+										i.ncmp,i.ttyp,i.docn,i.lino,rep.orno,rep.cprj) then
+										|Priority 3 - tfmsl037	
+									endif
+								endif		
+							else
+								|Priority 2 - tfacp200
+								if not tfisg.dll1402.get.purchase.project.from.open.item.purchase(
+									i.ncmp,i.ttyp,i.docn,i.lino,rep.orno,rep.cprj) then
+									|Priority 3 - tfmsl037	
+								endif
+								
+							endif
+						endif
+				endcase
+					
+					
+			break
+			case	tfcmg.tran.advance.rec:
+			case	tfcmg.tran.unalloc.rec:
+				|Priority 1 - tfacr200
+				if not tfisg.dll1402.get.project.from.open.item.sales(
+					i.ncmp,i.ttyp,i.docn,i.lino,rep.cprj) then
+					|Priority 2 - tfmsl037
+				endif
+				
+			break
+			
+			case	tfcmg.tran.customer:
+				|Priority 1 - cisli235
+				if not tfisg.dll1402.get.project.from.sales.invoice.details(
+					i.cono,i.ncmp,i.ctyp,i.cdoc,rep.cprj) then
+					|Priority 2 - tfacr200
+					if not tfisg.dll1402.get.project.from.open.item.sales(
+						i.ncmp,i.ctyp,i.cdoc,0,rep.cprj) then
+						|Priority 3 - tfmsl037
+					endif
+				endif
+				
+				|* Commercial Invoice against Export
+				
+				if not tfisg.dll1402.get.commercial.invoice.from.billing.advice(
+					i.cono,i.ctyp,i.cdoc,rep.cinv) then
+				endif
+				
+			break
+		endcase
+		
+		
+		
+		break
+	case	tfgld.catg.sales.corr :
+		break
+	case	tfgld.catg.purchase.corr :
+			|Priority 1 - tfisg001
+			if not tfisg.dll1402.get.purchase.project.from.ir.details(
+				i.cono,i.ctyp,i.cdoc,rep.orno,rep.cprj) then
+				|Priority 2 - tfacp100	
+				if not tfisg.dll1402.get.purchase.project.from.received.purchase.invoice(
+						i.ncmp,i.ctyp,i.cdoc,rep.orno,rep.cprj) then
+					|Priority 3 - tfacp200
+					if not tfisg.dll1402.get.purchase.project.from.open.item.purchase(
+						i.ncmp,i.ctyp,i.cdoc,0,rep.orno,rep.cprj) then	
+						|Priority 4 - tfmsl037
+					endif
+				endif
+			endif
+
+
+			|* Supplier Invoice Number against pruchase
+			if not tfisg.dll1402.get.commercial.invoice.from.open.item.purchase(
+				i.ncmp,i.ctyp,i.cdoc,rep.cinv) then
+			endif
+
+		break
+	case	tfgld.catg.purchase.inv :
+		|Priority 1 - tfisg001
+		if not tfisg.dll1402.get.purchase.project.from.ir.details(
+			i.cono,i.ttyp,i.docn,rep.orno,rep.cprj) then
+			|Priority 2 - tfacp100	
+			if not tfisg.dll1402.get.purchase.project.from.received.purchase.invoice(
+					i.ncmp,i.ttyp,i.docn,rep.orno,rep.cprj) then
+				|Priority 3 - tfacp200
+				if not tfisg.dll1402.get.purchase.project.from.open.item.purchase(
+					i.ncmp,i.ttyp,i.docn,i.lino,rep.orno,rep.cprj) then	
+					|Priority 4 - tfmsl037
+				endif
+			endif
+		endif	
+
+		|* Supplier Invoice Number against pruchase
+		if not tfisg.dll1402.get.commercial.invoice.from.open.item.purchase(
+			i.ncmp,i.ctyp,i.cdoc,rep.cinv) then
+		endif
+
+					
+		break
+	case	tfgld.catg.purchase.cred:
+		|Priority 1 - tfisg001
+		if not tfisg.dll1402.get.purchase.project.from.ir.details(
+			i.cono,i.ctyp,i.cdoc,rep.orno,rep.cprj) then
+			|Priority 2 - tfacp100	
+			if not tfisg.dll1402.get.purchase.project.from.received.purchase.invoice(
+					i.ncmp,i.ctyp,i.cdoc,rep.orno,rep.cprj) then
+				|Priority 3 - tfacp200
+				if not tfisg.dll1402.get.purchase.project.from.open.item.purchase(
+					i.ncmp,i.ctyp,i.cdoc,0,rep.orno,rep.cprj) then	
+					|Priority 4 - tfmsl037
+				endif
+			endif
+		endif
+		
+		|* Supplier Invoice Number against pruchase
+		if not tfisg.dll1402.get.commercial.invoice.from.open.item.purchase(
+			i.ncmp,i.ctyp,i.cdoc,rep.cinv) then
+		endif
+		break
+	endcase
+	
+| 	if get.argc() = 33 then
+| 		rep.ncmp = i.ncmp
+| 	endif
+| 	
+	
+	rprt_send()
+	
+}
+
+function domain tcnama	get.bp.nama
+			(
+				domain	tccom.bpid	i.bpid
+			)
+{
+	domain	tcnama	o.nama
+	o.nama  = "" 
+	
+	select 	tccom100.nama:o.nama
+	from	tccom100
+	where	tccom100._index1 = {:i.bpid}
+	as set with 1 rows
+	selectdo
+	endselect
+	return(o.nama)
+
+}
+
+
+function boolean withholding.on.advance.assignm(
+		domain	tcncmp		i.company,
+		domain	tfgld.ttyp	i.correction.transaction.type,
+		domain	tfcmg.tran	i.type.of.trans,
+		domain	tcyesno		i.control.account,
+		domain	tfgld.catg	i.trans.category,
+		domain	tcyesno		i.withholding.tax,
+		domain	tfcmg.tcsh	i.type.of.cash)
+{
+	if not tfcmg.dll8000.withholding.tax.for.advance.payments(
+			false,
+			i.company,
+			0) then
+		return(false)
+	endif
+	if ( i.type.of.trans = tfcmg.tran.advance.paym or
+	     ( i.control.account = tcyesno.yes and
+	       i.trans.category = tfgld.catg.cash and
+	       i.withholding.tax = tcyesno.yes and
+	       i.type.of.cash = tfcmg.tcsh.ssgn) ) then	
+		return(true)
+	endif
+
+	|* Advance Payment created by reconcilaition?
+	if i.type.of.trans = tfcmg.tran.reconc.suppl and
+	   i.withholding.tax = tcyesno.yes and
+	   isspace(i.correction.transaction.type) then 	
+		return(true)
+	endif
+
+	return(false)
+}								
+	  
+
+function boolean update.mode.real.time(
+				domain	tfgld.ttyp 	i.trans.type fixed)
+
+{
+		domain	tfgld.hmod	dummy.update.mode
+	static	domain	tfgld.ttyp	hold.ttyp		fixed
+	static	boolean			hold.return.value
+
+	if hold.ttyp = i.trans.type then
+		return(hold.return.value)
+	endif
+
+	hold.ttyp = i.trans.type
+	hold.return.value = false
+
+	select	tfgld011.hmod:dummy.update.mode
+	from	tfgld011
+	where	tfgld011._index1 = { :i.trans.type }
+	and	tfgld011.hmod = tfgld.hmod.real.time
+	as set with 1 rows
+	selectdo
+		hold.return.value = true
+	endselect
+
+	return(hold.return.value)
+}								
+
+
+function boolean opening.balance()
+{
+	select	tfgld011.ttyp
+	from	tfgld011
+	where	tfgld011._index1 = { :tfgld102.ttyp }
+	and	tfgld011.catg    = tfgld.catg.opening.bal
+	as set with 1 rows
+	selectdo
+		return(true)
+	endselect
+
+	return(false)
+}
+
+
+|****************  FINALIZED TRANSACTIONS ***************************
+
+function read.main.table1()
+{
+	domain	tcncmp		current.company
+	domain	tcncmp		original.company
+	domain	tcncmp		o.comp
+	string err.mesg(500)
+	
+	
+	domain	tcncmp		i.target.financial.company
+	domain	tfgld.ttyp	o.related.transaction.type
+	domain	tfgld.docn	o.related.document
+	domain	tcmcs.s200m	o.error.message
+	
+	
+	original.company = get.compnr()
+	
+	if not tfgld.dll6001.get.company.parameters(
+			original.company,
+			err.mesg) then
+	endif
+		
+	
+	cono.g = tfgld004.gcmp
+	
+	current.company = original.company
+	o.comp = get.compnr()
+	
+		select	tfgld001.ncmp
+		from	tfgld001
+		selectdo
+| 			read.company.description()
+			if tfgld001.ncmp = current.company then
+				select  tfgld106.*, tfgld008.*
+				from    tfgld106, tfgld008
+				where	tfgld106._index1 inrange {:ttyp.f,:docn.f} and {:ttyp.t,:docn.t}
+				and	tfgld106.fyer = :year.f
+				and	tfgld106.obat inrange :btno.f and :btno.t
+				and 	tfgld106.leac refers to tfgld008
+				and 	tfgld106._compnr = :tfgld001.ncmp
+				selectdo
+					if tfgld106.ocmp <> o.comp then
+						if not 
+						  trans.is.intergroup(
+							tfgld106.ocmp) then
+								continue
+						endif
+					endif
+					
+					
+					
+					if not tfisg.dll1402.intercompany.document.present(
+						tfgld106.ocmp,
+						tfgld106.otyp,
+						tfgld106.odoc,
+						i.target.financial.company,
+						o.related.transaction.type,
+						o.related.document,
+						o.error.message) then
+						
+						assign.report.variable(
+							tfgld106.otyp,		|Transaction Type
+							tfgld106.odoc,		|Document Number
+							tfgld106.olin,		|Line Number
+							tfgld106.dcdt,		|Document Date
+							tfgld106.ocmp,		|Company
+							tfgld001.ncmp,		|Target Company
+							tfgld106.obat,		|Batch Number
+							tfgld106.fyer,		|Fiscal Year
+							tfgld106.fprd,		|Fiscal Period
+							tfgld106.vyer,		|Tax Year
+							tfgld106.vprd,		|Tax Period
+							tfgld106.ccur,		|Currency
+							tfgld106.leac,		|Ledger Account
+							tfgld008.desc,		|Ledger Description
+							tfgld106.dim1,		|Dimension1
+							tfgld106.dim2,		|Dimension2
+							tfgld106.dim3,		|Dimension3
+							tfgld106.dim4,		|Dimension4
+							tfgld106.dim5,		|Dimension5
+							tfgld106.dbcr,		|Debit/Credit
+							tfgld106.amnt,		|Amount
+							tfgld106.amth(1),	|Amount in HC
+							tfgld106.refr,		|Reference
+							tfgld106.bpid,		|Business Partner
+							tfgld106.txta,		|Text						
+							tfgld106.catg,		|Transaction Category
+							tfgld106.tran,		|Type of Transaction 
+							tfgld106.tcsh,		|Type of Cash Transaction 
+							tfgld106.ctyp,
+							tfgld106.cinv,
+							tfgld106.trun,
+							2)
+						
+					else					
+					
+						assign.report.variable(
+							tfgld106.otyp,		|Transaction Type
+							tfgld106.odoc,		|Document Number
+							tfgld106.olin,		|Line Number
+							tfgld106.dcdt,		|Document Date
+							tfgld106.ocmp,		|Company
+							tfgld001.ncmp,		|Target Company
+							tfgld106.obat,		|Batch Number
+							tfgld106.fyer,		|Fiscal Year
+							tfgld106.fprd,		|Fiscal Period
+							tfgld106.vyer,		|Tax Year
+							tfgld106.vprd,		|Tax Period
+							tfgld106.ccur,		|Currency
+							tfgld106.leac,		|Ledger Account
+							tfgld008.desc,		|Ledger Description
+							tfgld106.dim1,		|Dimension1
+							tfgld106.dim2,		|Dimension2
+							tfgld106.dim3,		|Dimension3
+							tfgld106.dim4,		|Dimension4
+							tfgld106.dim5,		|Dimension5
+							tfgld106.dbcr,		|Debit/Credit
+							tfgld106.amnt,		|Amount
+							tfgld106.amth(1),	|Amount in HC
+							tfgld106.refr,		|Reference
+							tfgld106.bpid,		|Business Partner
+							tfgld106.txta,		|Text						
+							tfgld106.catg,		|Transaction Category
+							tfgld106.tran,		|Type of Transaction 
+							tfgld106.tcsh,		|Type of Cash Transaction 
+							tfgld106.ctyp,
+							tfgld106.cinv,
+							tfgld106.trun,
+							2,
+							i.target.financial.company)
+					endif
+					
+				endselect
+			else
+				select  tfgld106.*, tfgld008.*
+				from    tfgld106, tfgld008
+				where	tfgld106._index1 inrange {:ttyp.f,:docn.f} and {:ttyp.t,:docn.t}
+				and	tfgld106.fyer = :year.f
+		       		and	tfgld106.ocmp = :o.comp
+				and	tfgld106.obat inrange :btno.f and :btno.t
+				and 	tfgld106.leac refers to tfgld008
+				and 	tfgld106._compnr = :tfgld001.ncmp
+				selectdo
+					
+					if not tfisg.dll1402.intercompany.document.present(
+						tfgld106.ocmp,
+						tfgld106.otyp,
+						tfgld106.odoc,
+						i.target.financial.company,
+						o.related.transaction.type,
+						o.related.document,
+						o.error.message) then
+						
+						assign.report.variable(
+							tfgld106.otyp,		|Transaction Type
+							tfgld106.odoc,		|Document Number
+							tfgld106.olin,		|Line Number
+							tfgld106.dcdt,		|Document Date
+							tfgld106.ocmp,		|Company
+							tfgld001.ncmp,		|Target Company
+							tfgld106.obat,		|Batch Number
+							tfgld106.fyer,		|Fiscal Year
+							tfgld106.fprd,		|Fiscal Period
+							tfgld106.vyer,		|Tax Year
+							tfgld106.vprd,		|Tax Period
+							tfgld106.ccur,		|Currency
+							tfgld106.leac,		|Ledger Account
+							tfgld008.desc,		|Ledger Description
+							tfgld106.dim1,		|Dimension1
+							tfgld106.dim2,		|Dimension2
+							tfgld106.dim3,		|Dimension3
+							tfgld106.dim4,		|Dimension4
+							tfgld106.dim5,		|Dimension5
+							tfgld106.dbcr,		|Debit/Credit
+							tfgld106.amnt,		|Amount
+							tfgld106.amth(1),	|Amount in HC
+							tfgld106.refr,		|Reference
+							tfgld106.bpid,		|Business Partner
+							tfgld106.txta,		|Text				
+							tfgld106.catg,		|Transaction Category
+							tfgld106.tran,		|Type of Transaction 
+							tfgld106.tcsh,		|Type of Cash Transaction 
+							tfgld106.ctyp,
+							tfgld106.cinv,
+							tfgld106.trun,
+							2)
+
+					else					
+						assign.report.variable(
+							tfgld106.otyp,		|Transaction Type
+							tfgld106.odoc,		|Document Number
+							tfgld106.olin,		|Line Number
+							tfgld106.dcdt,		|Document Date
+							tfgld106.ocmp,		|Company
+							tfgld001.ncmp,		|Target Company
+							tfgld106.obat,		|Batch Number
+							tfgld106.fyer,		|Fiscal Year
+							tfgld106.fprd,		|Fiscal Period
+							tfgld106.vyer,		|Tax Year
+							tfgld106.vprd,		|Tax Period
+							tfgld106.ccur,		|Currency
+							tfgld106.leac,		|Ledger Account
+							tfgld008.desc,		|Ledger Description
+							tfgld106.dim1,		|Dimension1
+							tfgld106.dim2,		|Dimension2
+							tfgld106.dim3,		|Dimension3
+							tfgld106.dim4,		|Dimension4
+							tfgld106.dim5,		|Dimension5
+							tfgld106.dbcr,		|Debit/Credit
+							tfgld106.amnt,		|Amount
+							tfgld106.amth(1),	|Amount in HC
+							tfgld106.refr,		|Reference
+							tfgld106.bpid,		|Business Partner
+							tfgld106.txta,		|Text				
+							tfgld106.catg,		|Transaction Category
+							tfgld106.tran,		|Type of Transaction 
+							tfgld106.tcsh,		|Type of Cash Transaction 
+							tfgld106.ctyp,
+							tfgld106.cinv,
+							tfgld106.trun,
+							2,
+							i.target.financial.company)
+					endif
+					
+				endselect
+			endif
+		endselect
+
+}
+
+function domain tcnama  read.company.description(domain tcncmp	i.ncmp)
+{
+	|* Read company description
+	tccom000.nama = ""
+	select	tccom000.nama
+	from	tccom000
+	where	tccom000._index1 = {0, :i.ncmp}
+	as set with 1 rows |*Whole index used
+	selectdo
+	selectempty
+		tccom000.nama = ""
+	endselect
+	
+	return(tccom000.nama)
+}
+
+function boolean trans.is.intergroup(
+		domain	tcncmp		i.company)
+{
+	static	domain	tcncmp		hold.company
+	static		boolean		hold.result
+
+	domain	tcncmp		temp.gcmp
+
+	if hold.company = i.company then
+		return(hold.result)
+	endif
+
+	hold.company = i.company
+
+	select 	tfgld004.gcmp:temp.gcmp
+	from 	tfgld004
+	where	tfgld004._index1 = {0}
+	and	tfgld004._compnr = :i.company
+	selectdo
+		if temp.gcmp = cono.g then
+			hold.result = false	|* Intercompany
+		else
+			hold.result = true	|* Intergroup
+		endif
+	endselect
+	return(hold.result)
+}
+
+function domain tfgld.desc get.dimension
+			(
+				domain	tfgld.dimn	i.dtyp,
+				domain	tfgld.dimx	i.dimx
+			)
+{
+	domain	tfgld.desc	o.desc
+	
+	select 	tfgld010.desc:o.desc
+	from	tfgld010
+	where	tfgld010._index1 = {:i.dtyp,:i.dimx}
+	as set with 1 rows
+	selectdo
+	selectempty
+		o.desc = ""
+	endselect
+	
+	return(o.desc)
+}
+
+function assing.integration.report.variable
+				(
+					domain	tfgld.ttyp	i.ttyp,	|Transaction Type
+					domain	tfgld.docn	i.docn,	|Document Number
+					domain	tccprj		i.cprj,	|Project
+					domain	tcdsca		i.desc,	|Project Description
+					domain	tcitem		i.item,	|Item
+					domain	tppdm.cspa	i.cspa,	|Element
+					domain	tcdsca		i.dsca,	|Element Description
+					domain	tfgld.amnt	i.amnt
+				)
+{
+		
+	
+	rep.ttyp = i.ttyp
+	rep.docn = i.docn
+	rep.cprj = i.cprj
+	rep.desc = i.desc
+	rep.item = i.item
+	rep.cspa = i.cspa
+	rep.cspa.dsca = i.dsca
+	rep.amnt = i.amnt
+	
+	brp.ready(brp_id)
+	
+}
+
+
+| function read.prnt.integration()	
+| {
+
+| 	domain tcncmp	curr.comp
+| 	domain tfgld.ttyp  o.ttyp
+| 	domain tfgld.docn  o.docn
+| 	
+| 		
+| 	select 	tfgld018.ttyp,
+| 		tfgld018.docn
+| 	from	tfgld018
+| 	where	tfgld018._index2 inrange {:year.f,:btno.f,:ttyp.f,:docn.f}
+| 					and{:year.f,:btno.t,:ttyp.t,:docn.t}
+| 	selectdo
+| 		
+| 		
+| 	| 		o.ttyp = tfgld018.ttyp
+| 	| 		o.docn = tfgld018.docn
+| 	
+| 		select 	tpppc211.*,
+| 			tcmcs052.dsca
+| 		from   	tpppc211,tcmcs052
+| 		where  	tpppc211._index6 = {:comp.f,:o.ttyp,:o.docn}
+| 		and	tpppc211.cprj refers to tcmcs052 unref
+| 		selectdo
+| 			
+| 			select tpptc100.desc
+| 			from   tpptc100
+| 			where  tpptc100._index1 = {:tpppc211.cprj,:tpppc211.cspa}
+| 			selectdo
+| 			endselect
+| 			
+| 			assing.integration.report.variable(
+| 					tpppc211.ftty,	|Transaction Type
+| 					tpppc211.fdoc,	|Document Number
+| 					tpppc211.cprj,	|Project
+| 					tcmcs052.dsca,	|Project Description
+| 					tpppc211.item,	|Item
+| 					tpppc211.cspa,	|Element
+| 					tpptc100.desc,	|Element Description
+| 					(tpppc211.amoc * tpppc211.rtcc(1))
+
+| 		endselect
+| 		
+| 		select 	tpppc251.*,
+| 			tcmcs052.dsca
+| 		from   	tpppc251,tcmcs052
+| 		where  	tpppc251._index6 = {:comp.f,:o.ttyp,:o.docn}
+| 		and	tpppc251.cprj refers to tcmcs052 unref
+| 		selectdo
+| 			
+| 			select tpptc100.desc
+| 			from   tpptc100
+| 			where  tpptc100._index1 = {:tpppc251.cprj,:tpppc251.cspa}
+| 			selectdo
+| 			endselect
+| 			
+| 			assing.integration.report.variable(
+| 					tpppc251.ftty,	|Transaction Type
+| 					tpppc251.fdoc,	|Document Number
+| 					tpppc251.cprj,	|Project
+| 					tcmcs052.dsca,	|Project Description
+| 					"",		|Item
+| 					tpppc251.cspa,	|Element
+| 					tpptc100.desc,	|Element Description
+| 					(tpppc251.amoc * tpppc251.rtcc(1))
+
+| 		endselect
+| 		
+| 		select 	tpppc271.*,
+| 			tcmcs052.dsca
+| 		from   	tpppc271,tcmcs052
+| 		where  	tpppc271._index6 = {:comp.f,:o.ttyp,:o.docn}
+| 		and	tpppc271.cprj refers to tcmcs052
+| 		selectdo			
+| 			select tpptc100.desc
+| 			from   tpptc100
+| 			where  tpptc100._index1 = {:tpppc271.cprj,:tpppc271.cspa}
+| 			selectdo
+| 			endselect
+| 			
+| 			assing.integration.report.variable(
+| 					tpppc271.ftty,	|Transaction Type
+| 					tpppc271.fdoc,	|Document Number
+| 					tpppc271.cprj,	|Project
+| 					tcmcs052.dsca,	|Project Description
+| 					tpppc271.csub,	|Item
+| 					tpppc271.cspa,	|Element
+| 					tpptc100.desc,	|Element Description
+| 					(tpppc271.amoc * tpppc271.rtcc(1))
+
+| 		endselect
+| 		
+| 		select tpppc291.*,
+| 			tcmcs052.dsca
+| 		from   tpppc291,tcmcs052
+| 		where  tpppc291._index6 = {:comp.f,:o.ttyp,:o.docn}
+| 		and	tpppc291.cprj refers to tcmcs052 unref
+| 		selectdo			
+| 			select tpptc100.desc
+| 			from   tpptc100
+| 			where  tpptc100._index1 = {:tpppc291.cprj,:tpppc291.cspa}
+| 			selectdo
+| 			endselect
+| 			
+| 			assing.integration.report.variable(
+| 					tpppc291.ftty,	|Transaction Type
+| 					tpppc291.fdoc,	|Document Number
+| 					tpppc291.cprj,	|Project
+| 					tcmcs052.dsca,	|Project Description
+| 					tpppc291.cico,	|Item
+| 					tpppc291.cspa,	|Element
+| 					tpptc100.desc,	|Element Description
+| 					(tpppc291.amoc * tpppc291.rtcc(1))
+
+| 		endselect
+| 	
+| 	endselect					
+| }							

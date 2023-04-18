@@ -1,0 +1,343 @@
+|******************************************************************************
+|* tfisg1202m100  0  VRC B61U a7 live
+|* Update Ledger and Dimenions For Non-Finialized Transactions
+|* Installation user             
+|* 2014-10-29
+|******************************************************************************
+|* Form Type 4
+|******************************************************************************
+|* ID: ISGEC001174, IT0327, Ritu Shrivastava, Dt. 04-11-2014, VRC B61U a7 isg
+|* Added transaction reference
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttfgld010
+	table	ttfgld008
+	table	ttfgld102
+	table	ttfgld037
+#include "itfmsldll0032"	
+|**************  FORM FIELDS ***********************************
+	extern	domain	tfgld.ttyp	ttyp.f
+	extern	domain	tfgld.docn	docn.f
+	extern	domain	tfgld.lino	lino.f
+	extern	domain	tfgld.leac	leac.f
+	extern	domain	tcdsca		dsca.f
+	extern	domain	tfgld.dimx	dim1.f
+	extern	domain	tfgld.dimx	dim2.f
+	extern	domain	tfgld.dimx	dim3.f
+	extern	domain	tfgld.dimx	dim4.f
+	extern	domain	tfgld.dimx	dim5.f
+	extern domain  tfgld.refc	refr.f					|#ISGEC001174.n
+|************** IMPORT VARIABLES *******************************
+
+	extern	domain	tfgld.sess	i.calling.session
+	extern	domain	tfgld.ttyp	import.ttyp
+	extern	domain	tfgld.docn	import.docn
+	extern	domain	tfgld.lino	import.lino
+	extern	domain	tcncmp		import.cono
+	extern	domain	tcyesno		import.cont
+	extern	domain	tfgld.leac	import.leac
+	
+
+|****************************** program section ********************************
+
+before.program:
+| 	import("prog.name$",i.calling.session)
+| 	on case i.calling.session
+| 	case 	"tfgld1508m000":
+		import("tfgld102.ttyp",import.ttyp)
+		import("tfgld102.docn",import.docn)
+		import("tfgld102.lino",import.lino)
+		import("tfgld102.cono",import.cono)
+		import("tfgld102.cont",import.cont)
+		import("tfgld102.leac",import.leac)
+		
+		if import.cont = tcyesno.yes then
+			message("Modification Not Allowed For Control Account Lines")
+			execute(end.program)
+		endif
+		
+		if check.existing.ledger(import.leac) then
+			message("Modification Not Allowed For Integration Account Lines")
+			execute(end.program)
+		endif
+		
+		
+| 		break
+| 	endcase
+	
+|****************************** choice section **********************************
+choice.cont.update:
+before.choice:
+	check.all.input()
+on.choice:
+	update.non.finalized.transaction()
+after.choice:
+	execute(end.program)
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+
+
+|****************************** field section **********************************
+
+field.ttyp.f:
+before.field:
+	ttyp.f = import.ttyp
+
+field.docn.f:
+before.field:
+	docn.f = import.docn
+	
+field.lino.f:
+before.field:
+	lino.f = import.lino
+	
+field.leac.f:
+when.field.changes:
+	enable.disable.fields()
+before.zoom:
+	query.extend.where.in.zoom("tfgld008.iprj = tfgld.intr.not.applicable 
+^					and tfgld008.subl = 0 and tfgld008.inta = tcyesno.no 
+^					and tfgld008.bloc = tfgld.bloc.free and tfgld008.inta = tcyesno.no")	
+check.input:
+	check.ledger.account(import.cono,leac.f)
+after.field:
+	select 	tfgld008.desc
+	from	tfgld008
+	where	tfgld008._index1 = {:leac.f}
+	as set with 1 rows
+	selectdo
+	selectempty
+		tfgld008.desc = ""
+	endselect
+	
+	dsca.f = tfgld008.desc
+	display("dsca.f")
+	
+field.dim1.f:
+before.zoom:
+	dimension.filter(1)
+check.input:
+	LEDGER_DIMENSION(leac.f,1)
+	if itfmsldll0032.check_dimension_is_mandatory(result.dopt) and isspace(dim1.f) then
+		message("Dimension 1 is Mandatory")
+		set.input.error("")
+	endif
+
+	check.dimension(1,dim1.f)
+field.dim2.f:
+before.zoom:
+	dimension.filter(2)
+check.input:
+	LEDGER_DIMENSION(leac.f,2)
+	if itfmsldll0032.check_dimension_is_mandatory(result.dopt) and isspace(dim2.f) then
+		message("Dimension 2 is Mandatory")
+		set.input.error("")
+	endif
+	
+	check.dimension(2,dim2.f)
+field.dim3.f:
+before.zoom:
+	dimension.filter(3)
+check.input:
+	LEDGER_DIMENSION(leac.f,3)
+	if itfmsldll0032.check_dimension_is_mandatory(result.dopt) and isspace(dim3.f) then
+		message("Dimension 3 is Mandatory")
+		set.input.error("")
+	endif
+
+	check.dimension(3,dim3.f)
+field.dim4.f:
+before.zoom:
+	dimension.filter(4)
+check.input:
+	LEDGER_DIMENSION(leac.f,4)
+	if itfmsldll0032.check_dimension_is_mandatory(result.dopt) and isspace(dim4.f) then
+		message("Dimension 4 is Mandatory")
+		set.input.error("")
+	endif
+	
+	check.dimension(4,dim4.f)
+field.dim5.f:
+before.zoom:
+	dimension.filter(5)
+check.input:
+	LEDGER_DIMENSION(leac.f,5)
+	if itfmsldll0032.check_dimension_is_mandatory(result.dopt) and isspace(dim5.f) then
+		message("Dimension 5 is Mandatory")
+		set.input.error("")
+	endif
+	
+	check.dimension(5,dim5.f)
+	
+
+|****************************** function section **********************************
+
+functions:
+|*** Dimension Filter
+function dimension.filter(domain tfgld.dimn	i.dtyp)
+{
+	tfgld010.dtyp = i.dtyp
+	tfgld010.subl = 0
+	tfgld010.bloc = tfgld.bloc.free
+}
+
+function enable.disable.fields()
+{
+	LEDGER_DIMENSION(leac.f,1)
+	if not itfmsldll0032.check_dimension_is_applicable(result.dopt) then
+		disable.fields("dim1.f")
+	else
+		enable.fields("dim1.f")
+	endif
+	
+	LEDGER_DIMENSION(leac.f,2)
+	if not itfmsldll0032.check_dimension_is_applicable(result.dopt) then
+		disable.fields("dim2.f")
+	else
+		enable.fields("dim2.f")
+	endif
+	
+	LEDGER_DIMENSION(leac.f,3)
+	if not itfmsldll0032.check_dimension_is_applicable(result.dopt) then
+		disable.fields("dim3.f")
+	else
+		enable.fields("dim3.f")
+	endif
+	
+	LEDGER_DIMENSION(leac.f,4)
+	if not itfmsldll0032.check_dimension_is_applicable(result.dopt) then
+		disable.fields("dim4.f")
+	else
+		enable.fields("dim4.f")
+	endif
+	
+	LEDGER_DIMENSION(leac.f,5)
+	if not itfmsldll0032.check_dimension_is_applicable(result.dopt) then
+		disable.fields("dim5.f")
+	else
+		enable.fields("dim5.f")
+	endif
+}
+
+function check.dimension
+			(
+				domain	tfgld.dimn	i.dtyp,
+				domain	tfgld.dimx	i.dimx
+			)
+{
+	string error.msg(100)
+	if not isspace(i.dimx) then
+		if not itfmsldll0032.check.dimension(i.dtyp,i.dimx) then
+			error.msg = "Dimension " & str$(i.dtyp) & " is not Valid"
+			set.input.error("")
+		endif
+	endif
+	
+}
+
+
+function update.non.finalized.transaction()
+{
+	select 	tfgld102.leac,
+		tfgld102.dim1,
+		tfgld102.dim2,
+		tfgld102.dim3,
+		tfgld102.dim4,
+		tfgld102.dim5,
+		tfgld102.refr					|#ISGEC001174.n
+	from	tfgld102 for update 
+	where	tfgld102._index2 = {:import.cono,:ttyp.f,:docn.f,:lino.f}
+	selectdo
+		tfgld102.leac	=	""
+		tfgld102.dim1	=	""	
+		tfgld102.dim2	=	""
+		tfgld102.dim3	=	""
+		tfgld102.dim4	=	""
+		tfgld102.dim5	=	""
+		
+		tfgld102.leac	=	leac.f
+		tfgld102.dim1	=	dim1.f
+		tfgld102.dim2	=	dim2.f
+		tfgld102.dim3	=	dim3.f
+		tfgld102.dim4	=	dim4.f
+		tfgld102.dim5	=	dim5.f
+		
+		if not isspace(refr.f) then			|#ISGEC001174.sn
+			tfgld102.refr = refr.f
+		endif						|#ISGEC001174.en
+		
+		db.update(ttfgld102,db.retry,e)
+	endselect
+	commit.transaction()
+}
+
+
+function check.ledger.account
+			(
+				domain	tcncmp		i.ncmp,
+				domain	tfgld.leac	i.leac
+			)
+{
+	select 	tfgld008.leac
+	from	tfgld008
+	where	tfgld008._index1 = {:i.leac}
+	and	tfgld008.iprj = tfgld.intr.not.applicable 
+	and 	tfgld008.subl = 0 
+	and 	tfgld008.inta = tcyesno.no 
+	and 	tfgld008.bloc = tfgld.bloc.free 
+	as set with 1 rows
+	selectdo
+	selectempty
+		message("Enter Valid Ledger Account")
+		set.input.error("")
+	endselect
+	
+	|Control Account Check
+	select 	tfgld037.nosu, tfgld037.nocu
+	from	tfgld037
+	where	tfgld037._index1 = {
+		   :i.ncmp,
+		   :i.leac}
+	and	tfgld037._compnr = :i.ncmp
+	as set with 1 rows
+	selectdo
+		if tfgld037.nosu <> 0 or
+		   tfgld037.nocu  <> 0 then
+			mess("tfglds0732",1,i.leac)
+			set.input.error("",e)
+		endif
+	endselect
+	
+}
+
+
+function boolean check.existing.ledger
+			(
+				domain 	tfgld.leac	i.leac
+			)
+{
+	select 	tfgld008.leac
+	from	tfgld008
+	where	tfgld008._index1 = {:i.leac}
+	and	tfgld008.iprj <> tfgld.intr.not.applicable 
+	as set with 1 rows
+	selectdo
+		return(true)
+	endselect
+	
+	select 	tfgld008.leac
+	from	tfgld008
+	where	tfgld008._index1 = {:i.leac}
+	and 	tfgld008.inta = tcyesno.yes
+	as set with 1 rows
+	selectdo
+		return(true)
+	endselect
+	
+	return(false)
+}

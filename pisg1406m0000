@@ -1,0 +1,198 @@
+|******************************************************************************
+|* tfisg1406m000  0  VRC B61U a7 isg 
+|* Consolidated Finalized Transaction
+|* Merino1                       
+|* 2015-11-17
+|******************************************************************************
+|* Main table tfgld106 Finalized Transactions, Form Type 4
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttfgld106 | Finalized Transactions
+	table	ttccom000
+	table	ttfgld005
+	table	ttfgld018
+	table	ttfgld201
+	table	ttfgld203
+	table	ttfgld008
+	
+	extern	domain	tfgld.ttyp	ttyp.f, ttyp.t
+	extern	domain	tfgld.leac	leac.f, leac.t, old.leac
+	extern	domain	tfgld.docn	docn.f, docn.t
+	extern	domain	tcncmp		comp.f, comp.t
+	extern	domain	tfgld.year	year.f, year.t
+	extern	domain	tfgld.prod	prod.f, prod.t
+	extern	domain	tfgld.ptyp	period.ptyp
+	extern	domain	tfgld.amnt	debt.amnt, credit.amnt, opn.bal, tot.opn.all.comp
+
+|****************************** program section ********************************
+
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.cont.process:
+on.choice:
+   execute(print.data)
+
+choice.print.data:
+on.choice:
+   if rprt_open() then
+       read.main.table()
+       rprt_close()
+   else
+       choice.again()
+   endif
+
+
+|****************************** field section *********************************
+
+field.leac.f:
+when.field.changes:
+	leac.t = leac.f
+
+field.ttyp.f:
+when.field.changes:
+	ttyp.t = ttyp.f
+	
+field.docn.f:
+before.zoom:
+	tfgld018.ttyp = ttyp.f
+	
+when.field.changes:
+	docn.t = docn.f
+
+field.docn.t:
+before.zoom:
+	tfgld018.ttyp = ttyp.t
+	
+field.comp.f:
+when.field.changes:
+	comp.t = comp.f
+
+field.year.f:
+when.field.changes:
+	year.t = year.f
+
+field.prod.f:
+when.field.changes:
+	prod.t = prod.f
+before.zoom:
+	tfgld005.year	= year.f
+	tfgld005.ptyp	= period.ptyp
+
+field.prod.t:
+before.zoom:
+	tfgld005.year	= year.f
+	tfgld005.ptyp	= period.ptyp
+|****************************** function section ******************************
+
+functions:
+
+function read.main.table()
+{
+	tot.opn.all.comp = 0
+	select	tccom000.*
+	from	tccom000
+	where	tccom000._index1 inrange {0,:comp.f} and {0,:comp.t}
+	selectdo
+		debt.amnt = 0
+		credit.amnt = 0
+		opn.bal = 0
+		old.leac = ""
+		
+		select	tfgld106.*,tfgld008.desc
+		from	tfgld106,tfgld008
+		where	tfgld106._index1 inrange {:ttyp.f,:docn.f} and {:ttyp.t,:docn.t}
+		and	tfgld106.leac inrange {:leac.f} and {:leac.t}
+		and	tfgld106.fyer inrange {:year.f} and {:year.t}
+		and	tfgld106.fprd inrange {:prod.f} and {:prod.t}
+		and	tfgld106._compnr = {:tccom000.ncmp}
+		and	tfgld106.leac refers to tfgld008
+		selectdo
+			if old.leac <> tfgld106.leac then
+				opn.bal = calc.opening.balance()
+			endif
+			
+			if tfgld106.dbcr = tfgld.dbcr.debit then
+				debt.amnt = tfgld106.amth(1)
+				credit.amnt = 0
+			else
+				credit.amnt = tfgld106.amth(1)
+				debt.amnt = 0
+			endif
+			rprt_send()
+			old.leac = tfgld106.leac
+		endselect
+	endselect
+}
+
+function domain tfgld.amnt calc.opening.balance()
+{
+	domain	tfgld.amnt	tot.opn, i.amth(3)
+	domain	tfgld.dbcr	i.dbcr
+	domain	tfgld.year	i.fyer
+	domain	tfgld.prod	i.fprd
+	extern	domain	tfgld.prod	perd.v
+	i.amth(1) = 0
+	i.dbcr = empty
+	i.fyer = 0
+	i.fprd = 0 
+	tot.opn = 0
+| 	select	tfgld106.amth:i.amth,
+| 		tfgld106.dbcr:i.dbcr,
+| 		tfgld106.fyer:i.fyer,
+| 		tfgld106.fprd:i.fprd
+| 	from	tfgld106
+| 	where	tfgld106._index1 inrange {:ttyp.f,:docn.f} and {:ttyp.t,:docn.t}
+| 	and	tfgld106.leac = {:tfgld106.leac}
+| 	and	tfgld106.fyer <= :year.f 
+| 	|and	tfgld106.fprd <  :prod.f
+| 	and	tfgld106._compnr = {:tccom000.ncmp}
+| 	selectdo
+| 		if i.dbcr = tfgld.dbcr.debit then
+| 			i.amth(1) = i.amth(1) * (-1)
+| 		endif
+| 		if  i.fyer = year.f and i.fprd < prod.f  then
+| 			tot.opn = tot.opn + i.amth(1)
+| 			else if i.fyer < year.f then
+| 				tot.opn = tot.opn + i.amth(1)
+| 			endif
+| 		endif
+| 	endselect
+	select	tfgld203.fobh
+	from	tfgld203
+	where	tfgld203._index1 = {:tccom000.ncmp,:year.f,:tfgld106.leac}
+	and	tfgld203._compnr = {:tccom000.ncmp}
+	as set with 1 rows
+	selectdo
+		tot.opn = tfgld203.fobh(1)
+	selectempty
+		tot.opn = 0
+	endselect
+
+	perd.v = 1
+	while perd.v < prod.f 
+		select	tfgld201.*
+		from	tfgld201
+		where	tfgld201._index3 = {:tccom000.ncmp,:year.f,:tfgld106.leac,1,:perd.v}
+| 		and	tfgld201.prno = {:perd.v}
+| 		and	tfgld201.ptyp =  tfgld.ptyp.financial
+		and	tfgld201._compnr = {:tccom000.ncmp}
+		selectdo
+			tot.opn = tot.opn + tfgld201.fdah(1)
+			tot.opn = tot.opn - tfgld201.fcah(1)
+		endselect
+		perd.v = perd.v + 1
+	endwhile	
+	tot.opn.all.comp = tot.opn.all.comp + tot.opn
+	return(tot.opn)
+}

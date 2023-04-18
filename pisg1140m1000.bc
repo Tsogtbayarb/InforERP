@@ -1,0 +1,183 @@
+|******************************************************************************
+|* dmisg1140m100  0  VRC B61U a7 isg 
+|* Maintain Master Document List
+|* merino1                       
+|* 2017-08-24
+|******************************************************************************
+|* Main table dmisg140 Master Document List, Form Type 1
+|******************************************************************************
+|* ID:ISGEC01041, Sumit Bansal, 13/09/2017
+|* New Development
+|****************************** declaration section ***************************
+declaration:
+
+	table	tdmisg140 | Master Document List
+	table	tdmisg141
+	table	ttcmcs052
+	table	ttpmsl000
+	table	ttpptc100
+	table	tdmisg153
+	table	tdmisg156
+	table	ttcmcs036
+	
+#include <bic_dam>
+#pragma used dll otcmcsdll0095
+
+	extern	domain	tcmcs.str25	i.iuid
+	extern	domain	tcpono		cnt.rec, cnt.rcvd.rec
+			long		ret.val.dal
+
+|****************************** program section ********************************
+before.program:
+| 	query.extend.where("dmisg140.appr = tcyesno.no")
+
+before.display.object:
+	if dmisg140.appr = tcyesno.yes then
+		disable.fields("dmisg140.bssd")
+		disable.fields("dmisg140.bsfd")
+		disable.fields("dmisg140.docn")
+	else
+		enable.fields("dmisg140.bssd")
+		enable.fields("dmisg140.bsfd")
+		enable.fields("dmisg140.docn")
+	endif
+	
+
+|****************************** zoom section ********************************
+
+zoom.from.all:
+on.entry:
+	disable.commands(add.set)
+
+|****************************** group section **********************************
+|****************************** choice section *********************************	
+				|#SD15092017.sn, Saurabh Dubey
+choice.select.all:
+on.choice:
+	select.unselect.records(tcyesno.yes)
+	
+	
+choice.freeze.record:
+before.choice:
+	if check.records(tcyesno.yes) then
+		choice.again()
+	endif
+	
+on.choice:
+	if process.the.records(tcyesno.yes) then
+		message("Process Complete....")
+	endif	
+	
+
+choice.unfreeze.record:
+before.choice:
+	if check.records(tcyesno.no) then
+		choice.again()
+	endif
+	
+on.choice:
+	if process.the.records(tcyesno.no) then
+		message("Process Complete....")
+	endif
+
+											|#Sahil.Sharma.18.02.2019.sn
+choice.mark.delete:
+before.choice:
+	if dmisg140.acdt <> 0 then
+		message("Record cannot be deleted as Actual Release Date is present!")
+		choice.again()
+	endif
+											|#Sahil.Sharma.18.02.2019.en	
+
+
+choice.abort.program:
+before.choice:
+	select.unselect.records(tcyesno.no)
+	
+
+choice.end.program:
+before.choice:
+	select.unselect.records(tcyesno.no)
+		
+				|#SD15092017.en	
+|****************************** field section **********************************
+
+field.tcmcs052.dsca:
+before.display:
+	select	tcmcs052.dsca
+	from	tcmcs052
+	where	tcmcs052._index1 = {:dmisg140.cprj}
+	selectdo
+	selectempty
+		tcmcs052.dsca = ""
+	endselect
+
+
+
+			|#SD15092017.sn
+functions:
+
+function long check.records(domain tcyesno i.check.flag)
+{
+	select	dmisg140.selc
+	from	dmisg140 
+	where	dmisg140._index1 = {:dmisg140.pcod, :dmisg140.cprj}
+	and	dmisg140.selc = tcyesno.yes
+	and	dmisg140.appr <> :i.check.flag
+	selectdo
+	selectempty
+		message("No Records To Process...")
+		return(1)
+	endselect
+	
+	return(0)
+}
+
+
+function boolean process.the.records(domain tcyesno i.put.flag	)
+{
+	select	dmisg140.selc, dmisg140.appr
+	from	dmisg140 for update
+	where	dmisg140._index1 = {:dmisg140.pcod, :dmisg140.cprj}
+	and	dmisg140.selc = tcyesno.yes
+	selectdo		
+		dal.change.object("dmisg140")
+		
+		dal.set.field("dmisg140.appr", i.put.flag)
+		dal.set.field("dmisg140.selc", tcyesno.no)
+		
+		ret.val.dal = dal.save.object("dmisg140")
+				
+		if ret.val.dal = 0 then
+			commit.transaction()
+		else
+			show.dal.messages(MSG.ALL)
+			abort.transaction()
+			return(false)
+		endif
+	endselect
+	
+	return(true)
+}
+
+function select.unselect.records(domain tcyesno i.selc.flag)
+{
+	select	dmisg140.selc
+	from	dmisg140 for update
+	where	dmisg140._index1 = {:dmisg140.pcod, :dmisg140.cprj}
+	selectdo
+		dal.change.object("dmisg140")
+		
+		dal.set.field("dmisg140.selc", i.selc.flag)
+		
+		ret.val.dal = dal.save.object("dmisg140")
+				
+		if ret.val.dal = 0 then
+			commit.transaction()
+		else
+			abort.transaction()
+		endif
+	endselect
+}
+
+				|#SD15092017.en
