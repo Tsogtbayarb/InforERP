@@ -1,0 +1,133 @@
+|******************************************************************************
+|* tdisg8531m600  0  VRC B61U a7 live
+|* Billing Advice (Accounts)
+|* Tools                         
+|* 2014-07-25
+|******************************************************************************
+|* Main table tdisg831 Billing Advice, Form Type 1
+|******************************************************************************
+|* ID: ISGEC001186, IT0327, Ritu Shrivastava, VRC B61U a7 isg, Dt. 20-12-2014
+|* Added invoice date
+
+|*ISGEC015018, Shilpa Janardanan, IT0289, 12/06/201
+|* Refereshing the sent to approval
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttdisg831 | Billing Advice
+	table	ttcmcs052
+	table	ttpisg039
+	table	ttfacr200
+	
+	long ret_val
+	extern	domain	tcmcs.long	z
+	extern	domain	tfgld.ttyp		ityp.f
+	extern	domain	tfgld.docn		idoc.f
+	
+		domain	tfgld.ttyp		o.ityp
+		domain	tfgld.docn		o.idoc
+		domain	tcdate			o.idat
+		
+	extern domain  tfgld.date		indt.f			|#ISGEC001186.n
+#include <bic_dam>	
+|****************************** program section ********************************
+before.program:
+	dal.start.business.method("tdisg831","set.global.variable",ret_val,5)
+
+|****************************** group section **********************************
+before.display.object:
+	if	tdisg831.stat = tdisg.stat.freeze and tdisg831.flag = 0 then
+		enable.commands("unfreeze")
+	else
+		disable.commands("unfreeze")
+	endif
+	
+|****************************** field section **********************************
+field.tcmcs052.dsca:
+before.display:
+	select	tcmcs052.dsca
+	from	tcmcs052
+	where	tcmcs052._index1 = {:tdisg831.cprj}
+	selectdo
+	selectempty
+		tcmcs052.dsca = ""
+	endselect
+field.ityp.f:
+before.display:
+	if tdisg831.stat = tdisg.stat.process and tdisg831.scmp <> 0 then
+		
+		select 	cisli205.ityp:ityp.f,
+			cisli205.idoc:idoc.f
+		from	cisli205
+		where	cisli205._index2 = {:tdisg831.scmp,:tdisg831.brid}
+		and	cisli205._compnr = :tdisg831.scmp
+		as set with 1 rows
+		selectdo
+		endselect
+	else
+		ityp.f = ""
+		idoc.f = 0
+	endif
+	
+field.indt.f:						|#ISGEC001186.sn
+before.display:
+	select tfacr200.docd:indt.f
+	from   tfacr200
+	where  tfacr200._index1 = {:ityp.f,:idoc.f}
+	as set with 1 rows
+	selectdo
+	endselect
+							|#ISGEC001186.en
+	
+choice.unfreeze:
+on.choice:
+	dal.start.business.method("tdisg831","unfreeze.record",ret_val)
+	if ret_val <> 0 then
+		show.dal.messages(MSG.ALL)
+		abort.transaction()
+	else
+		commit.transaction()
+	endif
+	
+	tdisgdll0831.update.linked.ir.details(tdisg831.edrn,0)
+
+
+	
+	
+choice.cont.update.invoice:
+on.choice:
+	if tdisg831.stat = tdisg.stat.process and tdisg831.scmp <> 0 then
+		
+		select 	cisli205.ityp:o.ityp,
+			cisli205.idoc:o.idoc,
+			cisli205.idat:o.idat
+		from	cisli205
+		where	cisli205._index2 = {:tdisg831.scmp,:tdisg831.brid}
+		and	cisli205._compnr = :tdisg831.scmp
+		as set with 1 rows
+		selectdo
+		endselect
+		
+		select 	tpisg039.ityp,
+			tpisg039.idoc,
+			tpisg039.sidt
+		from	tpisg039 for update
+		where	tpisg039._index2 = {:tdisg831.edrn}
+		selectdo
+			tpisg039.ityp = o.ityp
+			tpisg039.idoc = o.idoc
+			tpisg039.sidt = o.idat
+			db.update(ttpisg039,db.retry,e)
+		endselect
+		
+		commit.transaction()
+	endif
+	
+field.tdisg831.stat:			|#ISGEC001186.sn
+after.field:
+
+| 	if tdisg831.stat = tdisg.stat.process then
+| 		disable.commands("unfreeze", actual.occ)
+| 	else
+| 		enable.commands("unfreeze", actual.occ)
+| 	endif				|#ISGEC001186.en

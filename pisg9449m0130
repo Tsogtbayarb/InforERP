@@ -1,0 +1,611 @@
+|******************************************************************************
+|* tcisg9449m013  0  VRC B61U a7 isg 
+|* Print C & H -Form Consumption Report
+|* Installation User             
+|* 2015-07-07
+|******************************************************************************
+|* Main table tccom949 Form Tracking Lines, Form Type 4
+|******************************************************************************
+|* ID: PATCH001082, IT0388, Gokul Chaurasia, Dt. 07-07-2015, VRC B61U a7 isg 
+|* New Session
+|******************************************************************************
+|* ID: PATCH001086, IT0388, Gokul Chaurasia, Dt. 15-07-2015, VRC B61U a7 isg 
+|* change the logic for few fields
+|*****************************************************************************
+|* ID: ISGEC01132, IT0327, Ritu Shrivastava, Dt. 11-08-2015, VRC B61U a7 isg
+|* Modification to print proper values for certain fields.
+|****************************** declaration section ***************************
+declaration:
+	
+	table	ttfacp100
+	table	ttfacp200
+	table	ttccom948
+	table	ttccom949
+	table	ttccom100
+	table	ttctax400
+	table	ttfgld005
+	table	ttfisg002
+	table	ttfacp251
+	table	ttdisg825
+	table	ttdisg839
+	table	ttdisg831
+	table	ttpisg045
+	table	ttfgld006
+	table	ttctax400		|#ISGEC01132.n
+	
+	extern	domain	tcorno		orno
+	extern	domain	tccom.bpid	bpid, bpid.f, bpid.t
+	extern	domain	tfgld.year	year
+	extern	domain	tfgld.prod	prod.f
+	extern	domain	tfgld.prod	prod.t
+	extern	domain	tccprj		cprj.f
+	extern	domain	tcmcs.str30	fnum
+	extern 	domain	tcncmp 		current.company
+	extern	domain	tcdate 		date.f
+	extern	domain	tcdate 		date.t
+	extern	domain	tcform		type
+	extern	domain	tcyesno		form.check
+	extern	domain	tcmcs.str3	form.code
+	extern	domain	tcorno 		form.order, pkslip
+	extern	domain	tccprj  	form.project
+	extern	domain	tcdsca	 	invoice
+	extern	domain	tfgld.year     	o.year
+	extern	domain	tfgld.prod     	o.prod
+	extern	domain	tcpono         	i.temp 
+	extern	domain	tcmcs.str3     	str.code
+	extern	domain	tfgld.date     	invoice.date
+	extern	domain	tcamnt		supp.bill.amnt, ptr.amnt
+	extern	domain	tccean		fcod.n
+	extern	domain	tcdsca		ot.nama
+	extern	domain	tfgld.date	date.n
+	string err.file(100),file.name(100),line(1500),desc.q(1000), line1(1500)
+	long   stat.fp,ret2, dd, yy, mm, dd1, mm1, yy1
+	
+	extern	domain tctax.txnb.l	rep.fovn	|#ISGEC01132.n
+	extern	domain tcdsca		rep.bpid.dsca	|#ISGEC01132.n
+  
+   #pragma used dll ottdllbw 
+|****************************** program section ********************************
+before.program:
+	current.company = get.compnr()
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.cont.process:
+on.choice:
+   execute(print.data)
+
+choice.print:
+on.choice:
+	generate.file()
+
+|****************************** field section *********************************
+
+field.prod.f:
+before.zoom:
+	tfgld005.year = year
+
+check.input:
+	select	tfgld005.prno
+	from	tfgld005
+	where	tfgld005._index1 = {tfgld.ptyp.financial, :year, :prod.f}
+	and	tfgld005.corr = tcyesno.no
+	selectdo
+	selectempty
+		message("Please Input correct Fiscal Period")
+		set.input.error("", e)
+	endselect
+	
+before.field:
+	prod.f = 1
+	
+field.prod.t:
+before.zoom:
+	tfgld005.year = year	
+
+check.input:
+	select	tfgld005.prno
+	from	tfgld005
+	where	tfgld005._index1 = {tfgld.ptyp.financial, :year, :prod.t}
+	and	tfgld005.corr = tcyesno.no
+	selectdo
+	selectempty
+		message("Please Input correct Fiscal Period")
+		set.input.error("", e)
+	endselect
+	
+field.fnum:								|#PATCH001086.sn
+before.zoom:
+	fcod.n = enum.descr$("tcform",type)
+	query.extend.where.in.zoom("tccom948.fcod = " & quoted.string(fcod.n))
+	
+field.bpid:
+before.field:
+	select	tccom948.bpid
+	from	tccom948
+	where	tccom948._index1 = {:fcod.n}
+	and	tccom948.fpon = :fnum
+	selectdo
+		bpid = tccom948.bpid
+	selectempty
+		bpid = ""
+	endselect
+	
+	
+	
+field.year:
+before.field:
+	select	tfgld006.year
+	from	tfgld006
+	order by tfgld006.year desc
+	as set with 1 rows
+	selectdo
+		year = tfgld006.year
+	endselect
+| 	date.n = date.num()
+| 	num.to.date(date.n,yy1,mm1,dd1)
+| 	year = yy1
+									|#PATCH001086.en
+|****************************** function section ******************************
+
+functions:
+
+
+function generate.file()
+{
+	err.file = bse.dir$() & str$(utc.num()) & ".xls"
+	
+	file.name = "c:\temp\" & str$(utc.num())  & ".xls"
+	
+	stat.fp = seq.open(err.file, "w+")
+	
+	process.file()
+	
+	message("Please refer to file %s in C:", file.name)
+	
+	seq.close(stat.fp)
+	ret2 = server2client(err.file,file.name,1)
+	ret2 = app_start(file.name,"c:","","","")
+
+}
+
+function process.file()
+{	
+	if etol(type) = 1 then
+		generate.header()
+		read.main.table()
+	else
+		generate.header.h()
+		read.main.table()
+	endif
+}
+
+function generate.header()
+{
+	if stat.fp >0 then
+		line1 =concat$("	", 											|#PATCH001086.sn
+			sprintf$("							C - FORM CONSUMPTION REPORT"))	|1	|#PATCH001086.en
+		
+		line =concat$("	", 
+			sprintf$("ISGEC Tin No"),				|1
+			sprintf$("C Form No"),					|2	
+			sprintf$("C Form Date"),				|3
+			sprintf$("Total C form Amount."), 			|4
+			sprintf$("TIN No of Supplier"),			|5
+			sprintf$("Supplier Name"),				|6
+			sprintf$("Supplier Invoice No"),			|7
+			sprintf$("Supplier Invoice Date"),			|8
+			sprintf$("Supplier Bill Amount"),			|9
+			sprintf$("Project Code"),				|10
+			sprintf$("Purchase Order"),				|11
+| 			sprintf$("Name of Sub-Vendor"),				|12		|#ISGEC01132.o		
+			sprintf$("Year(Supplier Invoice Year)"),		|13
+			sprintf$("Quarter(Supplier Invoice Period)"))		|14
+
+		line1 = strip$(shiftl$(line1))	|#PATCH001086.sn
+		seq.puts(line1, stat.fp)		|#PATCH001086.en
+		
+		line = strip$(shiftl$(line))
+		seq.puts(line, stat.fp)
+	endif
+}
+
+
+function read.main.table()
+{
+	i.temp = 0
+	get.date(year,prod.f,date.f)
+	i.temp = 1
+	get.date(year,prod.t,date.t)
+	
+	if	isspace(bpid)	then
+		set.fmin(bpid.f, "tccom.bpid")
+		set.fmax(bpid.t, "tccom.bpid")
+	else
+		bpid.f = bpid
+		bpid.t = bpid
+	endif
+	
+	select tfacp100.isup,tfacp100.invd,tfacp100.cdf_form,tfacp100.cdf_code,
+		tfacp100.cdf_pono,tfacp100.ninv,tccom100.nama,tfacp100.amth,
+		tfacp100.cinv,tfacp100.ctyp, tfacp100.cdf_cprj,
+		tfacp100.ifbp							|#ISGEC01132.n
+	from   tfacp100,tccom100
+| 	where  tfacp100._index2 = {:bpid}					|#PATCH001086.o
+	where  tfacp100._index2 inrange {:bpid.f} and {:bpid.t}		|#PATCH001086.n
+	and    tfacp100.invd inrange {:date.f} and {:date.t}
+	and    tfacp100.stin = tfacp.stin.copied
+	and    tfacp100.ifbp refers to tccom100
+	selectdo
+		get.var(pid,"tfacp100.cdf_form",form.check)
+		get.var(pid,"tfacp100.cdf_code",form.code)
+		get.var(pid,"tfacp100.cdf_pono",form.order)
+		get.var(pid,"tfacp100.cdf_cprj",form.project)
+		
+									|#ISGEC01132.sn
+		select tctax400.fovn, tctax400.efdt, tctax400.catg.l
+		from	tctax400
+		where	tctax400._index1 = {:tfacp100.ifbp}
+		and	tctax400.catg.l = tctax.catg.l.cst
+		order  by tctax400.efdt desc
+		as set with 1 rows
+		selectdo
+			rep.fovn = tctax400.fovn
+		selectempty
+			select tctax400.fovn, tctax400.efdt, tctax400.catg.l
+			from	tctax400
+			where	tctax400._index1 = {:tfacp100.ifbp}
+			and	tctax400.catg.l = tctax.catg.l.lst
+			order  by tctax400.efdt desc
+			as set with 1 rows
+			selectdo
+				rep.fovn = tctax400.fovn
+			selectempty
+				select tctax400.fovn, tctax400.efdt, tctax400.catg.l
+				from	tctax400
+				where	tctax400._index1 = {:tfacp100.ifbp}
+				and	tctax400.catg.l = tctax.catg.l.vat
+				order  by tctax400.efdt desc
+				as set with 1 rows
+				selectdo
+					rep.fovn = tctax400.fovn
+				selectempty
+					rep.fovn = ""
+				endselect
+			endselect
+		endselect
+											|#ISGEC01132.en
+		
+		
+		str.code = enum.descr$("tcform",type)
+		str.code = strip$(shiftl$(str.code))
+		form.code = strip$(shiftl$(form.code))
+		
+		if form.check = tcyesno.yes and form.code = str.code then
+| 			if form.order = orno or	 isspace(orno)	or form.project = cprj.f or isspace(cprj.f)	then	|#PATCH001086.o
+			if form.order = orno or	 isspace(orno)	then			|#PATCH001086.sn
+				if form.project = cprj.f or isspace(cprj.f)	then	|#PATCH001086.en
+					invoice = tfacp100.isup
+					invoice.date = tfacp100.invd 
+					get.year.quarter(tfacp100.invd)
+					
+					supp.bill.amnt = tfacp100.amth(1)
+					
+					select	tccom948.bpid
+					from	tccom948
+					where	tccom948._index1 = {:form.code}
+					and	tccom948.fpon = :fnum
+					selectdo
+					endselect
+					
+					select tctax400.fovn,tctax400.efdt
+					from   tctax400
+					where  tctax400._index1 = {:tccom948.bpid,"IN"}
+					order by tctax400.efdt desc
+					as set with 1 rows
+					selectdo
+					endselect
+					
+					select	tpisg045.refr					|#PATCH001086.sn
+					from	tpisg045
+					where	tpisg045._index1 = {:form.project}
+					selectdo
+					endselect						|#PATCH001086.en
+					
+					select tfacp200.amth,
+						tfacp200.ifbp, tccom100.nama			|#ISGEC01132.n
+					from    tfacp200,
+						tccom100					|#ISGEC01132.n
+					where   tfacp200._index1 = {:tfacp100.ctyp,:tfacp100.cinv}
+					and     tfacp200.docn = 0
+					and	tfacp200.ifbp refers to tccom100 unref clear	|#ISGEC01132.n
+					as set with 1 rows
+					selectdo
+	| 					supp.bill.amnt = tfacp200.amth(1)		|#PATCH001086.o
+						ptr.amnt = tfacp200.amth(1)			|#PATCH001086.n
+						rep.bpid.dsca = tccom100.nama			|#ISGEC01132.sn
+					selectempty
+						rep.bpid.dsca = ""				|#ISGEC01132.en
+					endselect
+					
+					select	tfisg002.grbp					|#PATCH001086.sn
+					from	tfisg002
+					where	tfisg002._index1 = {:tfacp100.ninv}
+					as set with 1 rows
+					selectdo
+						select	tccom100.nama				
+						from	tccom100
+						where	tccom100._index1 = {:tfisg002.grbp}
+						selectdo
+							ot.nama = tccom100.nama
+						endselect
+					endselect						|#PATCH001086.en
+					
+					select tccom949.*
+					from    tccom949
+					where   tccom949._index1 = {tccom.fdoc.typ.purchase.invoic}
+					and	tccom949._index3 = {:current.company, :tfacp100.ctyp, :tfacp100.cinv}
+	| 				and     tccom949.fpon    = :fnum			|#PATCH001086.o
+					and     tccom949.fcod    = :str.code
+					selectdo
+						if	shiftl$(strip$(tccom949.fpon)) = fnum	or isspace(fnum)	then	|#PATCH001086.sn
+							pkslip = str$(tfacp100.ninv)							
+							select tfacp251.*
+							from    tfacp251
+							where   tfacp251._index1 = {:current.company,:tccom949.ityp,:tccom949.idoc}
+							and     tfacp251.shpm = :pkslip
+							selectdo
+								select	tdisg832.edrn, tdisg831.lcno, tdisg831.ptld, tdisg831.bold,
+									tdisg825.des1,tdisg825.des2, tdisg825.des3, tdisg825.des4,
+									tdisg825.des5, tdisg825.des6, tdisg839.plod
+								from	tdisg832, tdisg831, tdisg825, tdisg839
+								where	tdisg832._index4 = {:tfacp251.rcno, :tfacp251.rseq}
+								and	tdisg832.edrn	refers to 	tdisg831
+								and	tdisg831.lcno	refers	to	tdisg825
+								and	tdisg831.bold	refers	to	tdisg839
+								selectdo							
+									desc.q = shiftl$(strip$(tdisg825.des1)) & shiftl$(strip$(tdisg825.des2)) &
+										shiftl$(strip$(tdisg825.des3))  & shiftl$(strip$(tdisg825.des4)) & 
+										shiftl$(strip$(tdisg825.des5))  & shiftl$(strip$(tdisg825.des6))
+								selectempty
+									desc.q = ""
+									tdisg839.plod = ""
+									tdisg831.bold = ""
+								endselect
+							endselect
+						else
+							desc.q = ""
+							tdisg839.plod = ""
+							tdisg831.bold = ""
+						endif										|#PATCH001086.en
+					endselect
+						
+	| 				if	not isspace(tccom949.fpon)	then			|#PATCH001086.o
+					if	not isspace(tccom949.fpon) and (shiftl$(strip$(tccom949.fpon)) = fnum or isspace(fnum))	then	|#PATCH001086.n
+						if str.code = "C" then
+							print.detail.c()
+						else
+							print.detail.h()
+						endif	
+						initialise()
+					endif
+				endif				|#PATCH001086.n
+			endif
+		endif
+	endselect	
+
+	
+}
+
+
+function get.date(domain tfgld.year in.year,domain tfgld.prod in.prod,ref domain tfgld.date o.date)
+{
+	if i.temp = 1  then
+		if prod.t = 12 then							
+			select tfgld005.stdt
+			from    tfgld005
+			where   tfgld005._index1 = {tfgld.ptyp.financial,:in.year + 1,1}
+			and    tfgld005.corr = tcyesno.no
+			selectdo
+				o.date = tfgld005.stdt
+			selectempty
+				select tfgld005.stdt
+				from    tfgld005
+				where   tfgld005._index1 = {tfgld.ptyp.financial,:in.year,:in.prod}
+				and    tfgld005.corr = tcyesno.no
+				selectdo
+					o.date = tfgld005.stdt
+					o.date = tfgld005.stdt + 30
+				endselect
+			endselect
+		else	
+			select tfgld005.stdt
+			from    tfgld005
+			where   tfgld005._index1 = {tfgld.ptyp.financial,:in.year,:in.prod+1}
+			and    tfgld005.corr = tcyesno.no
+			selectdo
+				o.date = tfgld005.stdt
+				o.date = o.date -1
+			endselect
+		endif
+	else
+		select tfgld005.stdt:o.date
+		from    tfgld005
+		where   tfgld005._index1 = {tfgld.ptyp.financial,:in.year,:in.prod}
+		and    tfgld005.corr = tcyesno.no
+		selectdo
+		endselect
+	endif
+}
+
+function initialise()
+{
+
+	tccom949.rseq = ""
+	tccom949.fpon = ""
+	tccom949.adat = 0
+	tccom949.amnt = 0
+	tctax400.fovn = ""
+	tccom100.nama = ""
+	invoice = ""
+	invoice.date = 0
+	supp.bill.amnt = 0
+	form.order = ""
+	form.project = ""
+	o.year = 0
+	o.prod = 0
+	ot.nama = ""
+	ptr.amnt = 0
+	pkslip = ""
+	desc.q = ""
+}
+
+function print.detail.c()
+{
+	line = concat$("	",
+		sprintf$("%s",tccom949.rseq),			|1			
+		sprintf$("%s",tccom949.fpon),  		|2
+		sprintf$("%u(%02m/%02d/%04Y)",tccom949.adat),	|3
+		sprintf$("%s",tccom949.amnt),			|4
+| 		sprintf$("%s",tctax400.fovn),			|5			|#ISGEC01132.o
+		sprintf$("%s",rep.fovn),			|5			|#ISGEC01132.n
+| 		sprintf$("%s",tccom100.nama),			|6			|#ISGEC01132.o
+		sprintf$("%s",rep.bpid.dsca),			|6			|#ISGEC01132.n
+		sprintf$("%s",invoice),			|7
+		sprintf$("%D(%02m/%02d/%04Y)",invoice.date),	|8	
+		sprintf$("%d",supp.bill.amnt),			|9
+		sprintf$("%s",form.project),  			|10
+		sprintf$("%s",form.order),			|11
+| 		sprintf$("%s",ot.nama),  			|12			|#ISGEC01132.o
+		sprintf$("%d",o.year),				|13
+		sprintf$("%d",o.prod))				|14
+		
+		line = strip$(shiftl$(line))
+		seq.puts(line, stat.fp)
+
+}
+
+function get.year.quarter(domain tfgld.date in.date)
+{
+
+	select tfgld005.year,tfgld005.prno,tfgld005.stdt
+	from    tfgld005
+	where   tfgld005._index1 = {tfgld.ptyp.financial}
+	and     tfgld005.stdt >= :in.date
+	and     tfgld005.corr = tcyesno.no
+	order by tfgld005.stdt 
+	as set with 1 rows
+	selectdo
+| 		o.year = tfgld005.year				|#PATCH001086.o
+		on case tfgld005.prno 				|#PATCH001086.sn
+		case 7 :
+		case 8 :
+		case 9 :
+			num.to.date(tfgld005.stdt,yy,mm,dd)
+			o.year = yy
+			o.prod = 3
+			break
+		case 10:
+		case 11:
+		case 12:
+			num.to.date(tfgld005.stdt,yy,mm,dd)
+			o.year = yy
+			o.prod = 4
+			break
+		case 1:
+		case 2:
+		case 3:
+			num.to.date(tfgld005.stdt,yy,mm,dd)
+			o.year = yy
+			o.prod = 1
+			break
+		case 4:
+		case 5:
+		case 6:
+			num.to.date(tfgld005.stdt,yy,mm,dd)
+			o.year = yy
+			o.prod = 2
+			break
+		endcase					|#PATCH001086.en
+	endselect	
+
+}
+
+|**************************************************************************************************
+
+function generate.header.h()
+{
+	if stat.fp >0 then
+		
+		line1 =concat$("	", 											|#PATCH001086.sn
+			sprintf$("							H - FORM CONSUMPTION REPORT"))	|1	|#PATCH001086.en
+		
+		line =concat$("	", 
+			sprintf$("ISGEC Tin No"),				|1
+			sprintf$("H Form No"),					|2	
+			sprintf$("H Form Date"),				|3
+			sprintf$("Total H form Amount."), 			|4
+			sprintf$("TIN No of Supplier"),			|5
+			sprintf$("Contract Agreement No & Date"),		|6
+| 			sprintf$("Contract Agreement Date"),			|7
+			sprintf$("Supplier Name"),				|8
+			sprintf$("Supplier Bill No"),				|9
+			sprintf$("Supplier Bill Date"),			|10
+			sprintf$("Supplier Bill Amount"),			|11
+			sprintf$("PTR Amount"),				|12
+			sprintf$("Description & Quantity"),			|13
+| 			sprintf$("Item Description"),				|13
+| 			sprintf$("Quantity of Goods"),				|14
+			sprintf$("Airport/Seaport(Dispatch)"),			|15
+			sprintf$("Bill of Lading No"),				|16
+			sprintf$("Project"),					|17
+			sprintf$("Purchase Order"),				|18
+| 			sprintf$("Name of Sub Vendor"),				|19		|#ISGEC01132.o
+			sprintf$("Quarter"),					|20
+			sprintf$("Year"))					|21
+			
+		line1 = strip$(shiftl$(line1))	|#PATCH001086.sn
+		seq.puts(line1, stat.fp)		|#PATCH001086.en
+		
+		line = strip$(shiftl$(line))
+		seq.puts(line, stat.fp)
+	endif
+}
+
+
+function print.detail.h()
+{
+	line = concat$("	",
+		sprintf$("%s",tccom949.rseq),			|1			
+		sprintf$("%s",tccom949.fpon),  		|2
+		sprintf$("%u(%02m/%02d/%04Y)",tccom949.adat), 	|3
+		sprintf$("%s",tccom949.amnt),			|4
+| 		sprintf$("%s",tctax400.fovn),			|5				|#ISGEC01132.o
+		sprintf$("%s",rep.fovn),			|5				|#ISGEC01132.n
+		sprintf$("%s",tpisg045.refr),			|6
+| 		sprintf$("%s",""),				|7	
+| 		sprintf$("%s",tccom100.nama),			|8				|#ISGEC01132.o
+		sprintf$("%s",rep.bpid.dsca),			|8				|#ISGEC01132.n
+		sprintf$("%d",invoice),			|9			
+		sprintf$("%D(%02m/%02d/%04Y)",invoice.date),  	|10
+		sprintf$("%d",supp.bill.amnt),  		|11
+		sprintf$("%d",ptr.amnt),			|12
+		sprintf$("%s",desc.q),				|13	
+| 		sprintf$("%d",0),				|14
+		sprintf$("%s",tdisg839.plod),			|15
+		sprintf$("%s",tdisg831.bold),			|16
+ 		sprintf$("%s",form.project),			|17
+		sprintf$("%s",form.order),			|18
+| 		sprintf$("%s",ot.nama),				|19				|#ISGEC01132.o
+		sprintf$("%s",o.prod),				|20
+		sprintf$("%s",o.year))				|21
+		
+		line = strip$(shiftl$(line))
+		seq.puts(line, stat.fp)
+}

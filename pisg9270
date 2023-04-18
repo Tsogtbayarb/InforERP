@@ -1,0 +1,197 @@
+|******************************************************************************
+|* tiisg927  0  VRC B61U a7 isg 
+|* DAL For tiisg927
+|* baan
+|* 15-01-22 [17:57]
+|******************************************************************************
+|* Script Type: DAL
+|******************************************************************************
+|* ID ISGEC01028
+|* Manish Kumar
+|* 22-01-2015
+|* Session for Staff Estimate Lines
+|*
+|*
+|* ID ISGEC001179 , Ankit Sharma , 21/05/2015
+|* Modification on condition of disable/enable  delete button 
+|******************************************************************************
+#include <bic_dal2>
+
+	table	ttiisg926
+	table	ttiisg927
+	
+	domain	tcqiv1	o.total.int
+	domain	tcqiv1	o.total.tot
+	domain	tcqiv1	o.total.out
+	
+	
+function extern long before.open.object.set()
+{
+	DAL.FIELD.DEPENDS.ON("tiisg927.qnty.i",HOOK_UPDATE,"tiisg927.qnty.t","tiisg927.qnty.o")
+	DAL.FIELD.DEPENDS.ON("tiisg927.toth.i",HOOK_UPDATE,"tiisg927.toth.t","tiisg927.toth.o")
+	DAL.FIELD.DEPENDS.ON("tiisg927.cost.i",HOOK_UPDATE,"tiisg927.role")
+	DAL.FIELD.DEPENDS.ON("tiisg927.hcos.i",HOOK_UPDATE,"tiisg927.toth.i","tiisg927.cost.i")
+	
+	DAL.FIELD.DEPENDS.ON(
+			"tiisg927.toth.o",
+			HOOK_UPDATE,
+			"tiisg927.dura.t",
+			"tiisg927.qnty.o",
+			"tiisg927.hour.o"
+			)
+	DAL.FIELD.DEPENDS.ON(
+			"tiisg927.cost.o",
+			HOOK_UPDATE,
+			"tiisg927.toth.o",
+			"tiisg927.rate.o"
+			)
+			
+	return(0)
+}
+
+function extern long before.save.object(long type)
+{
+	return(0)
+}
+
+function extern long after.save.object(long mode)
+{
+	calculate.total.and.update.header()
+	return(0)
+}
+
+function extern long after.destroy.object()
+{
+	calculate.total.and.update.header()
+	return(0)
+}
+
+function extern boolean method.is.allowed(long mode)
+{
+	on case mode 
+		
+		case DAL_NEW :
+		case DAL_UPDATE :
+			select	tiisg926.stat								|ISGEC01102.sn
+			from	tiisg926
+			where	tiisg926._index1 = {:tiisg927.cprj,:tiisg927.grup,:tiisg927.revi}
+			selectdo
+				if tiisg926.stat  =  tiisg.stat.active then	
+					return(false)
+				endif
+			endselect									|ISGEC01102.en
+		case DAL_DESTROY :
+			
+			select	tiisg926.stat
+			from	tiisg926
+			where	tiisg926._index1 = {:tiisg927.cprj,:tiisg927.grup,:tiisg927.revi}
+			selectdo
+| 				if tiisg926.stat <> tiisg.stat.created then						|#ISGEC001179.o
+				if tiisg926.stat <> tiisg.stat.created and tiisg926.stat <> tiisg.stat.active then	|#ISGEC001179.n
+					return(false)
+				endif
+			endselect
+		break
+	endcase
+	return(true)		
+
+}
+
+
+|****************** Field Hooks *********************************
+function extern boolean tiisg927.role.is.valid(long mode)
+{
+	select	tiisg925.roll
+	from	tiisg925
+	where	tiisg925.roll = :tiisg927.role
+	selectdo
+	selectempty
+		dal.set.error.message("@Specified Role ID is not Present in Rle Master.")
+		return(DALHOOKERROR)
+	endselect
+	return(true)
+}
+function extern boolean tiisg927.smon.t.is.valid(long mode)
+{
+	if tiisg927.smon.t < 1 or tiisg927.smon.t > 12 then
+		dal.set.error.message("@Please Enter Valid Start Month")
+		return(DALHOOKERROR)		
+	endif
+	return(true)
+}
+
+function extern boolean tiisg927.smon.t.is.mandatory(long mode)
+{
+	if tiisg927.smon.t  = 0 then
+		dal.set.error.message("@Please Enter Start Month Field Value.")
+		return(DALHOOKERROR)
+	endif
+	return(false)
+}
+
+function extern void tiisg927.qnty.i.update(long mode)
+{
+	tiisg927.qnty.i =  tiisg927.qnty.t - tiisg927.qnty.o
+}
+
+function extern void tiisg927.toth.i.update(long mode)
+{
+	tiisg927.toth.i =  tiisg927.toth.t - tiisg927.toth.o
+}
+
+function extern void tiisg927.cost.i.update(long mode)
+{
+	select	tiisg905.cost:tiisg927.cost.i
+	from	tiisg905
+	where	tiisg905._index1 = {:tiisg927.role}
+	selectdo
+	selectempty
+		tiisg927.cost.i = 0.00
+	endselect
+}
+
+function extern void tiisg927.hcos.i.update(long mode)
+{
+	tiisg927.hcos.i = tiisg927.toth.i * tiisg927.cost.i
+}
+
+function extern void tiisg927.toth.o.update(long mode)
+{
+	tiisg927.toth.o = tiisg927.dura.t * tiisg927.qnty.o * tiisg927.hour.o
+}
+
+function extern void tiisg927.cost.o.update(long mode)
+{
+	tiisg927.cost.o = tiisg927.toth.o * tiisg927.rate.o
+}
+
+function calculate.total.and.update.header()
+{
+	o.total.int = 0.00
+	o.total.tot = 0.00
+	o.total.out = 0.00
+	
+	select	sum(tiisg927.toth.i):o.total.int,
+		sum(tiisg927.toth.t):o.total.tot,
+		sum(tiisg927.toth.o):o.total.out
+	from	tiisg927
+	where	tiisg927._index1 = {:tiisg927.cprj,:tiisg927.grup,:tiisg927.revi}
+	selectdo
+		select	tiisg926.toth.i,
+			tiisg926.toth.t,
+			tiisg926.toth.o
+		from	tiisg926 for update
+		where	tiisg926._index1 = {:tiisg927.cprj,:tiisg927.grup,:tiisg927.revi}
+		selectdo
+			tiisg926.toth.i = o.total.int
+			tiisg926.toth.t = o.total.tot
+			tiisg926.toth.o = o.total.out
+			db.update(ttiisg926,db.retry,e)
+			if not e then
+				commit.transaction()
+			else
+				abort.transaction()
+			endif
+		endselect
+	endselect
+}

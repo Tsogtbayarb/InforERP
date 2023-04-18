@@ -1,0 +1,432 @@
+|******************************************************************************
+|* tfisg9257m000  0  VRC B61U a7 isg 
+|* Input Tax Credit Utility
+|* merino1                       
+|* 2017-12-01
+|******************************************************************************
+|* Main table tfacp957 Input Tax Credit Management, Form Type 1
+|******************************************************************************
+|* IDENT: ISGEC017012, Mudit Sharma, 2017-12-01
+|* New Development
+|*
+|* ID GH327CR621, RAvi Kumar, 30-05-2020
+|* Modification in Input Tax Creait utility
+|*
+|* GH549CR000, RAvi Kumar, 06-05-2021
+|* 177091-Change series from "41" to "42" in session "Input Tax Credit Utility
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttfacp957 | Input Tax Credit Management
+  table   ttfacp200
+	
+	domain	tfgld.ttyp	ttyp1,i.ttyp,i.tran.type
+	domain	tfgld.seri	seri1,i.seri
+	domain	tfgld.year	i.year,r.year,v.year
+	domain	tfgld.prod	i.prod,r.prod,v.prod
+	domain	tfgld.date	i.date
+	domain	tfgld.refc	i.refr
+	domain	tfgld.leac	g.ledger.account
+	domain	tcmcs.str100	error.message
+	domain	tccom.bpid	i.ifbp
+	domain	tfgld.docn	i.document
+	domain	tcorno		i.order.number
+	domain	whinh.shpm	i.receipt.number
+	domain	tctax.seqn	i.reg.no.own
+	domain	tctax.seqn.l	i.reg.no.bp
+	
+	string query(500),query1(500)
+	long yy,mm,dd,flag
+	extern	domain	tcibd.sern	irno				|GH327CR621.a
+	
+#pragma used dll ottstpapihand
+#pragma used dll otfacpdll9235.l
+#pragma used dll otfacpdll9257.l
+#pragma used dll otccomdll0010
+|****************************** program section ********************************
+before.program:
+	long     info(PSMAXSIZE)
+	string   progname(512)
+	long     procid,parent.new
+
+	procid = -1
+	procid = pstat( procid, progname, info )
+	while procid > 0
+		| process info
+		procid = pstat( procid, progname, info )
+		if progname = "tfacp9600m00l"	then
+			parent.new = procid
+		endif
+	endwhile
+	parent.new = parent.new-1
+	
+	get.var(parent.new,"fin.year",i.year)
+	get.var(parent.new,"fin.prod",i.prod)
+	get.var(parent.new,"b.date",i.date)
+	get.var(parent.new,"rep.year",r.year)
+	get.var(parent.new,"rep.prod",r.prod)
+	get.var(parent.new,"vat.year",v.year)
+	get.var(parent.new,"vat.prod",v.prod)
+	get.var(parent.new,"b.refr",i.refr)
+	get.var(parent.new,"gl.act.l",g.ledger.account)
+	get.var(parent.new,"b.ttyp",i.ttyp)
+	get.var(parent.new,"b.seri",i.seri)
+	get.var(parent.new,"f.ifbp",i.ifbp)
+	get.var(parent.new,"f.tran.type",i.tran.type)
+	get.var(parent.new,"f.document",i.document)
+	get.var(parent.new,"f.order.number",i.order.number)
+	get.var(parent.new,"f.receipt.number",i.receipt.number)
+	get.var(parent.new,"f.reg.no.own",i.reg.no.own)
+	get.var(parent.new,"f.reg.no.bp",i.reg.no.bp)
+	num.to.date(i.date,yy,mm,dd)
+
+	query.extend.select("tfacp200.post,tfacp200.pdat,tfacp200.isup,tfacp200.year,tfacp200.prod,tfacp957.*")
+        query.extend.from("tfacp200,tfacp957")
+	query1 = "tfacp957._index1 = {:tfacp957.loco,:tfacp957.otyp,:tfacp957.load,:tfacp957.clus,:tfacp957.oref,:tfacp957.rref,:tfacp957.line,:tfacp957.lcln,:tfacp957.tref,:tfacp957.iref}"&| and tfacp200._compnr =  tfacp957.fcpo)
+		"and	tfacp957.invs = tcyesno.yes and tfacp957.itcs = tfitcs.l.created and tfacp200.ttyp = tfacp957.ityp and tfacp200.ninv = tfacp957.idoc and tfacp200.docn = 0 and tfacp200.pdat > 0 and tfacp200.year <= "&str$(i.year) &" and tfacp200.prod <= "&str$(i.prod)|&" and tfacp200._compnr =  tfacp957.fcpo"|and tfacp200.post <>"&chr$(34) &chr$(34)
+        query.extend.where(query1)
+	
+before.display.object:
+	tfacp957.gstr = "UP"
+	tfacp957.tirf = tfacp200.isup
+
+field.tfacp957.pitc:
+after.input:
+	tfacp957.gstr = "UP"
+	select	tfacp200.isup
+	from	tfacp200
+	where	tfacp200._index1 = {:tfacp957.ityp,:tfacp957.idoc}
+	and	tfacp200.docn = 0
+	and tfacp200.pdat > 0
+	selectdo
+	endselect
+	tfacp957.tirf = tfacp200.isup
+	
+field.irno:					|GH327CR621.a.s
+before.display:
+	select	tdpur406.dino:irno
+	from	tdpur406
+	where	tdpur406._index2 = {:tfacp957.rcno, :tfacp957.rseq}
+	and	tdpur406._compnr = :tfacp957.loco
+	as set with 1 rows
+	selectdo
+	selectempty
+		irno = ""
+	endselect				|GH327CR621.a.e
+	
+|****************************** group section **********************************
+
+functions:
+function extern selectall()
+{
+	select	tfacp957.*
+	from	tfacp957 for update
+	where	tfacp957.invs = tcyesno.yes
+	and 	tfacp957.itcs = tfitcs.l.created
+	selectdo
+		select	tfacp200.post,tfacp200.pdat,tfacp200.isup,tfacp200.year,tfacp200.prod
+		from	tfacp200
+		where 	tfacp200.ttyp = :tfacp957.ityp  
+		and	tfacp200.ninv = :tfacp957.idoc
+		and	tfacp200.docn = 0
+		and 	tfacp200.pdat > 0
+		selectdo
+			tfacp957.pitc = tcyesno.yes
+			db.update(ttfacp957,DB.RETRY,e)
+		endselect
+	endselect
+	if not e then
+		commit.transaction()
+	else
+		abort.transaction()
+	endif
+}
+
+function extern unselectall()
+{
+	select	tfacp957.*
+	from	tfacp957 for update
+	where	tfacp957.invs = tcyesno.yes
+	and 	tfacp957.itcs = tfitcs.l.created
+	selectdo
+		select	tfacp200.post,tfacp200.pdat,tfacp200.isup,tfacp200.year,tfacp200.prod
+		from	tfacp200
+		where 	tfacp200.ttyp = :tfacp957.ityp  
+		and	tfacp200.ninv = :tfacp957.idoc
+		and	tfacp200.docn = 0
+		and 	tfacp200.pdat > 0
+		selectdo
+			tfacp957.pitc = tcyesno.no
+			db.update(ttfacp957,DB.RETRY,e)
+		endselect
+	endselect
+	if not e then
+		commit.transaction()
+	endif
+}
+
+function extern process()
+{
+	boolean			report.opened
+	
+	select	tfacp957.*
+	from	tfacp957
+	where	tfacp957.pitc = tcyesno.yes
+	and	tfacp957.invs = tcyesno.yes
+	and 	tfacp957.itcs = tfitcs.l.created
+	selectdo
+		run.afs(tfacp957.loco,tfacp957.otyp,tfacp957.load,tfacp957.clus,tfacp957.oref,tfacp957.rref,tfacp957.line,tfacp957.lcln,tfacp957.tref,tfacp957.iref,error.message)
+| 		report.opened = tccom.dll0010.open.report(1, "D", 1, language$, 1)
+| 		process.itc.line(error.message)
+| 		if report.opened then
+| 			tccom.dll0010.close.reports()
+| 		endif
+		if not isspace(error.message)	then
+			message(error.message)
+			flag = 1
+		endif
+	endselect
+	if flag = 0	then
+		message("Process Done")
+	endif
+}
+
+
+function boolean run.afs(	domain	tcncmp		i.loco,
+				domain	tfacp.itco.l	i.otyp,
+				domain	tcorno		i.load,
+				domain	tcorno		i.clus,
+				domain	tcmcs.str20	i.oref,
+				domain	tcmcs.str15	i.rref,
+				domain	tfgld.lino	i.line,
+				domain	tcpono		i.lcln,
+				domain	tcmcs.str20	i.tref,
+				domain	tcmcs.str15	i.iref,
+			ref	domain	tcmcs.str100	error.msg) 
+{
+
+	string recover.msg(500)
+	long ret_val,retval1,retval2
+	ttyp1 = "JET"
+| 	seri1 = 0041							|GH549CR000.com
+	|seri1 = 0042							|GH549CR000.a
+	
+	seri1 = 0043							|Changed by Veena on 19-05-2022 GH#681
+	
+	stpapi.put.field("tfacp9600m00l", "b.ttyp", ttyp1)		|itest.so
+	stpapi.put.field("tfacp9600m00l", "b.seri", str$(seri1))
+	stpapi.put.field("tfacp9600m00l", "b.date", str$(i.date))
+	stpapi.put.field("tfacp9600m00l", "fin.year", str$(i.year))
+	stpapi.put.field("tfacp9600m00l", "fin.prod", str$(i.prod))
+	stpapi.put.field("tfacp9600m00l", "rep.year", str$(r.year))
+	stpapi.put.field("tfacp9600m00l", "rep.prod", str$(r.prod))
+	stpapi.put.field("tfacp9600m00l", "vat.year", str$(v.year))
+	stpapi.put.field("tfacp9600m00l", "vat.prod", str$(v.prod))
+	stpapi.put.field("tfacp9600m00l", "f.ifbp", i.ifbp)
+	stpapi.put.field("tfacp9600m00l", "f.tran.type", i.tran.type)
+	stpapi.put.field("tfacp9600m00l", "f.document", str$(i.document))
+	stpapi.put.field("tfacp9600m00l", "f.order.number", i.order.number)
+	stpapi.put.field("tfacp9600m00l", "f.receipt.number", i.receipt.number)
+	stpapi.put.field("tfacp9600m00l", "f.reg.no.own", str$(i.reg.no.own))
+	stpapi.put.field("tfacp9600m00l", "f.reg.no.bp", str$(i.reg.no.bp))
+	retval1 = stpapi.insert("tfacp9600m00l", true, error.msg)		
+	if not retval1 then						
+		retval2 = stpapi.recover("tfacp9600m00l", recover.msg) 
+	endif
+| 	ret_val = stpapi.find("tfacp9600m00l", error.msg)
+	if ret_val = 1 then		
+		stpapi.handle.subproc("tfacp9600m00l", "tfacp9157m00l", "modify")
+	endif										|itest.eo
+	stpapi.put.field("tfacp9157m00l", "tfacp957.loco", str$(i.loco))
+	stpapi.put.field("tfacp9157m00l", "tfacp957.otyp", str$(i.otyp))
+	stpapi.put.field("tfacp9157m00l", "tfacp957.load", i.load)
+	stpapi.put.field("tfacp9157m00l", "tfacp957.clus", i.clus)
+	stpapi.put.field("tfacp9157m00l", "tfacp957.oref", i.oref)
+	stpapi.put.field("tfacp9157m00l", "tfacp957.rref", i.rref)
+	stpapi.put.field("tfacp9157m00l", "tfacp957.line", str$(i.line))
+	stpapi.put.field("tfacp9157m00l", "tfacp957.lcln", str$(i.lcln))
+	stpapi.put.field("tfacp9157m00l", "tfacp957.tref", i.tref)
+	stpapi.put.field("tfacp9157m00l", "tfacp957.iref", i.iref)
+	ret_val = stpapi.find("tfacp9157m00l", error.msg)
+	if ret_val = 1 then
+		ret_val = stpapi.mark("tfacp9157m00l",error.msg)
+		if ret_val = 1 then
+		stpapi.set.report("tfacp9157m00l","rtfacp91372100l","D",error.msg)
+		stpapi.continue.process("tfacp9157m00l",error.msg) 	
+		stpapi.form.command("tfacp9157m00l",5,"process.itc.line",error.msg)
+		endif
+	endif
+	stpapi.end.session("tfacp9600m00l")
+	stpapi.end.session("tfacp9157m00l")
+	return(true)
+}
+
+function process.itc.line(ref domain	tcmcs.s300m	o.error.message)
+{
+	domain	tfgld.btno	o.batch.number
+	domain	tfgld.docn	o.document.number
+		boolean		create.new.batch
+	domain	tfitcs.l	status.to.be.checked
+		boolean		report.opened
+
+	create.new.batch = false
+	report.opened = false
+
+| 	if tfacp957.itcs = tfitcs.l.completed then
+| 		return
+| 	endif
+
+| 	if  tfacp957.itcs = tfitcs.l.processed and
+| 	    tfacp957.txpd = tcyesno.no then
+| 		return
+| 	endif
+
+	if not itc.line.allowed.for.processing(
+					tfacp957.tirf,
+					tfacp957.tidt,
+					tfacp957.gstr,
+					tfacp957.pitc,
+					tfacp957.txpd,
+					o.error.message) then
+| 		print.error.message(o.error.message)
+		return
+	endif
+
+
+	on case tfacp957.itcs
+	case 	tfitcs.l.created:
+			create.new.batch = true
+			status.to.be.checked = tfacp957.itcs
+			break
+	case	tfitcs.l.processed:
+			create.new.batch = false
+			break
+	case	tfitcs.l.reversed:
+			create.new.batch = true
+			status.to.be.checked = tfacp957.itcs
+			break
+	default:
+	endcase
+
+	tfacp.dll9257.l.process.input.tax.credit.details(
+					tfacp957.fcpo,
+					i.date,
+					i.year,
+					r.year,
+					v.year,
+					i.prod,
+					r.prod,
+					v.prod,
+					i.ttyp,
+					i.seri,
+					i.refr,
+					tfacp957.loco,
+					tfacp957.loco,
+					tfacp957.otyp,
+					tfacp957.otyp,
+					tfacp957.orno,
+					tfacp957.orno,
+					tfacp957.pono,
+					tfacp957.pono,
+					tfacp957.rcno,
+					tfacp957.rcno,
+					tfacp957.rnso,
+					tfacp957.rnso,
+					tfacp957.ityp,		|#1906036.sn
+					tfacp957.ityp,
+					tfacp957.idoc,
+					tfacp957.idoc,
+					tfacp957.line,
+					tfacp957.line,		|#1906036.en
+					"",
+					"",
+					0,
+					tfacp957.itcs,
+					g.ledger.account,
+					"",
+					"",
+					"",
+					"",
+					"",
+					"",
+					"",
+					"",
+					"",
+					"",
+					"",
+					"",
+					false,
+					create.new.batch,
+					o.batch.number,
+					o.document.number,
+					o.error.message)
+
+| 	print.error.message(o.error.message)
+
+	if not tfacp.dll9235.l.set.batch.and.document.status(
+					false,
+					tfacp957.fcpo,
+					i.year,
+					v.year,
+					v.prod,
+					o.batch.number,
+					ttyp1,
+					o.document.number,
+					date.num(),
+					o.error.message) then
+| 		print.error.message(o.error.message)
+	endif
+}
+
+function boolean itc.line.allowed.for.processing(
+		domain	tcrefe		i.tax.invoice.ref,
+		domain	tcdate		i.tax.invoice.date,
+		domain	tcrefe		i.gstn.ref,
+		domain	tcyesno		i.provisional.itc.allowed,
+		domain	tcyesno		i.tax.paid.by.supplier,
+	ref	domain	tcmcs.s300m	o.error.message)
+{
+		domain	tcmcs.st60m	label.descr
+
+	if isspace(i.tax.invoice.ref) then
+		tt.label.desc(		"tftfacp957.tirf",
+					ttadv.cont.general,
+					label.descr)
+		o.error.message = sprintf$(
+					form.text$(
+					"tfacps9600.1.l"),
+					label.descr)
+		return(false)
+	endif
+
+	if i.tax.invoice.date = 0 then
+		tt.label.desc(		"tftfacp957.tidt",
+					ttadv.cont.general,
+					label.descr)
+		o.error.message = sprintf$(
+					form.text$(
+					"tfacps9600.1.l"),
+					label.descr)
+		return(false)
+	endif
+
+	if isspace(i.gstn.ref) then
+		tt.label.desc(		"tftfacp957.gstr",
+					ttadv.cont.general,
+					label.descr)
+		o.error.message = sprintf$(
+					form.text$(
+					"tfacps9600.1.l"),
+					label.descr)
+		return(false)
+	endif
+
+	if i.provisional.itc.allowed = tcyesno.no and
+	   i.tax.paid.by.supplier = tcyesno.no then
+	   	o.error.message = form.text$(
+	   				"tfacps9600.2.l")
+	   	return(false)
+	endif
+
+	return(true)
+}

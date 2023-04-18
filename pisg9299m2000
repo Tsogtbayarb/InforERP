@@ -1,0 +1,406 @@
+|******************************************************************************
+|* tdisg9299m100  0  VRC B61U a7 live
+|* Update Tax Code
+|* Installation user             
+|* 2014-08-14
+|******************************************************************************
+|* Form Type 4
+|******************************************************************************
+|* ISGECDV001010, IT0205, Arjit Gupta, VRC B61U a7 live
+|* Update Tax for Inbound Order lines (whinh210)
+|*
+|* ISGECDV001021, IT0205, Arjit Gupta, Dt. 15/09/2014, VRC B61U a7 live
+|* Session will run only Order raised before 05th sept 2014
+|* and Should not update tax If Inbound order is not open or planned
+|*
+|* ISGECDV001024, IT0205, Arjit Gupta, Dt. 15/09/2014, VRC B61U a7 live
+|* When to be confirmed back order present then tax must be update if inbound order
+|* is not open or planned for seqn greater than 0
+|****************************** declaration section ***************************
+declaration:
+	table	ttdpur401
+	table	ttcmcs036
+	table	ttdpur400
+	table	ttccom130
+	table	ttctax941
+	table	ttctax940
+	table	ttcibd943
+	table	ttfacp240
+	table	twhinh210		|#ISGECDV001010.n
+	extern	domain	tcorno	i.orno
+	extern	domain	tcpono	i.pono
+	extern	domain	tcpono	i.sqnb
+	extern	domain	tccvat	i.cvat
+	extern	domain	tcccty	i.ccty
+	domain tcamnt 		o.claimable.tax.amount
+	domain tcamnt 		o.non.claimable.tax.amount
+	domain tcamnt 		o.total.tax.amount
+	extern	domain	tcperc		asv.disc
+	
+		domain	tcbool	inbound.found		|#ISGECDV001021.n
+		
+|****************************** program section ********************************
+before.program:
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+field.i.pono:
+before.zoom:
+	tdpur401.orno = i.orno
+field.i.sqnb:
+before.display:
+	select max(tdpur401.sqnb):i.sqnb
+	from tdpur401
+	where tdpur401._index1 = {:i.orno,:i.pono}
+	as set with 1 rows
+	selectdo
+	endselect
+	
+field.i.ccty:
+before.display:
+	select tdpur401.*,tccom130.ccty:i.ccty
+	from tdpur401 ,tccom130
+	where tdpur401._index1 = {:i.orno,:i.pono,:i.sqnb}
+	and	tdpur401.sfad refers  to tccom130
+	as set with 1 rows
+	selectdo
+	endselect
+field.i.cvat:
+before.zoom:
+	tcmcs036.ccty = i.ccty
+	query.extend.where.in.zoom("tcmcs036.agtx.l = 1")
+functions:
+function extern update.tax.code()
+{
+	domain tcyesno exc.appl,exp.nonexp
+	domain	tcncmp	hold.comp
+	domain	tcamnt	calc.asv,asv.pric
+	exc.appl = tcyesno.no
+	exp.nonexp = tcyesno.no
+				|#ISGECDV001021.sn
+	select	tdpur400.odat
+	from	tdpur400
+	where	tdpur400._index1 = {:i.orno}
+	and	tdpur400.odat > :1
+	wherebind(1, date.to.utc(2014, 09, 05, 00, 00, 00))
+	selectdo
+		message("Tax Ammendment not allowed for New PO. Use Standard Session")
+		choice.again()
+	endselect
+				|#ISGECDV001021.en
+	
+	select tcmcs036.*
+	from tcmcs036,tctax941
+	where tctax941._index1 = {:i.ccty,:i.cvat}
+	and tctax941.cmbb refers to tcmcs036
+	and tcmcs036.indt.l = 4
+	as set with 1 rows
+	selectdo
+		exc.appl = tcyesno.yes
+		if tcmcs036.extx = tcyesno.no then
+			exp.nonexp = tcyesno.yes
+		else
+			exp.nonexp = tcyesno.no
+		endif
+	endselect
+	
+	db.retry.point()
+	select tdpur401.*,tccom130.ccty,tdpur400.cofc
+	from tdpur401 for update,tccom130,tdpur400
+	where tdpur401._index1 = {:i.orno,:i.pono,:i.sqnb}
+	and	tdpur401.sfad refers to tccom130
+	and	tdpur401.orno refers to tdpur400
+	as set with 1 rows
+	selectdo
+		if tdpur400.cofc = "PUR200" then
+			hold.comp = 200
+		else
+			hold.comp = 230
+		endif
+		
+		tdpur401.cvat = i.cvat
+		tdpur401.ccty = "IN"
+		tdpur401.bptc = tccom130.ccty
+		tdpur401.exca.l = exc.appl
+		tdpur401.cenv.l	= exp.nonexp
+		calc.asv = tdpur401.pric * tdpur401.qoor
+		calc.asv = calc.asv - (calc.asv * asv.disc / 100)
+		asv.pric = tdpur401.pric - (tdpur401.pric * asv.disc / 100)
+		if tdpur401.exca.l = tcyesno.no then
+			tdpur401.hcod.l = ""
+			tdpur401.icat.l = ltoe(2)
+			tdpur401.asoe.l = ltoe(5)
+			tdpur401.asve.l = 0
+			tdpur401.fase.l = 0
+			tdpur401.tase.l = 0		
+			tdpur401.asov.l = ltoe(3)
+			tdpur401.asvv.l = asv.pric			|tdpur401.pric
+			tdpur401.fasv.l = calc.asv			|tdpur401.pric * tdpur401.qoor
+			tdpur401.tasv.l = tdpur401.fasv.l
+			tdpur401.asos.l = ltoe(3)
+			tdpur401.asvs.l = asv.pric			|tdpur401.pric
+			tdpur401.fass.l = calc.asv			|tdpur401.pric * tdpur401.qoor
+			tdpur401.tass.l = tdpur401.fass.l
+			tdpur401.mrpe.l = tcyesno.no
+			tdpur401.mrpv.l = tcyesno.no
+			tdpur401.mrps.l = tcyesno.no
+		else
+			select tctax940.seqn from tctax940
+			where tctax940._index5 = {5,:tdpur401.cwar}
+			and	tctax940.fico = :hold.comp
+			order by tctax940.seqn desc
+			as set with 1 rows
+			selectdo
+			endselect
+			select tcibd943.hcod from tcibd943
+			where tcibd943._index2 = {1,:tdpur401.item}
+			as set with 1 rows
+			selectdo
+			selectempty
+				tcibd943.hcod = ""
+			endselect
+			if	isspace(tcibd943.hcod)	then
+				message("HSN Code Not Found..!!")
+				choice.again()
+			endif
+			if	tctax940.seqn = 0	then
+				message("ECC No. Not Found..!!")
+				choice.again()
+			endif
+			tdpur401.iecc.l = tctax940.seqn
+			tdpur401.hcod.l = tcibd943.hcod
+			tdpur401.iexb.l = tcyesno.no
+			tdpur401.icen.l = tcyesno.no
+			
+			tdpur401.icat.l = ltoe(2)
+			tdpur401.asoe.l = ltoe(3)
+			tdpur401.asve.l = asv.pric				|tdpur401.pric
+			tdpur401.fase.l = calc.asv				|tdpur401.pric * tdpur401.qoor
+			tdpur401.tase.l = tdpur401.fase.l		
+			tdpur401.asov.l = ltoe(3)
+			tdpur401.asvv.l = asv.pric				|tdpur401.pric
+			tdpur401.fasv.l = calc.asv				|tdpur401.pric * tdpur401.qoor
+			tdpur401.tasv.l = tdpur401.fasv.l
+			tdpur401.asos.l = ltoe(3)
+			tdpur401.asvs.l = asv.pric				|tdpur401.pric
+			tdpur401.fass.l = calc.asv				|tdpur401.pric * tdpur401.qoor
+			tdpur401.tass.l = tdpur401.fass.l
+			tdpur401.mrpe.l = tcyesno.no
+			tdpur401.mrpv.l = tcyesno.no
+			tdpur401.mrps.l = tcyesno.no
+		endif
+		populate.tax.amounts()
+		tdpur401.cltx.l = o.claimable.tax.amount
+		tdpur401.extx.l	= o.non.claimable.tax.amount
+							|#ISGECDV001021.sn
+		inbound.found = false
+		update.tax.for.inbound(tdpur401.orno, tdpur401.pono, tdpur401.sqnb)
+		if	inbound.found = false	then
+							|#ISGECDV001021.en
+			db.update(ttdpur401,db.retry)
+			update.order.data.for.approval(tdpur401.orno, tdpur401.pono, tdpur401.sqnb, tdpur401.ccty, tdpur401.cvat, tdpur401.bptc)
+| 		update.tax.for.inbound(tdpur401.orno, tdpur401.pono, tdpur401.sqnb)		|#ISGECDV001010.n	|#ISGECDV001021.o
+							|#ISGECDV001021.sn
+		else
+			choice.again()				
+		endif					
+							|#ISGECDV001021.en
+	endselect
+	select tdpur401.*
+	from tdpur401 for update
+	where tdpur401._index1 = {:i.orno,:i.pono,0}
+	as set with 1 rows
+	selectdo
+		tdpur401.cvat = i.cvat
+		tdpur401.ccty = "IN"
+		tdpur401.bptc = tccom130.ccty
+		tdpur401.exca.l = exc.appl
+		tdpur401.cenv.l	= exp.nonexp
+		calc.asv = tdpur401.pric * tdpur401.qoor
+		calc.asv = calc.asv - (calc.asv * asv.disc / 100)
+		asv.pric = tdpur401.pric - (tdpur401.pric * asv.disc / 100)
+		if tdpur401.exca.l = tcyesno.no then
+			tdpur401.hcod.l = ""
+			tdpur401.icat.l = ltoe(2)
+			tdpur401.asoe.l = ltoe(5)
+			tdpur401.asve.l = 0
+			tdpur401.fase.l = 0
+			tdpur401.tase.l = 0		
+			tdpur401.asov.l = ltoe(3)
+			tdpur401.asvv.l = asv.pric			|tdpur401.pric
+			tdpur401.fasv.l = calc.asv			|tdpur401.pric * tdpur401.qoor
+			tdpur401.tasv.l = tdpur401.fasv.l
+			tdpur401.asos.l = ltoe(3)
+			tdpur401.asvs.l = asv.pric			|tdpur401.pric
+			tdpur401.fass.l = calc.asv			|tdpur401.pric * tdpur401.qoor
+			tdpur401.tass.l = tdpur401.fass.l
+			tdpur401.mrpe.l = tcyesno.no
+			tdpur401.mrpv.l = tcyesno.no
+			tdpur401.mrps.l = tcyesno.no
+		else
+			tdpur401.iexb.l = tcyesno.no
+			tdpur401.icen.l = tcyesno.no
+			tdpur401.iecc.l = tctax940.seqn
+			tdpur401.hcod.l = tcibd943.hcod
+			tdpur401.icat.l = ltoe(2)
+			tdpur401.asoe.l = ltoe(3)
+			tdpur401.asve.l = asv.pric			|tdpur401.pric
+			tdpur401.fase.l = calc.asv			|tdpur401.pric * tdpur401.qoor
+			tdpur401.tase.l = tdpur401.fase.l		
+			tdpur401.asov.l = ltoe(3)
+			tdpur401.asvv.l = asv.pric			|tdpur401.pric
+			tdpur401.fasv.l = calc.asv			|tdpur401.pric * tdpur401.qoor
+			tdpur401.tasv.l = tdpur401.fasv.l
+			tdpur401.asos.l = ltoe(3)
+			tdpur401.asvs.l = asv.pric			|tdpur401.pric
+			tdpur401.fass.l = calc.asv			|tdpur401.pric * tdpur401.qoor
+			tdpur401.tass.l = tdpur401.fass.l
+			tdpur401.mrpe.l = tcyesno.no
+			tdpur401.mrpv.l = tcyesno.no
+			tdpur401.mrps.l = tcyesno.no
+		endif
+		populate.tax.amounts()
+		tdpur401.cltx.l = o.claimable.tax.amount
+		tdpur401.extx.l	= o.non.claimable.tax.amount
+						|#ISGECDV001021.sn
+		inbound.found = false
+		update.tax.for.inbound(tdpur401.orno, tdpur401.pono, tdpur401.sqnb)
+		if	inbound.found = false	then
+							|#ISGECDV001021.en
+			db.update(ttdpur401,db.retry)
+| 		update.tax.for.inbound(tdpur401.orno, tdpur401.pono, tdpur401.sqnb)		|#ISGECDV001010.n	|#ISGECDV001021.o
+							|#ISGECDV001021.sn
+		else
+			choice.again()				
+		endif					
+							|#ISGECDV001021.en
+	endselect
+	commit.transaction()
+}
+function populate.tax.amounts()
+{
+	domain	tcamnt		line.tax.amount.array(1, 1)	based
+	domain	tcamnt		line.base.amount.array(1, 1)	based
+	domain	tccvat		line.tax.code.array(1, 1)	based
+	domain	tctax.indt.l	o.line.indirect.tax.array(1, 1)	based
+	domain	tctax.indt.l	i.duty.type.array(1, 1)		based
+	domain	tcyesno		expensed.tax(1, 1)		based
+	domain	tcmcs.s250m	o.comb.output.set(1)		based
+	domain	tcpvat		o.tax.rates(1,1)		based
+	domain	tcamnt		i.duties.array(1,1)		based
+	domain tctax.seqn 	o.maximum.sequence.number
+	domain tcamnt 		o.sales.tax
+	domain tcmcs.s250m 	o.error.msg mb
+	tdpur400.ratd=utc.num()
+	tdpur400.ratt = "PUR"
+	tctax.dll9141.determine.aggregate.tax.amounts.per.line( 
+						tdpur401.ccty,				| domain tcccty i.tax.country, 
+						tdpur401.cvat,				| domain tccvat i.aggregate.tax.code, 
+						tdpur401.odat,				| domain tcdate i.tax.date, 
+						tdpur401.oamt,				| domain tcamnt i.order.line.price, 
+						tdpur401.cuva,				| domain tcamnt i.customs.value, 
+						tdpur401.mrpi.l,			| domain tcamnt i.market.retail.price, 
+						0.00,					| domain tcamnt i.retail.sales.price, 
+						0.00,					| domain tcamnt i.tariff.price, 
+						tdpur400.ccur,				| domain tcccur i.price.currency, 
+						tdpur400.ratd,				| domain tcdate i.currency.rate.date, 
+						tdpur400.ratt,				| domain tcrtyp i.currency.exchange.rate.type, 
+						tdpur401.fase.l,			| domain tcpric i.asv.excise, 
+						tdpur401.fasv.l,			| domain tcpric i.asv.vat, 
+						tdpur401.fass.l,			| domain tcpric i.asv.service.tax, 
+						tdpur401.ddta,				| domain tcdate i.ship.or.receive.date, 
+						tcyesno.no,				| domain tcyesno i.as.is.sales, 
+						tcyesno.no,				| domain tcyesno i.yesno.flag, 
+						i.duty.type.array,			| ref domain tctax.indt.l i.duty.type.array(,), 
+						i.duties.array,				| ref domain tcamnt i.duties.array(,), 
+						o.tax.rates,				| ref domain tcpvat o.tax.rates(,), 
+						o.maximum.sequence.number,		| ref domain tctax.seqn o.maximum.sequence.number, 
+						line.base.amount.array,			| ref domain tcamnt o.line.base.amount.array(,), 
+						line.tax.amount.array,			| ref domain tcamnt o.line.tax.amount.array(,), 
+						line.tax.code.array,			| ref domain tccvat o.line.tax.code.array(,) fixed, 
+						o.line.indirect.tax.array,		| ref domain tctax.indt.l o.line.indirect.tax.array(,), 
+						expensed.tax,				| ref domain tcyesno o.expensed.tax(,), 
+						o.claimable.tax.amount,			| ref domain tcamnt o.claimable.tax.amount, 
+						o.non.claimable.tax.amount,		| ref domain tcamnt o.non.claimable.tax.amount, 
+						o.total.tax.amount,			| ref domain tcamnt o.total.tax.amount, 
+						o.sales.tax,				| ref domain tcamnt o.sales.tax, 
+						o.comb.output.set,			| ref domain tcmcs.s250m o.comb.output.set() fixed mb, 
+						o.error.msg)				| ref domain tcmcs.s250m o.error.msg mb )
+}
+
+
+function update.order.data.for.approval(
+			domain	tcorno		in.orno,
+			domain	tcpono		in.pono,
+			domain	tcpono		in.sqnb,
+			domain	tcccty		in.ccty,
+			domain	tccvat		in.cvat,
+			domain	tcccty		in.bptc
+					)
+{
+	domain	tcncmp	curr.comp
+	
+	select	tfacp240.vatc, tfacp240.cvat, tfacp240.bptc
+	from	tfacp240 for update
+	where	tfacp240._index1 = {:curr.comp, tfacp.otyp.purchase, :in.orno, :in.pono, :in.sqnb}
+	selectdo
+		tfacp240.vatc = in.ccty
+		tfacp240.cvat = in.cvat
+		tfacp240.bptc = in.bptc
+		db.update(ttfacp240, db.retry)
+	endselect	
+}					
+
+					|#ISGECDV001010.sn
+function update.tax.for.inbound(
+			domain	tcorno	i.orno,
+			domain	tcpono	i.pono,
+			domain	tcpono	i.sqnb
+				)
+{
+	select	whinh210.*
+	from	whinh210 for update
+	where	whinh210._index1 = {whinh.oorg.purchase, :i.orno, :i.pono, :i.sqnb}
+	selectdo
+		if	(whinh210.lsta = whinh.lsta.planned)	or
+			(whinh210.lsta = whinh.lsta.open)	then
+		else
+						|#ISGECDV001024.sn
+			if	(tdpur401.qbbc > 0)	and	(i.sqnb <> 0)	then
+				inbound.found = false
+			else
+							|#ISGECDV001024.en
+				message("Receipt already linked. Remove Link to Update")
+				inbound.found = true		|#ISGECDV001021.n
+			endif				|#ISGECDV001024.n	
+			break				|#ISGECDV001021.n
+		endif	
+		whinh210.exca.l = tdpur401.exca.l
+		whinh210.easv.l = tdpur401.asoe.l
+		whinh210.easp.l = tdpur401.asve.l
+		whinh210.easa.l = tdpur401.fase.l
+		whinh210.sasv.l = tdpur401.asov.l
+		whinh210.sast.l = tdpur401.asvv.l
+		whinh210.sasa.l = tdpur401.fasv.l
+		whinh210.rasv.l = tdpur401.asos.l
+		whinh210.rasp.l = tdpur401.asvs.l
+		whinh210.rasa.l = tdpur401.fass.l
+		whinh210.tcty.l = tdpur401.ccty
+		whinh210.cvat.l = tdpur401.cvat
+		whinh210.bptc.l = tdpur401.bptc
+		whinh210.hcod.l = tdpur401.hcod.l
+		whinh210.iecc.l = tdpur401.iecc.l
+		whinh210.rnso.l = tdpur401.rnso.l
+		whinh210.rnsb.l = tdpur401.rnsb.l
+		whinh210.cenv.l = tdpur401.cenv.l
+		whinh210.icat.l = tdpur401.icat.l
+		whinh210.tase.l = tdpur401.tase.l
+		whinh210.tasv.l = tdpur401.tasv.l
+		whinh210.tass.l = tdpur401.tass.l
+		db.update(twhinh210, db.retry)
+	endselect	
+}
+					|#ISGECDV001010.en

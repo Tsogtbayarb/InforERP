@@ -1,0 +1,319 @@
+ |******************************************************************************
+|* tiisg9417m300  0  VRC B61U a7 isg 
+|* Print Hours Consumed Role Wise and Activity Wise
+|* Installation User             
+|* 2015-07-31
+|******************************************************************************
+|* Main table tiisg917 Employee Group Joining/leaving dates, Form Type 4
+|******************************************************************************
+|* ID ISGEC01031, IT0386, Saurabh Dubey, 31 July 2015, VRC B61U a7 isg 
+|* New Report development
+|*
+|* ID: ISGEC002020, IT0352, Abhishek singh, 29/10/2015, VRC B61U a7 isg
+|* Modification
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+	table   ttiisg917 | Employee Group Joining/leaving dates
+	table   ttiisg906
+	table   ttiisg925
+	table   ttiisg910
+	table   ttiisg911
+	table   ttiisg908
+	table   ttfgld005
+	table   ttcmcs052
+
+	
+	extern	domain	tcmcs.str10	grcd.f    
+	extern	domain	tcmcs.str10	grcd.t    
+	extern	domain	tcmcs.long	acid.f, acid.t, curr_activity 
+	extern	domain	tccprj		cprj.f, cprj.t , old.cprj  
+	extern	domain	tccprj		cprj.f, cprj.t   
+	extern	domain	tfgld.year	year.f   
+	extern	domain	tfgld.prod	prod.f, prod.t, higher.period.f, higher.period.t,period  
+
+	string	err.file(100), file.name(100), line.data(5000),line2(5000), line.header(5000)
+	string	line.header.group(5000)
+
+	domain	tcdate		date.array(2, 12)
+	domain	tfgld.prod	period.array(12)
+	domain	tfgld.date	first_date, end_date
+	domain	tcdsca		role.description(50)
+	domain	tcqiv1		role.value(12, 50)
+	domain	tcdate		first.date, last.date
+	domain	tcamnt		values(12),cal_array(12),cal_array2(12),cal_subs(12)	
+
+	long 	stat.fp, ret2, line, no.of.records, value.array, role.line,prno.add, yy, mm, dd, yy1, mm1, dd1,cnt,cnt1
+
+	domain tcdesc   	desc.var
+
+	extern domain tiisg.stat	stat.f, stat.t
+	extern	domain	tcmcs.int	rlid.f, rlid.t
+	extern	domain	tcmcs.str10	old.grcd
+	
+#include<bic_desktop>	
+
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+	get.screen.defaults()
+
+|****************************** field section *********************************
+
+field.grcd.f:
+when.field.changes:
+	grcd.t = grcd.f
+
+field.cprj.f:
+when.field.changes:
+	cprj.t = cprj.f
+
+|****************************** choice section ******************************
+
+choice.generate:
+on.choice:
+	cnt = 0		|ISGEC002020.n
+	cnt1 = 0	|ISGEC002020.n
+	generate.file()
+	close.file()
+
+|****************************** function section ******************************
+
+functions:
+
+function generate.file()
+{
+	long j 
+	
+	open.file()
+	generate.header()
+	print.detail.activity()
+
+	for j = 1 to 12
+		values(j) = 0.0
+		cal_array(j) = 0.0
+	endfor
+	
+	line.data = ""
+	line.data = strip$(shiftl$(line.data))		
+	seq.puts(line.data, stat.fp)	
+}
+
+
+function open.file()
+{
+	err.file = bse.tmp.dir$() & str$(utc.num()) & ".xls"
+	
+	file.name = "c:\temp\" & str$(utc.num())  & ".xls"
+	
+	stat.fp = seq.open(err.file, "w+")
+	if stat.fp >0 then
+ 		seq.seek(0, 0, stat.fp)
+	endif
+}
+
+function generate.header()
+{
+	long i, j,yy,mm,dd
+	long flag
+	i = 0
+	j = 0
+	line = 0
+	flag = 0
+	
+	line.data = " "  & "			"
+	
+	select 	tfgld005.desc, tfgld005.stdt
+	from	tfgld005
+	where	tfgld005._index1 inrange {tfgld.ptyp.financial, :year.f, :prod.f}
+				and	{tfgld.ptyp.financial, :year.f, :prod.t}
+	selectdo
+		num.to.date(tfgld005.stdt,yy,mm,dd)
+		line.data = strip$(line.data) & "	" & tfgld005.desc & "-" & str$(yy)
+	endselect
+	
+	line.data = strip$(shiftl$(line.data))		
+	seq.puts(line.data, stat.fp)
+}
+
+
+function print.detail.activity()
+{
+	domain	tcqsl1		hours, total_hours
+	domain	tcmcs.long	cnt
+	domain	tccprj		curr_proj
+	long 	i, line.detail, activity_loop, flag, curr_role
+	
+	role.line = 0
+	flag = 0
+	line.data = ""
+	
+	set.fmin(rlid.f, "tcmcs.int")
+	set.fmax(rlid.t, "tcmcs.int")
+	
+	select	tiisg917.grcd
+	from	tiisg917
+	where	tiisg917.grcd inrange {:grcd.f} and {:grcd.t}
+	group by tiisg917.grcd
+	order by tiisg917.grcd
+	selectdo
+		if not isspace (tiisg917.grcd) then
+			
+			select	tiisg911.desc, tiisg911.grcd
+			from	tiisg911
+			where	tiisg911._index1 = {:tiisg917.grcd}
+			selectdo
+			selectempty
+				tiisg911.desc = ""
+			endselect
+			
+			line.header.group = "Group	" & strip$(tiisg917.grcd) & "	"  & strip$(tiisg911.desc)
+			
+			flag = 0
+			
+			select	isg910.acid:curr_activity, isg910.cprj:curr_proj			
+			from	tiisg910	isg910
+			where	isg910._index4 inrange {:cprj.f, :acid.f} and {:cprj.t, :acid.t}	
+			group by isg910.cprj, isg910.acid
+			order by isg910.cprj, isg910.acid
+			selectdo	
+				
+				
+				select	tcmcs052.dsca
+				from	tcmcs052
+				where	tcmcs052._index1 = {:curr_proj}
+				selectdo
+				selectempty
+					tcmcs052.dsca = ""
+				endselect
+				
+				line.header = "Project	" & "	" & strip$(curr_proj) & "	" & strip$(tcmcs052.dsca)
+				
+				line2 = "Activity" & "	" & "Role Code" & "	" & "Role"
+				flag = 0
+			
+				line.data = ""
+				
+				select	tiisg906.rlid
+				from	tiisg906
+				where	tiisg906.rlid inrange {:rlid.f} and {:rlid.t}
+				and	tiisg906.grcd = :tiisg917.grcd
+				group by tiisg906.rlid
+				selectdo
+					select	tiisg925.*
+					from	tiisg925
+					where	tiisg925.roll = :tiisg906.rlid
+					selectdo
+					selectempty
+						tiisg925.dsca = ""
+					endselect
+					
+					end_date = 0
+					
+					line.data = ""
+					
+					total_hours = 0.00
+					
+					for i = prod.f to prod.t step 1
+						
+						get.start.end.date(year.f, i, first_date, end_date)
+						hours = 0.00						|ISGEC002020.n
+						select	tiisg910.hhrs, tiisg910.acid, tiisg910.emno,
+							tiisg910.grcd, tiisg910.edat
+						from	tiisg910
+						where	tiisg910._index7 = {:tiisg906.rlid, :curr_proj} 	
+						and	tiisg910._index12 = {:curr_activity} 	
+						and	tiisg910.grcd = :tiisg917.grcd	
+						and	tiisg910.tdat inrange :first_date and :end_date
+						selectdo
+							select tiisg917.emno,	
+								tiisg917.rldt	
+							from	tiisg917	
+							where	tiisg917._index2 = {:tiisg910.emno,:tiisg910.grcd}	
+							and	tiisg917.rldt >= :tiisg910.edat			
+							order by tiisg917.rldt desc
+							as set with 1 rows
+							selectdo
+								hours = hours + tiisg910.hhrs
+							endselect
+							
+						selectempty
+							hours = 0.00
+						endselect
+						
+						select	tiisg908.desc
+						from	tiisg908
+						where	tiisg908._index1 = {:tiisg910.acid}
+						selectdo
+						selectempty
+							tiisg908.desc = ""
+						endselect
+						
+						total_hours = total_hours + hours
+							
+						line.data = trim$(line.data) & "	" & str$(hours)
+					endfor
+					line.data = trim$(tiisg908.desc) & "	" & strip$(str$(tiisg906.rlid)) & "	" & strip$(tiisg925.dsca) & "	" & strip$(line.data)
+					if total_hours <> 0.00 then
+						if flag = 0 then
+							if old.grcd <> tiisg917.grcd then
+								seq.puts(line.header.group, stat.fp)
+								old.grcd = tiisg917.grcd
+							endif
+							if cnt1 = 0 then				|ISGEC002020.sn
+								seq.puts("	",stat.fp)
+								cnt1 = cnt1 + 1
+							endif						|ISGEC002020.en
+							if old.cprj <> curr_proj then
+								seq.puts(line.header, stat.fp)
+								old.cprj = curr_proj
+								seq.puts("	",stat.fp)
+							endif
+							if cnt = 0 then				|ISGEC002020.sn
+								seq.puts(line2, stat.fp)
+								cnt = cnt + 1
+							endif						|ISGEC002020.en
+						endif
+						seq.puts(line.data, stat.fp)
+						flag = 1
+					endif
+				endselect
+			endselect
+		endif
+		
+	endselect
+}
+
+
+function get.start.end.date(domain tfgld.year 		in.year,
+			     domain tfgld.prod 		in.prod,
+			 ref domain tfgld.date		o.s.date,
+			 ref domain tfgld.date		o.e.date)
+{
+
+	select tfgld005.stdt
+	from    tfgld005
+	where   tfgld005._index1 = {tfgld.ptyp.financial,:in.year,:in.prod}
+	and    tfgld005.corr = tcyesno.no
+	selectdo
+		o.s.date = tfgld005.stdt
+		num.to.date(o.s.date, yy, mm, dd)
+		o.e.date = date.to.num(mm<12?yy:yy+1, mm<12?mm + 1:1, 1) - 1
+		num.to.date(o.e.date, yy1,mm1,dd1)
+	endselect
+}
+
+function close.file()
+{
+	seq.close(stat.fp)
+	ret2 = server2client(err.file,file.name,1)
+	ret2 = app_start(file.name,"c:","","","")
+}
+	
+

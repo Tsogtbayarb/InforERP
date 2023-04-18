@@ -1,0 +1,231 @@
+|******************************************************************************
+|* tdisg860  0  VRC B61U a7 live
+|* 
+|* tools1
+|* 14-07-17 [14:12]
+|******************************************************************************
+|* Script Type: DAL
+|******************************************************************************
+|* IDENT ISG001035  Somak Mondal  22-07-2014	VRC B61U a7 live
+|*
+|* ISGECDV001089, IT0205, Arjit Gupta, Dt. 08-10-2014, VRC B61U a7 live
+|* Validate Value not exceeding 100
+|* 
+|* ISGEC001109, IT0327, Ritu Shrivastava, Dt. 16-10-2014, VRC B61U a7 isg
+|* Allow 0 in amount
+|*
+|* ISGEC001118, IT0327, Ritu Shrivastava, Dt. 20-10-2014, VRC B61U a7 isg
+|******************************************************************************
+table	ttdisg860  
+table	ttdisg825
+table	ttpest100 | Estimate Versions
+domain	tcpono	ptcd
+extern	domain	tcdisc	v.pval
+
+#include <bic_dal2>
+
+
+function extern long before.open.object.set()
+{
+	define.field.dependencies()
+	return(0)
+}
+
+function extern long before.save.object(long type)
+{
+	return(0)
+}
+
+function extern long before.new.object()
+{
+	get.remaining.percentage(tdisg860.lcno)					|ISG001035.n
+	tdisg860.pval = 100 - v.pval
+	select	max(tdisg860.ptcd):ptcd 
+	from	tdisg860
+	where 	tdisg860._index1 = {:tdisg860.lcno}
+	selectdo
+		tdisg860.ptcd = ptcd + 1 	
+	selectempty
+		tdisg860.ptcd = 1
+	endselect
+	return(0)
+}
+|********************** tdisg860.pval Hooks **********************
+function extern boolean tdisg860.pval.is.derived()
+{
+	if tdisg860.pval = 0 and tdisg860.amnt <> 0 then			
+		return(true)
+	endif
+	
+	return(false)
+}
+
+function extern void tdisg860.pval.update()				|ISG001035.sn
+{
+	domain 	tppdm.aalc		o.copr
+	
+	GetProjectValue(tdisg860.lcno,o.copr)
+	
+| 	tdisg860.pval = 100/(o.copr/tdisg860.amnt)			|#ISGEC001109.o
+									|#ISGEC001109.sn
+	if tdisg860.amnt <> 0 then
+		tdisg860.pval = 100/(o.copr/tdisg860.amnt)
+	else
+		tdisg860.pval = 0
+	endif								|#ISGEC001109.en
+}
+									|ISG001035.en
+									|#ISGECDV001089.sn
+function extern boolean tdisg860.pval.is.valid(long	mode)
+{
+| 	if	tdisg860.pval > 100	then				|#ISGEC001118.so
+| 		dal.set.error.message("@ Value should not exceed 100")
+| 		return(DALHOOKERROR)
+| 	endif								|#ISGEC001118.eo
+
+ domain tcratc	i.pval							|#ISGEC001118 .sn
+ 
+	i.pval = 0.0
+	select sum(tdisg860.pval):i.pval				
+	from   tdisg860
+	where  tdisg860._index1 = {:tdisg860.lcno}
+	selectdo
+	endselect	
+	
+	if i.pval > 100	then
+		dal.set.error.message("@ %Value should not exceed 100")
+		return(DALHOOKERROR)
+	endif
+									|#ISGEC001118.en
+	
+	return(true)
+}
+									|#ISGECDV001089.en
+|********************** tdisg860.amnt Hooks **********************
+function extern boolean tdisg860.amnt.is.derived()
+{
+	if tdisg860.pval <> 0 then
+		return(true)
+	endif
+	
+	return(false)
+}
+
+function extern void tdisg860.amnt.update()
+{
+	domain 	tppdm.aalc		o.copr
+	
+	GetProjectValue(tdisg860.lcno,o.copr)
+	
+	tdisg860.amnt = o.copr * tdisg860.pval / 100
+}
+
+function extern boolean tdisg860.amnt.is.valid(long type)
+{
+	domain	tcamnt			o.amnt
+	domain 	tppdm.aalc		o.copr
+	
+	o.copr = 0
+	o.amnt = 0
+	GetProjectValue(tdisg860.lcno,o.copr)
+	with.old.object.values.do(Calculate_Amount,tdisg860.lcno,tdisg860.ptcd,o.amnt) 
+	
+| 	tdisg860.amnt = round(tdisg860.amnt,0,0)		|#ISGECDV001089.o
+	tdisg860.amnt = round(tdisg860.amnt,2,1)		|#ISGECDV001089.o
+	
+| 	if (o.amnt + tdisg860.amnt) > o.copr then							|#ISGEC001118.so
+| 		dal.set.error.message("@ Total Payment Terms Amount is greater than Project Value")
+| 		return(DALHOOKERROR)
+| 	endif												|#ISGEC001118.eo
+	
+	return(true)
+	
+}
+
+| function extern boolean tdisg860.amnt.is.mandatory(long type)					|#ISGEC001109.so
+| {
+| 	if tdisg860.pval = 0 and tdisg860.amnt = 0 then						
+| 		dal.set.error.message("@ Kindly Enter Payment Terms Amount")
+| 		return(true)
+| 	endif
+| 	
+| 	return(false)										|#ISGEC001109.eo
+| }
+
+|********************** functions ********************************
+function define.field.dependencies()
+{
+	dal.field.depends.on("tdisg860.amnt",
+				HOOK_UPDATE +
+				HOOK_IS_DERIVED +
+				HOOK_IS_MANDATORY,
+					"tdisg860.pval","tdisg860.lcno")
+					
+	dal.field.depends.on("tdisg860.pval",
+				HOOK_UPDATE +					
+				HOOK_IS_DERIVED, 
+					"tdisg860.amnt")	
+}
+
+| function GetProjectValue								|ISG001035.so
+| 			(
+| 				domain 	tcorno		i.lcno,		|Project Code
+| 			ref 	domain	tppdm.aalc	o.copr		|Project Value
+| 			)
+| {
+| 	select 	tppdm600.copr:o.copr
+| 	from	tppdm600
+| 	where	tppdm600._index1 = {:i.lcno}
+| 	as set with 1 rows
+| 	selectdo
+| 	selectempty
+| 		o.copr = 0
+| 	endselect	
+| }
+											|ISG001035.eo
+function GetProjectValue								|ISG001035.sn
+			(
+				domain 	tcorno		i.lcno,		|Project Code
+			ref 	domain	tppdm.aalc	o.copr		|Project Value
+			)
+{
+	select 	tdisg825.valu:o.copr
+	from	tdisg825
+	where	tdisg825._index1 = {:i.lcno}
+	as set with 1 rows
+	selectdo
+	selectempty
+		o.copr = 0
+	endselect	
+}
+											|ISG001035.en
+												
+function Calculate_Amount
+			(
+				domain	tcorno		i.lcno,		|Project Code
+				domain	tcpono		i.ptcd,		|Payment Terms Code
+			ref	domain	tcamnt		o.amnt		|Total Amount
+			)
+{
+	domain	tcamnt		temp.amnt
+	domain	tcpono		temp.ptcd
+	
+	select 	tdisg860.amnt:temp.amnt,
+		tdisg860.ptcd:temp.ptcd
+	from	tdisg860
+	where	tdisg860._index1 = {:i.lcno}
+	selectdo
+		if temp.ptcd <> i.ptcd then
+			o.amnt = o.amnt + temp.amnt
+		endif
+	endselect
+}
+function get.remaining.percentage(domain tcorno i.lcno)				|ISG001035.sn
+{
+	select	sum(tdisg860.pval):v.pval
+	from	tdisg860
+	where	tdisg860._index1 = {:i.lcno}
+	selectdo
+	endselect	
+}
+											|ISG001035.en

@@ -1,0 +1,131 @@
+|******************************************************************************
+|* tdisg851  0  VRC B61U a7 live
+|* DAL for tdisg851
+|* tools1
+|* 14-06-13 [15:48]
+|******************************************************************************
+|* Script Type: DAL
+|******************************************************************************
+                         
+	table	ttdisg851
+	table	ttdisg855
+	table	ttdisg842
+	table	ttdisg845
+	table	ttdisg831
+	table	ttpisg036
+	
+#include <bic_dal2>
+
+
+function extern long before.open.object.set()
+{
+	define.field.dependency()
+	return(0)
+}
+
+function extern long before.save.object(long type)
+{
+	return(0)
+}
+
+function define.field.dependency()
+{
+	dal.field.depends.on("tdisg851.invl", HOOK_UPDATE, "tdisg851.shno")
+	dal.field.depends.on("tdisg851.inam", HOOK_UPDATE, "tdisg851.shno")
+	dal.field.depends.on("tdisg851.conu", HOOK_UPDATE, 
+					"tdisg851.shno","tdisg851.invl")
+	dal.field.depends.on("tdisg851.balm", HOOK_UPDATE, 
+					"tdisg851.shno","tdisg851.inam","tdisg851.conu")
+}
+
+function extern void tdisg851.invl.update()
+{
+	select	tdisg842.invd
+	from	tdisg842
+	where	tdisg842._index1 = {:tdisg851.shno}
+	selectdo
+		tdisg851.invl = tdisg842.invd
+	selectempty
+		tdisg851.invl = 0
+	endselect
+}
+
+function extern void tdisg851.inam.update()
+{
+	domain	tccprj	v.cprj
+	domain	tcnama	v.insu
+	
+	v.cprj = get.project(tdisg851.shno)
+| 	v.insu = get.insurance(v.cprj)
+	
+	select	tdisg855.insu,tdisg855.suin,tdisg855.balc
+	from	tdisg855
+	where	tdisg855._index1 = {:v.insu}
+	selectdo
+		tdisg851.inam = tdisg855.balc
+	selectempty
+		tdisg851.inam = 0
+	endselect
+}
+
+function extern void tdisg851.conu.update()
+{
+	domain	tccprj	v.cprj
+	domain	tcnama	v.insu
+	
+	v.cprj = get.project(tdisg851.shno)
+| 	v.insu = get.insurance(v.cprj)
+	
+	select	tdisg855.insu,tdisg855.excm
+	from	tdisg855
+	where	tdisg855._index1 = {:v.insu}
+	selectdo
+		tdisg851.conu = tdisg851.invl * tdisg855.excm
+	selectempty
+		tdisg851.conu = 0
+	endselect
+}
+
+function extern void tdisg851.balm.update()
+{
+	domain	tccprj	v.cprj
+	domain	tcnama	v.insu
+	
+	tdisg851.balm = tdisg851.inam - tdisg851.conu
+	
+	v.cprj = get.project(tdisg851.shno)
+| 	v.insu = get.insurance(v.cprj)
+	
+	db.retry.point()
+	select	tdisg855.balc
+	from	tdisg855 for update
+	where	tdisg855._index1 = {:v.insu}
+	selectdo
+		tdisg855.balc = tdisg851.balm
+		db.update(ttdisg855,db.retry,e)
+	endselect
+}
+
+
+function domain tccprj get.project(domain tcorno vv.shno)
+{
+	select	tdisg845.cinv,tdisg831.cprj,tdisg831.invn
+	from	tdisg845,tdisg831
+	where	tdisg845._index1 = {:vv.shno}
+	and	tdisg831.invn = tdisg845.cinv
+	selectdo
+	endselect
+	return(tdisg831.cprj)
+}
+
+| function domain tcnama	get.insurance(domain	tccprj	vv.cprj)
+| {
+| 	select	tpisg036.insu
+| 	from	tpisg036
+| 	where	tpisg036._index1 = {:vv.cprj}
+| 	selectdo
+| 	selectempty
+| 		tpisg036.insu = ""
+| 	endselect
+| 	return(tpisg036.insu)
+| }

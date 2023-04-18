@@ -1,0 +1,312 @@
+|******************************************************************************
+|* tdisg867  0  VRC B61U a7 live
+|* DAL 2 for tdisg867
+|* baan
+|* 14-10-07 [13:56]
+|******************************************************************************
+|* Script Type: DAL
+|******************************************************************************
+|* ISGECDV001095, IT0205, Arjit Gupta, VRC B61U a7 live, Dt. 09-10-2014
+|* Remove check of Same Item
+|*
+|* ISGEC001133, IT0205, Arjit Gupta, VRC B61U a7 isg, Dt. 29-10-2014
+|* Remove check of Same PO as suggested by Mr. Vikas Yadav.
+|******************************************************************************
+                                                                                
+	|******************** Includes
+	#include <bic_dal2>
+	#include "itcmcs2000"	|* DAL(-GUI) Support Defines
+
+	|*************** Table declaration ******************
+		table	ttdisg867
+		table	ttdisg832
+		table	ttdisg873
+		
+|****************************** object hooks **********************************
+
+function extern boolean method.is.allowed(
+			long		i.method)
+{
+	on case i.method
+		case DAL_NEW:
+		if not new.method.is.allowed() then
+			dal.set.error.message("@Cannot insert a record.")	
+			return(false)
+		endif
+		break
+	case DAL_UPDATE:
+		if not update.method.is.allowed() then
+			dal.set.error.message("@Cannot modify this record.")
+			return(false)
+		endif
+		break
+	case DAL_DESTROY:
+		if not destroy.method.is.allowed() then
+			dal.set.error.message("@Cannot delete this record.")
+			return(false)
+		endif
+		break
+	endcase
+
+	return(true)
+}
+
+function extern long before.open.object.set()
+{
+	read.parameters()
+	define.field.dependencies()
+	return(0)
+}
+
+function extern long before.save.object(long type)
+{
+	on case type
+		case DAL_NEW :
+			if	isspace(tdisg867.orno)	or
+				tdisg867.pono = 0 then
+				dal.set.error.message("@ Link PO and Position")
+				return(DALHOOKERROR)
+			endif	
+			break
+		case DAL_UPDATE:
+			if	isspace(tdisg867.orno)	or
+				tdisg867.pono = 0 then
+				dal.set.error.message("@ Link PO and Position")
+				return(DALHOOKERROR)
+			endif
+			break
+		case DAL_DESTROY :
+			if chec_data_in_tdisg873() then
+				dal.set.error.message("@ PO is linked with Sub-contrating Advice.")
+				return(DALHOOKERROR)
+			endif	
+			break	
+	ENDCASE
+	return(0)
+}
+
+function extern long set.object.defaults()
+{
+	return(0)
+}
+
+function extern long before.new.object()
+{	
+	return(0)
+}
+
+function extern long before.get.object()
+{
+	return(0)
+}
+
+function extern long after.get.object()
+{
+	
+	return(0)
+}
+
+function long read.parameters()
+{
+	return(0)
+}
+
+|**** Dependencies Section ****************************************************
+
+function void define.field.dependencies()
+{
+	|* Initialize field relations.
+	dal.init.field.dependencies()
+	
+	dal.field.depends.on("tdisg867.orno", HOOK_IS_VALID, 
+						"tdisg867.edrn",
+						"tdisg867.rcno",
+						"tdisg867.rcln"
+						)
+	dal.field.depends.on("tdisg867.pono", HOOK_IS_VALID, 
+						"tdisg867.edrn",
+						"tdisg867.rcno",
+						"tdisg867.rcln",
+						"tdisg867.orno"
+						)
+	|* Add direct dependent fields.
+	|* Please keep the fields in alphabetical order.
+
+	dal.finalize.field.dependencies()
+}
+
+function boolean new.method.is.allowed()
+{
+	select	tdisg831.stat
+	from	tdisg831
+	where	tdisg831._index1 = {:tdisg867.edrn}
+	and	tdisg831.stat = tdisg.stat.freeze
+	selectdo
+		return(false)
+	endselect
+	return(true)
+}
+
+function boolean update.method.is.allowed()
+{
+	select	tdisg831.stat
+	from	tdisg831
+	where	tdisg831._index1 = {:tdisg867.edrn}
+	and	tdisg831.stat = tdisg.stat.freeze
+	selectdo
+		return(false)
+	endselect
+	return(true)
+}
+function boolean destroy.method.is.allowed()
+{
+			long		delete.allowed
+
+	with.old.object.values.do(	deleting_allowed,
+					delete.allowed)	|* ref
+	if not delete.allowed then
+		return(false)
+	endif
+
+	return(true)
+}
+
+function void deleting_allowed(
+	ref		long		o.delete.allowed)
+{
+	o.delete.allowed = true
+	select	tdisg831.stat
+	from	tdisg831
+	where	tdisg831._index1 = {:tdisg867.edrn}
+	and	tdisg831.stat = tdisg.stat.freeze
+	selectdo
+		o.delete.allowed = false
+	endselect
+	
+	select 	tdisg873.*
+	from	tdisg873
+	where	tdisg873._index2 = {:tdisg867.edrn, :tdisg867.rcno, :tdisg867.rcln}
+	and	tdisg873.frez = tcyesno.yes
+	selectdo
+		o.delete.allowed = false
+	endselect
+	
+}
+
+|******************* PO *******************
+function extern boolean tdisg867.orno.is.valid(long mode)
+{
+										|#ISGEC001133.so
+| 	if	same.po(tdisg867.edrn, tdisg867.rcno, tdisg867.rcln, tdisg867.orno)	then
+| 		dal.set.error.message("@ PO not Valid")
+| 		return(false)
+| 	endif
+										|#ISGEC001133.eo
+	return(true)
+}
+
+|******************* PO Position ***********
+function extern boolean tdisg867.pono.is.valid(long mode)
+{
+	if	not po.valid(tdisg867.orno, tdisg867.pono)	then
+		dal.set.error.message("@ PO not Valid")
+		return(false)
+	endif
+	|#ISGECDV001095.so
+	| if	not subcontracting.item.same(tdisg867.edrn, tdisg867.rcno, tdisg867.rcln,
+	| 	tdisg867.orno, tdisg867.pono)	then
+	| 	dal.set.error.message("@ Billing Advice Item and Subcontraction PO Item not Same")
+	| 	return(false)
+	| endif
+	|#ISGECDV001095.eo
+	return(true)
+}
+
+|**************** Internal Function ************
+function boolean subcontracting.item.same
+			(
+			domain	tcorno		i.edrn,
+			domain	whinh.shpm	i.rcno,
+			domain	tcpono		i.rcln,
+			domain	tcorno		i.orno,
+			domain	tcpono		i.pono
+			)
+{
+	domain	tcitem	bill.item
+	domain	tcitem	sub.item
+	
+	bill.item = ""
+	sub.item = ""
+	select	bl_tdisg832.item:bill.item
+	from	tdisg832 bl_tdisg832
+	where	bl_tdisg832._index1 = {:i.edrn, :i.rcno, :i.rcln}
+	selectdo
+	endselect
+	
+	select	sb_tdpur401.item:sub.item
+	from	tdpur401 sb_tdpur401
+	where	sb_tdpur401._index1 = {:i.orno, :i.pono}
+	as set with 1 rows
+	selectdo
+	endselect
+	
+	if	bill.item = sub.item	then
+		return(true)
+	endif
+	
+	return(false)
+}
+
+function boolean po.valid(
+		domain	tcorno	i.orno,
+		domain	tcpono	i.pono
+			)
+{
+	select	tdpur401.item
+	from	tdpur401
+	where	tdpur401._index1 = {:i.orno, :i.pono}
+	as set with 1 rows
+	selectdo
+		return(true)
+	endselect
+	return(false)
+}
+
+function boolean same.po(
+		domain	tcorno		i.edrn,
+		domain	whinh.shpm	i.rcno,
+		domain	tcpono		i.rcln,
+		domain	tcorno		i.orno
+			)
+{
+	select	tdisg832.orno
+	from	tdisg832
+	where	tdisg832._index1 = {:i.edrn, :i.rcno, :i.rcln}
+	and	tdisg832.oorg = whinh.oorg.purchase
+	selectdo
+	endselect
+	
+	if	tdisg832.orno = i.orno	then
+		return(true)
+	endif
+	
+	return(false)
+}
+
+function boolean chec_data_in_tdisg873()
+{
+	select 	tdisg832.edrn, tdisg832.rcno, tdisg832.rcln
+	from	tdisg832
+	where	tdisg832.orno = :tdisg867.orno
+	and	tdisg832.pono = :tdisg867.pono
+	selectdo
+		select 	tdisg873.*
+		from	tdisg873
+		where	tdisg873._index1 = {:tdisg832.edrn, :tdisg832.rcno, :tdisg832.rcln,
+					:tdisg867.edrn, :tdisg867.rcno, :tdisg867.rcln}
+		selectdo
+			return(true)
+		endselect		
+	endselect
+	return(false)
+}

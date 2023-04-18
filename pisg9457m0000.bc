@@ -1,0 +1,602 @@
+|******************************************************************************
+|* tfisg9457m000  0  VRC B61U a7 isg 
+|* ITC Reversal
+|* merino1                       
+|* 2018-10-24
+|******************************************************************************
+|* Form Type 4
+|******************************************************************************
+|* ID:ISGEC001226,Manav Singh,25-10-2018,VRC B61U a7 isg 
+|* ITC Reversal Report
+|****************************** declaration section ***************************
+declaration:
+	#include<bic_desktop>
+	
+	table	ttfacp957	
+	table	ttctax940	
+	table	ttfisg415	
+	table	ttfacp200	
+	table	ttccom100	
+	table	ttfgld107	
+	table	ttfgld110	
+	table	ttcmcs035	
+	table	ttcmcs036	
+	table	ttfacp201	
+
+	extern	domain	tcmcs.str30m	proj
+	extern	domain	tcncmp		ncmp
+	extern	domain	tcccty		i.ccty
+	extern	domain	tcdate		july.date
+	extern	domain	tfgld.date	date.f,final.date,i.docd,final.tidt,
+					tax.inv.tidt
+	extern	domain	tfgld.amnt	opn.invc.amnt,pay.proc.wi.180.days,
+					a.balh,b.balh,pay.proc.aft.180.days,
+					x.balh,y.balh,i.balc,i.amth,x.amth
+	extern	domain	tcamnt		itc.sgst.amnt,itc.igst.amnt,itc.cgst.amnt
+	extern	domain	tcpvat		itc.sgst.rate,itc.cgst.rate,itc.igst.rate
+	extern 	domain	tcdate		new.final.date,new.tidt
+		string old.amnt(500)
+		string tdoc.docn(300), cheque.no(100), heading(60)
+	
+		domain	tfgld.ttyp	old.ttyp,new.ttyp, i.ityp
+		domain	tfgld.docn	old.docn,new.docn,flag,temp, i.idoc
+		domain	tcmcs.str50	result
+		domain	tfgld.docn	docn.f,docn.t
+		domain	tcmcs.str50	oref,nama,tirf,ifbp
+		domain	tfgld.date	tidt
+	
+		string 	err.file(200),file.name(200),line(2500)
+		string server.file(100)
+		long 	ret,stat.fp,no.of.days,fp
+		long	yearno,monthno,dayno,hour,mint,secs
+		domain	tcpono		line.no
+	
+| 		domain	tcncmp	i.loco
+| 		domain	tfacp.itco.l	i.otyp
+| 		domain	tcorno		i.load
+| 		domain	tcorno		i.clus
+| 		domain	tcmcs.str20	i.oref
+| 		domain	tcmcs.str15	i.rref
+| 		domain	tfgld.lino	i.line
+| 		domain	tcpono		i.lcln
+| 		domain	tcmcs.str20	i.tref
+| 		domain	tcmcs.str15	i.iref
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+| choice.cont.process:
+| on.choice:
+   | execute(print.data)
+
+choice.print_data:
+before.choice:
+	check.all.input()
+	
+on.choice:
+	generate.file()
+	
+
+| choice.print.data:
+| on.choice:
+   | if rprt_open() then
+       | read.main.table()
+       | rprt_close()
+   | else
+       | choice.again()
+   | endif
+
+
+|****************************** field section *********************************
+field.date.f:
+check.input:
+	no.of.days = date.to.num( 2017, 07, 01 )
+	if date.f < (no.of.days + 180) then
+		message("The Documnet date is less than 01-07-2017")
+		set.input.error("",e)
+	endif	
+	
+
+|****************************** function section ******************************
+
+functions:
+
+function generate.file()
+{
+	err.file = bse.tmp.dir$() & "/" & "ITC Reversal" & str$(utc.num()) & ".xls"
+	file.name = "ITC Reversal" & str$(utc.num())  & ".xls"
+	stat.fp = seq.open(err.file, "w+")
+	if stat.fp > 0 then
+		create.file()
+	endif
+	 
+	message("Please refer to file %s in C:\temp\" , file.name)
+	seq.close(stat.fp)
+	ret = server2client(err.file,"C:\temp\" & file.name,1)
+	ret = app_start("C:\temp\" & file.name,"C:","","","")
+}
+
+
+function create.file()
+{
+	generate.header()
+	read.main.table()
+}
+
+function generate.header()
+{
+	if stat.fp >0 then
+		heading = "ITC Reversal as on Date:" & sprintf$("%D(%02d/%02m/%04Y)",date.f)
+		seq.puts(heading, stat.fp)
+		seq.puts("Company:" & str$(ncmp), stat.fp)
+		
+		line = concat$("	", 
+		sprintf$("ISGEC GSTIN"),				|1
+		sprintf$("IR no."),    				|2
+		sprintf$("Document No."),    				|2.1
+		sprintf$("BP Invoice no."),    			|3
+		sprintf$("BP invoice date"),   			|4
+		sprintf$("PO"),   					|5
+		sprintf$("Project"),   				|6
+		sprintf$("BP code"),  		       			|7
+		sprintf$("BP Name"),  					|8
+		sprintf$("Invoice amount (Total)"),   			|9
+		sprintf$("Open invoice amount"),   			|10
+		sprintf$("Payments processed within 180 days "),  	|11
+		sprintf$("Payments processed after 180 days"),   	|12
+		sprintf$("ITC availed IGST"),   			|13
+		sprintf$("ITC availed CGST"),  	 		|14
+		sprintf$("ITC availed SGST") ,  			|15
+		sprintf$("Total ITC availed amount"),   		|16
+		sprintf$("Retention"),   				|17
+		sprintf$("Payment date"),  				|18
+		sprintf$("Payment amounts"),   			|19
+		sprintf$("Cheque No.s"),  				|20
+		sprintf$("Payment document no. (tran. type & docn)"))   |21
+		   
+		line = strip$(shiftl$(line))
+		seq.puts(line, stat.fp)
+	endif
+	}
+	
+function print_details()
+{	
+	
+	string	ZZZZTZZTZZ9DV99
+	line =  concat$("	", 
+		sprintf$("%s",tctax940.regn),									|1 
+		sprintf$("%d",tfisg415.ninv), 									|2
+		sprintf$("%s",i.ityp & "|" & str$(i.idoc)), 							|2.1
+		sprintf$("%s","'" & tirf), 										|3 
+		sprintf$("%u(%02d/%02m/%04Y)",tidt), 								|4
+		sprintf$("%s",oref),										|5
+		sprintf$("%s",proj),										|6
+		sprintf$("%s",ifbp),										|7
+		sprintf$("%s",nama),										|8
+		sprintf$("%d",i.amth),										|9
+		sprintf$("%d",opn.invc.amnt),									|10
+		sprintf$("%d",pay.proc.wi.180.days),								|11
+		sprintf$("%d",pay.proc.aft.180.days),								|12
+		sprintf$("%d",itc.igst.amnt),									|13
+		sprintf$("%d",itc.cgst.amnt),									|14
+		sprintf$("%d",itc.sgst.amnt),									|15
+		sprintf$("%d",itc.igst.amnt + itc.cgst.amnt + itc.sgst.amnt),					|16
+		sprintf$("%d",i.balc),										|17
+		sprintf$("%D(%02d/%02m/%04Y)",i.docd),								|18
+		sprintf$("%s",old.amnt),									|19
+		sprintf$("%s",trim$(cheque.no)),								|20
+		sprintf$("%s",tdoc.docn)									|21
+		)
+		line = strip$(shiftl$(line))
+		seq.puts(line, stat.fp)
+		
+		
+}	
+
+
+function read.main.table()
+{
+	
+	initailise.value()
+	
+
+	final.date = date.f - 180
+	num.to.date(final.date,yearno,monthno,dayno)
+	new.final.date = date.to.utc(yearno,monthno,dayno,00,00,01)
+	
+	july.date = date.to.utc(2017,07,01,00,00,01)
+	
+	old.ttyp = ""
+	old.docn = 0
+	new.docn = 0
+	new.ttyp = ""
+	tdoc.docn = ""
+	temp = 0
+	set.max(docn.t,"tfgld.docn")				|bharti.temp.04-02-2019
+	set.min(docn.f,"tfgld.docn")				|bharti.temp.04-02-2019
+| 	select	tfacp957.ttyp,
+| 		tfacp957.docn,
+|  		tfacp957.ityp,
+| 		tfacp957.idoc,
+| 		tfacp957.rnso,
+| 		tfacp957.tirf,
+| 		tfacp957.tidt,
+| 		tfacp957.oref,
+| 		tfacp957.ifbp,
+| 		tfacp957.cvat,
+| 		tfacp957.sern,
+| 		tfacp957.vamt,
+| 		tccom100.nama,
+| 		tfacp957.ccty
+	select	tfacp957.*, tccom100.nama
+	from	tfacp957,tccom100
+	where	tfacp957.tidt inrange {:july.date} and {:new.final.date}
+	and	tfacp957.invs = tcyesno.yes
+	and	tfacp957._compnr = :ncmp
+| 	and	tfacp957.ityp = "PTR"
+| 	and	tfacp957.idoc = 38010412
+	and	tfacp957.idoc inrange {:docn.f} and {:docn.t}
+	and	tfacp957.ifbp refers to tccom100 UNREF CLEAR
+	order by tfacp957.ityp, tfacp957.idoc asc
+	selectdo
+		new.ttyp = tfacp957.ityp
+		new.docn = tfacp957.idoc
+		if new.ttyp <> old.ttyp or new.docn <> old.docn then 
+			if flag = 1 then
+				print_details()
+				initailise.value()
+			endif
+			flag = 1
+			
+			old.ttyp = tfacp957.ityp
+			old.docn = tfacp957.idoc
+		endif
+	
+| 		i.otyp = tfacp957.otyp
+| 		i.load = tfacp957.load
+| 		i.clus = tfacp957.clus
+| 		i.oref = tfacp957.oref
+| 		i.rref = tfacp957.rref
+| 		i.line = tfacp957.line
+| 		i.lcln = tfacp957.lcln
+| 		i.tref = tfacp957.tref
+| 		i.iref = tfacp957.iref
+| 	
+		i.ityp = tfacp957.ityp
+		i.idoc = tfacp957.idoc
+		oref = trim$(tfacp957.oref)
+		tirf = trim$(tfacp957.tirf)
+		ifbp = trim$(tfacp957.ifbp)
+		tidt = tfacp957.tidt
+		i.ccty = tfacp957.ccty
+		nama = trim$(tccom100.nama)
+		utc.add(tfacp957.tidt,0,0,180,0,0,0,new.tidt)
+		result = sprintf$("%u(%02d/%02m/%04Y)%U(%02h%x%02m%x%02s%a)",tfacp957.tidt,tfacp957.tidt)
+		
+		select	tctax940.regn
+		from	tctax940	
+		where	tctax940._index1 = {:tfacp957.rnso}
+		and	tctax940._compnr = :ncmp
+		selectdo
+		selectempty
+			tctax940.regn = ""
+		endselect
+		
+		if tfacp957.idoc <> 0 then
+			select	tfisg415.ninv
+			from	tfisg415
+			where	tfisg415.ttyp = {:tfacp957.ityp}
+			and	tfisg415.docd = :tfacp957.idoc
+			and	tfisg415.fcmp = :tfacp957.fcmp
+			and	tfisg415._compnr = 200
+			selectdo
+			selectempty
+				tfisg415.ninv = 0
+			endselect
+		endif	
+		
+		if tfacp957.idoc <> 0 then
+			select	tfacp200.cdf_cprj,
+				tfacp200.amth:i.amth,
+				tfacp200.balh,
+				tfacp200.bahc,
+				tfacp200.docd,
+				tfacp200.dim1
+			from	tfacp200
+			where	tfacp200._index1 = {:tfacp957.ityp,:tfacp957.idoc}
+			and	tfacp200.tdoc = " "
+			and	tfacp200._compnr = :ncmp
+			selectdo
+				get.var(pid,"tfacp200.cdf_cprj",proj)
+				if isspace(proj) then
+					proj = trim$(tfacp200.dim1)
+				endif	
+				opn.invc.amnt = (tfacp200.balh(1) - tfacp200.bahc(1))
+			selectempty
+				opn.invc.amnt = 0
+				i.amth = 0
+			endselect
+		else
+			opn.invc.amnt = 0
+			i.amth = 0
+		endif
+		
+		utc.to.date(tfacp957.tidt,yearno,monthno,dayno,hour,mint,secs)
+		tax.inv.tidt = date.to.num(yearno,monthno,dayno)
+		
+		utc.to.date(new.tidt,yearno,monthno,dayno,hour,mint,secs)
+		final.tidt = date.to.num(yearno,monthno,dayno)
+		temp = 1
+		b.balh = 0.00
+		y.balh = 0.00
+		select	tfacp200.balh,
+			tfacp200.bahc,
+			tfacp200.amth,
+			tfacp200.tpay,
+			tfacp200.docd:i.docd,
+			tfacp200.amth:x.amth,
+			tfacp200.pdoc,
+			tfacp200.docn,
+			tfacp200.tdoc,
+			tfacp200.payd, tfacp200.payt, tfacp200.typa, tfacp200.doca, tfacp200.pcom
+		from	tfacp200
+		where	tfacp200._index1 = {:tfacp957.ityp,:tfacp957.idoc}
+		and	tfacp200.tpay in (2,4,14)
+		and	tfacp200._compnr = :ncmp
+		selectdo
+			if tfacp200.payd <> 0 then			|##ISGEC017009.N
+				select	tfcmg100.cheq:cheque.no
+				from	tfcmg100
+				where	tfcmg100._index3	=	{:tfacp200.payt,:tfacp200.payd}
+				and	tfcmg100.typo = :tfacp200.typa
+				and	tfcmg100.doco = :tfacp200.doca
+				and	tfcmg100._compnr = :tfacp200.pcom
+				as	set with 1 rows
+				selectdo
+				selectempty
+					cheque.no	=	""
+				endselect
+			endif	
+				
+| 			if not isspace(tfacp200.pdoc) then
+| 				if line.no = 0 then
+| 					cheque.no = tfacp200.pdoc
+| 					line.no = 1
+| 				else		
+| 					cheque.no = strip$(cheque.no) & "," & tfacp200.pdoc
+| 				endif	
+| 			endif
+			
+			get.todc.docn.amth()
+			if i.docd >= (final.tidt -180) and
+			   i.docd <= final.tidt then
+				on case etol(tfacp200.tpay)
+| 				case 1:
+| 					a.balh =  a.balh + tfacp200.balh(1)
+| 				break	
+				case 2: 
+				case 4:
+				case 14:
+| 					b.balh = b.balh + tfacp200.balh(1)
+					b.balh = b.balh + tfacp200.amth(1)
+| 					b.balh = tfacp200.amth(1)
+				break
+				endcase
+			else
+				if i.docd >= final.tidt and
+				   i.docd <= (final.tidt + 180) then
+					on case etol(tfacp200.tpay)
+| 					case 1:
+| 						x.balh =  x.balh + tfacp200.balh(1)
+| 					break	
+					case 2: 
+					case 4:
+					case 14:
+| 						y.balh = y.balh + tfacp200.balh(1)
+						y.balh = y.balh + tfacp200.amth(1)
+| 						y.balh = tfacp200.amth(1)
+					break
+					endcase
+				endif
+			endif		
+		endselect
+		
+
+		pay.proc.wi.180.days =  b.balh
+		pay.proc.aft.180.days = y.balh 
+		
+		if (i.amth + pay.proc.wi.180.days) < 0 then
+			continue
+		endif	
+		
+| 		select	tfgld107.ttyp,
+| 			tfgld107.docn,
+| 			tfgld107.cvat,
+| 			tfgld107.sern,
+| 			tfgld107.pvat,
+| 			tfgld107.vamh
+| 		from	tfgld107
+| 		where	tfgld107._index1 = {:ncmp,:tfacp957.ttyp,:tfacp957.docn}
+| 		selectdo
+			select	tcmcs035.cvat,
+				tcmcs035.sern,
+				tcmcs035.indt.l
+			from	tcmcs035
+			where	tcmcs035._index1 = {:i.ccty,:tfacp957.cvat,:tfacp957.sern}
+			and	tcmcs035.indt.l in (40,41,42)
+			and	tcmcs035._compnr = :ncmp
+			selectdo
+			on case etol(tcmcs035.indt.l)
+				case 40:
+| 					itc.sgst.rate = itc.sgst.rate + tfgld107.pvat
+					itc.sgst.amnt = itc.sgst.amnt + tfacp957.vamt
+				break	
+				case 41:
+| 					itc.cgst.rate = itc.cgst.rate + tfgld107.pvat
+					itc.cgst.amnt = itc.cgst.amnt + tfacp957.vamt
+				break	
+				case 42:
+| 					itc.igst.rate = itc.igst.rate + tfgld107.pvat
+					itc.igst.amnt = itc.igst.amnt + tfacp957.vamt
+				break	
+			endcase		
+
+			selectempty
+				select	tcmcs036.*
+				from	tcmcs036
+				where	tcmcs036._index1 = {:i.ccty,:tfacp957.cvat}
+				and	tcmcs036.smpl   = tcyesno.yes
+				and	tcmcs036.indt.l in (40,41,42)
+				and	tcmcs036._compnr = :ncmp
+				selectdo
+				on case etol(tcmcs036.indt.l)
+					case 40:
+| 						itc.sgst.rate = itc.sgst.rate + tfgld107.pvat
+						itc.sgst.amnt = itc.sgst.amnt + tfacp957.vamt
+					break	
+					case 41:
+| 						itc.cgst.rate = itc.cgst.rate + tfgld107.pvat
+						itc.cgst.amnt = itc.cgst.amnt + tfacp957.vamt
+					break	
+					case 42:
+| 						itc.igst.rate = itc.igst.rate + tfgld107.pvat
+						itc.igst.amnt = itc.igst.amnt + tfacp957.vamt
+					break	
+				endcase		
+
+				endselect
+			endselect
+			
+| 		endselect
+		
+| 		select	tfgld110.ttyp,
+| 			tfgld110.docn,
+| 			tfgld110.cvat,
+| 			tfgld110.sern,
+| 			tfgld110.pvat,
+| 			tfgld110.vamh
+| 		from	tfgld110
+| 		where	tfgld110._index1 = {:ncmp,:tfacp957.ttyp,:tfacp957.docn}
+| 		selectdo
+| 			select	tcmcs035.cvat,
+| 				tcmcs035.sern,
+| 				tcmcs035.indt.l
+| 			from	tcmcs035
+| 			where	tcmcs035._index1 = {:i.ccty,:tfgld110.cvat,:tfgld110.sern}
+| 			and	tcmcs035.indt.l in (40,41,42)
+| 			selectdo
+| 			on case etol(tcmcs035.indt.l)
+| 				case 40:
+| 					itc.sgst.rate = itc.sgst.rate + tfgld110.pvat
+| 					itc.sgst.amnt = itc.sgst.amnt + tfgld110.vamh(1)
+| 				break	
+| 				case 41:
+| 					itc.cgst.rate = itc.cgst.rate + tfgld110.pvat
+| 					itc.cgst.amnt = itc.cgst.amnt + tfgld110.vamh(1)
+| 				break	
+| 				case 42:
+| 					itc.igst.rate = itc.igst.rate + tfgld110.pvat
+| 					itc.igst.amnt = itc.igst.amnt + tfgld110.vamh(1)
+| 				break	
+| 			endcase		
+
+| 			selectempty
+| 				select	tcmcs036.*
+| 				from	tcmcs036
+| 				where	tcmcs036._index1 = {:i.ccty,:tfgld110.cvat}
+| 				and	tcmcs036.smpl   = tcyesno.yes
+| 				and	tcmcs036.indt.l in (40,41,42)
+| 				selectdo
+| 				on case etol(tcmcs036.indt.l)
+| 					case 40:
+| 						itc.sgst.rate = itc.sgst.rate + tfgld110.pvat
+| 						itc.sgst.amnt = itc.sgst.amnt + tfgld110.vamh(1)
+| 					break	
+| 					case 41:
+| 						itc.cgst.rate = itc.cgst.rate + tfgld110.pvat
+| 						itc.cgst.amnt = itc.cgst.amnt + tfgld110.vamh(1)
+| 					break	
+| 					case 42:
+| 						itc.igst.rate = itc.igst.rate + tfgld110.pvat
+| 						itc.igst.amnt = itc.igst.amnt + tfgld110.vamh(1)
+| 					break	
+| 				endcase		
+
+| 				endselect
+| 			endselect
+| 		endselect
+		
+| 		select	sum(tfacp201.balc):i.balc			|manav.o
+		select	sum(tfacp201.amnt):i.balc			
+		from	tfacp201
+		where	tfacp201._index1 = {:tfacp957.ityp,:tfacp957.idoc}
+		and	tfacp201.cdf_bloc <> " "
+		and	tfacp201._compnr = :ncmp
+		selectdo
+		selectempty
+			i.balc = 0
+		endselect					
+			
+	selecteos
+		print_details()
+	selectempty
+		tfacp957.tidt = 0	
+	endselect
+}
+
+function get.todc.docn.amth()
+{
+	if temp = 1 then
+		tdoc.docn = tfacp200.tdoc &"|"& str$(tfacp200.docn)
+		old.amnt = str$(x.amth)
+		temp = 2
+	else
+		tdoc.docn = tdoc.docn &"," & tfacp200.tdoc &"|"& str$(tfacp200.docn) 
+		old.amnt = old.amnt & "," & str$(x.amth)
+	endif
+	
+}
+function initailise.value()
+{
+	proj   = ""
+	i.amth = 0.00
+	opn.invc.amnt = 0.00
+	pay.proc.wi.180.days = 0.00
+	pay.proc.aft.180.days = 0.00
+	itc.igst.amnt = 0.00
+	itc.cgst.amnt = 0.00
+	itc.sgst.amnt = 0.00
+	itc.sgst.rate = 0.00
+	itc.cgst.rate = 0.00
+	itc.igst.rate = 0.00
+	i.balc = 0.00
+	i.docd = 0.00
+	x.amth = 0.00
+	i.ccty = ""
+	a.balh = 0.00
+	b.balh = 0.00
+	x.balh = 0.00
+	y.balh = 0.00
+| 	final.tidt = 0
+| 	new.tidt = 0
+| 	new.final.date = 0
+| 	july.date = 0
+| 	final.date = 0
+
+	oref = ""
+	tirf = ""
+	ifbp = ""
+	tidt = 0
+	i.ccty = ""
+	nama = ""
+	cheque.no = ""
+	line.no= 0
+}
+

@@ -1,0 +1,215 @@
+|******************************************************************************
+|* tiisg9410m200  0  VRC B61U a7 isg 
+|* Print Man Hour Booking on released and revised Drawing
+|* Installation user             
+|* 2015-01-01
+|******************************************************************************
+|* Main table tiisg910 Hours Transaction, Form Type 4
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttiisg910 | Hours Transaction
+  table   tdmisg001
+  table   ttpptc100
+  
+  extern domain tccprj		cprj.f,cprj.t
+  extern domain tppdm.cspa	cspa.f,cspa.t,element.code
+  extern domain tcpono         srno,temp.var
+  extern domain tcmcs.str100m  description
+  extern domain dmdoc.docid    document.no ,prev.document.var  
+  extern domain tcmcs.int      rev.no
+  extern domain tccprj         project.code
+  extern domain tcdsca         project.name
+  extern domain tppdm.dscl     element.description
+  extern domain tcnych		hours.consumed
+  extern domain tcmcs.int      prev.rev
+  string err.file(100),file.name(100),line(1500)
+  long   stat.fp,ret2
+  
+   #pragma used dll ottdllbw 
+|****************************** program section ********************************
+
+	
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.cont.process:
+on.choice:
+   execute(print.data)
+
+choice.print:
+on.choice:
+   generate.file()
+
+|****************************** field section *********************************
+
+field.cprj.f:
+when.field.changes:
+   cprj.t = cprj.f
+
+field.cspa.f:
+when.field.changes:
+   cspa.t = cspa.f
+   
+before.zoom:
+	query.extend.where.in.zoom("tpptc100.cprj ="&quoted.string(cprj.f))
+	
+field.cspa.t:
+before.zoom:
+	query.extend.where.in.zoom("tpptc100.cprj ="&quoted.string(cprj.t))
+
+|****************************** function section ******************************
+
+functions:
+
+function generate.file()
+{
+	err.file = bse.dir$() & str$(utc.num()) & ".xls"
+	
+	file.name = "c:\temp\" & str$(utc.num())  & ".xls"
+	
+	stat.fp = seq.open(err.file, "w+")
+	
+	process.file()
+	
+	message("Please refer to file %s in C:", file.name)
+	
+	seq.close(stat.fp)
+	ret2 = server2client(err.file,file.name,1)
+	ret2 = app_start(file.name,"c:","","","")
+}
+
+function process.file()
+{
+	generate.header()
+	read.main.table()
+	
+}
+
+function generate.header()
+{
+	if stat.fp >0 then
+		
+		line =concat$("	", 
+			sprintf$("SR No"),		|1
+			sprintf$("Project code"),	|2	
+			sprintf$("Project Name"),	|3
+			sprintf$("Element Code"), 	|4
+			sprintf$("Element Name"),	|5
+			sprintf$("Document Number"),	|6
+			sprintf$("Description"),	|7
+			sprintf$("Revision No"),	|8
+			sprintf$("Hours Consumed"))	|9
+
+		line = strip$(shiftl$(line))
+		seq.puts(line, stat.fp)
+	endif
+}
+
+function read.main.table()
+{	temp.var = 1
+	srno = 0
+	
+	select  tiisg910.cprj,tiisg910.cspa,tiisg910.dcat,tiisg910.dsno,tiisg910.dsrv,tiisg910.hhrs,
+		 tcmcs052.dsca:project.name
+	from    tiisg910,tcmcs052
+	where   tiisg910._index3 inrange {:cprj.f,:cspa.f} and {:cprj.f,:cspa.t}
+	and     tiisg910.cprj refers to tcmcs052
+	group by tiisg910.cprj,tiisg910.cspa,tiisg910.hhrs,tiisg910.dcat,tiisg910.dsno,tiisg910.dsrv,tcmcs052.dsca
+	order by tiisg910.cprj,tiisg910.cspa,tiisg910.dcat,tiisg910.dsno,tiisg910.dsrv
+	
+	selectdo
+		srno = srno + 1
+		project.code = strip$(tiisg910.cprj)
+		element.code = tiisg910.cspa
+		
+		select tpptc100.desc
+		from    tpptc100
+		where   tpptc100._index1 = {:tiisg910.cprj,:tiisg910.cspa}
+		selectdo
+			element.description = tpptc100.desc
+		endselect
+	
+		document.no = concat$("-",project.code,element.code,tiisg910.dcat,tiisg910.dsno)
+		document.no = shiftl$(strip$(document.no))
+		
+		if temp.var = 1 then
+			prev.document.var = document.no 
+			prev.rev   = tiisg910.dsrv
+		else
+			if document.no = prev.document.var and tiisg910.dsrv = prev.rev  then
+				srno = srno - 1
+				continue
+			endif
+		endif
+		temp.var = temp.var + 1
+		
+		select dmisg001.docn,dmisg001.revn,dmisg001.dttl
+		from   dmisg001
+		where  dmisg001.docn = :document.no
+		order by dmisg001.revn desc
+		as set with 1 rows
+		selectdo
+			description = dmisg001.dttl
+		selectempty
+			description = ""
+		endselect
+		rev.no = tiisg910.dsrv
+		calculate.hours()
+		print.detail()
+		prev.document.var = document.no
+		prev.rev = tiisg910.dsrv
+		initialization()
+		
+	endselect
+}
+
+function print.detail()
+{
+	line = concat$("	",
+		sprintf$("%d",srno),				|1			
+		sprintf$("%s",project.code ),  		|2
+		sprintf$("%s",project.name),  			|3
+		sprintf$("%s",element.code),			|4
+		sprintf$("%s",element.description),		|5
+		sprintf$("%s",document.no),			|6
+		sprintf$("%s",description),			|7
+		sprintf$("%d",rev.no),				|8	
+		sprintf$("%f",hours.consumed))			|9
+
+		line = strip$(shiftl$(line))
+		seq.puts(line, stat.fp)
+
+}
+
+function initialization()
+{
+	project.code = ""
+	project.name = ""
+	element.code = ""
+	element.description = ""
+	document.no = ""
+	description = ""
+	rev.no = 0
+	hours.consumed = 0
+}
+
+function calculate.hours()
+{
+	select	sum(tiisg910.hhrs):hours.consumed
+	from	tiisg910
+	where	tiisg910._index3 = {:tiisg910.cprj,:tiisg910.cspa}
+	and	tiisg910.dcat	=	:tiisg910.dcat
+	and	tiisg910.dsno	=	:tiisg910.dsno
+	and     tiisg910.dsrv   =       :tiisg910.dsrv
+	selectdo
+	endselect
+}

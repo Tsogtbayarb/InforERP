@@ -1,0 +1,2016 @@
+|******************************************************************************
+|* tiisg926  0  VRC B61U a7 isg 
+|* DAL for tiisg926
+|* baan
+|* 15-01-21 [17:10]
+|******************************************************************************
+|* Script Type: DAL
+|******************************************************************************
+|* ID ISGEC01028
+|* Manish Kumar
+|* 21-01-2015
+|* DAL for Resource Planning Header
+|*
+|* ID ISGEC001150 , Abhishek singh , 16/2/2015
+|* Internal/Outsource hour calculation
+|*
+|* ID ISGEC001179 , Ankit Sharma , 21/05/2015
+|* Modification on condition of disable/enable  delete button 
+|* Added logic for closed button
+|******************************************************************************
+|* ID ISGEC01102, Mani sharma , 05-06-2015 
+|* Modification on update actual button 
+|*
+|* ID ISGEC002020, Abhishek singh , 29/10/2015 
+|* Modification on update actual button 
+|******************************************************************************
+#include <bic_dal2>
+
+	table	ttiisg930
+	table	ttiisg925
+	table	ttiisg926
+	table	ttiisg927
+	table	ttiisg928
+	table	ttiisg929
+	table	ttiisg932							|#ISGEC001179.n
+	table	ttiisg931							|#ISGEC001179.n
+	table	ttccom000
+	table	ttccom130
+	table   ttiisg910
+	table   ttfgld005
+#define	LOGNAME		logname$
+#define CREATION.DATE	date.num()
+#pragma used dll "otcmcsdll0095"
+#pragma used dll "otccomdll4030"
+#pragma used dll "otcccpdll3070"
+
+	extern	domain 	tczone 		o.time.zone
+	extern domain 	tcdate 		o.working.dates(1) based
+	extern		long 		o.nr.of.days 
+| 	extern	domain	tisfc.prtm	o.nr.of.days.hrs
+	extern	domain	tcqiv1		o.nr.of.days.hrs
+	extern	domain	tfgld.date	curr.date				|#ISGEC001179.n
+	
+		long 		ret_val
+		domain		tfgld.year	o.year
+		domain		tfgld.prod	o.prod
+		domain		tcmcs.long	o.day,i
+		long	yearno,monthno,month_dayno				|#ISGEC001179.n
+		
+				boolean 	i.calculate
+	extern domain tcamnt  hours	
+	extern domain tfgld.date date.t
+	
+function extern long before.open.object.set()
+{
+	tcmcs.dll0095.read.parm("tiisg930")
+	
+	dal.field.depends.on(
+			"tiisg926.bpid",
+			HOOK_UPDATE+HOOK_IS_DERIVED,
+			"tiisg926.cprj"
+			)
+	return(0)
+}
+
+function extern long before.save.object(long type)
+{
+	return(0)
+}
+
+function extern long set.object.defaults() 
+{
+	tiisg926.revi = 1
+	tiisg926.user = LOGNAME
+	tiisg926.cdat = CREATION.DATE
+	tiisg926.stat = tiisg.stat.created
+	
+	return(0)
+}
+
+function extern boolean  method.is.allowed(long mode)
+{
+	on case mode
+	case DAL_UPDATE :
+		if  tiisg926.stat = tiisg.stat.active   then							|ISGEC01102.n
+				return(false)
+		endif
+			break
+		case DAL_DESTROY :
+| 			if (tiisg926.stat <> tiisg.stat.created then						|#ISGEC001179.o
+			if (tiisg926.stat <> tiisg.stat.created and tiisg926.stat <> tiisg.stat.active) then	|#ISGEC001179.n
+				return(false)
+			endif
+		break
+	endcase
+	return(true)
+}
+
+|************************** Field Hooks *********************************
+function extern boolean tiisg926.bpid.is.dervived(long mode)
+{
+	return(true)
+}
+
+function extern void tiisg926.bpid.update(long mode)
+{
+	tiisg926.bpid = ""
+	select	tppdm740.ofbp:tiisg926.bpid
+	from	tppdm740
+	where	tppdm740._index1 = {:tiisg926.cprj}
+	as set with 1 rows
+	selectdo
+	selectempty
+		tiisg926.bpid = ""
+	endselect
+}
+
+|****************** Businesss Method************************
+function extern boolean activate.is.allowed()
+{
+	if tiisg926.stat = tiisg.stat.created then
+		return(true)
+	endif
+	
+											|#ISGEC001179.sn
+	if tiisg926.stat = tiisg.stat.closed then
+		return(false)
+	endif
+											|#ISGEC001179.en
+	return(false)
+}
+
+function  extern boolean revised.is.allowed()
+{
+	if tiisg926.stat = tiisg.stat.active then
+		return(true)
+	endif
+	
+											|#ISGEC001179.sn
+	if tiisg926.stat = tiisg.stat.closed then
+		return(false)
+	endif
+											|#ISGEC001179.en
+	return(false)
+}
+function extern boolean calculate.is.allowed()
+{
+	if tiisg926.stat = tiisg.stat.created then
+		return(true)
+	endif
+											|#ISGEC001179.sn
+	if tiisg926.stat = tiisg.stat.closed then
+		return(false)
+	endif
+											|#ISGEC001179.en
+	return(false)
+}
+
+function extern boolean closed.is.allowed()						|#ISGEC001179.sn
+{
+	
+| 	if tiisg926.stat = tiisg.stat.created then					
+| 		return(true)
+| 	endif
+
+	curr.date = date.num()
+	num.to.date (curr.date,yearno,monthno,month_dayno)
+	
+	select	tiisg928.*
+	from	tiisg928
+	where	tiisg928._index1 = {:tiisg926.cprj,:tiisg926.grup,:tiisg926.revi}
+	and	tiisg928.year >= :yearno
+	and	tiisg928.prod >= :monthno
+	selectdo
+		if tiisg928.role.1 <> 0 or tiisg928.role.2 <> 0 or tiisg928.role.3 <> 0 or tiisg928.role.4 <> 0 or 
+		   tiisg928.role.5 <> 0 or tiisg928.role.6 <> 0 or tiisg928.role.7 <> 0 or tiisg928.role.8 <> 0 or 
+		   tiisg928.role.9 <> 0 or tiisg928.role.10 <> 0 or tiisg928.role.11 <> 0 or tiisg928.role.12 <> 0 or 
+		   tiisg928.role.13 <> 0 or tiisg928.role.14 <> 0 or tiisg928.role.15 <> 0 or tiisg928.role.16 <> 0 or 
+		   tiisg928.role.17 <> 0 or tiisg928.role.18 <> 0 or tiisg928.role.19 <> 0 or tiisg928.role.20 <> 0 or 
+		   tiisg928.role.21 <> 0 or tiisg928.role.22 <> 0 or tiisg928.role.23 <> 0 or tiisg928.role.24 <> 0 or 
+		   tiisg928.role.25 <> 0 or tiisg928.role.26 <> 0 or tiisg928.role.27 <> 0 or tiisg928.role.28 <> 0 or 
+		   tiisg928.role.29 <> 0 or tiisg928.role.30 <> 0 or tiisg928.role.31 <> 0 or tiisg928.role.32 <> 0 or 
+		   tiisg928.role.33 <> 0 or tiisg928.role.34 <> 0 or tiisg928.role.35 <> 0 or tiisg928.role.36 <> 0 or 
+		   tiisg928.role.37 <> 0 or tiisg928.role.38 <> 0 or tiisg928.role.39 <> 0 or tiisg928.role.40 <> 0 or 
+		   tiisg928.role.41 <> 0 or tiisg928.role.42 <> 0 or tiisg928.role.43 <> 0 or tiisg928.role.44 <> 0 or 
+		   tiisg928.role.45 <> 0 or tiisg928.role.46 <> 0 or tiisg928.role.47 <> 0 or tiisg928.role.48 <> 0 or 
+		   tiisg928.role.49 <> 0 or tiisg928.role.50 <> 0 then
+			dal.set.error.message("@Project Closing is not allowed")	
+			return(false)
+		else
+			select	tiisg929.*
+			from	tiisg929
+			where	tiisg929._index1 = {:tiisg926.cprj,:tiisg926.grup,:tiisg926.revi}
+			and	tiisg929.year >= :yearno
+			and	tiisg929.prod >= :monthno
+			selectdo
+				if tiisg929.role.1 <> 0 or tiisg929.role.2 <> 0 or tiisg929.role.3 <> 0 or tiisg929.role.4 <> 0 or 
+				   tiisg929.role.5 <> 0 or tiisg929.role.6 <> 0 or tiisg929.role.7 <> 0 or tiisg929.role.8 <> 0 or 
+				   tiisg929.role.9 <> 0 or tiisg929.role.10 <> 0 or tiisg929.role.11 <> 0 or tiisg929.role.12 <> 0 or 
+				   tiisg929.role.13 <> 0 or tiisg929.role.14 <> 0 or tiisg929.role.15 <> 0 or tiisg929.role.16 <> 0 or 
+				   tiisg929.role.17 <> 0 or tiisg929.role.18 <> 0 or tiisg929.role.19 <> 0 or tiisg929.role.20 <> 0 or 
+				   tiisg929.role.21 <> 0 or tiisg929.role.22 <> 0 or tiisg929.role.23 <> 0 or tiisg929.role.24 <> 0 or 
+				   tiisg929.role.25 <> 0 or tiisg929.role.26 <> 0 or tiisg929.role.27 <> 0 or tiisg929.role.28 <> 0 or 
+				   tiisg929.role.29 <> 0 or tiisg929.role.30 <> 0 or tiisg929.role.31 <> 0 or tiisg929.role.32 <> 0 or 
+				   tiisg929.role.33 <> 0 or tiisg929.role.34 <> 0 or tiisg929.role.35 <> 0 or tiisg929.role.36 <> 0 or 
+				   tiisg929.role.37 <> 0 or tiisg929.role.38 <> 0 or tiisg929.role.39 <> 0 or tiisg929.role.40 <> 0 or 
+				   tiisg929.role.41 <> 0 or tiisg929.role.42 <> 0 or tiisg929.role.43 <> 0 or tiisg929.role.44 <> 0 or 
+				   tiisg929.role.45 <> 0 or tiisg929.role.46 <> 0 or tiisg929.role.47 <> 0 or tiisg929.role.48 <> 0 or 
+				   tiisg929.role.49 <> 0 or tiisg929.role.50 <> 0 then
+					dal.set.error.message("@Project Closing is not allowed")
+					return(false)
+				endif
+			endselect
+		endif
+	endselect	
+											|#ISGEC001179.en
+	return(true)
+}
+
+function extern long activate.method()
+{
+	if not update.status.tiisg926(tiisg.stat.active) then
+		return(DALHOOKERROR)
+	endif
+	return(0)
+}
+
+
+function extern long revised()
+{
+	if not update.status.tiisg926(tiisg.stat.expired) then
+		return(DALHOOKERROR)
+	endif
+	
+	if not create.new.header.and.lines.with.new.revision(
+				tiisg926.cprj,
+				tiisg926.grup,
+				tiisg926.revi
+				) 
+	then
+		return(DALHOOKERROR)
+	else
+| 		calculate()			|*ISGEC001150.n				|ISGEC01102.o
+	endif
+	
+	return(0)
+}
+
+function extern long closed()
+{
+	select	tiisg926.stat
+	from	tiisg926 for update
+	where	tiisg926._index1 = {:tiisg926.cprj,:tiisg926.grup,:tiisg926.revi}
+	and     tiisg926.stat <> tiisg.stat.closed 
+	selectdo
+		dal.change.object("tiisg926")
+		dal.set.field("tiisg926.stat",tiisg.stat.closed)
+		ret_val = dal.save.object("tiisg926")
+		
+		if ret_val <> 0 then
+			abort.transaction()
+			return(1)
+		else
+			commit.transaction()
+		endif
+	endselect
+	return(0)
+}
+
+function extern long calculate()
+{
+	domain	tfgld.year	o.next.year,o.start.year
+	domain	tfgld.prod	o.next.prod,o.start.prod,o.start.prod.date
+	domain	tcmcs.long	o.gap.days,o.start.day,o.next.day
+		string		result(50)
+	
+	domain	tfgld.date	o.next.date,o.end.date,o.start.date
+	
+	if not clear.internal.outsource.reference.table() then
+		show.dal.messages(MSG.ALL)
+		return(DALHOOKERROR)
+	endif
+	
+	select	tiisg927.*
+	from	tiisg927
+	where	tiisg927._index1 = {:tiisg926.cprj,:tiisg926.grup,:tiisg926.revi}
+	selectdo
+		i.calculate = false 
+		num.to.date(tiisg926.sdat,o.year,o.prod,o.day)
+		
+		o.start.prod = tiisg927.smon.t
+		
+		
+		if o.start.prod =  1 then
+			for i = 1 to tiisg927.dura.t
+			
+				o.start.day = o.day
+				o.start.prod.date = o.prod
+				o.start.year = o.year
+				
+				if o.start.prod.date < 12 then
+					o.next.year = o.year
+					o.next.prod = o.prod + 1
+					o.next.day = 1
+				else
+					o.next.year = o.year +  1
+					o.next.prod = 1
+					o.next.day = 1
+				endif
+				
+				o.start.date = date.to.num(o.start.year,o.start.prod.date,o.start.day)
+				result = sprintf$("%D(Date: %02d/%02m/%04Y)", o.start.date)		| for testing purpose
+				
+				o.next.date = date.to.num(o.next.year,o.next.prod,o.next.day)
+				result = sprintf$("%D(Date: %02d/%02m/%04Y)", o.next.date)		| for testing purpose
+				o.gap.days = (o.next.date - o.start.date) - 1
+				o.end.date = date.to.num(o.start.year,o.start.prod.date,o.start.day+o.gap.days)
+				
+				result = sprintf$("%D(Date: %02d/%02m/%04Y)", o.end.date)		| for testing purpose
+				
+				if not insert.record.into.internal.reference.table(
+						tiisg927.role,
+						o.start.date,
+						o.end.date,
+						o.start.year,
+						o.start.prod.date,
+						tiisg927.role
+						)
+				then
+					
+					show.dal.messages(MSG.ALL)
+					return(DALHOOKERROR)
+				else
+					if tiisg927.qnty.o > 0 and tiisg927.hour.o <> 0 then
+						if not insert.into.outsource.reference.table(
+								tiisg927.cprj,		| Project
+								tiisg927.grup,		| Group
+								tiisg927.revi,		| Revision
+								tiisg927.role,		| Role ID
+								o.start.year,		| Year
+								o.start.prod.date,	| Period
+								tiisg927.hour.o	,	| Hour/Month
+								tiisg927.qnty.o		| Quantity
+								)
+						then
+							show.dal.messages(MSG.ALL)
+							return(DALHOOKERROR)
+						endif
+					endif
+					
+					update.lines.of.staff.estimate(
+							tiisg927.cprj,
+							tiisg927.grup,
+							tiisg927.revi,
+							tiisg927.role,
+							o.nr.of.days.hrs,
+							tiisg927.hour.o,
+							tiisg927.qnty.o
+							)
+				endif
+
+			
+			
+				o.prod = o.prod + 1
+				o.day = 1
+				if o.prod > 12 then
+					o.prod = 1
+					o.year = o.year + 1
+					o.day = 1
+				endif
+			endfor
+		
+		else
+			o.day = 1
+			if (o.prod + o.start.prod -1 ) <= 12 then
+				o.prod = o.prod + o.start.prod -1
+			else
+				o.prod = o.prod + o.start.prod -1 - 12
+				o.year = o.year + 1
+			endif
+			for i = 1 to tiisg927.dura.t
+			
+				o.start.day = o.day
+				o.start.prod.date = o.prod
+				o.start.year = o.year
+				
+				if o.start.prod.date < 12 then
+					o.next.year = o.year
+					o.next.prod = o.prod + 1
+					o.next.day = 1
+				else
+					o.next.year = o.year +  1
+					o.next.prod = 1
+					o.next.day = 1
+				endif
+				
+				o.start.date = date.to.num(o.start.year,o.start.prod.date,o.start.day)
+				result = sprintf$("%D(Date: %02d/%02m/%04Y)", o.start.date)		| for testing purpose
+				
+				o.next.date = date.to.num(o.next.year,o.next.prod,o.next.day)
+				result = sprintf$("%D(Date: %02d/%02m/%04Y)", o.next.date)		| for testing purpose
+				o.gap.days = (o.next.date - o.start.date) - 1
+				o.end.date = date.to.num(o.start.year,o.start.prod.date,o.start.day+o.gap.days)
+				
+				result = sprintf$("%D(Date: %02d/%02m/%04Y)", o.end.date)		| for testing purpose
+				
+				if not insert.record.into.internal.reference.table(
+						tiisg927.role,
+						o.start.date,
+						o.end.date,
+						o.start.year,
+						o.start.prod.date,
+						tiisg927.role
+						) 
+				then
+					
+					show.dal.messages(MSG.ALL)
+					return(DALHOOKERROR)
+				else
+					if tiisg927.qnty.o > 0 and tiisg927.hour.o <> 0 then
+						if not insert.into.outsource.reference.table(
+								tiisg927.cprj,		| Project
+								tiisg927.grup,		| Group
+								tiisg927.revi,		| Revision
+								tiisg927.role,		| Role ID
+								o.start.year,		| Year
+								o.start.prod.date,	| Period
+								tiisg927.hour.o	,	| Hour/Month
+								tiisg927.qnty.o		| Quantity
+								)
+						then
+							show.dal.messages(MSG.ALL)
+							return(DALHOOKERROR)
+						endif
+					endif
+					
+					update.lines.of.staff.estimate(
+							tiisg927.cprj,
+							tiisg927.grup,
+							tiisg927.revi,
+							tiisg927.role,
+							o.nr.of.days.hrs,
+							tiisg927.hour.o,
+							tiisg927.qnty.o
+							)
+				endif
+			
+				o.prod = o.prod + 1
+				o.day = 1
+				if o.prod > 12 then
+					o.prod = 1
+					o.year = o.year + 1
+					o.day = 1
+				endif
+			endfor
+		endif
+	endselect
+	
+	return(0)
+}
+
+function boolean  insert.record.into.internal.reference.table
+	(
+		domain	tcmcs.int	i.role.id,
+		domain	tfgld.date	i.start.date.gld,
+		domain	tfgld.date	i.end.date.gld,
+		domain	tfgld.year	i.start.year,
+		domain	tfgld.prod	i.start.prod,
+		domain	tcmcs.int	i.role
+	)
+{
+
+	domain	tfgld.year	yearno1,yearno2
+	domain	tfgld.prod	monthno1,monthno2
+	domain	tcmcs.long	dayno1,dayno2
+	domain	tcdate		i.start.date,i.end.date
+	
+	o.nr.of.days.hrs = 0.00
+	o.nr.of.days = 0
+	
+	
+	num.to.date(i.start.date.gld,yearno1,monthno1,dayno1)
+	num.to.date(i.end.date.gld,yearno2,monthno2,dayno2)
+	
+	i.start.date = date.to.utc(yearno1,monthno1,dayno1,0,0,0)
+	
+	i.end.date = date.to.utc(yearno2,monthno2,dayno2,23,59,59)
+
+
+	tcmcs.dll0095.read.parm("tccom000")
+	
+	select	tccom130.cste
+	from	tccom130
+	where	tccom130._index1 = {:tccom000.cadr}
+	selectdo
+	selectempty
+		tccom130.cste = ""
+	endselect
+	
+	tccom.dll4030.read.country.time.zone(
+			tccom000.cadr,
+			tccom130.cste,
+			o.time.zone
+				)
+
+	tccom.dll4030.read.address.time.zone(
+			tccom000.cadr, 
+			o.time.zone
+			)
+	
+	tcccp.dll3070.get.working.days(
+		"STND", 
+		"STND", 
+		o.time.zone, 
+		i.start.date,
+		i.end.date,
+		o.working.dates,
+		o.nr.of.days 
+		)
+		
+	select	tiisg925.seqn
+	from	tiisg925
+	where	tiisg925.roll = :i.role.id
+	selectdo
+	endselect
+	
+	| o.nr.of.days.hrs = o.nr.of.days * tiisg930.hrso * tiisg927.qnty.t
+	o.nr.of.days.hrs = o.nr.of.days * tiisg930.hrso * tiisg927.qnty.i		|*ISGEC001150.sn
+		
+	select	tiisg928.*
+	from	tiisg928 for update
+	where	tiisg928._index1 = {
+				:tiisg926.cprj,
+				:tiisg926.grup,
+				:tiisg926.revi,
+				:i.start.year,
+				:i.start.prod
+				}
+	selectdo
+		dal.change.object("tiisg928")
+		
+		if tiisg925.seqn = 1 then
+			dal.set.field("tiisg928.role.1",tiisg928.role.1 +o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 2 then
+			dal.set.field("tiisg928.role.2",tiisg928.role.2 +o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 3 then
+			dal.set.field("tiisg928.role.3",tiisg928.role.3 +o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 4 then
+			dal.set.field("tiisg928.role.4",tiisg928.role.4 +o.nr.of.days.hrs)
+		endif
+		
+		
+		if tiisg925.seqn = 5 then
+			dal.set.field("tiisg928.role.5",tiisg928.role.5 +o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 6 then
+			dal.set.field("tiisg928.role.6",tiisg928.role.6 +o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 7 then
+			dal.set.field("tiisg928.role.7",tiisg928.role.7 +o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 8 then
+			dal.set.field("tiisg928.role.8",tiisg928.role.8 +o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 9 then		
+			dal.set.field("tiisg928.role.9",tiisg928.role.9 +o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 10 then
+			dal.set.field("tiisg928.role.10",tiisg928.role.10 +o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 11 then
+			dal.set.field("tiisg928.role.11",tiisg928.role.11 +o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 12 then
+			dal.set.field("tiisg928.role.12",tiisg928.role.12 +o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 13 then
+			dal.set.field("tiisg928.role.13",tiisg928.role.13+o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 14 then
+			dal.set.field("tiisg928.role.14",tiisg928.role.14 +o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 15 then
+			dal.set.field("tiisg928.role.15",tiisg928.role.15 +o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 16 then
+			dal.set.field("tiisg928.role.16",tiisg928.role.16 +o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 17 then
+			dal.set.field("tiisg928.role.17",tiisg928.role.17 +o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 18 then
+			dal.set.field("tiisg928.role.18",tiisg928.role.18 +o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 19 then
+			dal.set.field("tiisg928.role.19",tiisg928.role.19 +o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 20 then
+			dal.set.field("tiisg928.role.20",tiisg928.role.20 +o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 21 then
+			dal.set.field("tiisg928.role.21",tiisg928.role.21 +o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 22 then
+			dal.set.field("tiisg928.role.22",tiisg928.role.22 +o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 23 then
+			dal.set.field("tiisg928.role.23",tiisg928.role.23 +o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 24 then
+			dal.set.field("tiisg928.role.24",tiisg928.role.24 +o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 25 then
+			dal.set.field("tiisg928.role.25",tiisg928.role.25 +o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 26 then
+			dal.set.field("tiisg928.role.26",tiisg928.role.26 +o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 27 then
+			dal.set.field("tiisg928.role.27",tiisg928.role.27 +o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 28 then
+			dal.set.field("tiisg928.role.28",tiisg928.role.28 +o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 29 then	
+			dal.set.field("tiisg928.role.29",tiisg928.role.29 +o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 30 then
+			dal.set.field("tiisg928.role.30",tiisg928.role.30 +o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 31 then
+			dal.set.field("tiisg928.role.31",tiisg928.role.31 +o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 32 then
+			dal.set.field("tiisg928.role.32",tiisg928.role.32 +o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 33 then	
+			dal.set.field("tiisg928.role.33",tiisg928.role.33 +o.nr.of.days.hrs)
+		endif
+	
+		if tiisg925.seqn = 34 then
+			dal.set.field("tiisg928.role.34",tiisg928.role.34 +o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 35 then
+			dal.set.field("tiisg928.role.35",tiisg928.role.35 +o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 36 then
+			dal.set.field("tiisg928.role.36",tiisg928.role.36 +o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 37 then
+			dal.set.field("tiisg928.role.37",tiisg928.role.37 +o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 38 then
+			dal.set.field("tiisg928.role.38",tiisg928.role.38 +o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 39 then
+			dal.set.field("tiisg928.role.39",tiisg928.role.39 +o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 40 then
+			dal.set.field("tiisg928.role.40",tiisg928.role.40 +o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 41 then
+			dal.set.field("tiisg928.role.41",tiisg928.role.41 +o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 42 then
+			dal.set.field("tiisg928.role.42",tiisg928.role.42 +o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 43 then
+			dal.set.field("tiisg928.role.43",tiisg928.role.43 +o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 44 then
+			dal.set.field("tiisg928.role.44",tiisg928.role.44 +o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 45 then
+			dal.set.field("tiisg928.role.45",tiisg928.role.45 +o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 46 then
+			dal.set.field("tiisg928.role.46",tiisg928.role.46 +o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 47 then
+			dal.set.field("tiisg928.role.47",tiisg928.role.47 +o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 48 then
+			dal.set.field("tiisg928.role.48",tiisg928.role.48 +o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 49 then
+			dal.set.field("tiisg928.role.49",tiisg928.role.49 +o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 50 then
+			dal.set.field("tiisg928.role.50",tiisg928.role.50 +o.nr.of.days.hrs)		|*ISGEC001150.en
+		endif
+		
+		ret_val = dal.save.object("tiisg928")
+		
+		if ret_val <> 0 then
+			abort.transaction()
+			return(false)
+		else
+			commit.transaction()
+		endif
+		
+	selectempty
+		dal.new.object("tiisg928")
+		
+		dal.set.field("tiisg928.cprj",tiisg926.cprj)
+		
+		dal.set.field("tiisg928.grup",tiisg926.grup)
+		
+		dal.set.field("tiisg928.revi",tiisg926.revi)
+		
+		dal.set.field("tiisg928.year",i.start.year)
+		
+		dal.set.field("tiisg928.prod",i.start.prod)
+		
+		if tiisg925.seqn = 1 then
+			dal.set.field("tiisg928.role.1",o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 2 then
+			dal.set.field("tiisg928.role.2",o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 3 then
+			dal.set.field("tiisg928.role.3",o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 4 then
+			dal.set.field("tiisg928.role.4",o.nr.of.days.hrs)
+		endif
+		
+		
+		if tiisg925.seqn = 5 then
+			dal.set.field("tiisg928.role.5",o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 6 then
+			dal.set.field("tiisg928.role.6",o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 7 then
+			dal.set.field("tiisg928.role.7",o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 8 then
+			dal.set.field("tiisg928.role.8",o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 9 then		
+			dal.set.field("tiisg928.role.9",o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 10 then
+			dal.set.field("tiisg928.role.10",o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 11 then
+			dal.set.field("tiisg928.role.11",o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 12 then
+			dal.set.field("tiisg928.role.12",o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 13 then
+			dal.set.field("tiisg928.role.13",o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 14 then
+			dal.set.field("tiisg928.role.14",o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 15 then
+			dal.set.field("tiisg928.role.15",o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 16 then
+			dal.set.field("tiisg928.role.16",o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 17 then
+			dal.set.field("tiisg928.role.17",o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 18 then
+			dal.set.field("tiisg928.role.18",o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 19 then
+			dal.set.field("tiisg928.role.19",o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 20 then
+			dal.set.field("tiisg928.role.20",o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 21 then
+			dal.set.field("tiisg928.role.21",o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 22 then
+			dal.set.field("tiisg928.role.22",o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 23 then
+			dal.set.field("tiisg928.role.23",o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 24 then
+			dal.set.field("tiisg928.role.24",o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 25 then
+			dal.set.field("tiisg928.role.25",o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 26 then
+			dal.set.field("tiisg928.role.26",o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 27 then
+			dal.set.field("tiisg928.role.27",o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 28 then
+			dal.set.field("tiisg928.role.28",o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 29 then	
+			dal.set.field("tiisg928.role.29",o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 30 then
+			dal.set.field("tiisg928.role.30",o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 31 then
+			dal.set.field("tiisg928.role.31",o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 32 then
+			dal.set.field("tiisg928.role.32",o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 33 then	
+			dal.set.field("tiisg928.role.33",o.nr.of.days.hrs)
+		endif
+	
+		if tiisg925.seqn = 34 then
+			dal.set.field("tiisg928.role.34",o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 35 then
+			dal.set.field("tiisg928.role.35",o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 36 then
+			dal.set.field("tiisg928.role.36",o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 37 then
+			dal.set.field("tiisg928.role.37",o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 38 then
+			dal.set.field("tiisg928.role.38",o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 39 then
+			dal.set.field("tiisg928.role.39",o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 40 then
+			dal.set.field("tiisg928.role.40",o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 41 then
+			dal.set.field("tiisg928.role.41",o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 42 then
+			dal.set.field("tiisg928.role.42",o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 43 then
+			dal.set.field("tiisg928.role.43",o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 44 then
+			dal.set.field("tiisg928.role.44",o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 45 then
+			dal.set.field("tiisg928.role.45",o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 46 then
+			dal.set.field("tiisg928.role.46",o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 47 then
+			dal.set.field("tiisg928.role.47",o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 48 then
+			dal.set.field("tiisg928.role.48",o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 49 then
+			dal.set.field("tiisg928.role.49",o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 50 then
+			dal.set.field("tiisg928.role.50",o.nr.of.days.hrs)
+		endif
+		
+		ret_val = dal.save.object("tiisg928")
+		
+		if ret_val <> 0 then
+			abort.transaction()
+			return(false)
+		else
+			commit.transaction()
+		endif
+	endselect
+	return(true)
+}
+
+function boolean update.status.tiisg926
+	(
+		domain	tiisg.stat	i.stat
+	)
+{
+	select	tiisg926.stat
+	from	tiisg926 for update
+	where	tiisg926._index1 = {:tiisg926.cprj,:tiisg926.grup,:tiisg926.revi}
+	selectdo
+		tiisg926.stat = i.stat
+		db.update(ttiisg926,db.retry,e)
+		if not e then
+			commit.transaction()
+			return(true)
+		else
+			abort.transaction()
+			return(false)
+		endif
+	endselect
+	return(true)
+}
+
+function boolean insert.into.outsource.reference.table
+	(
+		domain	tccprj		i.cprj,		| Project
+		domain	tcmcs.str10	i.grup,		| Group
+		domain	tcmcs.long	i.revi,		| Revision
+		domain	tcmcs.int	i.role,		| Role ID
+		domain	tfgld.year	i.year,		| Year
+		domain	tfgld.prod	i.prod,		| Period
+| 		domain	tisfc.prtm	i.hrs.rate,	| Hour.Day
+		domain	tcqiv1		i.hrs.rate,	| Hour.Day
+		domain	tcqnty		i.qnty.o
+	)
+{
+| 	domain	tisfc.prtm	o.o.nr.of.days.hrs
+	domain	tcqiv1		o.o.nr.of.days.hrs
+	
+	o.o.nr.of.days.hrs = i.hrs.rate*i.qnty.o
+	
+	select	tiisg925.seqn
+	from	tiisg925
+	where	tiisg925.roll = :i.role
+	selectdo
+	endselect
+	
+	select	tiisg929.*
+	from	tiisg929 for update
+	where	tiisg929._index1 = {
+				:i.cprj,
+				:i.grup,
+				:i.revi,
+				:i.year,
+				:i.prod
+				}
+	selectdo
+		dal.change.object("tiisg929")								|*ISGEC001150.sn
+		
+		if tiisg925.seqn = 1 then
+			dal.set.field("tiisg929.role.1",tiisg929.role.1 +o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 2 then
+			dal.set.field("tiisg929.role.2",tiisg929.role.2 +o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 3 then
+			dal.set.field("tiisg929.role.3",tiisg929.role.3 +o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 4 then
+			dal.set.field("tiisg929.role.4",tiisg929.role.4 +o.o.nr.of.days.hrs)
+		endif
+		
+		
+		if tiisg925.seqn = 5 then
+			dal.set.field("tiisg929.role.5",tiisg929.role.5 +o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 6 then
+			dal.set.field("tiisg929.role.6",tiisg929.role.6 +o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 7 then
+			dal.set.field("tiisg929.role.7",tiisg929.role.7 +o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 8 then
+			dal.set.field("tiisg929.role.8",tiisg929.role.8 +o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 9 then		
+			dal.set.field("tiisg929.role.9",tiisg929.role.9 +o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 10 then
+			dal.set.field("tiisg929.role.10",tiisg929.role.10 +o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 11 then
+			dal.set.field("tiisg929.role.11",tiisg929.role.11 +o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 12 then
+			dal.set.field("tiisg929.role.12",tiisg929.role.12 +o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 13 then
+			dal.set.field("tiisg929.role.13",tiisg929.role.13+o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 14 then
+			dal.set.field("tiisg929.role.14",tiisg929.role.14 +o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 15 then
+			dal.set.field("tiisg929.role.15",tiisg929.role.15 +o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 16 then
+			dal.set.field("tiisg929.role.16",tiisg929.role.16 +o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 17 then
+			dal.set.field("tiisg929.role.17",tiisg929.role.17 +o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 18 then
+			dal.set.field("tiisg929.role.18",tiisg929.role.18 +o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 19 then
+			dal.set.field("tiisg929.role.19",tiisg929.role.19 +o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 20 then
+			dal.set.field("tiisg929.role.20",tiisg929.role.20 +o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 21 then
+			dal.set.field("tiisg929.role.21",tiisg929.role.21 +o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 22 then
+			dal.set.field("tiisg929.role.22",tiisg929.role.22 +o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 23 then
+			dal.set.field("tiisg929.role.23",tiisg929.role.23 +o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 24 then
+			dal.set.field("tiisg929.role.24",tiisg929.role.24 +o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 25 then
+			dal.set.field("tiisg929.role.25",tiisg929.role.25 +o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 26 then
+			dal.set.field("tiisg929.role.26",tiisg929.role.26 +o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 27 then
+			dal.set.field("tiisg929.role.27",tiisg929.role.27 +o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 28 then
+			dal.set.field("tiisg929.role.28",tiisg929.role.28 +o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 29 then	
+			dal.set.field("tiisg929.role.29",tiisg929.role.29 +o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 30 then
+			dal.set.field("tiisg929.role.30",tiisg929.role.30 +o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 31 then
+			dal.set.field("tiisg929.role.31",tiisg929.role.31 +o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 32 then
+			dal.set.field("tiisg929.role.32",tiisg929.role.32 +o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 33 then	
+			dal.set.field("tiisg929.role.33",tiisg929.role.33 +o.o.nr.of.days.hrs)
+		endif
+	
+		if tiisg925.seqn = 34 then
+			dal.set.field("tiisg929.role.34",tiisg929.role.34 +o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 35 then
+			dal.set.field("tiisg929.role.35",tiisg929.role.35 +o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 36 then
+			dal.set.field("tiisg929.role.36",tiisg929.role.36 +o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 37 then
+			dal.set.field("tiisg929.role.37",tiisg929.role.37 +o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 38 then
+			dal.set.field("tiisg929.role.38",tiisg929.role.38 +o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 39 then
+			dal.set.field("tiisg929.role.39",tiisg929.role.39 +o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 40 then
+			dal.set.field("tiisg929.role.40",tiisg929.role.40 +o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 41 then
+			dal.set.field("tiisg929.role.41",tiisg929.role.41 +o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 42 then
+			dal.set.field("tiisg929.role.42",tiisg929.role.42 +o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 43 then
+			dal.set.field("tiisg929.role.43",tiisg929.role.43 +o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 44 then
+			dal.set.field("tiisg929.role.44",tiisg929.role.44 +o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 45 then
+			dal.set.field("tiisg929.role.45",tiisg929.role.45 +o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 46 then
+			dal.set.field("tiisg929.role.46",tiisg929.role.46 +o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 47 then
+			dal.set.field("tiisg929.role.47",tiisg929.role.47 +o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 48 then
+			dal.set.field("tiisg929.role.48",tiisg929.role.48 +o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 49 then
+			dal.set.field("tiisg929.role.49",tiisg929.role.49 +o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 50 then
+			dal.set.field("tiisg929.role.50",tiisg929.role.50 +o.o.nr.of.days.hrs)
+		endif												|*ISGEC001150.en
+		
+		ret_val = dal.save.object("tiisg929")
+		
+		if ret_val <> 0 then
+			abort.transaction()
+			return(false)
+		else
+			commit.transaction()
+			return(true)
+		endif
+		
+	selectempty
+		dal.new.object("tiisg929")
+		
+		dal.set.field("tiisg929.cprj",i.cprj)
+		
+		dal.set.field("tiisg929.grup",i.grup)
+		
+		dal.set.field("tiisg929.revi",i.revi)
+		
+		dal.set.field("tiisg929.year",i.year)
+		
+		dal.set.field("tiisg929.prod",i.prod)
+		
+		if tiisg925.seqn = 1 then
+			dal.set.field("tiisg929.role.1",o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 2 then
+			dal.set.field("tiisg929.role.2",o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 3 then
+			dal.set.field("tiisg929.role.3",o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 4 then
+			dal.set.field("tiisg929.role.4",o.o.nr.of.days.hrs)
+		endif
+		
+		
+		if tiisg925.seqn = 5 then
+			dal.set.field("tiisg929.role.5",o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 6 then
+			dal.set.field("tiisg929.role.6",o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 7 then
+			dal.set.field("tiisg929.role.7",o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 8 then
+			dal.set.field("tiisg929.role.8",o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 9 then		
+			dal.set.field("tiisg929.role.9",o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 10 then
+			dal.set.field("tiisg929.role.10",o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 11 then
+			dal.set.field("tiisg929.role.11",o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 12 then
+			dal.set.field("tiisg929.role.12",o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 13 then
+			dal.set.field("tiisg929.role.13",o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 14 then
+			dal.set.field("tiisg929.role.14",o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 15 then
+			dal.set.field("tiisg929.role.15",o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 16 then
+			dal.set.field("tiisg929.role.16",o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 17 then
+			dal.set.field("tiisg929.role.17",o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 18 then
+			dal.set.field("tiisg929.role.18",o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 19 then
+			dal.set.field("tiisg929.role.19",o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 20 then
+			dal.set.field("tiisg929.role.20",o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 21 then
+			dal.set.field("tiisg929.role.21",o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 22 then
+			dal.set.field("tiisg929.role.22",o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 23 then
+			dal.set.field("tiisg929.role.23",o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 24 then
+			dal.set.field("tiisg929.role.24",o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 25 then
+			dal.set.field("tiisg929.role.25",o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 26 then
+			dal.set.field("tiisg929.role.26",o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 27 then
+			dal.set.field("tiisg929.role.27",o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 28 then
+			dal.set.field("tiisg929.role.28",o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 29 then	
+			dal.set.field("tiisg929.role.29",o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 30 then
+			dal.set.field("tiisg929.role.30",o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 31 then
+			dal.set.field("tiisg929.role.31",o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 32 then
+			dal.set.field("tiisg929.role.32",o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 33 then	
+			dal.set.field("tiisg929.role.33",o.o.nr.of.days.hrs)
+		endif
+	
+		if tiisg925.seqn = 34 then
+			dal.set.field("tiisg929.role.34",o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 35 then
+			dal.set.field("tiisg929.role.35",o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 36 then
+			dal.set.field("tiisg929.role.36",o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 37 then
+			dal.set.field("tiisg929.role.37",o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 38 then
+			dal.set.field("tiisg929.role.38",o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 39 then
+			dal.set.field("tiisg929.role.39",o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 40 then
+			dal.set.field("tiisg929.role.40",o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 41 then
+			dal.set.field("tiisg929.role.41",o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 42 then
+			dal.set.field("tiisg929.role.42",o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 43 then
+			dal.set.field("tiisg929.role.43",o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 44 then
+			dal.set.field("tiisg929.role.44",o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 45 then
+			dal.set.field("tiisg929.role.45",o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 46 then
+			dal.set.field("tiisg929.role.46",o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 47 then
+			dal.set.field("tiisg929.role.47",o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 48 then
+			dal.set.field("tiisg929.role.48",o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 49 then
+			dal.set.field("tiisg929.role.49",o.o.nr.of.days.hrs)
+		endif
+		
+		if tiisg925.seqn = 50 then
+			dal.set.field("tiisg929.role.50",o.o.nr.of.days.hrs)
+		endif
+		
+		ret_val = dal.save.object("tiisg929")
+		
+		if ret_val <> 0 then
+			abort.transaction()
+			return(false)
+		else
+			commit.transaction()
+| 			return(true)
+		endif
+	endselect
+	
+	select	tiisg932.*									|#ISGEC001179.sn
+	from	tiisg932 for update
+	where	tiisg932._index1 = {
+				:i.cprj,
+				:i.grup,
+				:i.revi,
+				:i.year,
+				:i.prod
+				}
+	selectdo
+	selectempty
+		dal.new.object("tiisg932")
+		
+		dal.set.field("tiisg932.cprj",i.cprj)
+		
+		dal.set.field("tiisg932.grup",i.grup)
+		
+		dal.set.field("tiisg932.revi",i.revi)
+		
+		dal.set.field("tiisg932.year",i.year)
+		
+		dal.set.field("tiisg932.prod",i.prod)
+		ret_val = dal.save.object("tiisg932")
+		
+		if ret_val <> 0 then
+			abort.transaction()
+			return(false)
+		else
+			commit.transaction()
+| 			return(true)
+		endif
+	endselect
+	
+	select	tiisg931.*									
+	from	tiisg931 for update
+	where	tiisg931._index1 = {
+				:i.cprj,
+				:i.grup,
+				:i.revi,
+				:i.year,
+				:i.prod
+				}
+	selectdo
+	selectempty
+		dal.new.object("tiisg931")
+		
+		dal.set.field("tiisg931.cprj",i.cprj)
+		
+		dal.set.field("tiisg931.grup",i.grup)
+		
+		dal.set.field("tiisg931.revi",i.revi)
+		
+		dal.set.field("tiisg931.year",i.year)
+		
+		dal.set.field("tiisg931.prod",i.prod)
+		ret_val = dal.save.object("tiisg931")
+		
+		if ret_val <> 0 then
+			abort.transaction()
+			return(false)
+		else
+			commit.transaction()
+| 			return(true)
+		endif
+	endselect
+return(true)										|#ISGEC001179.en
+	
+}
+
+function boolean create.new.header.and.lines.with.new.revision
+	(
+		domain	tccprj		i.cprj,
+		domain	tcmcs.str10	i.grup,
+		domain	tcmcs.long	i.revi
+	)
+{	
+	select	tiisg926.*
+	from	tiisg926
+	where	tiisg926._index1 = {:i.cprj,:i.grup,:i.revi}
+	selectdo
+		dal.copy.object("tiisg926")
+		
+		dal.set.field("tiisg926.revi", i.revi + 1)
+		
+		dal.set.field("tiisg926.cdat", CREATION.DATE)
+		
+| 		dal.set.field("tiisg926.sdat", CREATION.DATE)		
+		
+		dal.set.field("tiisg926.user", LOGNAME)
+		
+		dal.set.field("tiisg926.stat",tiisg.stat.created)
+		
+		ret_val = dal.save.object("tiisg926")
+	
+		if ret_val <> 0 then
+			show.dal.messages(MSG.ALL)
+			return(false)
+		else
+			commit.transaction()
+			
+			if not copy.lines.informations(i.cprj,i.grup,i.revi) then
+				return(false)
+			endif
+		endif
+	endselect
+	return(true)
+}
+
+function boolean copy.lines.informations
+	(
+		domain	tccprj		i.cprj,
+		domain	tcmcs.str10	i.grup,
+		domain	tcmcs.long	i.revi
+	)
+{
+	select	tiisg927.*
+	from	tiisg927
+	where	tiisg927._index1 = {:i.cprj,:i.grup,:i.revi}
+	selectdo
+		dal.copy.object("tiisg927")
+		
+		dal.set.field("tiisg927.revi",i.revi+1)
+		
+| 		dal.set.field("tiisg927.toth.t",0.00)
+		
+		ret_val = dal.save.object("tiisg927")
+		
+		if ret_val <> 0 then
+			show.dal.messages(MSG.ALL)
+			return(false)
+		else
+			commit.transaction()
+		endif
+	endselect
+	select	tiisg928.*										|ISGEC01102.sn
+	from	tiisg928
+	where	tiisg928._index1 = {:i.cprj,:i.grup,:i.revi}
+	selectdo
+		dal.copy.object("tiisg928")
+		
+		dal.set.field("tiisg928.revi",i.revi+1)
+		
+		ret_val = dal.save.object("tiisg928")
+		
+		if ret_val <> 0 then
+			show.dal.messages(MSG.ALL)
+			return(false)
+		else
+			commit.transaction()
+		endif
+	endselect
+	
+	select	tiisg929.*
+	from	tiisg929
+	where	tiisg929._index1 = {:i.cprj,:i.grup,:i.revi}
+	selectdo
+		dal.copy.object("tiisg929")
+		
+		dal.set.field("tiisg929.revi",i.revi+1)
+		
+		ret_val = dal.save.object("tiisg929")
+		
+		if ret_val <> 0 then
+			show.dal.messages(MSG.ALL)
+			return(false)
+		else
+			commit.transaction()
+		endif
+	endselect
+	
+	select	tiisg931.*
+	from	tiisg931
+	where	tiisg931._index1 = {:i.cprj,:i.grup,:i.revi}
+	selectdo
+		dal.copy.object("tiisg931")
+		
+		dal.set.field("tiisg931.revi",i.revi+1)
+		
+		ret_val = dal.save.object("tiisg931")
+		
+		if ret_val <> 0 then
+			show.dal.messages(MSG.ALL)
+			return(false)
+		else
+			commit.transaction()
+		endif
+	endselect
+	
+	select	tiisg932.*
+	from	tiisg932
+	where	tiisg932._index1 = {:i.cprj,:i.grup,:i.revi}
+	selectdo
+		dal.copy.object("tiisg932")
+		
+		dal.set.field("tiisg932.revi",i.revi+1)
+		
+		ret_val = dal.save.object("tiisg932")
+		
+		if ret_val <> 0 then
+			show.dal.messages(MSG.ALL)
+			return(false)
+		else
+			commit.transaction()
+		endif
+	endselect											|ISGEC01102.en
+	return(true)
+}
+
+
+function boolean clear.internal.outsource.reference.table()
+{
+	select	tiisg928.*
+	from	tiisg928 for update
+	where	tiisg928._index1 = {:tiisg926.cprj,:tiisg926.grup,:tiisg926.revi}
+	selectdo
+		ret_val = dal.destroy.object("tiisg928")
+		if ret_val  =  0 then
+			commit.transaction()
+		else
+			abort.transaction()
+			return(false)
+		endif
+	endselect
+	select	tiisg929.*
+	from	tiisg929 for update
+	where	tiisg929._index1 = {:tiisg926.cprj,:tiisg926.grup,:tiisg926.revi}
+	selectdo
+		ret_val = dal.destroy.object("tiisg929")
+		if ret_val  =  0 then
+			commit.transaction()
+		else
+			abort.transaction()
+			return(false)
+		endif
+	endselect
+	
+	select	tiisg932.*										|#ISGEC001179.sn
+	from	tiisg932 for update
+	where	tiisg932._index1 = {:tiisg926.cprj,:tiisg926.grup,:tiisg926.revi}
+	selectdo
+		ret_val = dal.destroy.object("tiisg932")
+		if ret_val  =  0 then
+			commit.transaction()
+		else
+			abort.transaction()
+			return(false)
+		endif
+	endselect
+	
+	select	tiisg931.*										|#ISGEC001179.sn
+	from	tiisg931 for update
+	where	tiisg931._index1 = {:tiisg926.cprj,:tiisg926.grup,:tiisg926.revi}
+	selectdo
+		ret_val = dal.destroy.object("tiisg931")
+		if ret_val  =  0 then
+			commit.transaction()
+		else
+			abort.transaction()
+			return(false)
+		endif
+	endselect		|#ISGEC001179.en
+	
+	return(true)
+}
+
+
+function boolean update.lines.of.staff.estimate
+	(
+		domain	tccprj		i.cprj,
+		domain	tcmcs.str10	i.grup,
+		domain	tcmcs.long	i.revi,
+		domain	tcmcs.int	i.role,
+| 		domain	tisfc.prtm	i.hrs.tot,
+		domain	tcqiv1		i.hrs.tot,
+| 		domain	tisfc.prtm	i.hrs.out,
+		domain	tcqiv1		i.hrs.out,
+		domain	tcqnty		i.qnty.o
+	)
+	
+{
+| 	domain	tisfc.prtm	o.prev.hrs,o.prev.hrs.out
+	domain	tcqiv1		o.prev.hrs,o.prev.hrs.out
+	
+	o.prev.hrs = 0.00
+	o.prev.hrs.out = 0.00
+	
+	select	tiisg927.toth.t:o.prev.hrs,
+		tiisg927.toth.o:o.prev.hrs.out
+	from	tiisg927 for update
+	where	tiisg927._index1 = {:i.cprj,:i.grup,:i.revi,:i.role}
+	selectdo
+		dal.change.object("tiisg927")
+	
+		if not i.calculate then
+			i.calculate = true
+			| dal.set.field("tiisg927.toth.t",i.hrs.tot)
+			dal.set.field("tiisg927.toth.t",i.hrs.tot + (i.hrs.out*i.qnty.o))			|*ISGEC001150.n
+			dal.set.field("tiisg927.toth.o",i.hrs.out*i.qnty.o)
+		else
+			| dal.set.field("tiisg927.toth.t",o.prev.hrs + i.hrs.tot)
+			dal.set.field("tiisg927.toth.t",o.prev.hrs + i.hrs.tot + (i.hrs.out*i.qnty.o))		|*ISGEC001150.n
+			dal.set.field("tiisg927.toth.o",o.prev.hrs.out + (i.hrs.out*i.qnty.o))
+		endif
+		
+		ret_val = dal.save.object("tiisg927")
+		
+		if ret_val = 0 then
+			commit.transaction()
+		endif
+	endselect
+	return(true)	
+}
+
+
+function extern long update.actual()											|#ISGEC001179.sn
+{
+	domain tfgld.date stdt 
+	domain tfgld.prod prod.var,in.prd,tmp.prd
+	domain tfgld.year tmp.yr
+	long lsdt.f,stdt.f,first.date,sec.first.date
+	long yearno, yy
+	long monthno, mm
+	long month_dayno ,dd,ret.val
+	
+	select	tiisg927.*
+	from	tiisg927 
+	where	tiisg927._index1 = {:tiisg926.cprj,:tiisg926.grup,:tiisg926.revi}
+	selectdo
+		select	tiisg931.prod,tiisg931.year
+		from	tiisg931 for update
+		where	tiisg931._index1 = {:tiisg926.cprj,:tiisg926.grup,:tiisg926.revi}
+		selectdo
+			stdt = date.to.num(tiisg931.year,tiisg931.prod,01)
+			first.date = num.to.date  (stdt, yearno, monthno, month_dayno)
+			if	in.prd = 12	then
+				tmp.yr = tiisg931.year + 1
+				tmp.prd = 1
+			else
+				tmp.yr = tiisg931.year
+				tmp.prd = tiisg931.prod + 1
+			endif
+			date.t = date.to.num(tmp.yr,tmp.prd,01)
+			date.t = date.t - 1
+| 			select	tfgld005.stdt
+| 			from	tfgld005
+| 			where	tfgld005._index1 = {tfgld.ptyp.financial, :tmp.yr, :tmp.prd}
+| 			and	tfgld005.corr = tcyesno.no
+| 			selectdo
+| 				date.t = tfgld005.stdt - 1
+| 			selectempty
+| 				num.to.date(stdt, yy, mm, dd)
+| 				date.t = date.to.num(mm<12?yy:yy+1, mm<12?mm+1:1, 1) - 1
+| 			endselect
+			num.to.date(date.t, yearno, monthno,month_dayno)
+			hours = 0
+			
+			select tiisg910.hhrs
+			from    tiisg910
+			where   tiisg910._index7 = {:tiisg927.role,:tiisg927.cprj}
+			and     tiisg910.tdat inrange {:stdt} and {:date.t}
+			and	tiisg910.grcd = :tiisg926.grup				|ISGEC002020.n
+			selectdo
+				hours = hours + tiisg910.hhrs
+			endselect
+			
+			dal.change.object("tiisg931")
+			select tiisg925.seqn
+			from    tiisg925
+			where   tiisg925.roll = :tiisg927.role
+			selectdo
+			endselect
+			
+			if   tiisg925.seqn = 1 then
+				dal.set.field("tiisg931.role.1",hours)
+			endif	
+			if   tiisg925.seqn = 2 then
+				dal.set.field("tiisg931.role.2",hours)
+			endif	
+			if   tiisg925.seqn = 3 then
+				dal.set.field("tiisg931.role.3",hours)
+			endif	
+			if   tiisg925.seqn = 4 then
+				dal.set.field("tiisg931.role.4",hours)
+			endif	
+			if   tiisg925.seqn = 5 then
+				dal.set.field("tiisg931.role.5",hours)
+			endif
+			if   tiisg925.seqn = 6 then
+				dal.set.field("tiisg931.role.6",hours)
+			endif	
+			if   tiisg925.seqn = 7 then
+				dal.set.field("tiisg931.role.7",hours)
+			endif	
+			if   tiisg925.seqn = 8 then
+				dal.set.field("tiisg931.role.8",hours)
+			endif	
+			if   tiisg925.seqn = 9 then
+				dal.set.field("tiisg931.role.9",hours)
+			endif	
+			if   tiisg925.seqn = 10 then
+				dal.set.field("tiisg931.role.10",hours)
+			endif	
+			if   tiisg925.seqn = 11 then
+				dal.set.field("tiisg931.role.11",hours)
+			endif	
+			if   tiisg925.seqn = 12 then
+				dal.set.field("tiisg931.role.12",hours)
+			endif	
+			if   tiisg925.seqn = 13 then
+				dal.set.field("tiisg931.role.13",hours)
+			endif	
+			if   tiisg925.seqn = 14 then
+				dal.set.field("tiisg931.role.14",hours)
+			endif	
+			if   tiisg925.seqn = 15 then
+				dal.set.field("tiisg931.role.15",hours)
+			endif
+			if   tiisg925.seqn = 16 then
+				dal.set.field("tiisg931.role.16",hours)
+			endif	
+			if   tiisg925.seqn = 17 then
+				dal.set.field("tiisg931.role.17",hours)
+			endif	
+			if   tiisg925.seqn = 18 then
+				dal.set.field("tiisg931.role.18",hours)
+			endif	
+			if   tiisg925.seqn = 19 then
+				dal.set.field("tiisg931.role.19",hours)
+			endif	
+			if   tiisg925.seqn = 20 then
+				dal.set.field("tiisg931.role.20",hours)
+			endif	
+			if   tiisg925.seqn = 21 then
+				dal.set.field("tiisg931.role.21",hours)
+			endif	
+			if   tiisg925.seqn = 22 then
+				dal.set.field("tiisg931.role.22",hours)
+			endif	
+			if   tiisg925.seqn = 23 then
+				dal.set.field("tiisg931.role.23",hours)
+			endif	
+			if   tiisg925.seqn = 24 then
+				dal.set.field("tiisg931.role.24",hours)
+			endif	
+			if   tiisg925.seqn = 25 then
+				dal.set.field("tiisg931.role.25",hours)
+			endif
+			if   tiisg925.seqn = 26 then
+				dal.set.field("tiisg931.role.26",hours)
+			endif	
+			if   tiisg925.seqn = 27 then
+				dal.set.field("tiisg931.role.27",hours)
+			endif	
+			if   tiisg925.seqn = 28 then
+				dal.set.field("tiisg931.role.28",hours)
+			endif	
+			if   tiisg925.seqn = 29 then
+				dal.set.field("tiisg931.role.29",hours)
+			endif	
+			if   tiisg925.seqn = 30 then
+				dal.set.field("tiisg931.role.30",hours)
+			endif	
+			if   tiisg925.seqn = 31 then
+				dal.set.field("tiisg931.role.31",hours)
+			endif	
+			if   tiisg925.seqn = 32 then
+				dal.set.field("tiisg931.role.32",hours)
+			endif	
+			if   tiisg925.seqn = 33 then
+				dal.set.field("tiisg931.role.33",hours)
+			endif	
+			if   tiisg925.seqn = 34 then
+				dal.set.field("tiisg931.role.34",hours)
+			endif	
+			if   tiisg925.seqn = 35 then
+				dal.set.field("tiisg931.role.35",hours)
+			endif
+			if   tiisg925.seqn = 36 then
+				dal.set.field("tiisg931.role.36",hours)
+			endif	
+			if   tiisg925.seqn = 37 then
+				dal.set.field("tiisg931.role.37",hours)
+			endif	
+			if   tiisg925.seqn = 38 then
+				dal.set.field("tiisg931.role.38",hours)
+			endif	
+			if   tiisg925.seqn = 39 then
+				dal.set.field("tiisg931.role.39",hours)
+			endif	
+			if   tiisg925.seqn = 40 then
+				dal.set.field("tiisg931.role.40",hours)
+			endif	
+			if   tiisg925.seqn = 41 then
+				dal.set.field("tiisg931.role.41",hours)
+			endif	
+			if   tiisg925.seqn = 42 then
+				dal.set.field("tiisg931.role.42",hours)
+			endif	
+			if   tiisg925.seqn = 43 then
+				dal.set.field("tiisg931.role.43",hours)
+			endif	
+			if   tiisg925.seqn = 44 then
+				dal.set.field("tiisg931.role.44",hours)
+			endif	
+			if   tiisg925.seqn = 45 then
+				dal.set.field("tiisg931.role.45",hours)
+			endif
+			if   tiisg925.seqn = 46 then
+				dal.set.field("tiisg931.role.46",hours)
+			endif	
+			if   tiisg925.seqn = 47 then
+				dal.set.field("tiisg931.role.47",hours)
+			endif	
+			if   tiisg925.seqn = 48 then
+				dal.set.field("tiisg931.role.48",hours)
+			endif	
+			if   tiisg925.seqn = 49 then
+				dal.set.field("tiisg931.role.49",hours)
+			endif	
+			if   tiisg925.seqn = 50 then
+				dal.set.field("tiisg931.role.50",hours)
+			endif	
+			ret.val = dal.save.object("tiisg931")
+			if ret.val = 0 then
+				commit.transaction()
+			else
+				show.dal.messages(MSG.ALL)
+				abort.transaction()
+			endif	
+		endselect
+			
+	endselect		
+return(0)
+}
+													|#ISGEC001179.sn

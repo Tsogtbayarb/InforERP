@@ -1,0 +1,728 @@
+|******************************************************************************
+|* tiisg910  0  VRC B61U a7 live
+|* Hours Transion
+|* tools2
+|* 14-05-14 [11:51]
+|******************************************************************************
+|* Script Type: DAL
+|* IDENT ISG001021, Yoshita Kundwani, IT0177, 14-05-2014 , VRC B61U a7 live 
+|*
+|* ISGEC001006, Arjit Gupta, IT0205, 04/09/2014, VRC B61U a7 isg
+|* Employee to be picked/default after matching login code of current user.
+|* Remove Check of previous date entry.
+|*
+|* ISGECDV001148, IT0205, Arjit Gupta, VRC B61U a7 live, Dt. 10-11-2014
+|* Validate Future Entry when Activity code exists
+|* 
+|* ISGECDV001188, IT0205, Arjit Gupta, VRC B61U a7 live, Dt. 28-11-2014
+|* Default Drawing Size must be empty.
+|******************************************************************************
+#ident "@(#)ISG001021, Yoshita Kundwani, IT0177, 14-05-2014 , VRC B61U a7 live"
+
+#include <bic_dal2>
+	extern	domain tcpono	max.v
+	table	ttiisg910 
+	table 	ttiisg906
+	table 	ttiisg909
+	table	ttpptc100
+	table	ttpmsl000
+	table	ttpest120
+	|table	ttiisg914 |table does not exists
+	|table	ttpptc930 |table does not exists
+	|table	ttpptc928 |table does not exists
+	
+	
+		long lusr.m
+	domain tppdm.cspa cspa.m
+	domain tcemno emno.m
+	extern domain tphrs.nhrs thrs.m
+	extern domain tphrs.nhrs uhrs.m | used
+	extern domain tphrs.nhrs nuhrs.m | not used
+	extern domain tphrs.nhrs ohrs.m | old value in field
+	extern domain tcncmp ncmp.m
+	extern domain tcmcs.int srno.m
+	domain tcmcs.int level
+	domain tcyesno dele.yn 
+	domain tcyesno dcat.yn
+	domain tcyesno dsno.yn
+	domain tcyesno dsiz.yn
+	domain tcyesno check.dsno
+	domain tcmcs.int	count.m
+	extern	domain	tphrs.nhrs	totalhours
+	extern domain tcmcs.str90 sact.desc
+	extern 	domain 	tfgld.user	curr.user
+	extern 	domain 	tcemno		curr.emno
+
+
+|**********************************field hooks for validation *****************************************
+
+function extern boolean tiisg910.acid.is.valid(long type)
+{
+	select	tiisg909.acid 
+	from	tiisg909
+	where	tiisg909._index1 = {:tiisg910.rlid, :tiisg910.acid}
+	selectdo
+	selectempty
+		dal.set.error.message("@Activity not present in Role")
+		return(DALHOOKERROR)
+	endselect
+
+	return (true)
+}
+
+function extern boolean tiisg910.tdat.is.valid(long type)
+{
+	if	tiisg910.tdat > date.num()	then
+		if	tiisg910.acid <> 0	then			|#ISGECDV001148.n
+			if	check.future.date(tiisg910.rlid, tiisg910.acid)	then
+			else
+				dal.set.error.message("@future date entry allowed only for Leave and OD")
+				return(DALHOOKERROR)
+			endif
+		endif							|#ISGECDV001148.n	
+	endif
+	
+	return (true)
+}
+
+function extern boolean tiisg910.cspa.is.valid(long type)
+{
+	if	check.element.req(tiisg910.rlid, tiisg910.acid) =  tcyesno.yes then
+		if	isspace(tiisg910.cspa)	then
+			dal.set.error.message("@Element cannot be left blank")
+			return(DALHOOKERROR)
+		else	
+			if	not check.element.level(tiisg910.cprj, tiisg910.cspa)	then
+				dal.set.error.message("@Element must be of Level 4")
+				return(DALHOOKERROR)
+			endif
+		endif
+	else
+		dal.set.error.message("@Element not Required")
+		return(DALHOOKERROR)
+	endif
+
+	return (true)
+}
+
+| function extern boolean tiisg910.dsiz.is.valid(long type)
+| {
+| 	if	isdsizrequired(tiisg910.rlid, tiisg910.acid) =  tcyesno.yes then
+| 		if	tiisg910.dsiz = empty	 then
+| 			dal.set.error.message("@Drawing Size cannot be left blank")
+| 			return(DALHOOKERROR)
+| 		endif
+| 	else
+| 		dal.set.error.message("@Drawing Size not Required")
+| 		return(DALHOOKERROR)
+| 	endif
+
+| 	return (true)
+| }
+
+function extern boolean tiisg910.dsno.is.valid(long type)
+{
+	if	isdsnorequired(tiisg910.rlid, tiisg910.acid) = tcyesno.yes	then
+		if	not isdigit(trim$(tiisg910.dsno))	then
+			dal.set.error.message("@Drawing Serial No should be numeric")
+			return(DALHOOKERROR)
+		endif 
+	else
+		dal.set.error.message("@Drawing Serial Number not Required")
+		return(DALHOOKERROR)	
+	endif
+
+	return (true)
+}
+
+function extern boolean tiisg910.dcat.is.valid(long type)
+{
+	if	isdcatrequired(tiisg910.rlid, tiisg910.acid) = tcyesno.yes	then
+		if	isspace(tiisg910.dcat)	then
+			dal.set.error.message("Drawing Category cannot be left blank")
+			return(DALHOOKERROR)
+		endif
+	else		
+		dal.set.error.message("@Drawing Category not Required")
+		return(DALHOOKERROR)	 
+	endif
+	return (true)
+}
+
+function extern boolean tiisg910.hhrs.is.valid(long type)
+{		
+	if	tiisg910.hhrs <= 0	then		
+		dal.set.error.message("Invalid hours")
+		return(DALHOOKERROR)
+	endif
+
+	return (true)
+}
+
+|**********************************field hooks for Mandat *****************************************
+function extern boolean tiisg910.cprj.is.mandatory(long type)
+{
+	if	check.project.req(tiisg910.rlid, tiisg910.acid)	= tcyesno.yes	then
+		if	isspace(tiisg910.cprj) then
+			return(true)
+		endif
+	endif
+	return(false)
+}
+
+function extern boolean tiisg910.cspa.is.mandatory(long type)
+{
+	if	check.element.req(tiisg910.rlid, tiisg910.acid) = tcyesno.yes	then
+		if	isspace(tiisg910.cspa) then
+			return(true)
+		endif
+	endif
+	return(false)
+}
+
+| function extern boolean tiisg910.dsiz.is.mandatory(long type)
+| {
+| 	if	isdsizrequired(tiisg910.rlid, tiisg910.acid) = tcyesno.yes	then
+| 		if	tiisg910.dsiz = empty then
+| 			return(true)
+| 		endif
+| 	endif
+| 	return(false)
+| }
+
+function extern boolean tiisg910.dsno.is.mandatory(long type)
+{
+	if	isdsnorequired(tiisg910.rlid, tiisg910.acid) = tcyesno.yes	then
+		if	isspace(tiisg910.dsno)	then
+			return(true)
+		endif
+	endif
+	return(false)
+}
+
+function extern boolean tiisg910.dcat.is.mandatory(long type)
+{
+	if	isdcatrequired(tiisg910.rlid, tiisg910.acid) = tcyesno.yes	then
+		if	isspace(tiisg910.dcat)	then
+			return(true)
+		endif
+	endif
+	return(false)
+}
+
+function extern boolean tiisg910.hhrs.is.mandatory(long type)
+{
+	if	tiisg910.hhrs <= 0	then
+		return(true)
+	endif
+	return(false)
+}
+
+|**********************************field hooks for Default *****************************************
+
+function extern long tiisg910.hhrs.set.defaults( long type ) 
+{
+| 	if dal_new =true then		
+| 		if (tiisg910.hhrs<=0) then
+| 		tiisg910.hhrs = nuhrs.m
+| 		uhrs.m = 14
+| 		endif
+| 		ohrs.m = tiisg910.hhrs
+| 	endif
+	
+	return(true)
+
+}
+
+
+|**********************************field hooks for update *****************************************
+function extern void tiisg910.comp.update()
+{
+	ncmp.m = 0
+	select	tppdm600.ncmp:ncmp.m 
+	from	tppdm600
+	where	tppdm600.cprj = :tiisg910.cprj
+	selectdo
+		tiisg910.comp = ncmp.m
+	endselect
+
+}
+
+|**********************************field hooks for Applicable *****************************************
+function extern boolean tiisg910.cprj.is.applicable(long type)
+{
+	if	check.project.req(tiisg910.rlid, tiisg910.acid) =  tcyesno.yes then
+		return(true)
+	endif
+	
+	return(false)
+}
+
+function extern boolean tiisg910.dsno.is.applicable(long type)
+{
+	if	isdsnorequired(tiisg910.rlid, tiisg910.acid) = tcyesno.yes then
+		return(true)
+	endif
+	
+	return(false)
+}
+
+
+| function extern boolean tiisg910.dsiz.is.applicable(long type)
+| {
+| 	if	isdsizrequired(tiisg910.rlid, tiisg910.acid) = tcyesno.yes	then
+| 		return(true)
+| 	endif
+| 	
+| 	return(false)
+| }
+
+
+function extern boolean tiisg910.dcat.is.applicable(long type)
+{
+	if	isdcatrequired(tiisg910.rlid, tiisg910.acid) = tcyesno.yes then
+		return(true)
+	endif
+	
+	return(false)
+}
+
+function extern boolean tiisg910.cspa.is.applicable(long type)
+{
+	if	check.element.req(tiisg910.rlid, tiisg910.acid) =  tcyesno.yes then		
+		return(true)
+	endif
+	
+	return(false)
+}
+
+function extern boolean tiisg910.sact.is.applicable(long type)
+{
+	if	check.sact.req(tiisg910.acid) =  tcyesno.yes then
+		return(true)
+	else
+		return(false)
+	endif
+
+}
+
+
+|*****************************objects hooks*****************************************	
+
+function extern long before.open.object.set()
+{
+	get.employee.code(curr.user, curr.emno)		|#ISGEC001006.n
+	
+	dal.field.depends.on("tiisg910.cprj",
+				HOOK_IS_APPLICABLE + HOOK_IS_VALID + HOOK_IS_MANDATORY, 
+						"tiisg910.rlid","tiisg910.acid") 
+	dal.field.depends.on("tiisg910.cspa",
+				HOOK_IS_APPLICABLE + HOOK_IS_VALID + HOOK_IS_MANDATORY, 
+						"tiisg910.rlid","tiisg910.acid") 
+						
+| 	dal.field.depends.on("tiisg910.dele",
+| 				HOOK_IS_APPLICABLE + HOOK_IS_VALID + HOOK_IS_MANDATORY, 
+| 						"tiisg910.rlid","tiisg910.acid") 
+						
+	dal.field.depends.on("tiisg910.dsno", 
+				HOOK_IS_APPLICABLE + HOOK_IS_VALID + HOOK_IS_MANDATORY,
+						"tiisg910.rlid","tiisg910.acid")
+	
+|#ISGEC001006.so	
+|	dal.field.depends.on("tiisg910.dsiz", 
+|				HOOK_IS_APPLICABLE + HOOK_IS_VALID + HOOK_IS_MANDATORY,
+|						"tiisg910.rlid","tiisg910.acid")
+|#ISGEC001006.eo						
+						
+	dal.field.depends.on("tiisg910.dcat", 
+				HOOK_IS_APPLICABLE + HOOK_IS_VALID + HOOK_IS_MANDATORY,
+						"tiisg910.rlid","tiisg910.acid")
+	
+	dal.field.depends.on("tiisg910.cspa", 
+				HOOK_IS_APPLICABLE + HOOK_IS_VALID + HOOK_IS_MANDATORY,
+						"tiisg910.rlid","tiisg910.acid")
+						
+	dal.field.depends.on("tiisg910.sact", HOOK_IS_APPLICABLE, "tiisg910.acid")
+
+	dal.field.depends.on("tiisg910.acid", HOOK_IS_VALID, "tiisg910.rlid")
+	
+	dal.field.depends.on("tiisg910.tdat", HOOK_IS_VALID, "tiisg910.emno")
+	
+	dal.field.depends.on("tiisg910.hhrs", HOOK_IS_VALID + HOOK_IS_MANDATORY, "tiisg910.emno")
+	
+	
+	dal.field.depends.on("tiisg910.comp", HOOK_UPDATE, "tiisg910.cprj") 
+| 	dal.field.depends.on("tiisg910.dele", HOOK_UPDATE, "tiisg910.grcd")
+| 	dal.field.depends.on("tiisg910.dgid", HOOK_UPDATE, "tiisg910.dele") 	
+
+
+	
+	return(0)
+}
+
+function extern long before.new.object()
+{
+	get.employee.code(curr.user, curr.emno)	|#ISGEC001006.n
+| 	tiisg910.emno = curr.user		|#ISGEC001006.o
+	tiisg910.emno = curr.emno		|#ISGEC001006.n
+	|tiisg910.tdat = date.num()
+	tiisg910.edat = date.num()
+	select	tiisg906.rlid:tiisg910.rlid, tiisg906.grcd:tiisg910.grcd 
+	from	tiisg906 
+	where	tiisg906._index1 = {:tiisg910.emno}
+	and	tiisg906.stat = tcyesno.yes 
+	selectdo 
+	endselect
+	
+	select	max(tiisg910.srno):max.v
+	from	tiisg910
+	where	tiisg910._index1 = {:tiisg910.emno, :tiisg910.rlid, :tiisg910.tdat}
+	selectdo
+	selectempty
+		max.v = 0
+	endselect
+	
+	tiisg910.srno = max.v + 1
+	
+	return(0)
+}
+function extern long before.save.object(long type)
+{
+on case type
+	case DAL_NEW :
+	  
+		domain tcmcs.int cnt
+		cnt = 0
+		get.employee.code(curr.user, curr.emno)		|#ISGEC001006.n
+		
+		select count(*):cnt 
+		from	tiisg919 
+		where	tiisg919._index1 = {:tiisg910.emno, :tiisg910.tdat} 
+		selectdo 
+		endselect
+			
+		if	cnt > 0	then
+		else	
+			|#ISGEC001006.so
+| 			if	tiisg910.tdat < (date.num() - 7)	then
+| 				dal.set.error.message("@Manhours older than 7 days cannot be entered")
+| 			endif
+			|#ISGEC001006.eo
+		endif
+		
+| 		if	trim$(tiisg910.emno) <> curr.user	then		|#ISGEC001006.o
+		if	trim$(tiisg910.emno) <>trim$(curr.emno)	then		|#ISGEC001006.n
+			dal.set.error.message("@You cannot enter manhours of other employees")
+			return (DALHOOKERROR)
+		endif
+
+		if	isspace(tiisg910.cprj)	then
+			tiisg910.comp = get.compnr()
+		endif
+		
+		tiisg910.edat = date.num()
+		tiisg910.hgap = tiisg910.edat - tiisg910.tdat	
+		tiisg910.grcd = ""
+		
+		select	tiisg906.grcd 
+		from	tiisg906 
+		where	tiisg906.emno = :tiisg910.emno 
+		selectdo 
+			tiisg910.grcd = tiisg906.grcd
+		selectempty
+			dal.set.error.message("@Employee not linked with any group")
+			return (DALHOOKERROR)
+		endselect	
+		
+| 		if tiisg910.acid = 1 or tiisg910.acid = 2 or tiisg910.acid = 56 then
+| 			tiisg910.cdoc = tiisg910.cprj & "-" & tiisg910.dele & "-" & tiisg910.dcat & "-" & tiisg910.dsno
+| 		endif
+		
+		
+		uhrs.m = get.used.working.hours(tiisg910.emno , tiisg910.tdat)	
+| 		if (uhrs.m - 14 >= 0) then
+| 			dal.set.error.message("Hours in a working day cannot be more than 14 hours")
+| 			return(false)
+| 		else
+| 			nuhrs.m = 14 - uhrs.m
+| 		endif
+		if	(uhrs.m + tiisg910.hhrs) > 14	then
+			dal.set.error.message("@Hours in a working day cannot be more than 14 hours")
+			return(DALHOOKERROR)
+		endif
+		
+| 		if ((uhrs.m - ohrs.m + tiisg910.hhrs) - 14 > 0) then
+| 			dal.set.error.message("Hours in a working day cannot be more than 14 hours")
+| 		endif
+	break
+	case 	DAL_UPDATE :
+	
+		uhrs.m = get.used.working.hours(tiisg910.emno , tiisg910.tdat)	
+		nuhrs.m = 14 - uhrs.m
+		if	(uhrs.m + tiisg910.hhrs) > 14	then
+			dal.set.error.message("@Hours in a working day cannot be more than 14 hours")
+			return(DALHOOKERROR)
+		endif
+| 		uhrs.m = uhrs.m - ohrs.m + tphrs910.hrs
+| 		nuhrs.m = 14 - uhrs.m
+		
+	break
+	endcase
+		
+	
+	return(0)
+}
+
+function extern long before.get.object (long type)
+{
+	get.total.line.amount()	
+	return(0)
+}
+function extern long after.get.object(long type)
+{
+	get.total.line.amount()
+| 	if tiisg910.acid <> 1 and tiisg910.acid <> 2 
+| 		and tiisg910.acid <> 3 and tiisg910.acid <> 56 
+| 		and tiisg910.acid <> 74  and tiisg910.acid <> 76 then
+| 		
+| 		return(DALHOOKERROR)
+| 	
+| 	endif
+	if tiisg910.tdat < date.to.num(2008,09,01) then 
+		
+		return(DALHOOKERROR)
+	
+	endif
+| 	if strip$(shiftl$(tiisg910.grcd)) <> "ENGGA" 
+| 		and strip$(shiftl$(tiisg910.grcd)) <> "ENGGJ" then 
+| 		
+| 		return(DALHOOKERROR)
+| 	
+| 	endif	
+	
+	return (0)
+}
+
+function extern long set.object.defaults()
+{
+	tiisg910.emno.object.default()		
+	tiisg910.rlid.object.default()		
+	|tiisg910.tdat.object.default()	
+	tiisg910.dsiz.object.default()		|#ISGECDV001188.n	
+	return(0)
+}
+
+function void tiisg910.emno.object.default()
+{
+| 	tiisg910.emno = toupper$(logname$)	|#ISGEC001006.o
+	get.employee.code(toupper$(logname$), curr.emno)	|#ISGEC001006.n
+	tiisg910.emno = curr.emno		|#ISGEC001006.n
+}
+
+function void tiisg910.rlid.object.default()
+{
+	select	a_tiisg906.rlid:tiisg910.rlid
+	from	tiisg906 a_tiisg906
+	where	a_tiisg906._index1 = {:tiisg910.emno}
+	and	a_tiisg906.stat = tcyesno.yes
+	as set with 1 rows
+	selectdo
+	selectempty
+		tiisg910.rlid = 0
+	endselect	
+}
+
+function void tiisg910.tdat.object.default()
+{
+		
+	if	tiisg910.acid <> 0	then			|#ISGECDV001148.sn
+		if	check.future.date(tiisg910.rlid, tiisg910.acid)	then
+		else
+			tiisg910.tdat = date.num()
+		endif
+	else
+		tiisg910.tdat = date.num()
+	endif							|#ISGECDV001148.en	
+}
+
+						|#ISGECDV001188.sn
+function void tiisg910.dsiz.object.default()
+{
+	tiisg910.dsiz = empty
+}
+						|#ISGECDV001188.en
+|******************************function ***********************************************
+function get.total.line.amount()
+{	
+	select	sum(tiisg910.hhrs):totalhours
+	from	tiisg910
+	where	tiisg910.emno = :tiisg910.emno
+	and	tiisg910.tdat = :tiisg910.tdat
+	selectdo
+	endselect
+}
+
+|************ Project Required *****************
+function domain tcyesno check.project.req(domain tcmcs.int	rlid.a,
+					domain tcmcs.long	acid.a)
+{
+	domain tcyesno preq.f
+	
+	select	tiisg909.preq:preq.f 
+	from	tiisg909 
+	where	tiisg909._index1 = {:rlid.a, :acid.a}
+	selectdo 
+	endselect
+	return(preq.f)
+}
+
+|************ Element Required **********************
+function domain tcyesno check.element.req(domain tcmcs.int	rlid.a,
+					domain tcmcs.long	acid.a)
+{
+	domain tcyesno ereq.f
+	
+	select	tiisg909.ereq:ereq.f
+	from	tiisg909 
+	where	tiisg909._index1 = {:rlid.a, :acid.a}
+	selectdo 
+	endselect
+	return(ereq.f)
+}
+
+function domain tcyesno check.sact.req(domain tcmcs.long acid.a)
+{
+	domain tcyesno sactreq.f
+	sactreq.f = tcyesno.no
+	select	tiisg908.* 
+	from	tiisg908 
+	where	tiisg908.acmn = :acid.a
+	selectdo 
+		sactreq.f = tcyesno.yes
+	endselect
+	return(sactreq.f)
+}
+
+|*********** Get Used Working Hours *************
+function domain tcmcs.long get.used.working.hours(
+					domain	tcemno		emno.a,
+					domain	tfgld.date	tdate.a)
+{	
+	domain tcmcs.double thrs.f
+	select	sum(tiisg910.hhrs):thrs.f 
+	from	tiisg910
+	where	tiisg910._index2 = {:emno.a, :tdate.a}
+	selectdo 
+	endselect	
+	return(thrs.f)
+}
+
+|************ Drawing Size Required ***************
+| function domain tcyesno isdsizrequired(domain	tcmcs.int	rlid,
+| 					domain	tcmcs.long	acid)
+| {
+| 	dsiz.yn = tcyesno.no
+| 	select	tiisg909.dsiz:dsiz.yn
+| 	from	tiisg909 
+| 	where	tiisg909._index1 = {:rlid, :acid} 
+| 	selectdo 
+| 	endselect
+| 	
+| 	return(dsiz.yn)
+| }
+
+|*********** Drawing Element Required ********************
+function domain tcyesno isdelerequired(domain	tcmcs.int	rlid,
+					domain	tcmcs.long	acid)
+{
+	dele.yn = tcyesno.no
+	select	tiisg909.dele:dele.yn 
+	from	tiisg909 
+	where	tiisg909._index1 = {:rlid, :acid} 
+	selectdo 
+	endselect
+	
+	return(dele.yn)
+}
+
+|*********** Drawing Category Required ******************
+function domain tcyesno isdcatrequired(domain	tcmcs.int	rlid,
+					domain	tcmcs.long	acid)
+{
+	dcat.yn = tcyesno.no
+	select	tiisg909.dcat:dcat.yn 
+	from	tiisg909 
+	where	tiisg909._index1 = {:rlid, :acid} 
+	selectdo 
+	endselect
+	
+	return(dcat.yn)
+}
+
+|*********** Drawing Serial No. Required *****************
+function domain tcyesno isdsnorequired(domain	tcmcs.int	rlid,
+					domain	tcmcs.long	acid)
+{
+	dsno.yn = tcyesno.no
+	select	tiisg909.dsno:dsno.yn 
+	from	tiisg909 
+	where	tiisg909._index1 = {:rlid, :acid} 
+	selectdo 
+	endselect
+	
+	return(dsno.yn)
+}
+
+|*********** Future Date Allowed ****************
+function boolean check.future.date(domain	tcmcs.int	rlid,
+					domain	tcmcs.long	acid)
+{
+	select	tiisg909.fald
+	from	tiisg909 
+	where	tiisg909._index1 = {:rlid, :acid}
+	and	tiisg909.fald = tcyesno.yes
+	selectdo 
+		return(true)
+	endselect
+	
+	return(false)
+}
+
+|*********** Check Element Level ***************
+function boolean check.element.level(domain	tccprj		i.cprj,
+				domain	tppdm.cspa	i.cspa)
+{
+	domain	tcpono		param.levl
+	domain	tppdm.cspa	o.elem
+	
+	tcmcs.dll0095.read.parm("tpmsl000")
+	param.levl = tpmsl000.levl + 1
+		
+	select 	tpest120.sele:o.elem
+	from	tpest120
+	where	tpest120._index1 = {:i.cprj}
+	and	tpest120.sele = :i.cspa
+	and	tpest120.levl > :param.levl
+	as set with 1 rows
+	selectdo
+		return(true)
+	endselect
+	
+	return(false)
+}
+
+|#ISGEC001006.sn
+|************ Get Employee Code *******************
+function get.employee.code(domain	tfgld.user	in.user,
+			ref	domain	tcemno		ot.emno)
+{			
+	select	e_tccom001.emno:ot.emno
+	from	tccom001 e_tccom001
+	where	e_tccom001._index4 = {:in.user}
+	as set with 1 rows
+	selectdo
+	selectempty
+		ot.emno = ""
+	endselect
+}	
+|#ISGEC001006.en

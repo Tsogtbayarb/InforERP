@@ -1,0 +1,152 @@
+| ******************************************************************************
+| * tdisg868  0  VRC B61U a7 isg 
+| * tdisg868 DAL
+| * baan
+| * 15-01-13 [14:04]
+| ******************************************************************************
+| * Script Type: DAL
+| ******************************************************************************
+|#include "idmisgstatus"                                                                                
+#include <bic_dal2>
+
+	table ttpmsl000
+	table ttdisg868
+	table ttcmcs051
+	table ttdpur401
+        table ttccom100
+	table ttdpur400
+	table tdmcom010
+	extern domain dmcom.shrtid   target.object.type
+	extern domain dmcom.lnkd     document.no
+	long   ret_val
+
+function extern long before.open.object.set()
+{
+	DAL.FIELD.DEPENDS.ON("tdisg868.cprj",HOOK_UPDATE,"tdisg868.orno")
+	DAL.FIELD.DEPENDS.ON("tdisg868.bpid",HOOK_UPDATE,"tdisg868.orno")
+	return(0)
+}
+
+function extern long before.save.object(long type)
+{
+	if type = DAL_NEW then
+		tcmcs.dll0095.read.parm("tpmsl000")
+		select	tcmcs051.lngt
+		from	tcmcs051
+		where	tcmcs051._index1 = {:tpmsl000.mnrg}
+		as set with 1 rows
+		selectdo
+		endselect
+		
+		if len(strip$(tdisg868.micd)) = tcmcs051.lngt then 
+			if tcmcs.dll0050.check.and.generate.order.number(3,		|Action
+								tdisg868.micd,		|Series
+								tpmsl000.mnrg,		|No. Group
+								9,			|Length
+								tdisg868.micd) then	|O/P
+				dal.set.error.message("")
+				return(DALHOOKERROR)
+			else
+				
+			endif
+		endif
+		
+	endif
+	
+	return(0)
+}	
+function extern long after.save.object(long type)
+{	
+
+| 	if type = DAL_UPDATE	 then
+| 		dmisgstatus(tdisg868.micd)
+| 		target.object.type = "MICN"
+| 		document.no = shiftl$(strip$(tdisg868.micd))
+| 		temp = 0
+| 		
+| 		select 	dmcom010.trid
+| 		from    dmcom010
+| 		where   dmcom010._index4 = {:target.object.type}
+| 		selectdo
+| 			if dmcom010.trid(3;9) = document.no then
+| 				if tdisg868.stat = tdupload.created  then
+| 					tdisg868.stat = tdupload.doc.upload
+| 					temp = 1
+| 				endif
+| 			else
+| 				if temp = 0 then
+| 					if tdisg868.stat = tdupload.doc.upload  then
+| 						tdisg868.stat = tdupload.created
+| 					endif
+| 				endif	
+| 			endif
+| 		selectempty
+| 			if tdisg868.stat = tdupload.doc.upload  then
+| 					tdisg868.stat = tdupload.created
+| 			endif
+| 		endselect	
+| 	endif		
+	return(0)
+}
+
+
+
+function extern boolean tdisg868.micn.is.valid(long mode)
+{	
+	if mode = DAL_NEW then 
+		select tdisg868.micn
+		from   tdisg868
+		where  tdisg868.micn = :tdisg868.micn
+		as set with 1 rows
+		selectdo
+			dal.set.error.message("Record already exists")
+			return(DALHOOKERROR)
+		endselect
+| 		return(true)
+	endif
+	return(true)
+}
+
+
+function extern void tdisg868.cprj.update()
+{
+	select tdpur401.cprj
+	from    tdpur401
+	where   tdpur401._index1 = {:tdisg868.orno}
+	and 	tdpur401.cprj <> ""
+	as set with 1 rows
+	selectdo
+		tdisg868.cprj = tdpur401.cprj
+	selectempty
+		tdisg868.cprj = ""
+	endselect	
+}
+
+function extern void tdisg868.bpid.update()
+{
+	select tdpur400.otbp
+	from    tdpur400
+	where  tdpur400._index1 = {:tdisg868.orno}
+	selectdo
+		tdisg868.bpid = tdpur400.otbp
+	selectempty
+		tdisg868.bpid = ""
+	endselect
+}
+| function extern boolean tdisg868.orno.is.valid(long mode)
+| {
+| 	select tdpur401.orno
+| 	from    tdpur401
+| 	where  tdpur401._index5 = {:tdisg868.cprj}
+| 	and     tdpur401.orno = {:tdisg868.orno}
+| 	selectdo
+| 	selectempty
+| 		dal.set.error.message("@Entered Order is not Valid")
+| 		return (DALHOOKERROR)
+| 	endselect
+| 	return(true)
+
+| }
+
+
+	

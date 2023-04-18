@@ -1,0 +1,105 @@
+|******************************************************************************
+|* tfisg9235m000  0  VRC B61U a7 live
+|* Update Tax Dimensions
+|* Installation user             
+|* 2014-10-18
+|******************************************************************************
+|* Form Type 4
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+	table	ttfgld102
+	table	ttfacp935
+	table	ttfgld107
+	table	ttdpur401
+	table	ttfgld008
+	
+
+extern	domain	tfgld.ttyp	import.ttyp
+extern	domain	tfgld.docn	import.docn
+extern	domain	tfgld.year	import.fyer
+extern	domain	tfgld.btno	import.btno
+extern	domain	tcncmp		import.cono
+extern	domain	tcyesno		cprj.f
+
+
+|****************************** program section ********************************
+before.program:
+	import("tfgld102.ttyp",import.ttyp)
+	import("tfgld102.docn",import.docn)
+	import("tfgld102.fyer",import.fyer)
+	import("tfgld102.btno",import.btno)
+	import("tfgld102.cono",import.cono)
+
+	
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+
+choice.cont.generate:
+on.choice:
+	process()
+	
+functions:
+function process()
+{
+	select 	tfgld102.*
+	from	tfgld102
+	where	tfgld102._index1 = {:import.cono,:import.fyer,
+				:import.btno,:import.ttyp,:import.docn}
+	selectdo
+		select 	tfacp935.loco,
+			tfacp935.orno,
+			tfacp935.pono,
+			tfacp935.sqnb,
+			tfacp935.ttyp,
+			tfacp935.docn,
+			tfacp935.lino,
+			tfacp935.fcpo
+		from	tfacp935
+		where	tfacp935._index3 = {:tfgld102.tedt,:tfgld102.fyer,
+					:tfgld102.btno,:tfgld102.ttyp,
+					:tfgld102.docn,:tfgld102.lino}
+		and	tfacp935.otyp = 1
+		selectdo
+			select 	tdpur401.cprj
+			from	tdpur401
+			where	tdpur401._index1 = {:tfacp935.orno,:tfacp935.pono,:tfacp935.sqnb}
+			and	tdpur401._compnr = :tfacp935.loco
+			as set with 1 rows
+			selectdo
+			endselect
+			
+			if not isspace(tdpur401.cprj) then
+				select 	tfgld107.dim1,
+					tfgld107.typ1,
+					tfgld107.vlac,
+					tfgld008.dim1
+				from	tfgld107 for update,tfgld008
+				where	tfgld107._index1 ={:tfacp935.fcpo,:tfacp935.ttyp,
+							:tfacp935.docn,:tfacp935.lino}
+				and	tfgld107.vlac refers to tfgld008
+				and	tfgld008.dim1 <> tfgld.dopt.no
+				as set with 1 rows
+				selectdo
+					if cprj.f = tcyesno.yes then
+						tfgld107.typ1 = 1
+						tfgld107.dim1 = tdpur401.cprj
+					else
+						tfgld107.typ1 = 0
+						tfgld107.dim1 = ""
+					endif
+					
+					db.update(ttfgld107,db.retry,e)
+					commit.transaction()
+				endselect
+			endif
+			
+		endselect
+		
+	endselect		
+}

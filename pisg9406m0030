@@ -1,0 +1,284 @@
+|******************************************************************************
+|* tiisg9406m003  0  VRC B61U a7 live
+|* Print Defaulters Who Made Entry Less Than 8 1/4  Hours a Day
+|* Tools                         
+|* 2014-05-16
+|******************************************************************************
+|* Main table tiisg906 , Form Type 4
+|******************************************************************************
+|* IDENT ISG001022, Yoshita Kundwani, IT0177, 16-05-2014 , VRC B61U a7 live 
+|*
+|* ISGECDV001011, IT0205, Arjit Gupta, VRC B61U a7 live
+|* Group employee wise and calculate hour
+|* Only for employee who have transaction less than 8.25 hrs or transaction not maintained
+|*
+|* ISGECDV001055, IT0205, Arjit Gupta, Dt. 24-09-2014, VRC B61U a7 live
+|* Report will also print for date in which transaction has been not maintain.
+|*
+|* ISGECDV001188, IT0205, Arjit Gupta, Dt. 27-11-2014, VRC B61U a7 live
+|* Ex-employee / Employee Trnsfered to other Group may be filter.
+|****************************** declaration section ***************************
+declaration:
+#ident "@(#)ISG001022, Yoshita Kundwani, IT0177, 16-05-2014 , VRC B61U a7 live"
+
+	table   ttiisg906 |
+	table	ttccom001	| Employees
+	table	ttiisg905	| Roles
+	table  ttirou001
+	|table	ttppss030	|Table does not exists
+	table	ttcccp020
+	table	tbpmdm001
+	table	ttiisg911
+	table	ttiisg917	|#ISGECDV001188.n
+	
+
+	extern	domain  	tcemno          emno.f    
+	extern	domain  	tcemno          emno.t
+	extern	domain		tcpono	     	rlid.f
+	extern	domain		tcpono     	rlid.t
+	extern	domain		tcmcs.str10     grcd.f
+	extern	domain		tcmcs.str10     grcd.t
+	extern	domain 		tfgld.date	date.f
+	extern	domain 		tfgld.date	date.t
+
+	extern	domain 		tcdate 		curdt.f
+	extern	domain 		tcdate		stdt.f
+	extern	domain 		tfgld.date		date.m	
+	extern	domain 		tfgld.date		startdate.f
+	extern	domain 		tfgld.date		enddate.t	
+	extern	domain		tphrs.nhrs	hrs.m
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.cont.process:
+on.choice:
+   execute(print.data)
+
+choice.print.data:
+on.choice:
+	if	rprt_open()	then
+| 		read.main.table()	|#ISGECDV001011.o
+		read.main.table.new()	|#ISGECDV001011.n
+		rprt_close()
+	else
+		choice.again()
+	endif
+
+
+|****************************** field section *********************************
+
+field.emno.f:
+when.field.changes:
+	emno.t = emno.f
+
+field.rlid.f:
+when.field.changes:
+   rlid.t = rlid.f
+
+field.grcd.f:
+when.field.changes:
+   grcd.t = grcd.f
+
+
+field.date.f:
+when.field.changes:
+   date.t = date.f
+
+
+|****************************** function section ******************************
+
+functions:
+
+function read.main.table()
+{
+    domain	tcmcs.str20	strdate
+    
+	select	tiisg906.emno, tiisg911.desc
+	from	tiisg906, tiisg911
+	where	tiisg906._index1 inrange {:emno.f, :rlid.f} and	{:emno.t, :rlid.t}
+	and	tiisg906.grcd between :grcd.f and	:grcd.t
+	and	tiisg906.grcd refers to tiisg911 Unref Clear
+	and	tiisg906.stat = tcyesno.yes
+	group by tiisg906.emno, tiisg911.desc
+	order by tiisg906.emno, tiisg911.desc	
+	selectdo
+		tccom001.nama = ""
+		tirou001.dsca = ""
+		select	tccom001.nama, tirou001.dsca, bpmdm001.sdte, bpmdm001.edte 	
+		from	tccom001 , tirou001, bpmdm001
+		where	tccom001._index1 = {:tiisg906.emno}
+		and	tccom001.cwoc refers to tirou001 Unref Clear
+		and	tccom001.emno refers to bpmdm001 Unref Clear
+		selectdo
+		endselect
+
+
+| 		strdate = num.to.date$(tccom001.sdte,3 )				|*		tccom001.sdte Does Not Exists in table
+| 		
+		if	date.f = 0	then 
+			startdate.f = date.to.num(2006,01,01) 
+		else 
+			startdate.f = date.f 
+		endif
+		
+		if	bpmdm001.sdte > startdate.f then
+			startdate.f = bpmdm001.sdte 
+		endif
+		if	bpmdm001.edte > 0 then
+			if	bpmdm001.edte < date.t then
+				enddate.t = bpmdm001.edte
+			else
+				enddate.t = date.t
+			endif
+		else
+			enddate.t = date.t
+		endif
+| 		
+		|employees who made entry less than 8 hours
+		select	tiisg910.emno, tiisg910.tdat:date.m, sum(tiisg910.hhrs):hrs.m 
+		from	tiisg910, tcccp020
+		where	tiisg910._index2 inrange {:tiisg906.emno, :startdate.f}	 
+					and	{:tiisg906.emno, :enddate.t}	
+		and	tiisg910.tdat >= :bpmdm001.sdte
+		and	tiisg910.tdat = tcccp020.date
+		|and	tppss030.cdty <> "D00"
+		group by tiisg910.emno, tiisg910.tdat
+		selectdo
+			if	hrs.m > 0.00 and	round(hrs.m,2,1) < 8.25	then
+				rprt_send()				
+			endif
+			hrs.m = 0
+		endselect
+		
+|		|Employees who not made entry
+		hrs.m = 0
+		
+		for date.m = startdate.f to enddate.t
+| 			select	tiisg910.tdat |, tppss030.cdty 
+| 			from	tiisg910 , tcccp020 
+| 			where	tiisg910._index2 = {:tiisg906.emno, :date.m}
+| 			and	tcccp020.date = :date.m
+| 			selectdo
+| 			selectempty
+| 				tppss030.cdty = "D00"
+| 				select	tppss030.cdty 
+| 				from	tppss030 
+| 				where	tppss030.date = :date.m 
+| 				selectdo 
+| 				endselect
+| 			
+| 				if tppss030.cdty <> "D00" then
+| 					rprt_send()
+| 				endif
+| 			endselect
+| 			select	tiisg910.tdat		|#ISGECDV001011.o
+			select	tiisg910.emno, sum(tiisg910.hhrs):hrs.m	|#ISGECDV001011.n
+			from	tiisg910
+			where	tiisg910._index2 = {:tiisg906.emno, :date.m}
+			group by tiisg910.emno					|#ISGECDV001011.n
+			selectdo
+				select	tcccp020.avlb
+				from	tcccp020
+				where	tcccp020._index1 = {"STND", "STND", :date.m}
+				and	tcccp020.avlb = tcyesno.yes
+				selectdo
+					rprt_send()
+				endselect
+				hrs.m = 0			|#ISGECDV001011.n
+			endselect	
+		endfor
+	endselect
+}
+
+						|#ISGECDV001011.sn
+function read.main.table.new()
+{
+	select	tiisg906.emno, tiisg911.desc,
+		tiisg906.grcd				|#ISGECDV001188.n
+	from	tiisg906, tiisg911
+	where	tiisg906._index1 inrange {:emno.f, :rlid.f} and	{:emno.t, :rlid.t}
+	and	tiisg906.grcd between :grcd.f and	:grcd.t
+	and	tiisg906.grcd refers to tiisg911 Unref Clear
+	and	tiisg906.stat = tcyesno.yes
+	group by tiisg906.emno, tiisg911.desc,
+		tiisg906.grcd					|#ISGECDV001188.n
+	order by tiisg906.emno, tiisg911.desc,
+		tiisg906.grcd					|#ISGECDV001188.n
+	selectdo
+		tccom001.nama = ""
+		tirou001.dsca = ""
+		select	tccom001.nama, tirou001.dsca, bpmdm001.sdte, bpmdm001.edte 	
+		from	tccom001 , tirou001, bpmdm001
+		where	tccom001._index1 = {:tiisg906.emno}
+		and	tccom001.cwoc refers to tirou001 Unref Clear
+		and	tccom001.emno refers to bpmdm001 Unref Clear
+		selectdo
+		endselect
+		
+		startdate.f = 0
+		enddate.t = 0
+		if	date.f = 0	then 
+			startdate.f = date.to.num(2006,01,01) 
+		else 
+			startdate.f = date.f 
+		endif
+		
+		if	bpmdm001.sdte > startdate.f then
+			startdate.f = bpmdm001.sdte 
+		endif
+		if	bpmdm001.edte > 0 then
+			if	bpmdm001.edte < date.t then
+				enddate.t = bpmdm001.edte
+			else
+				enddate.t = date.t
+			endif
+		else
+			enddate.t = date.t
+		endif
+		
+		for date.m = startdate.f to	enddate.t		|#ISGECDV001055.n
+			select	tiisg917.emno, tiisg917.grcd
+			from	tiisg917
+			where	tiisg917._index2 = {:tiisg906.emno, :tiisg906.grcd}
+			and	tiisg917.gndt <= :date.m
+			and	tiisg917.rldt >= :date.m
+			selectdo
+				select	tiisg910.emno, tiisg910.tdat:date.m, sum(tiisg910.hhrs):hrs.m
+				from	tiisg910, tcccp020
+	| 			where	tiisg910._index2 inrange {:tiisg906.emno, :startdate.f}	and	{:tiisg906.emno, :enddate.t}	|#ISGECDV001055.o
+				where	tiisg910._index2 = {:tiisg906.emno, :date.m}				|#ISGECDV001055.n
+				|and	tiisg910.tdat >= :bpmdm001.sdte		|#ISGECDV001055.o
+				and	tiisg910.tdat = tcccp020.date
+				and	tcccp020._index1 = {"STND", "STND"}
+				and	tcccp020.avlb = tcyesno.yes
+				group by tiisg910.emno, tiisg910.tdat
+				selectdo
+					if	(hrs.m > 0.00) and	(round(hrs.m,2,1) < 8.25)	then
+						rprt_send()				
+					endif
+					hrs.m = 0
+				selectempty
+	| 				for date.m = startdate.f to	enddate.t	|#ISGECDV001055.o
+						hrs.m = 0
+						select	tcccp020.avlb
+						from	tcccp020
+						where	tcccp020._index1 = {"STND", "STND", :date.m}
+						and	tcccp020.avlb = tcyesno.yes
+						selectdo
+							rprt_send()
+						endselect
+	| 				endfor						|#ISGECDV001055.o
+				endselect
+			endselect				|#ISGECDV001188.n
+		endfor							|#ISGECDV001055.n	
+	endselect
+}
+								|#ISGECDV001011.en

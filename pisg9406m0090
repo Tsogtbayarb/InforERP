@@ -1,0 +1,133 @@
+|******************************************************************************
+|* tiisg9406m009  0  VRC B61U a7 live
+|* Groupwise Leave / OD
+|* Tools                         
+|* 2014-05-16
+|******************************************************************************
+|* Main table tiisg906 , Form Type 4
+|******************************************************************************
+|* IDENT ISG001022, Yoshita Kundwani, IT0177, 16-05-2014 , VRC B61U a7 live 
+|****************************** declaration section ***************************
+declaration:
+#ident "@(#)ISG001022, Yoshita Kundwani, IT0177, 16-05-2014 , VRC B61U a7 live"
+
+  table ttiisg906 | 
+  table	ttccom001	| Employees
+  table	ttiisg905	| Roles
+  table	ttiisg911	| Hours Accounting Group Master
+  table	ttcccp020
+  table ttiisg910
+  table	ttiisg908
+
+   extern  domain  tcpono	      rlid.f
+   extern  domain  tcpono	      rlid.t
+   extern  domain  tfgld.date       date.f
+   extern  domain  tfgld.date       date.t
+   
+	extern	domain	tcmcs.str10     grcd.f
+	extern	domain	tcmcs.str10     grcd.t
+	extern	domain	tcdate	date.m
+	extern	domain	tphrs.nhrs	thrs
+	extern	domain	tcdays	workingdays
+	extern	domain	tphrs.nhrs	workinghrs
+	extern	domain	tfgld.amnt		leaveperc
+	extern	domain	tfgld.amnt		odperc
+	domain	tcmcs.long	cnt
+	domain	tphrs.nhrs	leavehours
+	domain	tphrs.nhrs	odhours
+	
+	extern	domain	tcdays     	zerodays
+	extern	domain	tcmcs.double     	gfulldays
+	extern	domain	tcmcs.double     	gpartdays
+	extern	domain	tcmcs.double     	gzerodays
+	extern	domain	tcmcs.double     	tfulldays
+	extern	domain	tcmcs.double     	tpartdays
+	extern	domain	tcmcs.double     	tzerodays
+	extern	domain	tfgld.amnt		acperc
+
+
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.cont.process:
+on.choice:
+   execute(print.data)
+
+choice.print.data:
+on.choice:
+   if rprt_open() then
+       read.main.table()
+       rprt_close()
+   else
+       choice.again()
+   endif
+
+
+|****************************** field section *********************************
+
+field.rlid.f:
+when.field.changes:
+   rlid.t = rlid.f
+
+field.date.f:
+when.field.changes:
+   date.t = date.f
+
+
+|****************************** function section ******************************
+
+functions:
+
+function read.main.table()
+{
+	workingdays = 0
+	tfulldays = 0
+	tpartdays = 0
+	tzerodays = 0
+	domain tcmcs.int oldrlid
+	oldrlid = 0
+	select count(*):workingdays 
+	from tcccp020 
+	where tcccp020.date between :date.f and :date.t 
+	|and tppss030.cdty <> "D00" 
+	selectdo 
+	endselect
+	
+
+	
+	select	tiisg905.* 
+	from	tiisg905
+	where	tiisg905.rlid between :rlid.f and :rlid.t
+	selectdo	
+		cnt = 0
+		select  sum(tiisg910.hhrs):workinghrs
+		from	tiisg910
+		where 	tiisg910._index11 inrange {:date.f} and {:date.t}
+		and 	tiisg910.rlid = :tiisg905.rlid
+		selectdo 
+		endselect	
+
+		select	sum(tiisg910.hhrs):tiisg910.hhrs,tiisg910.rlid, tiisg910.acid, tiisg908.desc
+		from	tiisg910, tiisg908
+		where	tiisg910.tdat between :date.f and :date.t
+			and tiisg910.rlid = :tiisg905.rlid
+			and tiisg910.acid = tiisg908.acid
+		group by tiisg910.rlid, tiisg910.acid, tiisg908.desc
+		order by tiisg910.rlid, tiisg910.acid, tiisg908.desc
+		selectdo 
+			acperc = (tiisg910.hhrs/workinghrs) * 100.00
+			rprt_send()	
+			acperc = 0
+			tiisg905.rdes = ""
+			tiisg908.desc = ""
+		endselect	
+	endselect
+}

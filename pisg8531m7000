@@ -1,0 +1,156 @@
+|******************************************************************************
+|* tdisg8531m700  0  VRC B61U a7 live
+|* Export Invoicing
+|* Tools                         
+|* 2014-08-12
+|******************************************************************************
+|* Main table tdisg831 Billing Advice, Form Type 1
+|******************************************************************************
+|* ID ISGEC001061,	Sujeet Kumar,		2014-30-09
+|* Update Transaction Reference on table [tfgld102, tfacr200]
+|* Functional: Mr. Deepak Rawat
+|*
+|* ID: ISGECDV001114, Ritu Shrivastava, Dt. 17-10-2014, VRC B61U a7 live
+|* Added functionality to sent back commercial invoice
+|* Functional: Mrs. Mamta Updhaya
+
+|* ID ISGEC01021, Shilpa Janardanan, Dt. 15-01-2015, VRC B61U a7 live
+|* Linking reports that are linked to session tdisg8131m800.
+
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttdisg831 | Billing Advice
+  table   ttdisg865
+  table		tcisli205
+  table		ttfgld102
+  table		ttfacr200
+
+extern	domain		tcorno	o.cinv
+|****************************** program section ********************************
+before.program:
+| 	o.cinv = ""
+| 	query.extension = "tdisg831.nvst = tdisg.nvst.transfer and (tdisg831.stat = tdisg.stat.freeze or tdisg831.stat = tdisg.stat.process"
+	query.extend.where("tdisg831.nvst = tdisg.nvst.transfer and tdisg831.type = tdisg.type.export and (tdisg831.stat = tdisg.stat.freeze or tdisg831.stat = tdisg.stat.process)")
+
+|****************************** group section **********************************
+|****************************** choice section *********************************
+choice.payment.breakup:
+on.choice:
+	if not isspace(tdisg831.lcno) then
+		start.synchronized.child("tdisg8165m100","tdisg831.cinv","tdisg865.cinv","tdisg831.lcno","tdisg865.lcno")
+	else
+		start.synchronized.child("tdisg8165m100","tdisg831.cinv","tdisg865.cinv","tdisg831.cprj","tdisg865.lcno")
+	endif
+						|#ISGEC001061.sn
+choice.cont.update:
+on.choice:
+	update.transaction.reference()
+
+choice.sent.back:				|#ISGECDV001114.sn
+before.choice:
+	select tdisg831.stat
+	from   tdisg831
+	where  tdisg831._index3 = {:tdisg831.cinv}
+	and    tdisg831.stat = tdisg.stat.process
+	selectdo
+		message("Record Already Processed, Cannot be sent back",1)
+		choice.again()
+	endselect
+		
+on.choice:
+	sent.back.commercial()
+	refresh.parent(-1)
+						|#ISGECDV001114.en
+						
+choice.print.data:
+on.choice:
+	if reportno = 1 then						|#ISG01021.sn
+		if rprt_open() then						
+			tdisgdll831rep_commercial_invoice(tdisg831.cinv)
+			rprt_close()
+		else
+			choice.again()
+		endif
+	else if reportno = 2 then
+		if rprt_open() then
+			commercial_invoice_packing_list(tdisg831.cinv)
+			rprt_close()
+		else
+			choice.again()
+		endif	
+	else if reportno = 3 then
+		if rprt_open() then
+			commercial_invoice_annexure(tdisg831.cinv)
+			rprt_close()
+		else
+			choice.again()
+		endif	
+		
+	else if reportno = 4 then
+		if rprt_open() then
+			tdisgdll831rep_bill_of_lading_summary(tdisg831.cinv)
+			rprt_close()
+		else
+			choice.again()
+		endif	
+	endif	
+	endif
+	endif
+	endif								|#ISG01021.en
+						
+functions:
+function update.transaction.reference()
+{
+	select	tdisg831.brid,
+		tdisg831.scmp,
+		tdisg831.cinv,
+		tdisg831.cind
+	from	tdisg831
+	where	tdisg831._index1 = {:tdisg831.edrn}
+	as set with 1 rows
+	selectdo
+		select cisli205.ityp,
+			cisli205.idoc
+		from	cisli205
+		where	cisli205._index2 = {:tdisg831.scmp,:tdisg831.brid}
+		and	cisli205._compnr = :tdisg831.scmp
+		as set with 1 rows
+		selectdo
+			select 	tfgld102.refr
+			from	tfgld102 for update
+			where	tfgld102._index2 = {:tdisg831.scmp,:cisli205.ityp,:cisli205.idoc}
+			and	tfgld102._compnr = :tdisg831.scmp
+			selectdo
+				tfgld102.refr = tdisg831.cinv &"/" & sprintf$("%D(%02d-%02m-%04Y)",tdisg831.cind)
+				db.update(ttfgld102,db.retry,e)
+			endselect
+			
+			select 	tfacr200.refr
+			from	tfacr200 for update
+			where	tfacr200._index1 = {:cisli205.ityp,:cisli205.idoc}
+			and	tfacr200._compnr = :tdisg831.scmp
+			and	tfacr200.docn = 0
+			selectdo
+				tfacr200.refr = tdisg831.cinv &"/" & sprintf$("%D(%02d-%02m-%04Y)",tdisg831.cind)
+				db.update(ttfacr200,db.retry,e)
+			endselect
+		endselect
+	endselect
+	
+	commit.transaction()
+}
+									|#ISGEC001061.sn
+									
+function sent.back.commercial()					|#ISGECDV001114
+{
+	select tdisg831.nvst
+	from   tdisg831  for update
+	where  tdisg831._index3 = {:tdisg831.cinv}
+	and    tdisg831.stat = tdisg.stat.freeze
+	selectdo
+		tdisg831.nvst = tdisg.nvst.cominv
+		db.update(ttdisg831,db.retry,e)
+	endselect
+	commit.transaction()
+}									|#ISGECDV001114.en
