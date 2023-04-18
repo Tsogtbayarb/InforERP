@@ -1,0 +1,172 @@
+******************************************************************************
+|* tpisg1400m000  0  VRC B61U a7 live
+|* Print L3 Level Element Estimation v/s Engineering Weight
+|* Installation user             
+|* 2014-11-27
+|******************************************************************************
+|* Main table tpptc100 Elements, Form Type 4
+|******************************************************************************
+|*ISGEC01026, SHilpa Janardanan, 19/01/2015, VRC B61U a7 liv
+|* Picking unit with conversion factor
+|* 
+|* GH526CR866, RAvi Kumar, 24-03-2021
+|* Modification in report Print L3 level element Element vs Engineering Weight
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttpptc100 | Elements
+	table	ttpest200
+	table	ttcisg004
+	table	ttcmcs052
+	table	ttcibd003		|ISGEC01026.n
+	table	ttcmcs001
+
+	|**************** Form Variables ********************
+	extern	domain	tccprj		cprj.f    fixed
+	extern	domain	tccprj		cprj.t    fixed
+	extern	domain	tppdm.cspa	cspa.f    fixed
+	extern	domain	tppdm.cspa	cspa.t    fixed
+	
+	|**************** Script Variables ******************
+		domain	tcbool		estimation_exist
+		domain	tcqiv1		tmp.eswt
+	
+	|**************** Report Variables ******************
+	extern	domain	tccprj		rep.cprj
+	extern	domain	tcdsca		rep.pjdc
+	extern	domain	tppdm.cspa	rep.cspa
+	extern	domain	tcmcs.str50	rep.eldc
+	extern	domain	tppdm.wast	rep.wast
+	extern	domain	tcqiv1		rep.eswt
+	extern	domain	tcqiv1		rep.enwt
+	extern	domain	tcamnt		rep.perc
+	
+
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+group.1:
+init.group:
+	get.screen.defaults()
+
+|****************************** choice section ********************************
+choice.print.data:
+on.choice:
+	if	rprt_open()	then
+		read.main.table()
+		rprt_close()
+	else
+		choice.again()
+	endif
+
+|****************************** field section *********************************
+field.cprj.f:
+when.field.changes:
+	cprj.t = cprj.f
+
+field.cspa.f:
+when.field.changes:
+	cspa.t = cspa.f
+
+|****************************** function section ******************************
+functions:
+
+function read.main.table()
+{
+	select	tpptc100.cprj, tpptc100.cspa, tpptc100.desc, tpptc100.wast,
+		tcmcs052.dsca
+	from	tpptc100, tcmcs052
+	where	tpptc100._index1 inrange {:cprj.f, :cspa.f}	and	{:cprj.t, :cspa.t}
+	and	tpptc100.cprj refers to tcmcs052 Unref Clear
+	order by tpptc100._index1
+	selectdo
+		tmp.eswt = 0
+		Initialize_Variables()
+		estimation_exist = false
+		select	tpest200.cprj, tpest200.psel, tpest200.unit, sum(tpest200.quan):tmp.eswt
+		from	tpest200
+		where	tpest200._index1 = {:tpptc100.cprj, "001"}
+		and	tpest200.psel = :tpptc100.cspa
+		group by tpest200.cprj, tpest200.psel, tpest200.unit
+		selectdo
+			rep.cprj = tpptc100.cprj
+			rep.pjdc = tcmcs052.dsca
+			rep.cspa = tpptc100.cspa
+			rep.eldc = tpptc100.desc
+			rep.wast = tpptc100.wast
+			if	trim$(tpest200.unit) = "kg"	then
+				rep.eswt = rep.eswt + tmp.eswt
+			else
+				get_conversion_factor()	|#ISGEC01026.sn
+				if tcibd003.conv = 0 then	
+					tmp.eswt = 0
+					rep.eswt = rep.eswt + tmp.eswt
+				else			
+					rep.eswt =  rep.eswt + (tmp.eswt /tcibd003.conv)	
+				endif	
+			endif				|#ISGEC01026.en
+			
+			estimation_exist = true 
+		endselect	
+		if	estimation_exist	then
+| 			select	tcisg004.proj, tcisg004.elmt, sum(tcisg004.wght):rep.enwt
+| 			from	tcisg004
+| 			where	tcisg004._index1 = {:tpptc100.cprj, :tpptc100.cspa}
+| 			and	tcisg004.stat = dmstat.released or tcisg004.stat = dmstat.process)			|GH526CR866.cng
+| 			group by tcisg004.proj, tcisg004.elmt
+| 			selectdo
+| 			selectempty
+| 				rep.enwt = 0
+| 			endselect	
+			
+			select	sum(dmisg005.wght):rep.enwt
+			from	dmisg005
+			where	dmisg005._index1 = {:tpptc100.cprj, :tpptc100.cspa}	
+			and	(dmisg005.stat = dmstat.released or dmisg005.stat = dmstat.process)
+			selectdo
+			selectempty
+				rep.enwt = 0
+			endselect
+			
+			if	rep.eswt <> 0	then
+				rep.perc = round((rep.enwt * 100) / rep.eswt, 2, 1)
+			endif	
+			rprt_send()
+		endif	
+	endselect
+}
+
+function Initialize_Variables()
+{
+	rep.cprj = ""
+	rep.pjdc = ""
+	rep.cspa = ""
+	rep.eldc = ""
+	rep.wast = empty
+	rep.eswt = 0
+	rep.enwt = 0
+	rep.perc = 0
+}
+
+function get_conversion_factor()		|#ISGEC01026.sn
+{
+	select	tcmcs001.tccu
+	from	tcmcs001
+	where	tcmcs001._index1=  {:tpest200.unit}
+	and	tcmcs001.tccu = 1			|# Weight
+	selectdo
+	
+		select	tcibd003.conv
+		from	tcibd003
+		where	tcibd003._index2 = "kg"
+		and	tcibd003.unit = :tpest200.unit
+		selectdo
+		selectempty
+			tcibd003.conv = 0
+		endselect
+	selectempty
+			tcibd003.conv = 0	
+	endselect	
+}
+				|#ISGEC01026.en

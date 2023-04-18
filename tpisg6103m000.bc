@@ -1,0 +1,111 @@
+|******************************************************************************
+|* tpisg6103m000  0  VRC B61U a7 isg 
+|* Maitain Bank ID Detail
+|* Ravi Kumar                    
+|* 2021-02-22
+|******************************************************************************
+|* Main table tpisg603 Bank ID Header, Form Type 1
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttpisg603 | Bank ID Header
+  table   ttpisg602
+  table   ttpisg605
+  table   ttdisg831
+  table   ttdisg860
+  table   ttdisg865
+  table   ttpisg601
+  
+	extern	domain	tfgld.date	curr.date
+	extern	domain	tcmcs.str60	bank.name
+			long		brp.id, count.cinv
+			
+	extern	domain	tcamnt		tot.amnt, tot.nera, tot.bchg, tot.drcr, tot.out, tot.advan
+
+	#include <bic_dam>
+|****************************** program section ********************************
+before.program:
+	curr.date = date.num()
+	
+
+|****************************** group section **********************************
+choice.print.report:
+on.choice:
+	tot.amnt = 0
+	tot.advan = 0
+	spool.preview = true
+	brp.id = brp.open("rtpisg640301000", "P", 0)
+	
+	select	tpisg603.code
+	from	tpisg603
+	where	tpisg603.bank = :tpisg603.bank
+	selectdo
+		select	tpisg601.lcno
+		from	tpisg601
+		where	tpisg601._index1 = {:tpisg603.code}
+		selectdo
+			select	tpisg602.*
+			from	tpisg602
+			where	tpisg602._index1 = {:tpisg603.code}
+			selectdo
+				select	tdisg860.ptcd
+				from	tdisg860
+				where	tdisg860._index1= {:tpisg601.lcno}
+				and	tdisg860.ptyp = tdisg.ptyp.advance
+				selectdo
+					select	tdisg865.amnt
+					from	tdisg865
+					where	tdisg865._index1 = {:tpisg602.cinv, :tpisg601.lcno, :tdisg860.ptcd}
+					selectdo
+						tot.advan = tot.advan + tdisg865.amnt
+					endselect
+				endselect
+			endselect
+		endselect
+		
+		select	tpisg602.amnt,
+			tpisg602.cinv,
+			tpisg602.ptcd
+		from	tpisg602
+		where	tpisg602._index1 = {:tpisg603.code}
+		selectdo
+			select	count(tpisg602.code):count.cinv
+			from	tpisg602, tpisg603
+			where	tpisg602.cinv = :tpisg602.cinv
+			and	tpisg603.bank = :tpisg603.bank
+			and	tpisg603.code = tpisg602.code
+			selectdo
+			endselect
+		
+			tot.amnt = tot.amnt + (tpisg602.amnt/count.cinv)
+		endselect
+	endselect
+	
+	select	sum(tpisg604.nera):tot.nera,
+		sum(tpisg604.bchg):tot.bchg,
+		sum(tpisg604.drcr):tot.drcr
+	from	tpisg604
+	where	tpisg604.bank = :tpisg603.bank
+	selectdo
+	selectempty
+		tot.nera = 0
+		tot.bchg = 0
+		tot.drcr = 0
+	endselect
+	tot.out = tot.amnt - tot.nera - tot.bchg - tot.drcr - tot.advan	
+	brp.ready(brp.id)
+		
+	brp.close(brp.id)
+	
+field.bank.name:
+before.display:
+	select	tdisg847.bank:bank.name
+	from	tdisg847
+	where	tdisg847._index1 = {:tpisg603.bnam}
+	as set with 1 rows
+	selectdo
+	selectempty
+		bank.name = ""
+	endselect

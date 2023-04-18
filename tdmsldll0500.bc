@@ -1,0 +1,1256 @@
+|******************************************************************************
+|* tdmsldll0500  0  VRC B61U a7 live
+|* Purchase Order History
+|* tools3
+|* 14-06-07 [10:47]
+|******************************************************************************
+|* Script Type: Library
+|******************************************************************************
+|*
+|* IDENT ISGECDV001080, Kuldeep Sharma, 2014-10-06
+|*  Create Text History on po copy
+|*
+|* ISGECDV001168, IT0205, Arjit Gupta, VRC B61U a7 live, Dt. 19-11-2014
+|* New Added Reason code to be move to History
+|*****************************************************************************
+|* IDENT PATCH002027, IT0376, Mani sharma, VRC B61U a7 isg Dt. 3.4.2015
+|* Add transaction date & login code in table tdmsl500,tdmsl501
+|*
+|* ID ISGEC016011, Manish Manchanda, 2016-07-29
+|* Modifications on db.insert duplicate data error value i.e. 100 is returned 
+|* which is fetched on User Exit and DALHOOKERROR is returned with no error in DAL Buffer
+|* 
+|* ISGEC016048, Manish Manchanda, 2016-12-15
+|* Modifications - new fields added
+|*****************************************************************************
+|* ISGEC017006, IT0386, Saurabh Dubey, 27 April 2017, VRC B61U a7 isg
+|* Isgec Onsite Deployment
+|* Logic for insertion of History in second table added as no more field could
+|* be added in previous table
+|******************************************************************************
+|* GSTLIVE01016, IT0386, Saurabh Dubey, 30 October 2017, VRC B61U a7 isg
+|* Isgec Onsite Deployment
+|* Logic for insertion of History of PO Wise MOC
+|*
+|* ID ISGEC01069, Priya Jindal, 1/6/2018
+|* Removal of line description of tdmsl501
+|*
+|* ID GH211CR000, RAvi Kumar, 19/11/2019
+|* IR-133019-Wrong Tax print on PO P10139321 
+|* 
+|* GH539CR881, RAvi Kumar, 02-04-2021
+|* Provision for writing Header Text Fields in PO
+|******************************************************************************
+	table	ttdpur400
+	table	ttdpur401
+	table	ttdmsl400
+	table	ttdmsl500
+	table	ttdmsl501
+	table	ttclct200
+	table	ttcmsl200
+	table	ttcisg001
+	table	ttdmsl504
+	table	ttdisg001
+	table	ttdisg002
+	table	ttdisg020
+| 	table	ttdisg025
+	table	ttdisg502
+	table  ttdpur450
+				|#ISGECDV001080.sn
+	table	ttttxt001
+	table	ttttxt002
+	table	ttdmsl502	|#ISGEC016048.n
+	table	ttdmsl503	|#ISGEC016048.n
+#include <bic_text>
+				|#ISGECDV001080.en
+	
+function extern long tdmsl.dll0500.insert.history(
+				domain 	tcorno 	i.orno,
+				domain	tcsern	i.vrsn)
+{
+	domain tcsern prv.vrsn
+	|*** tdpur400
+	tdmsl.dll0500.move.tdpur400.to.tdmsl500()
+	tdmsl500.vrsn = i.vrsn
+| 	db.insert(ttdmsl500,db.retry,db.return.error)		|#ISGEC016011.o
+	db.insert(ttdmsl500,db.skip.dupl,e)			|#ISGEC016011.n
+	if e <> 0 then
+		return(e)
+	endif
+	
+| 	write.MOC.history(i.orno, i.vrsn)	|#GSTLIVE01016.n
+	
+	|*** tdpur401
+	select tdpur401.* from tdpur401
+	where tdpur401._index1 = {:i.orno}
+	selectdo
+		tdmsl.dll0500.move.tdpur401.to.tdmsl501()
+		tdmsl501.vrsn = i.vrsn
+| 		db.insert(ttdmsl501,db.retry,db.return.error)	|#ISGEC016011.o
+		db.insert(ttdmsl501,db.skip.dupl,e)	|#ISGEC016011.n
+		if e <> 0 then
+			return(e)
+		endif
+		
+		insert.update.second.history.part()	|#ISGEC017006.sn
+		tdmsl504.revi = i.vrsn
+		
+		db.insert(ttdmsl504, db.skip.dupl)	
+					|#ISGEC017006.en
+	endselect
+	|*** tclct200
+	select tclct200.* from tclct200
+	where tclct200.boty in (1,2)
+	and 	tclct200.bobj = :i.orno
+	selectdo
+		tdmsl.dll0500.move.tclct200.to.tcmsl200()
+		tcmsl200.vrsn = i.vrsn
+| 		db.insert(ttcmsl200,db.retry,db.return.error)		|#ISGEC016011.o
+		db.insert(ttcmsl200,db.skip.dupl,e)			|#ISGEC016011.n
+		if e <> 0 then
+			return(e)
+		endif
+	endselect
+	if i.vrsn = 0 then
+		return(0)
+	endif
+	|*** tdisg002
+	select tdisg002.* from tdisg002
+	where tdisg002._index1 = {:i.orno}
+	selectdo
+		tdmsl.dll0500.move.tdisg002.to.tdisg502()
+		tdisg502.vrsn = i.vrsn
+| 		db.insert(ttdisg502,db.retry,db.return.error)		|#ISGEC016011.o
+		db.insert(ttdisg502,db.skip.dupl,e)		|#ISGEC016011.n
+		if e <> 0 then
+			return(e)
+		endif
+	endselect
+	|*** tcisg001
+	prv.vrsn = i.vrsn - 1
+| 	select tcisg001.* from tcisg001
+| 	where tcisg001._index1 = {:i.orno,:prv.vrsn}
+| 	selectdo
+| 		tcisg001.vrsn = i.vrsn
+| 		db.insert(ttcisg001,db.retry,db.return.error)
+| 		if e <> 0 then
+| 			return(e)
+| 		endif
+| 	endselect
+	|*** tdisg001
+	select tdisg001.* from tdisg001
+	where tdisg001._index1 = {:i.orno,:prv.vrsn}
+	selectdo
+		tdisg001.vrsn = i.vrsn
+| 		db.insert(ttdisg001,db.retry,db.return.error)			|#ISGEC016011.o
+		db.insert(ttdisg001,db.skip.dupl,e)				|#ISGEC016011.n
+		if e <> 0 then
+			return(e)
+		endif
+	endselect
+	return(0)
+}
+function extern tdmsl.dll0500.move.tdpur400.to.tdmsl500()
+{
+
+	tdmsl500.orno = tdpur400.orno
+	tdmsl500.otbp = tdpur400.otbp
+	tdmsl500.otad = tdpur400.otad
+	tdmsl500.otcn = tdpur400.otcn
+	tdmsl500.sfbp = tdpur400.sfbp
+	tdmsl500.sfad = tdpur400.sfad
+	tdmsl500.sfcn = tdpur400.sfcn
+	tdmsl500.ifbp = tdpur400.ifbp
+	tdmsl500.ifad = tdpur400.ifad
+	tdmsl500.ifcn = tdpur400.ifcn
+	tdmsl500.ptbp = tdpur400.ptbp
+	tdmsl500.ptad = tdpur400.ptad
+	tdmsl500.ptcn = tdpur400.ptcn
+	tdmsl500.corg = tdpur400.corg
+	tdmsl500.cotp = tdpur400.cotp
+	tdmsl500.ragr = tdpur400.ragr
+	tdmsl500.cpay = tdpur400.cpay
+	tdmsl500.odat = tdpur400.odat
+	tdmsl500.odis = tdpur400.odis
+	tdmsl500.ccur = tdpur400.ccur
+	tdmsl500.mcfr = tdpur400.mcfr
+	tdmsl500.ratp = tdpur400.ratp
+	tdmsl500.ratf = tdpur400.ratf
+	tdmsl500.ratd = tdpur400.ratd
+	tdmsl500.ratt = tdpur400.ratt
+	tdmsl500.raur = tdpur400.raur
+	tdmsl500.cwar = tdpur400.cwar
+	tdmsl500.cadr = tdpur400.cadr
+	tdmsl500.ccon = tdpur400.ccon
+	tdmsl500.plnr = tdpur400.plnr
+	tdmsl500.ccrs = tdpur400.ccrs
+	tdmsl500.cfrw = tdpur400.cfrw
+	tdmsl500.cplp = tdpur400.cplp
+	tdmsl500.bppr = tdpur400.bppr
+	tdmsl500.bptx = tdpur400.bptx
+	tdmsl500.cdec = tdpur400.cdec
+	tdmsl500.ptpa = tdpur400.ptpa
+	tdmsl500.ddat = tdpur400.ddat
+	tdmsl500.ddtc = tdpur400.ddtc
+	tdmsl500.cbrn = tdpur400.cbrn
+	tdmsl500.creg = tdpur400.creg
+	tdmsl500.refa = tdpur400.refa
+	tdmsl500.refb = tdpur400.refb
+	tdmsl500.prno = tdpur400.prno
+	tdmsl500.ctrj = tdpur400.ctrj
+	tdmsl500.cofc = tdpur400.cofc
+	tdmsl500.fdpt = tdpur400.fdpt
+	tdmsl500.odty = tdpur400.odty
+	tdmsl500.odno = tdpur400.odno
+	tdmsl500.retr = tdpur400.retr
+	tdmsl500.sorn = tdpur400.sorn
+	tdmsl500.cosn = tdpur400.cosn
+	tdmsl500.akcd = tdpur400.akcd
+	tdmsl500.crcd = tdpur400.crcd
+	tdmsl500.ctcd = tdpur400.ctcd
+	tdmsl500.egen = tdpur400.egen
+	tdmsl500.sbim = tdpur400.sbim
+	tdmsl500.paft = tdpur400.paft
+	tdmsl500.sbmt = tdpur400.sbmt
+	tdmsl500.bpcl = tdpur400.bpcl
+	tdmsl500.oamt = tdpur400.oamt
+	tdmsl500.comm = tdpur400.comm
+	tdmsl500.iebp = tdpur400.iebp
+	tdmsl500.iafc = tdpur400.iafc
+	tdmsl500.lccl = tdpur400.lccl
+	tdmsl500.hdst = tdpur400.hdst
+	tdmsl500.hisp = tdpur400.hisp
+	tdmsl500.hism = tdpur400.hism
+	tdmsl500.ccty = tdpur400.ccty
+	tdmsl500.cvyn = tdpur400.cvyn
+	tdmsl500.bpid.l = tdpur400.bpid.l
+	tdmsl500.impo.l = tdpur400.impo.l
+	tdmsl500.ccty.l = tdpur400.ccty.l
+	tdmsl500.cvat.l = tdpur400.cvat.l
+	tdmsl500.exmt.l = tdpur400.exmt.l
+	tdmsl500.catg.l = tdpur400.catg.l
+	tdmsl500.ceno.l = tdpur400.ceno.l
+	tdmsl500.bdbt.l = tdpur400.bdbt.l
+	tdmsl500.bnoo.l = tdpur400.bnoo.l
+							|#ISGECDV001080.so
+	insert.creator(tdpur400.orno,tdmsl500.vrsn)     |PATCH002027.n					
+	
+| 	tdmsl500.txta = tdpur400.txta
+| 	tdmsl500.txtb = tdpur400.txtb
+							|#ISGECDV001080.eo
+							|#ISGECDV001080.sn
+	copy.text("tdpur400.txta", "tdmsl500.txta",tdpur400.txta)
+	copy.text("tdpur400.txtb", "tdmsl500.txtb",tdpur400.txtb)
+							|#ISGECDV001080.en
+	get.var(pid, "tdpur400.cdf_adat", tdmsl500.adat.c)
+	get.var(pid, "tdpur400.cdf_alvl", tdmsl500.alvl.c)
+	get.var(pid, "tdpur400.cdf_prty", tdmsl500.prty.c)
+	get.var(pid, "tdpur400.cdf_qap", tdmsl500.qap.c)
+	get.var(pid, "tdpur400.cdf_qdat", tdmsl500.qdat.c)
+	get.var(pid, "tdpur400.cdf_refb",tdmsl500.refb.c)
+	get.var(pid, "tdpur400.cdf_reas", tdmsl500.reas)		|#ISGECDV001168.n
+	
+	select	tdmsl502.*						|RAvi.a.s.25092020
+	from	tdmsl502
+	where	tdmsl502._index1	=	{:tdpur401.orno}
+	as	set with 1 rows
+	selectdo
+	selectempty
+		tdmsl502.fdes	=	""
+		tdmsl502.fde2	=	""
+		tdmsl502.fde3	=	""
+		tdmsl502.hde1	=	""		|GH539CR881.a
+		tdmsl502.hde2	=	""		|GH539CR881.a
+		tdmsl502.hde3	=	""		|GH539CR881.a
+	endselect
+	tdmsl500.fdes	=	tdmsl502.fdes
+	tdmsl500.fde2	=	tdmsl502.fde2
+	tdmsl500.fde3	=	tdmsl502.fde3				|RAvi.a.e.25092020
+	tdmsl500.hde1	=	tdmsl502.hde1		|GH539CR881.a
+	tdmsl500.hde2	=	tdmsl502.hde2		|GH539CR881.a
+	tdmsl500.hde3	=	tdmsl502.hde3		|GH539CR881.a
+}
+									|#ISGECDV001080.sn
+function copy.text(domain tcmcs.str17 i.field, domain tcmcs.str17 o.text, domain tctxtn inp.text)
+{
+	long ret
+	if inp.text = 0 then
+| 		out.text = 0
+		return
+	endif
+	select tttxt001.txtg,tttxt001.txtg from tttxt001
+	where tttxt001._index1 = {:inp.text}
+	as set with 1 rows
+	selectdo
+	endselect
+	
+	select tttxt002.kwd1,tttxt002.kwd2,tttxt002.kwd3,tttxt002.kwd4 from tttxt002
+	where tttxt002._index1 = {:inp.text,"2"}
+	as set with 1 rows
+	selectdo
+	endselect
+	
+	ret = text.copy  (o.text, i.field, tttxt002.kwd1, tttxt002.kwd2, tttxt002.kwd3, tttxt002.kwd4, tttxt001.txtg, tttxt001.opwd)
+}
+								|#ISGECDV001080.en
+function extern tdmsl.dll0500.move.tdmsl500.to.tdpur400()
+{
+	tdpur400.orno = tdmsl500.orno
+	tdpur400.otbp = tdmsl500.otbp
+	tdpur400.otad = tdmsl500.otad
+	tdpur400.otcn = tdmsl500.otcn
+	tdpur400.sfbp = tdmsl500.sfbp
+	tdpur400.sfad = tdmsl500.sfad
+	tdpur400.sfcn = tdmsl500.sfcn
+	tdpur400.ifbp = tdmsl500.ifbp
+	tdpur400.ifad = tdmsl500.ifad
+	tdpur400.ifcn = tdmsl500.ifcn
+	tdpur400.ptbp = tdmsl500.ptbp
+	tdpur400.ptad = tdmsl500.ptad
+	tdpur400.ptcn = tdmsl500.ptcn
+	tdpur400.corg = tdmsl500.corg
+	tdpur400.cotp = tdmsl500.cotp
+	tdpur400.ragr = tdmsl500.ragr
+	tdpur400.cpay = tdmsl500.cpay
+	tdpur400.odat = tdmsl500.odat
+	tdpur400.odis = tdmsl500.odis
+	tdpur400.ccur = tdmsl500.ccur
+	tdpur400.mcfr = tdmsl500.mcfr
+	tdpur400.ratp = tdmsl500.ratp
+	tdpur400.ratf = tdmsl500.ratf
+	tdpur400.ratd = tdmsl500.ratd
+	tdpur400.ratt = tdmsl500.ratt
+	tdpur400.raur = tdmsl500.raur
+	tdpur400.cwar = tdmsl500.cwar
+	tdpur400.cadr = tdmsl500.cadr
+	tdpur400.ccon = tdmsl500.ccon
+	tdpur400.plnr = tdmsl500.plnr
+	tdpur400.ccrs = tdmsl500.ccrs
+	tdpur400.cfrw = tdmsl500.cfrw
+	tdpur400.cplp = tdmsl500.cplp
+	tdpur400.bppr = tdmsl500.bppr
+	tdpur400.bptx = tdmsl500.bptx
+	tdpur400.cdec = tdmsl500.cdec
+	tdpur400.ptpa = tdmsl500.ptpa
+	tdpur400.ddat = tdmsl500.ddat
+	tdpur400.ddtc = tdmsl500.ddtc
+	tdpur400.cbrn = tdmsl500.cbrn
+	tdpur400.creg = tdmsl500.creg
+	tdpur400.refa = tdmsl500.refa
+	tdpur400.refb = tdmsl500.refb
+	tdpur400.prno = tdmsl500.prno
+	tdpur400.ctrj = tdmsl500.ctrj
+	tdpur400.cofc = tdmsl500.cofc
+	tdpur400.fdpt = tdmsl500.fdpt
+	tdpur400.odty = tdmsl500.odty
+	tdpur400.odno = tdmsl500.odno
+	tdpur400.retr = tdmsl500.retr
+	tdpur400.sorn = tdmsl500.sorn
+	tdpur400.cosn = tdmsl500.cosn
+	tdpur400.akcd = tdmsl500.akcd
+	tdpur400.crcd = tdmsl500.crcd
+	tdpur400.ctcd = tdmsl500.ctcd
+	tdpur400.egen = tdmsl500.egen
+	tdpur400.sbim = tdmsl500.sbim
+	tdpur400.paft = tdmsl500.paft
+	tdpur400.sbmt = tdmsl500.sbmt
+	tdpur400.bpcl = tdmsl500.bpcl
+	tdpur400.oamt = tdmsl500.oamt
+	tdpur400.comm = tdmsl500.comm
+	tdpur400.iebp = tdmsl500.iebp
+	tdpur400.iafc = tdmsl500.iafc
+	tdpur400.lccl = tdmsl500.lccl
+	tdpur400.hdst = tdmsl500.hdst
+	tdpur400.hisp = tdmsl500.hisp
+	tdpur400.hism = tdmsl500.hism
+	tdpur400.ccty = tdmsl500.ccty
+	tdpur400.cvyn = tdmsl500.cvyn
+	tdpur400.bpid.l = tdmsl500.bpid.l
+	tdpur400.impo.l = tdmsl500.impo.l
+	tdpur400.ccty.l = tdmsl500.ccty.l
+	tdpur400.cvat.l = tdmsl500.cvat.l
+	tdpur400.exmt.l = tdmsl500.exmt.l
+	tdpur400.catg.l = tdmsl500.catg.l
+	tdpur400.ceno.l = tdmsl500.ceno.l
+	tdpur400.bdbt.l = tdmsl500.bdbt.l
+	tdpur400.bnoo.l = tdmsl500.bnoo.l
+	tdpur400.txta = tdmsl500.txta
+	tdpur400.txtb = tdmsl500.txtb
+	put.var(pid, "tdmsl500.adat.c","tdpur400.cdf_adat")
+	put.var(pid, "tdmsl500.alvl.c","tdpur400.cdf_alvl")
+	put.var(pid, "tdmsl500.prty.c","tdpur400.cdf_prty")
+	put.var(pid, "tdmsl500.qap.c","tdpur400.cdf_qap")
+	put.var(pid, "tdmsl500.qdat.c","tdpur400.cdf_qdat")
+	put.var(pid, "tdmsl500.refb.c","tdpur400.cdf_refb")
+	
+	put.var(pid, "tdpur400.cdf_reas", tdmsl500.reas)		|#ISGECDV001168.n
+}
+function extern tdmsl.dll0500.move.tdpur401.to.tdmsl501()
+{	
+	
+	tdmsl501.orno = tdpur401.orno
+	tdmsl501.pono = tdpur401.pono
+	tdmsl501.sqnb = tdpur401.sqnb
+	tdmsl501.corg = tdpur401.corg
+	tdmsl501.oltp = tdpur401.oltp
+	tdmsl501.otbp = tdpur401.otbp
+	tdmsl501.sfbp = tdpur401.sfbp
+	tdmsl501.sfad = tdpur401.sfad
+	tdmsl501.sfcn = tdpur401.sfcn
+	tdmsl501.sfwh = tdpur401.sfwh
+	tdmsl501.item = tdpur401.item
+	tdmsl501.effn = tdpur401.effn
+	tdmsl501.sdsc = tdpur401.sdsc
+	tdmsl501.crrf = tdpur401.crrf
+	tdmsl501.citt = tdpur401.citt
+	tdmsl501.crit = tdpur401.crit
+	tdmsl501.mpnr = tdpur401.mpnr
+	tdmsl501.subc = tdpur401.subc
+	tdmsl501.mpsn = tdpur401.mpsn
+	tdmsl501.cmnf = tdpur401.cmnf
+	tdmsl501.mitm = tdpur401.mitm
+	tdmsl501.revi = tdpur401.revi
+	tdmsl501.btsp = tdpur401.btsp
+	tdmsl501.qual = tdpur401.qual
+	tdmsl501.qoor = tdpur401.qoor
+	tdmsl501.cuqp = tdpur401.cuqp
+	tdmsl501.cvqp = tdpur401.cvqp
+	tdmsl501.leng = tdpur401.leng
+	tdmsl501.widt = tdpur401.widt
+	tdmsl501.thic = tdpur401.thic
+	tdmsl501.odat = tdpur401.odat
+	tdmsl501.ddta = tdpur401.ddta
+	tdmsl501.ddtb = tdpur401.ddtb
+	tdmsl501.ddtc = tdpur401.ddtc
+	tdmsl501.ddtd = tdpur401.ddtd
+	tdmsl501.ddte = tdpur401.ddte
+	tdmsl501.ddtf = tdpur401.ddtf
+	tdmsl501.rdta = tdpur401.rdta
+	tdmsl501.pric = tdpur401.pric
+	tdmsl501.porg = tdpur401.porg
+	tdmsl501.pmde = tdpur401.pmde
+	tdmsl501.pmse = tdpur401.pmse
+	tdmsl501.cupp = tdpur401.cupp
+	tdmsl501.cvpp = tdpur401.cvpp
+	tdmsl501.disc = tdpur401.disc
+	tdmsl501.ldam = tdpur401.ldam
+	tdmsl501.dorg = tdpur401.dorg
+	tdmsl501.dmty = tdpur401.dmty
+	tdmsl501.dmde = tdpur401.dmde
+	tdmsl501.dmse = tdpur401.dmse
+	tdmsl501.dmth = tdpur401.dmth
+	tdmsl501.cdis = tdpur401.cdis
+	tdmsl501.dtrm = tdpur401.dtrm
+	tdmsl501.elgb = tdpur401.elgb
+	tdmsl501.stdc = tdpur401.stdc
+	tdmsl501.oamt = tdpur401.oamt
+	tdmsl501.rcno = tdpur401.rcno
+	tdmsl501.rseq = tdpur401.rseq
+	tdmsl501.dino = tdpur401.dino
+	tdmsl501.qips = tdpur401.qips
+	tdmsl501.qidl = tdpur401.qidl
+	tdmsl501.qiap = tdpur401.qiap
+	tdmsl501.crej = tdpur401.crej
+	tdmsl501.qirj = tdpur401.qirj
+	tdmsl501.qibo = tdpur401.qibo
+	tdmsl501.qbbc = tdpur401.qbbc
+	tdmsl501.cubp = tdpur401.cubp
+	tdmsl501.cvbp = tdpur401.cvbp
+	tdmsl501.fire = tdpur401.fire
+	tdmsl501.qibp = tdpur401.qibp
+	tdmsl501.ddon = tdpur401.ddon
+	tdmsl501.lseq = tdpur401.lseq
+	tdmsl501.pseq = tdpur401.pseq
+	tdmsl501.amld = tdpur401.amld
+	tdmsl501.amod = tdpur401.amod
+	tdmsl501.damt = tdpur401.damt
+	tdmsl501.stsc = tdpur401.stsc
+	tdmsl501.stsd = tdpur401.stsd
+	tdmsl501.vryn = tdpur401.vryn
+	tdmsl501.invn = tdpur401.invn
+	tdmsl501.invd = tdpur401.invd
+	tdmsl501.copr = tdpur401.copr
+	tdmsl501.coop = tdpur401.coop
+	tdmsl501.cpcp = tdpur401.cpcp
+	tdmsl501.cwar = tdpur401.cwar
+	tdmsl501.cadr = tdpur401.cadr
+	tdmsl501.lsel = tdpur401.lsel
+	tdmsl501.clot = tdpur401.clot
+	tdmsl501.cprj = tdpur401.cprj
+	tdmsl501.cspa = tdpur401.cspa
+	tdmsl501.cact = tdpur401.cact
+	tdmsl501.cstl = tdpur401.cstl
+	tdmsl501.ccco = tdpur401.ccco
+	tdmsl501.ctrj = tdpur401.ctrj
+	tdmsl501.akcd = tdpur401.akcd
+	tdmsl501.cfrw = tdpur401.cfrw
+	tdmsl501.crbn = tdpur401.crbn
+	tdmsl501.clyn = tdpur401.clyn
+	tdmsl501.cpva = tdpur401.cpva
+	tdmsl501.crcd = tdpur401.crcd
+	tdmsl501.ctcd = tdpur401.ctcd
+	tdmsl501.cosn = tdpur401.cosn
+	tdmsl501.qiiv = tdpur401.qiiv
+	tdmsl501.iamt = tdpur401.iamt
+	tdmsl501.comm = tdpur401.comm
+	tdmsl501.appr = tdpur401.appr
+	tdmsl501.ccty = tdpur401.ccty
+	tdmsl501.cvat = tdpur401.cvat
+	tdmsl501.bptc = tdpur401.bptc
+	tdmsl501.exmt = tdpur401.exmt
+	tdmsl501.ceno = tdpur401.ceno
+	tdmsl501.rcod = tdpur401.rcod
+	tdmsl501.bpcl = tdpur401.bpcl
+	tdmsl501.taxp = tdpur401.taxp
+	tdmsl501.gefo = tdpur401.gefo
+	tdmsl501.ldat = tdpur401.ldat
+	tdmsl501.serv = tdpur401.serv
+	tdmsl501.casi = tdpur401.casi
+	tdmsl501.ptpe = tdpur401.ptpe
+	tdmsl501.glco = tdpur401.glco
+	tdmsl501.sbim = tdpur401.sbim
+	tdmsl501.paft = tdpur401.paft
+	tdmsl501.sbmt = tdpur401.sbmt
+	tdmsl501.cuva = tdpur401.cuva
+	tdmsl501.cono = tdpur401.cono
+	tdmsl501.cpon = tdpur401.cpon
+	tdmsl501.ccof = tdpur401.ccof
+	tdmsl501.cnig = tdpur401.cnig
+	tdmsl501.paya = tdpur401.paya
+	tdmsl501.cpay = tdpur401.cpay
+	tdmsl501.cdec = tdpur401.cdec
+	tdmsl501.ptpa = tdpur401.ptpa
+	tdmsl501.pmnt = tdpur401.pmnt
+	tdmsl501.pmni = tdpur401.pmni
+	tdmsl501.pmnd = tdpur401.pmnd
+	tdmsl501.owns = tdpur401.owns
+	tdmsl501.lccl = tdpur401.lccl
+	tdmsl501.spcn = tdpur401.spcn
+	tdmsl501.bgxc = tdpur401.bgxc
+	tdmsl501.cpcl = tdpur401.cpcl
+	tdmsl501.cpln = tdpur401.cpln
+	tdmsl501.csgp = tdpur401.csgp
+	tdmsl501.acti = tdpur401.acti
+	tdmsl501.pmsk = tdpur401.pmsk
+	tdmsl501.rnso.l = tdpur401.rnso.l
+	tdmsl501.rnsb.l = tdpur401.rnsb.l
+	tdmsl501.ecif.l = tdpur401.ecif.l
+	tdmsl501.assv.l = tdpur401.assv.l
+	tdmsl501.elco.l = tdpur401.elco.l
+	tdmsl501.ihsn.l = tdpur401.ihsn.l
+	tdmsl501.mrpo.l = tdpur401.mrpo.l
+	tdmsl501.iexb.l = tdpur401.iexb.l
+	tdmsl501.icen.l = tdpur401.icen.l
+	tdmsl501.imca.l = tdpur401.imca.l
+	tdmsl501.exca.l = tdpur401.exca.l
+	tdmsl501.mrpe.l = tdpur401.mrpe.l
+	tdmsl501.hcod.l = tdpur401.hcod.l
+	tdmsl501.cenv.l = tdpur401.cenv.l
+	tdmsl501.icat.l = tdpur401.icat.l
+	tdmsl501.asoe.l = tdpur401.asoe.l
+	tdmsl501.asve.l = tdpur401.asve.l
+	tdmsl501.dise.l = tdpur401.dise.l
+	tdmsl501.fase.l = tdpur401.fase.l
+	tdmsl501.asov.l = tdpur401.asov.l
+	tdmsl501.asvv.l = tdpur401.asvv.l
+	tdmsl501.disv.l = tdpur401.disv.l
+	tdmsl501.fasv.l = tdpur401.fasv.l
+	tdmsl501.asos.l = tdpur401.asos.l
+	tdmsl501.asvs.l = tdpur401.asvs.l
+	tdmsl501.diss.l = tdpur401.diss.l
+	tdmsl501.fass.l = tdpur401.fass.l
+	tdmsl501.iecc.l = tdpur401.iecc.l
+	tdmsl501.mrpv.l = tdpur401.mrpv.l
+	tdmsl501.mrps.l = tdpur401.mrps.l
+	tdmsl501.reno.l = tdpur401.reno.l
+	tdmsl501.rcln.l = tdpur401.rcln.l
+	tdmsl501.mrpi.l = tdpur401.mrpi.l
+	tdmsl501.ocim.l = tdpur401.ocim.l
+	tdmsl501.ocio.l = tdpur401.ocio.l
+	tdmsl501.extx.l = tdpur401.extx.l
+	tdmsl501.cltx.l = tdpur401.cltx.l
+	tdmsl501.lacm.l = tdpur401.lacm.l
+	tdmsl501.tase.l = tdpur401.tase.l
+	tdmsl501.tasv.l = tdpur401.tasv.l
+	tdmsl501.tass.l = tdpur401.tass.l
+	tdmsl501.uiac.l = tdpur401.uiac.l
+	tdmsl501.uaig.l = tdpur401.uaig.l
+	tdmsl501.txin.l = tdpur401.txin.l
+	tdmsl501.gsub.l = tdpur401.gsub.l
+	tdmsl501.gsta.l = tdpur401.gsta.l	|ISGEC01069.sn
+	tdmsl501.asog.l = tdpur401.asog.l
+	tdmsl501.asvg.l = tdpur401.asvg.l
+	tdmsl501.tasg.l = tdpur401.tasg.l	|ISGEC01069.en
+							|#ISGECDV001080.so
+	insert.creator.line(tdpur400.orno,tdmsl501.vrsn,tdpur401.pono)              |PATCH002027.n
+| 	tdmsl501.txta = tdpur401.txta
+| 	tdmsl501.btx1 = tdpur401.btx1
+| 	tdmsl501.btx2 = tdpur401.btx2
+							|#ISGECDV001080.eo
+							|#ISGECDV001080.sn
+	copy.text("tdpur401.txta", "tdmsl501.txta",tdpur401.txta)
+	copy.text("tdpur401.btx1", "tdmsl501.btx1",tdpur401.btx1)
+	copy.text("tdpur401.btx2", "tdmsl501.btx2",tdpur401.btx2)
+							|#ISGECDV001080.en
+	tdmsl501.btx1 = tdpur401.btx1
+	tdmsl501.btx2 = tdpur401.btx2
+	get.var(pid, "tdpur401.cdf_ldat", tdmsl501.ldat.c)
+										|#ISGEC016048.sn
+	select	tdmsl502.*
+	from	tdmsl502
+	where	tdmsl502._index1	=	{:tdpur401.orno}
+	as	set with 1 rows
+	selectdo
+	selectempty
+		tdmsl502.fdes	=	""
+		tdmsl502.fde2	=	""
+		tdmsl502.fde3	=	""
+	endselect
+	select	tdmsl503.*
+	from	tdmsl503
+	where	tdmsl503._index1	=	{:tdpur401.orno,:tdpur401.pono}
+	as	set with 1 rows
+	selectdo
+	selectempty
+		tdmsl503.ldes	=	""
+		tdmsl503.lde2	=	""
+		tdmsl503.lde3	=	""
+	endselect
+	tdmsl501.fdes	=	tdmsl502.fdes
+	tdmsl501.fde2	=	tdmsl502.fde2
+	tdmsl501.fde3	=	tdmsl502.fde3
+| 	tdmsl501.ldes	=	tdmsl503.ldes		|ISGEC01069.o
+| 	tdmsl501.lde2	=	tdmsl503.lde2		|ISGEC01069.o
+| 	tdmsl501.lde3	=	tdmsl503.lde3		|ISGEC01069.o
+	
+										|#ISGEC016048.en
+}
+function extern tdmsl.dll0500.move.tdmsl501.to.tdpur401()
+{
+	tdpur401.orno = tdmsl501.orno
+	tdpur401.pono = tdmsl501.pono
+	tdpur401.sqnb = tdmsl501.sqnb
+	tdpur401.corg = tdmsl501.corg
+	tdpur401.oltp = tdmsl501.oltp
+	tdpur401.otbp = tdmsl501.otbp
+	tdpur401.sfbp = tdmsl501.sfbp
+	tdpur401.sfad = tdmsl501.sfad
+	tdpur401.sfcn = tdmsl501.sfcn
+	tdpur401.sfwh = tdmsl501.sfwh
+	tdpur401.item = tdmsl501.item
+	tdpur401.effn = tdmsl501.effn
+	tdpur401.sdsc = tdmsl501.sdsc
+	tdpur401.crrf = tdmsl501.crrf
+	tdpur401.citt = tdmsl501.citt
+	tdpur401.crit = tdmsl501.crit
+	tdpur401.mpnr = tdmsl501.mpnr
+	tdpur401.subc = tdmsl501.subc
+	tdpur401.mpsn = tdmsl501.mpsn
+	tdpur401.cmnf = tdmsl501.cmnf
+	tdpur401.mitm = tdmsl501.mitm
+	tdpur401.revi = tdmsl501.revi
+	tdpur401.btsp = tdmsl501.btsp
+	tdpur401.qual = tdmsl501.qual
+	tdpur401.qoor = tdmsl501.qoor
+	tdpur401.cuqp = tdmsl501.cuqp
+	tdpur401.cvqp = tdmsl501.cvqp
+	tdpur401.leng = tdmsl501.leng
+	tdpur401.widt = tdmsl501.widt
+	tdpur401.thic = tdmsl501.thic
+	tdpur401.odat = tdmsl501.odat
+	tdpur401.ddta = tdmsl501.ddta
+	tdpur401.ddtb = tdmsl501.ddtb
+	tdpur401.ddtc = tdmsl501.ddtc
+	tdpur401.ddtd = tdmsl501.ddtd
+	tdpur401.ddte = tdmsl501.ddte
+	tdpur401.ddtf = tdmsl501.ddtf
+	tdpur401.rdta = tdmsl501.rdta
+	tdpur401.pric = tdmsl501.pric
+	tdpur401.porg = tdmsl501.porg
+	tdpur401.pmde = tdmsl501.pmde
+	tdpur401.pmse = tdmsl501.pmse
+	tdpur401.cupp = tdmsl501.cupp
+	tdpur401.cvpp = tdmsl501.cvpp
+	tdpur401.disc = tdmsl501.disc
+	tdpur401.ldam = tdmsl501.ldam
+	tdpur401.dorg = tdmsl501.dorg
+	tdpur401.dmty = tdmsl501.dmty
+	tdpur401.dmde = tdmsl501.dmde
+	tdpur401.dmse = tdmsl501.dmse
+	tdpur401.dmth = tdmsl501.dmth
+	tdpur401.cdis = tdmsl501.cdis
+	tdpur401.dtrm = tdmsl501.dtrm
+	tdpur401.elgb = tdmsl501.elgb
+	tdpur401.stdc = tdmsl501.stdc
+	tdpur401.oamt = tdmsl501.oamt
+	tdpur401.rcno = tdmsl501.rcno
+	tdpur401.rseq = tdmsl501.rseq
+	tdpur401.dino = tdmsl501.dino
+	tdpur401.qips = tdmsl501.qips
+	tdpur401.qidl = tdmsl501.qidl
+	tdpur401.qiap = tdmsl501.qiap
+	tdpur401.crej = tdmsl501.crej
+	tdpur401.qirj = tdmsl501.qirj
+	tdpur401.qibo = tdmsl501.qibo
+	tdpur401.qbbc = tdmsl501.qbbc
+	tdpur401.cubp = tdmsl501.cubp
+	tdpur401.cvbp = tdmsl501.cvbp
+	tdpur401.fire = tdmsl501.fire
+	tdpur401.qibp = tdmsl501.qibp
+	tdpur401.ddon = tdmsl501.ddon
+	tdpur401.lseq = tdmsl501.lseq
+	tdpur401.pseq = tdmsl501.pseq
+	tdpur401.amld = tdmsl501.amld
+	tdpur401.amod = tdmsl501.amod
+	tdpur401.damt = tdmsl501.damt
+	tdpur401.stsc = tdmsl501.stsc
+	tdpur401.stsd = tdmsl501.stsd
+	tdpur401.vryn = tdmsl501.vryn
+	tdpur401.invn = tdmsl501.invn
+	tdpur401.invd = tdmsl501.invd
+	tdpur401.copr = tdmsl501.copr
+	tdpur401.coop = tdmsl501.coop
+	tdpur401.cpcp = tdmsl501.cpcp
+	tdpur401.cwar = tdmsl501.cwar
+	tdpur401.cadr = tdmsl501.cadr
+	tdpur401.lsel = tdmsl501.lsel
+	tdpur401.clot = tdmsl501.clot
+	tdpur401.cprj = tdmsl501.cprj
+	tdpur401.cspa = tdmsl501.cspa
+	tdpur401.cact = tdmsl501.cact
+	tdpur401.cstl = tdmsl501.cstl
+	tdpur401.ccco = tdmsl501.ccco
+	tdpur401.ctrj = tdmsl501.ctrj
+	tdpur401.akcd = tdmsl501.akcd
+	tdpur401.cfrw = tdmsl501.cfrw
+	tdpur401.crbn = tdmsl501.crbn
+	tdpur401.clyn = tdmsl501.clyn
+	tdpur401.cpva = tdmsl501.cpva
+	tdpur401.crcd = tdmsl501.crcd
+	tdpur401.ctcd = tdmsl501.ctcd
+	tdpur401.cosn = tdmsl501.cosn
+	tdpur401.qiiv = tdmsl501.qiiv
+	tdpur401.iamt = tdmsl501.iamt
+	tdpur401.comm = tdmsl501.comm
+	tdpur401.appr = tdmsl501.appr
+	tdpur401.ccty = tdmsl501.ccty
+	tdpur401.cvat = tdmsl501.cvat
+	tdpur401.bptc = tdmsl501.bptc
+	tdpur401.exmt = tdmsl501.exmt
+	tdpur401.ceno = tdmsl501.ceno
+	tdpur401.rcod = tdmsl501.rcod
+	tdpur401.bpcl = tdmsl501.bpcl
+	tdpur401.taxp = tdmsl501.taxp
+	tdpur401.gefo = tdmsl501.gefo
+	tdpur401.ldat = tdmsl501.ldat
+	tdpur401.serv = tdmsl501.serv
+	tdpur401.casi = tdmsl501.casi
+	tdpur401.ptpe = tdmsl501.ptpe
+	tdpur401.glco = tdmsl501.glco
+	tdpur401.sbim = tdmsl501.sbim
+	tdpur401.paft = tdmsl501.paft
+	tdpur401.sbmt = tdmsl501.sbmt
+	tdpur401.cuva = tdmsl501.cuva
+	tdpur401.cono = tdmsl501.cono
+	tdpur401.cpon = tdmsl501.cpon
+	tdpur401.ccof = tdmsl501.ccof
+	tdpur401.cnig = tdmsl501.cnig
+	tdpur401.paya = tdmsl501.paya
+	tdpur401.cpay = tdmsl501.cpay
+	tdpur401.cdec = tdmsl501.cdec
+	tdpur401.ptpa = tdmsl501.ptpa
+	tdpur401.pmnt = tdmsl501.pmnt
+	tdpur401.pmni = tdmsl501.pmni
+	tdpur401.pmnd = tdmsl501.pmnd
+	tdpur401.owns = tdmsl501.owns
+	tdpur401.lccl = tdmsl501.lccl
+	tdpur401.spcn = tdmsl501.spcn
+	tdpur401.bgxc = tdmsl501.bgxc
+	tdpur401.cpcl = tdmsl501.cpcl
+	tdpur401.cpln = tdmsl501.cpln
+	tdpur401.csgp = tdmsl501.csgp
+	tdpur401.acti = tdmsl501.acti
+	tdpur401.pmsk = tdmsl501.pmsk
+	tdpur401.rnso.l = tdmsl501.rnso.l
+	tdpur401.rnsb.l = tdmsl501.rnsb.l
+	tdpur401.ecif.l = tdmsl501.ecif.l
+	tdpur401.assv.l = tdmsl501.assv.l
+	tdpur401.elco.l = tdmsl501.elco.l
+	tdpur401.ihsn.l = tdmsl501.ihsn.l
+	tdpur401.mrpo.l = tdmsl501.mrpo.l
+	tdpur401.iexb.l = tdmsl501.iexb.l
+	tdpur401.icen.l = tdmsl501.icen.l
+	tdpur401.imca.l = tdmsl501.imca.l
+	tdpur401.exca.l = tdmsl501.exca.l
+	tdpur401.mrpe.l = tdmsl501.mrpe.l
+	tdpur401.hcod.l = tdmsl501.hcod.l
+	tdpur401.cenv.l = tdmsl501.cenv.l
+	tdpur401.icat.l = tdmsl501.icat.l
+	tdpur401.asoe.l = tdmsl501.asoe.l
+	tdpur401.asve.l = tdmsl501.asve.l
+	tdpur401.dise.l = tdmsl501.dise.l
+	tdpur401.fase.l = tdmsl501.fase.l
+	tdpur401.asov.l = tdmsl501.asov.l
+	tdpur401.asvv.l = tdmsl501.asvv.l
+	tdpur401.disv.l = tdmsl501.disv.l
+	tdpur401.fasv.l = tdmsl501.fasv.l
+	tdpur401.asos.l = tdmsl501.asos.l
+	tdpur401.asvs.l = tdmsl501.asvs.l
+	tdpur401.diss.l = tdmsl501.diss.l
+	tdpur401.fass.l = tdmsl501.fass.l
+	tdpur401.iecc.l = tdmsl501.iecc.l
+	tdpur401.mrpv.l = tdmsl501.mrpv.l
+	tdpur401.mrps.l = tdmsl501.mrps.l
+	tdpur401.reno.l = tdmsl501.reno.l
+	tdpur401.rcln.l = tdmsl501.rcln.l
+	tdpur401.mrpi.l = tdmsl501.mrpi.l
+	tdpur401.ocim.l = tdmsl501.ocim.l
+	tdpur401.ocio.l = tdmsl501.ocio.l
+	tdpur401.extx.l = tdmsl501.extx.l
+	tdpur401.cltx.l = tdmsl501.cltx.l
+	tdpur401.lacm.l = tdmsl501.lacm.l
+	tdpur401.tase.l = tdmsl501.tase.l
+	tdpur401.tasv.l = tdmsl501.tasv.l
+	tdpur401.tass.l = tdmsl501.tass.l
+	tdpur401.uiac.l = tdmsl501.uiac.l
+	tdpur401.uaig.l = tdmsl501.uaig.l
+	tdpur401.txin.l = tdmsl501.txin.l
+	tdpur401.gsub.l = tdmsl501.gsub.l
+	tdpur401.txta = tdmsl501.txta
+	tdpur401.btx1 = tdmsl501.btx1
+	tdpur401.btx2 = tdmsl501.btx2
+| 	tdpur401.gsta.l = tdmsl501.gsta.l	|ISGEC01069.sn   |* Commented By Ms. Veena 
+| 	tdpur401.asog.l = tdmsl501.asog.l			 |* Functional: Mamta Upadhyay	
+| 	tdpur401.asvg.l = tdmsl501.asvg.l			 |* Technical: Priya Jindal
+	tdpur401.tasg.l = tdmsl501.tasg.l	|ISGEC01069.en   |*	RAvi.uncom.GH211CR000
+	put.var(pid, "tdmsl501.ldat.c","tdpur401.cdf_ldat")
+	
+	tdmsl503.code = tdmsl504.code
+}
+function extern tdmsl.dll0500.move.tclct200.to.tcmsl200()
+{
+	tcmsl200.boty = tclct200.boty
+	tcmsl200.boor = tclct200.boor
+	tcmsl200.bobj = tclct200.bobj
+	tcmsl200.borf = tclct200.borf
+	tcmsl200.lcln = tclct200.lcln
+	tcmsl200.lorg = tclct200.lorg
+	tcmsl200.lcst = tclct200.lcst
+	tcmsl200.lcos = tclct200.lcos
+	tcmsl200.lctp = tclct200.lctp
+	tcmsl200.calm = tclct200.calm
+	tcmsl200.lcam = tclct200.lcam
+	tcmsl200.lcur = tclct200.lcur
+	tcmsl200.pric = tclct200.pric
+	tcmsl200.prun = tclct200.prun
+	tcmsl200.prcv = tclct200.prcv
+	tcmsl200.perc = tclct200.perc
+	tcmsl200.famt = tclct200.famt
+	tcmsl200.falv = tclct200.falv
+	tcmsl200.aptp = tclct200.aptp
+	tcmsl200.adbc = tclct200.adbc
+	tcmsl200.cpcp = tclct200.cpcp
+	tcmsl200.rinv = tclct200.rinv
+	tcmsl200.otbp = tclct200.otbp
+	tcmsl200.otad = tclct200.otad
+	tcmsl200.otcn = tclct200.otcn
+	tcmsl200.ifbp = tclct200.ifbp
+	tcmsl200.ifad = tclct200.ifad
+	tcmsl200.ifcn = tclct200.ifcn
+	tcmsl200.ptbp = tclct200.ptbp
+	tcmsl200.ptad = tclct200.ptad
+	tcmsl200.ptcn = tclct200.ptcn
+	tcmsl200.bptx = tclct200.bptx
+	tcmsl200.cbrn = tclct200.cbrn
+	tcmsl200.creg = tclct200.creg
+	tcmsl200.cplp = tclct200.cplp
+	tcmsl200.ptpe = tclct200.ptpe
+	tcmsl200.cpay = tclct200.cpay
+	tcmsl200.paya = tclct200.paya
+	tcmsl200.ccrs = tclct200.ccrs
+	tcmsl200.ratl = tclct200.ratl
+	tcmsl200.ratf = tclct200.ratf
+	tcmsl200.ratd = tclct200.ratd
+	tcmsl200.ratt = tclct200.ratt
+	tcmsl200.fcrt = tclct200.fcrt
+	tcmsl200.raur = tclct200.raur
+	tcmsl200.slad = tclct200.slad
+	tcmsl200.vtbo = tclct200.vtbo
+	tcmsl200.srtt = tclct200.srtt
+	tcmsl200.cvat = tclct200.cvat
+	tcmsl200.ccty = tclct200.ccty
+	tcmsl200.bptc = tclct200.bptc
+	tcmsl200.bpcl = tclct200.bpcl
+	tcmsl200.exmt = tclct200.exmt
+	tcmsl200.ceno = tclct200.ceno
+	tcmsl200.rcod = tclct200.rcod
+	tcmsl200.iamt = tclct200.iamt
+	tcmsl200.modi = tclct200.modi
+	tcmsl200.clyn = tclct200.clyn
+	tcmsl200.stsd = tclct200.stsd
+	tcmsl200.stsc = tclct200.stsc
+	tcmsl200.proc = tclct200.proc
+	tcmsl200.appr = tclct200.appr
+	tcmsl200.conf = tclct200.conf
+	tcmsl200.fire = tclct200.fire
+	tcmsl200.qibl = tclct200.qibl
+	tcmsl200.lart = tclct200.lart
+	tcmsl200.obot = tclct200.obot
+	tcmsl200.oboo = tclct200.oboo
+	tcmsl200.obob = tclct200.obob
+	tcmsl200.obor = tclct200.obor
+	tcmsl200.olcl = tclct200.olcl
+	tcmsl200.rcno = tclct200.rcno
+	tcmsl200.rcln = tclct200.rcln
+	tcmsl200.rnso.l = tclct200.rnso.l
+	tcmsl200.rnsb.l = tclct200.rnsb.l
+	tcmsl200.icvc.l = tclct200.icvc.l
+	tcmsl200.txta = tclct200.txta
+}
+function extern tdmsl.dll0500.move.tcmsl200.to.tclct200()
+{
+	tclct200.boty = tcmsl200.boty
+	tclct200.boor = tcmsl200.boor
+	tclct200.bobj = tcmsl200.bobj
+	tclct200.borf = tcmsl200.borf
+	tclct200.lcln = tcmsl200.lcln
+	tclct200.lorg = tcmsl200.lorg
+	tclct200.lcst = tcmsl200.lcst
+	tclct200.lcos = tcmsl200.lcos
+	tclct200.lctp = tcmsl200.lctp
+	tclct200.calm = tcmsl200.calm
+	tclct200.lcam = tcmsl200.lcam
+	tclct200.lcur = tcmsl200.lcur
+	tclct200.pric = tcmsl200.pric
+	tclct200.prun = tcmsl200.prun
+	tclct200.prcv = tcmsl200.prcv
+	tclct200.perc = tcmsl200.perc
+	tclct200.famt = tcmsl200.famt
+	tclct200.falv = tcmsl200.falv
+	tclct200.aptp = tcmsl200.aptp
+	tclct200.adbc = tcmsl200.adbc
+	tclct200.cpcp = tcmsl200.cpcp
+	tclct200.rinv = tcmsl200.rinv
+	tclct200.otbp = tcmsl200.otbp
+	tclct200.otad = tcmsl200.otad
+	tclct200.otcn = tcmsl200.otcn
+	tclct200.ifbp = tcmsl200.ifbp
+	tclct200.ifad = tcmsl200.ifad
+	tclct200.ifcn = tcmsl200.ifcn
+	tclct200.ptbp = tcmsl200.ptbp
+	tclct200.ptad = tcmsl200.ptad
+	tclct200.ptcn = tcmsl200.ptcn
+	tclct200.bptx = tcmsl200.bptx
+	tclct200.cbrn = tcmsl200.cbrn
+	tclct200.creg = tcmsl200.creg
+	tclct200.cplp = tcmsl200.cplp
+	tclct200.ptpe = tcmsl200.ptpe
+	tclct200.cpay = tcmsl200.cpay
+	tclct200.paya = tcmsl200.paya
+	tclct200.ccrs = tcmsl200.ccrs
+	tclct200.ratl = tcmsl200.ratl
+	tclct200.ratf = tcmsl200.ratf
+	tclct200.ratd = tcmsl200.ratd
+	tclct200.ratt = tcmsl200.ratt
+	tclct200.fcrt = tcmsl200.fcrt
+	tclct200.raur = tcmsl200.raur
+	tclct200.slad = tcmsl200.slad
+	tclct200.vtbo = tcmsl200.vtbo
+	tclct200.srtt = tcmsl200.srtt
+	tclct200.cvat = tcmsl200.cvat
+	tclct200.ccty = tcmsl200.ccty
+	tclct200.bptc = tcmsl200.bptc
+	tclct200.bpcl = tcmsl200.bpcl
+	tclct200.exmt = tcmsl200.exmt
+	tclct200.ceno = tcmsl200.ceno
+	tclct200.rcod = tcmsl200.rcod
+	tclct200.iamt = tcmsl200.iamt
+	tclct200.modi = tcmsl200.modi
+	tclct200.clyn = tcmsl200.clyn
+	tclct200.stsd = tcmsl200.stsd
+	tclct200.stsc = tcmsl200.stsc
+	tclct200.proc = tcmsl200.proc
+	tclct200.appr = tcmsl200.appr
+	tclct200.conf = tcmsl200.conf
+	tclct200.fire = tcmsl200.fire
+	tclct200.qibl = tcmsl200.qibl
+	tclct200.lart = tcmsl200.lart
+	tclct200.obot = tcmsl200.obot
+	tclct200.oboo = tcmsl200.oboo
+	tclct200.obob = tcmsl200.obob
+	tclct200.obor = tcmsl200.obor
+	tclct200.olcl = tcmsl200.olcl
+	tclct200.rcno = tcmsl200.rcno
+	tclct200.rcln = tcmsl200.rcln
+	tclct200.rnso.l = tcmsl200.rnso.l
+	tclct200.rnsb.l = tcmsl200.rnsb.l
+	tclct200.icvc.l = tcmsl200.icvc.l
+	tclct200.txta = tcmsl200.txta
+}
+function extern tdmsl.dll0500.move.tdisg002.to.tdisg502()
+{
+	tdisg502.orno = tdisg002.orno
+	tdisg502.pono = tdisg002.pono
+| 	tdisg502.sern = tdisg002.sern
+	tdisg502.item = tdisg002.item
+	tdisg502.desc = tdisg002.desc
+	tdisg502.qnty = tdisg002.qnty
+	tdisg502.quom = tdisg002.quom
+	tdisg502.wght = tdisg002.wght
+	tdisg502.slct = tdisg002.slct
+	tdisg502.stat = tdisg002.stat
+	tdisg502.pric = tdisg002.pric
+	tdisg502.amnt = tdisg002.amnt
+	tdisg502.qoor = tdisg002.qoor
+	tdisg502.acht = tdisg002.acht
+	tdisg502.docn = tdisg002.docn
+	tdisg502.revi = tdisg002.revi
+	
+}
+function extern tdmsl.dll0500.move.tdisg502.to.tdisg002()
+{
+	tdisg002.orno = tdisg502.orno
+	tdisg002.pono = tdisg502.pono
+| 	tdisg002.sern = tdisg502.sern
+	tdisg002.item = tdisg502.item
+	tdisg002.desc = tdisg502.desc
+	tdisg002.qnty = tdisg502.qnty
+	tdisg002.quom = tdisg502.quom
+	tdisg002.wght = tdisg502.wght
+	tdisg002.slct = tdisg502.slct
+	tdisg002.stat = tdisg502.stat
+	tdisg002.pric = tdisg502.pric
+	tdisg002.amnt = tdisg502.amnt
+	tdisg002.qoor = tdisg502.qoor
+	tdisg002.acht = tdisg502.acht
+	tdisg002.docn = tdisg502.docn
+	tdisg002.revi = tdisg502.revi
+}
+
+function extern long tdmsl.dll0500.insert.history.0(
+				domain 	tcorno 	i.orno,
+				domain	tcsern	i.vrsn)
+{
+	domain tcsern prv.vrsn
+	|*** tdpur401
+	select tdmsl500.* from tdmsl500 for update
+	where tdmsl500._index1 = {:i.orno,:i.vrsn}
+	as set with 1 rows
+	selectdo
+		tdmsl.dll0500.move.tdpur400.to.tdmsl500()
+		tdmsl500.vrsn = i.vrsn
+		db.update(ttdmsl500,db.retry,db.return.error)
+	selectempty
+		tdmsl.dll0500.move.tdpur400.to.tdmsl500()
+		tdmsl500.vrsn = i.vrsn
+| 		db.insert(ttdmsl500,db.retry,db.return.error)		|#ISGEC016011.o
+		db.insert(ttdmsl500,db.skip.dupl,e)		|#ISGEC016011.n
+	endselect
+	if e <> 0 then
+		return(e)
+	endif
+				|#GSTLIVE01016.sn
+| 	select	tdisg025.*
+| 	from	tdisg025 for update
+| 	where	tdisg025._index1 = {:i.orno, :i.vrsn}
+| 	|as set with 1 rows
+| 	selectdo
+| 		write.MOC.history(i.orno, i.vrsn)
+| 	selectempty
+| 		write.MOC.history(i.orno, i.vrsn, 0)
+| 	endselect
+				|#GSTLIVE01016.en
+		
+	
+	select tdpur401.* from tdpur401
+	where tdpur401._index1 = {:i.orno}
+	selectdo
+		select tdmsl501.* from tdmsl501 for update
+		where tdmsl501._index1 = {:i.orno,:i.vrsn,:tdpur401.pono,:tdpur401.sqnb}
+		as set with 1 rows
+		selectdo
+			tdmsl.dll0500.move.tdpur401.to.tdmsl501()
+			tdmsl501.vrsn = i.vrsn
+			db.update(ttdmsl501,db.retry,db.return.error)
+		selectempty
+			tdmsl.dll0500.move.tdpur401.to.tdmsl501()
+			tdmsl501.vrsn = i.vrsn
+| 			db.insert(ttdmsl501,db.retry,db.return.error)		|#ISGEC016011.o
+			db.insert(ttdmsl501,db.skip.dupl,e)			|#ISGEC016011.n
+		endselect
+		
+		if e <> 0 then
+			return(e)
+		endif
+									|#ISGEC017006.sn
+		select 	tdmsl504.* 
+		from 	tdmsl504 for update
+		where 	tdmsl504._index1 = {
+					:i.orno,
+					:i.vrsn,
+					:tdpur401.pono
+					}
+		as set with 1 rows
+		selectdo
+			insert.update.second.history.part()
+			tdmsl504.revi = i.vrsn
+			db.update(ttdmsl504, db.retry)
+		selectempty
+			insert.update.second.history.part()
+			tdmsl504.revi = i.vrsn
+			db.insert(ttdmsl504, db.skip.dupl)		
+		endselect
+									|#ISGEC017006.en
+	endselect
+	|*** tclct200
+	select tclct200.* from tclct200
+	where tclct200.boty in (1,2)
+	and 	tclct200.bobj = :i.orno
+	selectdo
+		select tcmsl200.* from tcmsl200 for update
+		where tcmsl200._index1 = {:tclct200.boty,:tclct200.boor,:tclct200.bobj,:tclct200.borf,:i.vrsn,:tclct200.lcln}
+		as set with 1 rows
+		selectdo
+			tdmsl.dll0500.move.tclct200.to.tcmsl200()
+			tcmsl200.vrsn = i.vrsn
+			db.update(ttcmsl200,db.retry,db.return.error)
+		selectempty
+			tdmsl.dll0500.move.tclct200.to.tcmsl200()
+			tcmsl200.vrsn = i.vrsn
+| 			db.insert(ttcmsl200,db.retry,db.return.error)		|#ISGEC016011.o
+			db.insert(ttcmsl200,db.skip.dupl,e)			|#ISGEC016011.n
+		endselect	
+		if e <> 0 then
+			return(e)
+		endif
+	endselect
+	select tdisg002.* from tdisg002
+	where tdisg002._index1 = {:i.orno}
+	selectdo
+		select tdisg502.* from tdisg502 for update
+| 		where tdisg502._index1 = {:tdisg002.orno,:i.vrsn,:tdisg002.pono,:tdisg002.sern}
+		where tdisg502._index1 = {:tdisg002.orno,:i.vrsn,:tdisg002.pono,:tdisg002.item}
+		as set with 1 rows
+		selectdo
+			tdmsl.dll0500.move.tdisg002.to.tdisg502()
+			tdisg502.vrsn = i.vrsn
+			db.update(ttdisg502,db.retry,db.return.error)
+		selectempty
+			tdmsl.dll0500.move.tdisg002.to.tdisg502()
+			tdisg502.vrsn = i.vrsn
+| 			db.insert(ttdisg502,db.retry,db.return.error)		|#ISGEC016011.o
+			db.insert(ttdisg502,db.skip.dupl,e)			|#ISGEC016011.n
+		endselect
+		if e <> 0 then
+			return(e)
+		endif
+	endselect
+	return(0)
+}
+
+
+function insert.creator(domain tcorno in.orno,domain tcsern in.vrsn)					| |PATCH002027.sn
+{
+
+	if tdmsl500.trdt = 0 and strip$(shiftl$(tdmsl500.logn)) = "" then
+		tdmsl500.trdt = utc.num()	
+		tdmsl500.logn = logname$			
+	endif	
+	
+}
+
+
+function  insert.creator.line(domain tcorno in.orno, domain tcsern in.sern,domain tcpono in.pono)  
+{
+
+	if tdmsl500.trdt = 0 and strip$(shiftl$(tdmsl500.logn)) = "" then
+		tdmsl500.trdt = utc.num()			
+		tdmsl500.logn = logname$		
+	endif	
+	
+}												  |PATCH002027.en
+
+						|#ISGEC017006.sn
+function extern insert.update.second.history.part()
+{	
+	select	tdmsl503.*
+	from	tdmsl503
+	where	tdmsl503._index1 = {
+				:tdpur401.orno,
+				:tdpur401.pono
+				}
+	as	set with 1 rows
+	selectdo
+	selectempty
+		tdmsl503.mtrd = tcyesno.no
+		tdmsl503.rcma = tcyesno.no
+		tdmsl503.crel = tcyesno.no
+		tdmsl503.ipgs = tcyesno.no
+		tdmsl503.ipss = tcyesno.no
+		tdmsl503.clgs = tcyesno.no
+		tdmsl503.gstn.b = 0
+		tdmsl503.gstn.c = 0
+		tdmsl503.code =	""
+		tdmsl503.cvat = ""
+	endselect
+	
+	tdmsl504.orno = tdpur401.orno
+	tdmsl504.pono = tdpur401.pono
+	tdmsl504.typo =	tdmsl503.typo
+	tdmsl504.mtrd =	tdmsl503.mtrd
+	tdmsl504.rcma =	tdmsl503.rcma
+	tdmsl504.crel =	tdmsl503.crel
+	tdmsl504.code =	tdmsl503.code
+	tdmsl504.cvat =	tdmsl503.cvat
+	tdmsl504.ipgs =	tdmsl503.ipgs
+	tdmsl504.ipss =	tdmsl503.ipss
+	tdmsl504.clgs =	tdmsl503.clgs
+	tdmsl504.impr =	tdmsl503.impr
+	tdmsl504.gstn.b = tdmsl503.gstn.b
+	tdmsl504.gstn.c = tdmsl503.gstn.c
+}
+						|#ISGEC017006.en
+			|#GSTLIVE01016.sn
+| function write.MOC.history
+| 		(
+| 			domain tcorno	in.orno, 
+| 			domain tcpono	i.vrno
+| 		)
+| {
+| 	
+| 	long	i.val
+| 	
+| 	select	tdisg020.*
+| 	from	tdisg020
+| 	where	tdisg020._index1 = {:in.orno}
+| 	selectdo
+| 		select	tdisg025.*
+| 		from	tdisg025 for update
+| 		where	tdisg025._index1 = {:in.orno, :i.vrno, :tdisg020.mcod}
+| 		selectdo
+| 			tdisg025.orno = tdisg020.orno
+| 			tdisg025.mcod = tdisg020.mcod
+| 			tdisg025.wght = tdisg020.wght
+| 			tdisg025.pric = tdisg020.pric
+| 			tdisg025.amnt = tdisg020.amnt
+| 			i.val = 1
+| 		selectempty
+| 			tdisg025.orno = tdisg020.orno
+| 			tdisg025.mcod = tdisg020.mcod
+| 			tdisg025.wght = tdisg020.wght
+| 			tdisg025.pric = tdisg020.pric
+| 			tdisg025.amnt = tdisg020.amnt
+| 			
+| 			i.val = 0
+| 		endselect		
+| 	
+| 		if i.val = 0 then
+| 			tdisg025.revn = i.vrno
+| 			db.insert(ttdisg025, db.skip.dupl)
+| 		else
+| 			db.update(ttdisg025, db.retry)
+			|db.update(ttdisg025)
+| 		endif
+| 	endselect
+| }
+| 			|#GSTLIVE01016.en						

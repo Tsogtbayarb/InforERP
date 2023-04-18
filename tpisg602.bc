@@ -1,0 +1,170 @@
+|******************************************************************************
+|* tpisg602  0  VRC B61U a7 isg 
+|* DAL for tpisg602
+|* 3776
+|* 21-02-19 [12:57]
+|******************************************************************************
+|* Script Type: DAL
+|******************************************************************************
+                        
+	table	ttpisg602
+	table	ttdisg831
+	table	ttdisg860
+	table	ttdisg865
+	table	ttpisg601
+	
+	domain	tcamnt	td.amnt
+#include <bic_dal2>
+
+
+function extern long before.open.object.set()
+{
+	dal.field.depends.on("tpisg602.amnt", HOOK_UPDATE ,"tpisg602.cinv")
+	dal.field.depends.on("tpisg602.ccur", HOOK_UPDATE ,"tpisg602.cinv")
+	dal.field.depends.on("tpisg602.cmnt", HOOK_UPDATE , "tpisg602.ptcd")
+	dal.field.depends.on("tpisg602.ptcd", HOOK_IS_VALID , "tpisg602.ptcd")
+	return(0)
+}
+
+function extern long before.save.object(long type)
+{
+	on case type
+	case DAL_NEW :
+	case DAL_UPDATE :
+		if tpisg602.ptcd = 0 then
+			dal.set.error.message("@Payment Term Code should be valid")
+			return(DALHOOKERROR) 
+		endif
+	endcase
+	return(0)
+}
+
+function extern boolean method.is.allowed(long type)
+{
+	on case type 
+	case DAL_NEW :
+	case DAL_UPDATE :
+	case DAL_DESTROY :
+		select	tpisg603.*
+		from	tpisg603
+		where	tpisg603._index1 = {:tpisg602.code}
+		as set with 1 rows
+		selectdo
+			return(false)
+		endselect
+	endcase
+	
+	return(true)
+}
+
+function extern	void tpisg602.amnt.update()
+{
+	select	sum(tdisg832.bivl):tpisg602.amnt
+	from	tdisg832
+	where	tdisg832._index3 = {:tpisg602.cinv}
+	selectdo
+	selectempty
+		tpisg602.amnt = 0
+	endselect
+}
+
+function extern	void tpisg602.ccur.update()
+{
+	select	tdisg831.cprj,
+		tdisg831.ofbp
+	from	tdisg831
+	where	tdisg831._index3 = {:tpisg602.cinv}
+	as set with 1 rows
+	selectdo
+	endselect
+	
+	select	tppdm740.ccur:tpisg602.ccur
+	from	tppdm740
+	where	tppdm740._index1 = {:tdisg831.cprj, :tdisg831.ofbp}
+	as set with 1 rows
+	selectdo
+	selectempty
+		tpisg602.ccur = ""
+	endselect
+}
+
+function extern	void tpisg602.cmnt.update()
+{
+	tpisg602.cmnt = 0
+	select	tpisg601.lcno
+	from	tpisg601
+	where	tpisg601._index1 = {:tpisg602.code}
+	as set with 1 rows
+	selectdo
+| 		select	tdisg865.lcno,
+| 			tdisg865.amnt,
+| 			tdisg865.ptcd,
+		select	tdisg865.amnt:td.amnt
+		from	tdisg865 
+		where	tdisg865._index1 = {:tpisg602.cinv, :tpisg601.lcno, :tpisg602.ptcd}
+		selectdo
+| 			select	tdisg860.ptcd
+| 			from	tdisg860
+| 			where	tdisg860._index1 = {:tdisg865.lcno, :tdisg865.ptcd}
+| 			and	tdisg860.ptyp = tdisg.ptyp.advance
+| 			selectdo
+				tpisg602.cmnt = tpisg602.cmnt + td.amnt
+| 			endselect
+		endselect
+	endselect
+}
+
+function extern boolean tpisg602.ptcd.is.valid()
+{	
+	select	tpisg601.lcno
+	from	tpisg601
+	where	tpisg601._index1 = {:tpisg602.code}
+	as set with 1 rows
+	selectdo
+		select	tdisg860.lcno,
+			tdisg860.ptcd,
+			tdisg860.ptyp
+		from	tdisg860
+		where	tdisg860._index1 = {:tpisg601.lcno, :tpisg602.ptcd}
+		selectdo
+			if tdisg860.ptyp = tdisg.ptyp.advance then
+				return(false) 
+			endif
+		selectempty
+			return(false) 
+		endselect
+	endselect
+	
+	select	tpisg602.code
+	from	tpisg602
+	where	tpisg602.cinv = :tpisg602.cinv
+	and	tpisg602.ptcd = :tpisg602.ptcd
+	as set with 1 rows
+	selectdo
+		dal.set.error.message("@ Payment Type code of Commercial Invoice is already used.")
+		return(DALHOOKERROR)
+	endselect
+	
+	return(true)
+}
+
+function extern boolean tpisg602.cinv.is.valid()
+{
+	select	tpisg601.lcno,
+		tpisg601.bpid
+	from	tpisg601
+	where	tpisg601._index1 = {:tpisg602.code}
+	as set with 1 rows	
+	selectdo
+		select	tdisg831.edrn
+		from	tdisg831
+		where	tdisg831.ofbp = :tpisg601.bpid
+		and	tdisg831.lcno = :tpisg601.lcno
+		and	tdisg831.cinv = :tpisg602.cinv
+		as set with 1 rows
+		selectdo
+			return(true)
+		endselect
+	endselect
+	return(false)
+}

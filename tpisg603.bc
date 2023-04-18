@@ -1,0 +1,293 @@
+|******************************************************************************
+|* tpisg603  0  VRC B61U a7 isg 
+|* DAL for tpisg603
+|* 3776
+|* 21-04-28 [16:25]
+|******************************************************************************
+|* Script Type: DAL
+|******************************************************************************
+                  
+	table	ttpisg603		  
+	table	ttpisg602		  
+	table	ttpisg605		  
+	table	ttdisg831		  
+	table	ttdisg860		  
+	table	ttdisg865
+	table	ttpisg601
+	table	ttdisg045
+	
+	extern	domain	tcamnt	cr.amnt, dr.amnt, tot.cus.amnt
+	
+#include <bic_dal2>
+
+
+function extern long before.open.object.set()
+{
+	dal.field.depends.on("tpisg603.bamt", HOOK_UPDATE ,"tpisg603.code")
+	dal.field.depends.on("tpisg603.camt", HOOK_UPDATE ,"tpisg603.code")
+	dal.field.depends.on("tpisg603.days", HOOK_UPDATE ,"tpisg603.dued")
+	return(0)
+}
+
+function extern long before.save.object(long type)
+{
+	on case type
+	case DAL_NEW :
+		insert.data.tpisg605()
+		break
+	endcase
+		
+	return(0)
+}
+
+function extern tpisg603.bamt.update()
+{
+	select	sum(tpisg602.amnt):tpisg603.bamt
+	from	tpisg602
+	where	tpisg602._index1 = {:tpisg603.code}
+	selectdo
+	selectempty
+		tpisg603.bamt = 0
+	endselect
+}
+
+function extern tpisg603.camt.update()
+{
+	select	sum(tpisg602.cmnt):tpisg603.camt
+	from	tpisg602
+	where	tpisg602._index1 = {:tpisg603.code}
+	selectdo
+	selectempty
+		tpisg603.camt = 0
+	endselect
+}
+
+function extern boolean tpisg603.bamt.is.valid()
+{
+	select	tpisg601.code
+	from	tpisg601
+	where	tpisg601._index1 = {:tpisg603.code}
+	as set with 1 rows
+	selectdo
+	selectempty
+		dal.set.error.message("@Invalid BOE")
+		return(DALHOOKERROR)
+	endselect
+	return(true)
+}
+
+function extern tpisg603.days.update()
+{
+	tpisg603.days = date.num() - tpisg603.dued
+}
+
+function extern boolean tpisg603.dued.is.valid()
+{
+	if tpisg603.dued < tpisg603.ddte then
+		return(false)
+	endif
+	return(true)
+}
+
+function insert.data.tpisg605()
+{
+| 	domain	tcpono	pono.srno
+| 	pono.srno = 0
+	cr.amnt = 0
+	dr.amnt = 0
+	tot.cus.amnt = 0
+	select	tpisg602.cinv,
+		tpisg602.ptcd
+	from	tpisg602
+	where	tpisg602._index1 = {:tpisg603.code}
+	selectdo
+| 		select	tpisg605.srno
+| 		from	tpisg605
+| 		where	tpisg605._index1 = {:tpisg603.code, :tpisg603.bank}
+| 		order by tpisg605.srno desc
+| 		as set with 1 rows
+| 		selectdo
+| 		selectempty
+| 			pono.srno = 0
+| 		endselect
+		
+		select	tdisg831.invn,
+			tdisg831.cinv,
+			tdisg831.amti
+		from	tdisg831
+		where	tdisg831._index3 = {:tpisg602.cinv}
+		selectdo
+			select	tpisg605.code
+			from	tpisg605
+			where	tpisg605._index1 = {:tpisg603.code, :tpisg603.bank}
+			and	tpisg605.cinv = :tdisg831.invn
+			and	tpisg605.invn = :tdisg831.cinv
+			selectdo
+			selectempty
+				select	tdisg045.rqno
+				from	tdisg045
+				where	tdisg045._index3 = {:tdisg831.invn}
+				and	tdisg045.note = tdisg.notes.credit
+				selectdo
+					select	sum(tdisg046.amnt):cr.amnt
+					from	tdisg046
+					where	tdisg046._index1 = {:tdisg045.rqno}
+					selectdo
+					selectempty
+						cr.amnt = 0
+					endselect
+				endselect
+				
+				select	tdisg045.rqno
+				from	tdisg045
+				where	tdisg045._index3 = {:tdisg831.invn}
+				and	tdisg045.note = tdisg.notes.debit
+				selectdo
+					select	sum(tdisg046.amnt):dr.amnt
+					from	tdisg046
+					where	tdisg046._index1 = {:tdisg045.rqno}
+					selectdo
+					selectempty
+						dr.amnt = 0
+					endselect
+				endselect
+				tot.cus.amnt = tdisg831.amti + cr.amnt - dr.amnt
+| 				pono.srno = tpisg605.srno + 1
+				if dal.new.object("tpisg605") = 0 then
+					dal.set.field("tpisg605.code", tpisg603.code)
+					dal.set.field("tpisg605.bank", tpisg603.bank)
+| 					dal.set.field("tpisg605.srno", pono.srno)
+					dal.set.field("tpisg605.srno", tpisg602.ptcd)
+					dal.set.field("tpisg605.cinv", tdisg831.invn)
+					dal.set.field("tpisg605.invn", tdisg831.cinv)
+					dal.set.field("tpisg605.amnt", tot.cus.amnt)
+					dal.set.field("tpisg605.adva", cal.advance(tdisg831.invn))
+					dal.set.field("tpisg605.ramt", cal.retention(tdisg831.invn))
+| 					dal.set.field("tpisg605.rere", cal.retention.realised(tdisg831.invn))
+					dal.set.field("tpisg605.camt", cal.claimed(tpisg603.code, tdisg831.cinv, tdisg831.invn))
+					if dal.save.object("tpisg605") = 0 then
+| 						commit.transaction()
+					else
+						abort.transaction()
+					endif
+				endif
+			endselect
+		endselect
+	endselect
+}
+
+function domain	tcamnt	cal.advance(domain	tcorno	i.invn)
+{
+	domain	tcamnt	tot.advan
+	tot.advan = 0 
+	
+	select	tdisg831.amti,
+		tdisg831.lcno
+	from	tdisg831
+	where	tdisg831._index2 = {:i.invn}
+	as set with 1 rows
+	selectdo
+		select	tdisg860.pval
+		from	tdisg860
+		where	tdisg860._index1= {:tdisg831.lcno}
+		and	tdisg860.ptyp = tdisg.ptyp.advance
+		selectdo
+| 			tot.advan = tot.advan + (tdisg831.amti * tdisg860.pval/100)
+			tot.advan = tot.advan + (tot.cus.amnt * tdisg860.pval/100)
+		endselect
+	endselect
+	return(tot.advan)
+}
+
+function domain	tcamnt	cal.retention(domain	tcorno	i.invn)
+{
+	domain	tcamnt	tot.reten
+	tot.reten = 0 
+	
+	select	tdisg831.amti,
+		tdisg831.lcno
+	from	tdisg831
+	where	tdisg831._index2 = {:i.invn}
+	as set with 1 rows
+	selectdo
+		select	tdisg860.pval
+		from	tdisg860
+		where	tdisg860._index1= {:tdisg831.lcno}
+		and	tdisg860.ptyp = tdisg.ptyp.retention 
+		selectdo
+| 			tot.reten = tot.reten + (tdisg831.amti * tdisg860.pval/100)
+			tot.reten = tot.reten + (tot.cus.amnt * tdisg860.pval/100)
+		endselect
+	endselect
+	return(tot.reten)
+}
+
+function domain	tcamnt	cal.retention.realised(domain	tcorno	i.invn)
+{
+	domain	tcamnt	tot.reten
+	tot.reten = 0 
+	
+	select	tdisg831.amti,
+		tdisg831.lcno
+	from	tdisg831
+	where	tdisg831._index2 = {:i.invn}
+	as set with 1 rows
+	selectdo
+		select	tdisg860.pval
+		from	tdisg860
+		where	tdisg860._index1= {:tdisg831.lcno}
+		and	tdisg860.ptyp = tdisg.ptyp.retention
+		selectdo
+| 			tot.reten = tot.reten + (tdisg831.amti * tdisg860.pval/100)
+			tot.reten = tot.reten + (tot.cus.amnt * tdisg860.pval/100)
+		endselect
+	endselect
+	return(tot.reten)
+}
+
+function domain	tcamnt	cal.claimed(	domain	tcorno	i.code,
+						domain	tcorno	i.cinv,
+						domain	tcorno	i.invn)
+{
+	domain	tcamnt	tot.claimed, bil.value
+	tot.claimed = 0
+	bil.value = 0
+	
+	select	tpisg601.lcno
+	from	tpisg601
+	where	tpisg601._index1 = {:i.code}
+	as set with 1 rows
+	selectdo
+		select	tpisg602.*
+		from	tpisg602
+		where	tpisg602._index1 = {:i.code, :i.cinv}
+		selectdo
+			select	tdisg860.pval
+			from	tdisg860
+			where	tdisg860._index1 = {:tpisg601.lcno, :tpisg602.ptcd}
+			selectdo
+				select	tdisg831.edrn
+				from	tdisg831
+				where	tdisg831._index2 = {:i.invn}
+				selectdo
+					select	sum(tdisg832.bivl):bil.value
+					from	tdisg832
+					where	tdisg832._index1 = {:tdisg831.edrn}
+					selectdo
+					selectempty
+						bil.value = 0
+					endselect
+				endselect
+				
+				tot.claimed = tot.claimed + ((bil.value * tdisg860.pval)/100)
+			endselect
+		endselect
+	endselect
+	
+	return(tot.claimed)
+}
+
+function cal.retention.boe()
+{
+	
+}

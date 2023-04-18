@@ -1,0 +1,123 @@
+|******************************************************************************
+|* tpisg1587m100  0  VRC B61U a7 isg 
+|* Monthwise Projectwise Actual Billing
+|* Ravi Kumar                    
+|* 2020-01-03
+|******************************************************************************
+|* Main table tpisg187 Contractwise Billing Lines, Form Type 1
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttpisg187 | Contractwise Billing Lines
+
+	extern	domain	tcamnt	vari, budg.tot, actu.tot, vari.tot, budg
+	extern	domain	tcdsca	cprj.dsca, eunt.dsca
+		string	calling.session(13)
+	extern	domain	tfgld.year	year
+	extern	domain	tpisg.month	mnth
+	extern	domain	tcmcs.str215m	rmks
+	
+|****************************** program section ********************************
+before.program:
+	import("prog.name$", calling.session)
+	import("tpisg187.year", year)
+	import("tpisg187.mnth", mnth)
+	
+	if calling.session = "tpisg1587m000" then
+		query.extend.where("tpisg187.year = " & str$(year) & " and tpisg187.mnth = " & str$(mnth))
+	endif
+	
+	fattr.total.line = true
+	 
+on.display.total.line:
+	cal.total()
+	display.total.fields( "budg", budg.tot, 
+				"tpisg187.actu", actu.tot,
+				"vari", vari.tot)
+|****************************** group section **********************************
+field.budg:
+before.display:
+	budg = budget.amount()
+	
+field.vari:
+before.display:
+	budg = budget.amount()
+| 	vari = budg - tpisg187.actu
+	vari = tpisg187.actu - budg
+	
+field.cprj.dsca:
+before.display:
+	select	tcmcs052.dsca:cprj.dsca
+	from	tcmcs052
+	where	tcmcs052._index1 = {:tpisg187.cprj}
+	as set with 1 rows
+	selectdo
+	selectempty
+		cprj.dsca = ""
+	endselect
+	
+field.eunt.dsca:
+before.display:
+	select	tcemm030.dsca:eunt.dsca
+	from	tcemm030
+	where	tcemm030._index1 = {:tpisg187.eunt}
+	as set with 1 rows
+	selectdo
+	selectempty
+		eunt.dsca = ""
+	endselect
+	
+field.rmks:
+before.display:
+	select	tpisg086.rmks:rmks
+	from	tpisg086
+	where	tpisg086._index2 = {:tpisg187.year, :tpisg187.mnth, :tpisg187.eunt, :tpisg187.cprj}
+	as set with 1 rows
+	selectdo
+	selectempty
+		rmks = ""
+	endselect
+	
+	
+functions:
+function cal.total()
+{
+	select	sum(tpisg086.budg):budg.tot
+	from	tpisg086
+	where	tpisg086._index2 = {:tpisg187.year, :tpisg187.mnth}
+	selectdo
+	selectempty
+		budg.tot = 0
+	endselect
+	
+	select	sum(tpisg187.actu):actu.tot
+	from	tpisg187
+	where	tpisg187._index1 = {:tpisg187.year, :tpisg187.mnth}
+	selectdo
+	selectempty
+		actu.tot = 0
+	endselect
+	
+| 	vari.tot = budg.tot - actu.tot
+	vari.tot = actu.tot - budg.tot
+}
+
+function domain	tcamnt	budget.amount()
+{
+	domain	tcamnt	budg.amnt 
+	
+	select	tpisg086.budg:budg.amnt
+	from	tpisg086
+	where	tpisg086._index2 = {:tpisg187.year, :tpisg187.mnth, :tpisg187.eunt, :tpisg187.cprj}
+	as set with 1 rows
+	selectdo
+	selectempty
+		budg.amnt = 0
+	endselect
+	
+	return(budg.amnt)
+}
+
+

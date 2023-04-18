@@ -1,0 +1,781 @@
+|******************************************************************************
+|* tpisg1161s000  0  VRC B61U a7 isg 
+|* Contract Coversheet
+|* Paras Kukreti (TV)                    
+|* 2019-12-14
+|******************************************************************************
+|* Main table tpisg161 , Form Type 1
+|*
+|* ID: GH218CR524, RAvi Kumar, 28-01-2020
+|* Add logic for Original Order Value in INR field
+|*
+|* ID: GH262CR555, RAvi Kumar, 03-02-2020
+|* Modification in Contract Coversheet Module-Sachin (Add claim fields logic)
+|*
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+	table   ttpisg161 | 
+	table   ttpisg047 
+	table   ttpisg087
+	table   ttpisg088
+	table	ttpisg090
+	table	ttpisg311
+	table	ttpisg312
+	table	ttpisg317 
+	table	ttpisg093
+	table	ttpisg318
+	table	ttccom100
+	table	tttaad200
+	table	ttpisg007
+	table	ttpisg011
+	table	ttpisg008
+	table	ttpisg012
+	table	ttpisg112
+	table	ttpisg082
+	table	ttcmcs052
+	table	ttppdm740
+	
+	extern	domain	tcmcs.str100	ccno
+		
+		domain	tcmcs.str15	curr.user
+		domain	tcdate		curr.utc.date
+		domain	tcmcs.str15	error.message
+		domain	tccprj		project, i.cprj
+		domain	tcamnt		sum.incr
+		domain	tcamnt		sum.decr
+		domain	tcamnt		sum.incr1
+		domain	tcamnt		sum.decr1
+		domain	tcamnt		claim.amnt
+		domain	tcamnt		satl.amnt
+		domain	tpchng.type	increase
+		domain	tpchng.type	decrease
+		domain	tcmcs.long	revn.no
+		domain	tcorno		cont.code
+		domain	tppdm.aalc	ini.contingency
+		domain	tppdm.aalc	contract.amnt,contract.hc.amnt,contingency.amnt
+		domain	tcamnt		totl.bug
+		domain	tcccur		contract.ccur,com.ccur
+		domain	tcncmp		curr.comp
+		domain	tcrate		hold.rate
+		domain	tcamnt		hold.bcth, hold.bcnt, hold.bwar, hold.cssh 
+		domain	tcamnt		hold.acnt, hold.awar, hold.acys, hold.stcs,hold.cnsg, hold.ctoh, temp.acys
+		domain	tcamnt		hold.ctsh, hold.wtsh, temp.ctsh, temp.wtsh, rate, temp.bwar
+		domain	tcamnt		hold.cnut, hold.waru, hold.cnsu, temp.cssh,temp.acnt, temp.bcnt, temp.awar		
+		domain	tcamnt		r.ttbt,r.tfcy,r.tfcs,
+					r.tfwy,r.tfch, hc.amnt.find
+			
+		
+	extern	domain	tcyesno		ceca, appl						|GH262CR555.a
+	extern	domain	tcamnt		cval, eval, aval					|GH262CR555.a
+	extern	domain	tfgld.date	cdte, cuto, edte, euto, adte, auto			|GH262CR555.a
+	
+	
+#include <bic_text>
+#include <bic_dam>
+|****************************** choice section *********************************
+choice.print.data:
+on.choice:
+	if rprt_open() then
+		read.main.table()
+		rprt_close()
+	else
+		choice.again()
+	endif
+
+before.choice:
+	if tpisg161.frzd = tcyesno.yes then
+		attr.textmode = 1
+	endif
+
+|****************************** program section ********************************
+before.program:
+	set.synchronized.dialog("tpisg1161s000", true, true)
+	curr.user = logname$
+	curr.utc.date = utc.num()
+
+before.display.object:
+	cont.code = tpisg161.ccod
+	revn.no = tpisg161.revn
+	
+	disable.fields("tpisg161.arcn")
+	disable.fields("tpisg161.apmp")
+	disable.fields("tpisg161.ctoe")
+	
+	select	c_tpisg087.ccno:ccno
+	from	tpisg087 c_tpisg087
+	where	c_tpisg087._index1 = {:tpisg161.ccod}
+	as set with 1 rows
+	selectdo
+		display("ccno")
+	endselect
+	display("ccno")
+
+	if tpisg161.frzd = tcyesno.yes then
+		disable.commands("freeze.contract")
+		disable.commands("refresh.unfreezd.contract")
+		disable.fields("tpisg161.arcn")
+		disable.fields("tpisg161.apmp")
+		disable.fields("tpisg161.ctoe")
+	else
+		if not check.project.cost.sheet.approver() then
+			disable.commands("freeze.contract")
+		else
+			enable.fields("tpisg161.arcn")
+			enable.fields("tpisg161.apmp")
+			enable.fields("tpisg161.ctoe")
+		endif
+		if not check.project.cost.sheet.creator() then
+			disable.commands("refresh.unfreezd.contract")
+		else
+			enable.fields("tpisg161.arcn")
+			enable.fields("tpisg161.apmp")
+			enable.fields("tpisg161.ctoe")
+		endif
+	endif
+
+|****************************** function section *******************************
+functions:
+
+function read.main.table()
+{
+	select	tpisg161.*
+	from	tpisg161
+	where	tpisg161._index1 = {:cont.code, :revn.no}
+	as set with 1 rows
+	selectdo
+		get.contract.header(cont.code)
+		rprt_send()
+	endselect
+}
+
+function extern freeze.contract()
+{
+	if check.project.cost.sheet.approver() then
+		db.set.to.default(ttpisg161)
+		db.retry.point() 
+		select	tpisg161.*
+		from	tpisg161 for update
+		where	tpisg161._index1 = {:cont.code, :revn.no}
+		as set with 1 rows
+		selectdo
+			dal.set.field("tpisg161.frzd", tcyesno.yes)		|Freezed
+			dal.set.field("tpisg161.frzb", curr.user)		|Freezed by
+			dal.set.field("tpisg161.frzo", curr.utc.date)		|Freezed on
+			if dal.save.object("tpisg161") = 0 then
+				commit.transaction()
+			else
+				abort.transaction()
+				dal.get.error.message(error.message)
+				message(error.message)
+			endif
+		endselect
+	else
+		message("User is not Authorized to Freez the Contract")
+	endif
+	refresh.parent(-1)
+}
+
+function extern refresh.unfreezd.contract()
+{	
+	ini.variables()
+	
+	if check.project.cost.sheet.creator() then
+		get.contract.header(cont.code)
+		get.contract.lines(cont.code)
+		get.extra.claim(cont.code)
+		
+		select	b_tpisg088.cprj:i.cprj
+		from	tpisg088 b_tpisg088
+		where	b_tpisg088._index1 = {:cont.code}
+		selectdo
+			select	tpisg011.*
+			from	tpisg011
+			where	tpisg011._index1 = {:i.cprj}
+			selectdo
+			endselect
+			ini.variables1()		
+			get.ctoh.budget(i.cprj)
+			hold.bcth = hold.bcth + ini.contingency
+			hold.ctoh = hold.ctoh + contingency.amnt
+			get.data.from.tpisg008()
+			hold.cnut = hold.cnut + r.tfcy
+			hold.waru = hold.waru + r.tfwy
+			hold.cnsu = hold.cnsu + r.tfcs		
+			get.data.tpisg012.tpisg008()
+			get.coningency.s()
+		endselect
+		update.data.tpisg161()		
+	else
+		message("User is not authorised to refresh contract")
+	endif
+	refresh.parent(-1)
+}
+
+function get.data.from.tpisg008()	
+{
+	domain	tcdate	r.apdt
+	ini.variables2()
+	select	tpisg007.apdt:r.apdt,
+		tpisg007.cprj,
+		tpisg007.vers
+	from	tpisg007
+	where	tpisg007._index1 = {:i.cprj}
+	order by tpisg007.apdt
+	selectdo
+		select	tpisg008.tfcy:r.tfcy,
+			tpisg008.tfcs:r.tfcs,
+			tpisg008.tfwy:r.tfwy
+		from	tpisg008
+		where	tpisg008._index1  =  {:tpisg007.cprj,:tpisg007.vers} 
+		and 	tpisg008.ttbt <> 0
+		selectdo
+		endselect
+	endselect
+}
+
+function get.coningency.s()
+{
+	select	tpisg112.amnt
+	from	tpisg112
+	where	tpisg112._index1 = {:i.cprj}
+	selectdo
+		hold.cnsg = hold.cnsg + tpisg112.amnt
+	endselect
+}
+
+function get.ctoh.budget(domain tccprj	i.cprj)
+
+{
+	select	tppdm740.copr:contract.amnt,
+		tppdm740.ccur:com.ccur,
+		tppdm740.rate
+	from	tppdm740
+	where	tppdm740._index1 = {:i.cprj}
+	as set with 1 rows
+	selectdo
+		hold.rate = tppdm740.rate(1)
+	endselect
+	
+	curr.comp = get.compnr()
+	
+	select 	tcemm170.fcua:contract.ccur
+	from	tcemm170
+	where	tcemm170._index1 = {:curr.comp}
+	as set with 1 rows
+	selectdo
+	endselect
+	
+	contract.hc.amnt =  tppdm740.rate(1) * contract.amnt
+	
+	select 	tpisg012.totl
+	from	tpisg012
+	where	tpisg012._index1 = {:i.cprj,:tpisg011.vers}
+	and	tpisg012.levl = 0
+	as set with 1 rows
+	selectdo
+	selectempty
+		tpisg012.totl = 0
+	endselect
+
+	select	tpisg082.totl
+	from	tpisg082
+	where	tpisg082._index1 = {:i.cprj}
+	and	tpisg082.parn = ""
+	selectdo
+	selectempty
+		tpisg082.totl = 0
+	endselect
+
+	select	tpisg082.budg
+	from	tpisg082
+	where	tpisg082._index1 = {:i.cprj}
+	and	tpisg082.parn = ""
+	selectdo
+	selectempty
+		tpisg082.budg = 0
+	endselect
+
+	contingency.amnt = contract.hc.amnt + tpisg082.totl - tpisg012.totl	
+	
+	select	tpisg007.rate,
+		tpisg007.apdt
+	from	tpisg007
+	where	tpisg007._index1 = {:i.cprj}
+	order by tpisg007.apdt asc
+	as set with 1 rows
+	selectdo
+		if tpisg007.rate > 0 then
+			
+			select 	tpisg008.totl									
+			from	tpisg008
+			where	tpisg008._index1 = {:i.cprj,"1.0"}
+			and	tpisg008.levl = 0
+			as set with 1 rows
+			selectdo
+				ini.contingency =  (tpisg007.rate * tpisg011.copr) - tpisg008.totl + tpisg082.budg	
+			selectempty
+				tpisg008.totl = 0
+				totl.bug = 0.00
+				select 	aa_tpisg012.totl:totl.bug
+				from	tpisg012	aa_tpisg012
+				where	aa_tpisg012._index1 = {:i.cprj}
+				and 	aa_tpisg012.levl = 0
+				as set with 1 rows
+				selectdo
+					ini.contingency =  (tpisg007.rate * tpisg011.copr) - totl.bug + tpisg082.budg
+				selectempty
+					ini.contingency = 0.00
+				endselect
+			endselect
+		else
+			select	tppdm740.rate
+			from	tppdm740
+			where	tppdm740._index1 = {:i.cprj}
+			as set with 1 rows
+			selectdo
+				select 	tpisg008.totl								
+				from	tpisg008
+				where	tpisg008._index1 = {:i.cprj,"1.0"}
+				and	tpisg008.levl = 0
+				as set with 1 rows
+				selectdo
+					ini.contingency =  (tppdm740.rate(1) * tpisg011.copr) - tpisg008.totl + tpisg082.budg	
+				selectempty
+					tpisg008.totl = 0
+					totl.bug = 0.00
+					select 	aa_tpisg012.totl:totl.bug
+					from	tpisg012	aa_tpisg012
+					where	aa_tpisg012._index1 = {:i.cprj}
+					and 	aa_tpisg012.levl = 0
+					as set with 1 rows
+					selectdo
+						ini.contingency =  (tppdm740.rate(1) * tpisg011.copr) - totl.bug + tpisg082.budg
+					selectempty
+						ini.contingency = 0.00
+					endselect
+				endselect
+			endselect
+			
+		endif
+	selectempty
+		select	tppdm740.rate
+		from	tppdm740
+		where	tppdm740._index1 = {:i.cprj}
+		as set with 1 rows
+		selectdo
+			tpisg008.totl = 0
+			totl.bug = 0.00
+			select 	aa_tpisg012.totl:totl.bug
+			from	tpisg012	aa_tpisg012
+			where	aa_tpisg012._index1 = {:i.cprj}
+			and 	aa_tpisg012.levl = 0
+			as set with 1 rows
+			selectdo
+				ini.contingency =  (tppdm740.rate(1) * tpisg011.copr) - totl.bug + tpisg082.budg
+			selectempty
+				ini.contingency = 0.00
+			endselect
+		endselect
+	endselect
+}
+
+function domain tcbool check.project.cost.sheet.creator()
+{
+	select	tpisg088.cprj
+	from	tpisg088
+	where	tpisg088._index1 = {:cont.code}
+	selectdo
+		select	tpisg046.user
+		from	tpisg046
+		where	tpisg046._index1 = {:tpisg088.cprj}
+		as set with 1 rows
+		selectdo
+			return(true)
+		endselect
+	endselect
+	return(false)
+}
+
+function domain tcbool check.project.cost.sheet.approver()
+{
+	select	tpisg088.cprj
+	from	tpisg088
+	where	tpisg088._index1 = {:cont.code}
+	selectdo
+		select	tpisg047.user
+		from	tpisg047
+		where	tpisg047._index1 = {:tpisg088.cprj}
+		as set with 1 rows
+		selectdo
+			return(true)
+		endselect
+	endselect
+	return(false)
+}
+
+function get.contract.header(domain	tcorno	i.ccod)
+{
+	select	tpisg087.*
+	from	tpisg087
+	where	tpisg087._index1 = {:i.ccod}
+	as set with 1 rows
+	selectdo
+		select	tccom100.nama
+		from	tccom100
+		where	tccom100._index1 = {:tpisg087.cust}
+		as set with 1 rows
+		selectdo
+		endselect
+	endselect
+}
+
+function get.extra.claim(domain	tcorno	i.ccod)
+{
+	claim.amnt = 0
+	
+| 	select	tpisg090.ccod, sum(tpisg090.camt):claim.amnt, sum(tpisg090.camt):satl.amnt
+| 	from	tpisg090
+| 	where	tpisg090._index1 = {:i.ccod}
+| 	and	tpisg090.cltp = tpisg.cltp.tmct
+| 	group by tpisg090.ccod
+| 	selectdo
+| 	endselect
+}
+
+function get.contract.lines(domain	tcorno	i.ccod)
+{
+	project = ""
+	increase = tpchng.type.increase
+	decrease = tpchng.type.decrease
+	sum.incr = 0
+	sum.decr = 0
+	sum.incr1 = 0
+	sum.decr1 = 0
+	
+	select	tpisg088.*
+	from	tpisg088
+	where	tpisg088._index1 = {:i.ccod}
+	selectdo
+		project = tpisg088.cprj
+		get.change.order.value.incr.dcre(project, increase)
+		sum.incr = sum.incr + tpisg311.ciov
+		get.change.order.value.incr.dcre(project, decrease)
+		sum.decr = sum.decr + tpisg311.ciov
+		get.sanction.amandent.incr.dcre(project, increase)
+		sum.incr1 = sum.incr1 + tpisg317.ciov
+		get.sanction.amandent.incr.dcre(project, decrease)
+		sum.decr1 = sum.decr1 + tpisg317.ciov
+	endselect
+}
+
+function get.change.order.value.incr.dcre(domain tccprj i.project,
+					  domain tpchng.type i.inc.dcr)
+{
+	select	tpisg311.*
+	from	tpisg311 
+	where	tpisg311._index1 = {:i.project}
+	and	tpisg311.otyp = :i.inc.dcr
+	selectdo
+	selectempty
+		tpisg311.ciov = 0 
+	endselect	
+}
+
+function get.sanction.amandent.incr.dcre(domain tccprj i.project,
+					 domain tpchng.type i.inc.dcr)
+{
+	select	tpisg317.*
+	from	tpisg317
+	where	tpisg317._index1 = {:i.project}
+	and	tpisg317.otyp = :i.inc.dcr
+	selectdo
+	selectempty
+		tpisg317.ciov = 0 
+	endselect	
+}
+
+function get.data.tpisg012.tpisg008()
+{
+	select	a_tpisg012.ritb:temp.bcnt,
+		a_tpisg012.totl:temp.acnt
+	from	tpisg012 a_tpisg012
+	where	a_tpisg012._index1 = {:i.cprj,:tpisg011.vers}
+	and	a_tpisg012.elem = "99100000"
+	selectdo
+		hold.bcnt = hold.bcnt + temp.bcnt
+		hold.acnt = hold.acnt + temp.acnt
+	endselect
+	
+	select	b_tpisg012.ritb:temp.bwar,
+		b_tpisg012.totl:temp.awar
+	from	tpisg012 b_tpisg012
+	where	b_tpisg012._index1 = {:i.cprj,:tpisg011.vers}
+	and	b_tpisg012.elem = "99110000"
+	selectdo
+		hold.bwar = hold.bwar + temp.bwar
+		hold.awar = hold.awar + temp.awar
+	endselect
+	
+	select	c_tpisg012.totl:temp.acys
+	from	tpisg012 c_tpisg012
+	where	c_tpisg012._index1 = {:i.cprj,:tpisg011.vers}
+	and	c_tpisg012.elem = "99180000"
+	selectdo
+		hold.acys = hold.acys + temp.acys
+	endselect
+	
+	select	tpisg008.ttch:temp.ctsh
+	from	tpisg008
+	where	tpisg008._index1  =  {:i.cprj,:tpisg011.vers}
+	and 	tpisg008.ttch <> 0
+	and	tpisg008.elem = "99100000"
+	selectdo
+		hold.ctsh = hold.ctsh + temp.ctsh
+	endselect
+	
+	select	tpisg008.ttch:temp.wtsh
+	from	tpisg008
+	where	tpisg008._index1  =  {:i.cprj,:tpisg011.vers}
+	and 	tpisg008.ttch <> 0
+	and	tpisg008.elem = "99110000"
+	selectdo
+		hold.wtsh = hold.wtsh + temp.wtsh
+	endselect
+	
+	select	tpisg008.ttch:temp.cssh
+	from	tpisg008
+	where	tpisg008._index1  =  {:i.cprj,:tpisg011.vers}
+	and 	tpisg008.ttch <> 0
+	and	tpisg008.elem = "99180000"
+	selectdo
+		hold.cssh = hold.cssh + temp.cssh
+	endselect
+}
+
+function update.data.tpisg161()
+{
+	hc.amnt.find = 0							|GH218CR524.a
+	hc.amnt.find = cover.original.value()					|GH218CR524.a
+	last.time.extention.details()						|GH262CR555.a
+	db.set.to.default(ttpisg161)
+	db.retry.point() 
+	select	tpisg161.*
+	from	tpisg161 for update
+	where	tpisg161._index1 = {:cont.code, :revn.no}
+	and	tpisg161.frzd = tcyesno.no
+	as set with 1 rows
+	selectdo            
+		dal.set.field("tpisg161.rfdt", curr.utc.date)			|Refresh Date
+		dal.set.field("tpisg161.nama", tccom100.nama)			|Customer Name
+		dal.set.field("tpisg161.ccdt", tpisg087.ccdt)			|Contractual Commissioning Date
+		dal.set.field("tpisg161.ecdt", tpisg087.ecdt)			|Expected Commissioning Date
+		dal.set.field("tpisg161.orvl", tpisg087.orvl)			|Order Value in Functional Currency
+		dal.set.field("tpisg161.ordl", tpisg087.ordl)			|Order Value in INR
+		dal.set.field("tpisg161.ccur", com.ccur)			
+		dal.set.field("tpisg161.rate", hold.rate)			
+		dal.set.field("tpisg161.ovfc", tpisg087.ovfc)			|Original Order Value in functional Currency
+|	 	dal.set.field("tpisg161.oovi", (tpisg161.ovfc * hold.rate))	|RAvi.cng.o.GH218CR524
+		dal.set.field("tpisg161.oovi", hc.amnt.find)			|RAvi.cng.n.GH218CR524
+		dal.set.field("tpisg161.iovc", sum.incr)			|Increase in Order Value due to client
+		dal.set.field("tpisg161.dovc", sum.decr)			|Decrease in Order Value due to client
+		dal.set.field("tpisg161.iovt", sum.incr1)			|Increase in Order Value due to Internal Transfer
+		dal.set.field("tpisg161.dovt", sum.decr1)			|Decrease in Order Value due to Internal Transfer
+| 		dal.set.field("tpisg161.rvov", (tpisg087.ovfc + sum.incr - 
+| 						sum.decr + sum.incr1 - sum.decr1))	|Revised Order Value
+		dal.set.field("tpisg161.rvov", tpisg087.ordl)
+		dal.set.field("tpisg161.clmv", claim.amnt)			|Claimed Value
+		dal.set.field("tpisg161.apvc", satl.amnt)			|Approved Value by Client
+		dal.set.field("tpisg161.bcnt", hold.bcnt)			|Budgeted Contigency
+		dal.set.field("tpisg161.cnut", hold.cnut)			|Contigency Utilized
+		dal.set.field("tpisg161.ctsh", hold.ctsh)			|Contigency Transfered
+		dal.set.field("tpisg161.acnt", hold.acnt)			|Available Contigency
+		dal.set.field("tpisg161.bwar", hold.bwar)			|Budgeted Warranty
+		dal.set.field("tpisg161.waru", hold.waru)			|Warranty Utilized
+		dal.set.field("tpisg161.wtsh", hold.wtsh)			|Warranty Transfered to CTOH
+		dal.set.field("tpisg161.awar", hold.awar)			|Available Warranty
+		dal.set.field("tpisg161.cnsg", hold.cnsg)			|Contigency-S-Generated
+		dal.set.field("tpisg161.cnsu", hold.cnsu)			|Contigency-S-Utilized
+		dal.set.field("tpisg161.cssh", hold.cssh)			|Contigency-S-Transfer
+		dal.set.field("tpisg161.acys", hold.acys)			|Contigency-S-Balance
+		dal.set.field("tpisg161.bcth", hold.bcth)			|Budgeted CTOH
+		dal.set.field("tpisg161.ctoh", hold.ctoh)			|CTOH-Actual as on Date
+		dal.set.field("tpisg161.ltsr", true)				|Latest Revision
+		dal.set.field("tpisg161.ceca", ceca)					|Cost Esclation Claim			 GH262CR555.a.s					
+		dal.set.field("tpisg161.appl", appl)					|Time Extension Claim
+		dal.set.field("tpisg161.cdte", cdte)					|Claim Date
+		dal.set.field("tpisg161.cval", cval)					|Claim Value
+		dal.set.field("tpisg161.cuto", cuto)					|Extension Claimed Upto
+		dal.set.field("tpisg161.edte", edte)					|Settelement Date
+		dal.set.field("tpisg161.eval", eval)					|Settelement Value
+		dal.set.field("tpisg161.euto", euto)					|Settelement Upto
+		dal.set.field("tpisg161.adte", adte)					|Actual Date
+		dal.set.field("tpisg161.aval", aval)					|Actual Value
+		dal.set.field("tpisg161.auto", auto)					|Actual Upto				GH262CR555.a.e
+		if dal.save.object("tpisg161") = 0 then
+			commit.transaction()
+		else
+			abort.transaction()
+			dal.get.error.message(error.message)
+			message(error.message)
+		endif
+		
+	endselect
+}
+
+function ini.variables()
+{
+	hold.bcth = 0.0
+	hold.bcnt = 0.0
+	hold.acnt = 0.0
+	hold.bwar = 0.0                                        
+	hold.acys = 0.0
+	hold.acnt = 0.0
+	hold.awar = 0.0
+	hold.stcs = 0.0
+	hold.cnsg = 0.0
+	hold.cssh = 0.0
+	hold.ctoh = 0.0
+	hold.ctsh = 0.0
+	hold.wtsh = 0.0
+	temp.ctsh = 0.0
+	temp.wtsh = 0.0
+	temp.cssh = 0.0
+	hold.cnut = 0.0
+	hold.waru = 0.0
+	hold.cnsu = 0.0
+	rate = 0.0
+}
+
+function ini.variables1()
+{
+	temp.acnt = 0.0
+	temp.bcnt = 0.0
+	temp.bwar = 0.0
+	temp.awar = 0.0
+	temp.acys = 0.0
+	temp.cssh = 0.0
+	temp.ctsh = 0.0
+	temp.wtsh = 0.0
+	ini.contingency = 0.0
+	contingency.amnt = 0.0
+	r.tfcy = 0.0
+	r.tfwy = 0.0
+	r.tfcs = 0.0
+}
+
+function ini.variables2()
+{
+	r.ttbt = 0.00
+	r.tfcy = 0.00
+	r.tfcs = 0.00
+	r.tfwy = 0.00
+	r.tfch = 0.00
+}
+
+function domain	tcamnt	cover.original.value()					|GH218CR524.a.s
+{
+	domain	tcamnt	hc.amnt
+	
+	hc.amnt = 0 
+	
+	select	tpisg088.cprj
+	from	tpisg088
+	where	tpisg088._index1 = {:tpisg161.ccod}
+	selectdo
+| 		select	tppdm740.copr
+| 		from	tppdm740
+| 		where	tppdm740._index1 = {:tpisg088.cprj}
+| 		selectdo
+| 			hc.amnt = hc.amnt + (tppdm740.copr * tppdm740.rate(1))
+| 		endselect
+
+		select	tpisg011.copr
+		from	tpisg011
+		where	tpisg011._index1 = {:tpisg088.cprj}
+		as set with 1 rows
+		selectdo
+		selectempty
+			tpisg011.copr = 0
+		endselect
+
+		select	tpisg007.rate,
+			tpisg007.apdt
+		from	tpisg007
+		where	tpisg007._index1 = {:tpisg088.cprj}
+		order by tpisg007.apdt asc
+		as set with 1 rows
+		selectdo
+			if tpisg007.rate > 0 then
+				hc.amnt = hc.amnt + (tpisg011.copr * tpisg007.rate)
+			else
+				select	tppdm740.rate
+				from	tppdm740
+				where	tppdm740._index1 = {:tpisg088.cprj}
+				as set with 1 rows
+				selectdo
+					hc.amnt = hc.amnt + (tpisg011.copr * tppdm740.rate(1))
+				endselect
+			endif
+		selectempty
+			select	tppdm740.rate
+			from	tppdm740
+			where	tppdm740._index1 = {:tpisg088.cprj}
+			as set with 1 rows
+			selectdo
+				hc.amnt = hc.amnt + (tpisg011.copr * tppdm740.rate(1))
+			endselect
+		endselect
+	endselect
+	return(hc.amnt)
+}
+										|GH218CR524.a.e
+										
+function last.time.extention.details()						|GH262CR555.a.s
+{
+	select	tpisg090.slno,
+		tpisg090.ceca:ceca,		
+		tpisg090.appl:appl,		
+		tpisg090.cdte:cdte,		
+		tpisg090.cuto:cuto,		
+		tpisg090.edte:edte,		
+		tpisg090.euto:euto,		
+		tpisg090.adte:adte,		
+		tpisg090.auto:auto
+	from	tpisg090
+	where	tpisg090._index1 = {:tpisg161.ccod}
+	and	tpisg090.cltp = tpisg.cltp.tmct
+	order by tpisg090.slno desc
+	as set with 1 rows
+	selectdo
+	selectempty
+		ceca = tcyesno.no
+		appl = tcyesno.no
+		cdte = 0
+		cuto = 0
+		edte = 0
+		euto = 0
+		adte = 0
+		auto = 0
+	endselect
+	
+	select	sum(tpisg090.cval):cval,
+		sum(tpisg090.eval):eval,
+		sum(tpisg090.aval):aval
+	from	tpisg090
+	where	tpisg090._index1 = {:tpisg161.ccod}
+	and	tpisg090.cltp = tpisg.cltp.tmct
+	selectdo
+	selectempty
+		cval = 0
+		eval = 0
+		aval = 0
+	endselect
+}										|GH262CR555.a.e
+										
+
+
+
+

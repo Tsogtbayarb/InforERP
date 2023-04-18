@@ -1,0 +1,1052 @@
+|******************************************************************************
+|* tdpur201ue  0  VRC B61U a7 live
+|* Purchase Requisition Lines
+|* tools1
+|* 14-02-06 [12:28]
+|******************************************************************************
+|* Script Type: Library
+|******************************************************************************
+| IDENT  ISG001001  GAURAV TYAGI 07/02/2014 VRC B61U a7 live
+|******************************************************************************
+|* IDENT ISG001014 , Manish Kumar , 12-03-2014 , VRC B61U a7 live
+|* Updating Actual Start Date in tppss200 when first record for element is
+|* Inserted in tppss200
+|******************************************************************************
+|* IDENT ISG001022 , Arjit Kr Gupta , 29-03-2014 , VRC B61U a7 live
+|* Defaulting CDF_Planned Order Date and Implementing Nature of Indent(Normal, Urgent & Emergency)
+|* 
+|* ID ESSP INCIDENT - 3538, Sujeet Kumar, 05-05-2014, B61U a7 live
+|* Defaulting of 
+|* tdpur120.qoor will be defaulted from tpptc120.quan
+|* tdpur120.pric will be defaulted from tpptc120.pric
+
+|* ID ESSP INCIDENT - 3665 Sujeet Kumar	17-05-2014
+|* Line Project Code is Always Equal to Header Project Code.
+
+|* ID ESSP INCIDENT - 3661 Sujeet Kumar 22-05-2014
+|* Linking of Item Release
+|*
+|* IDENT ISG001039 , Manish Kumar ,04-06-2014 , VRC B61U a7 live
+|* Check on tpptc157
+
+|* 20140612,	Sujeet Kumar,		2014-06-12
+|* Script Clean.
+|* check_control_budgeting -  Function Need to be enhanced.
+|*
+|* ID ISGECDV001156,	Sujeet Kumar,	2014-11-14
+|* If Bill of Material Lines Present, then Project, Element, and Activity 
+|* can't be changed.
+|* Functional: Mr. Vikas Yadav
+|*
+
+|* ID ISGEC01013, 	Shilpa Janardanan, 2015-01-01
+|* If Requisition is approved then item , Quantity & price should not be changed
+|******************************************************************************
+|*IDENT ISGEC001140, Sandhyarani, 14-01-2015
+|*Modification on function Update.Planned.Order.Date()
+|******************************************************************************
+|*IDENT ISGEC001147, Sandhyarani, 23-01-2015
+|*Modification on function Update.Nature.of.Indent()
+|******************************************************************************
+|* ISGEC001143, Ankit Sharma,IT0302, 17-01-2015,B61U a7 isg 
+|* Added check on Buy from Business partner (tdpur201.otbp) field
+|******************************************************************************	
+|* ID ISGEC01033
+|* Manish Kumar
+|* 29-01-2015
+|* Modifications for Priority Setting in tdisg100
+
+|****************************************************************************
+|* ISGEC01070, Shilpa Janardanan, 2015-03-02
+|* Check on Same item & price. i,e if item is same then price should be different
+|*
+|* PATCH001047, Dharmendra, 25-03-2015
+|*
+|* ID ISGEC015086, Manish Manchanda, 2016-03-02
+|* Project Type check from business partner 
+|* 
+|* ID: GH345CR643, RAvi Kumar, 19-06-2020 
+|* Allow to put same price in Indent Line
+|******************************************************************************	
+
+
+#ident "@(#)ISG001001	GAURAV TYAGI 07/02/2014 VRC B61U a7 live"
+
+#ident "@(#)ISG001014	Manish Kumar 12/03/2014 VRC B61U a7 live"
+
+#ident "@(#)ISG001022	Arjit Kr Gupta 29/03/2014 VRC B61U a7 live"
+
+	table	ttdpur201
+	table	ttdpur200
+	table	ttcibd001
+	table	ttpptc127
+	table	ttpptc157
+	table	ttcibd001
+	table	ttppdm600
+	table	ttppss200
+						
+	table	ttdisg003
+	table	ttcisg003
+	table	ttcisg004
+	table	ttpmsl000
+	table	ttcisg007
+	table	ttdisg100
+	table	ttccom100					|# PATCH001047.n
+	
+extern	domain	tcqrd1	budg.quan,ava.qnty,subc.quan,cancel.qnty
+domain	tcpono	o.pono
+long ret_val
+domain	tcmcs.str100	approver.remarks(1)
+#include <bic_dal>
+#include <bic_dam>
+#include <bic_text>
+						
+#include "itdisgdll0003"				
+						
+function extern long ue.before.before.save.object(long mode)
+{
+
+	domain		tccprj		o.cprj							
+	domain		tppdm.cspa	o.cspa
+	domain		tcitem		o.item
+	
+	domain		tcorno		o.vers
+	
+	domain	tcorno		o.tdisg003.rqno		|#ISGECDV001156.n
+	domain	tcmcs.str30m	v.cdf_rtyp,v.cdf_cprj,v.cdf_rtyp1	|#ISGEC001143.n
+	domain	tcmcs.str30m	cdf_remarks		|# PATCH001047.n
+	
+	on case mode
+	case DAL_NEW:
+| 													
+| 		if check_control_budgeting() then
+| 			dal.set.error.message("tdmsl2010001")
+| 			return(DALHOOKERROR)
+| 		endif
+		
+| 		if  ret_val = 1 then
+| 			dal.set.error.message("tdmsl2010001")
+| 			return(DALHOOKERROR)
+| 		endif
+		
+		tdpur201.oamt = tdpur201.qoor * tdpur201.pric		
+		if  Update.Actual.Start.Date.In.tppss200() then					
+			|*****Error in Updating Actual Start Date In Activities****
+| 			dal.set.error.message("tpisg200001")
+			return(DALHOOKERROR)
+		endif											
+		
+						|#22052014.so
+		if	not Update.Requested.Order.Date()	then					
+			dal.set.error.message("tdisg201003")
+		endif	
+		if	not Update.Planned.Order.Date()	then						
+			dal.set.error.message("tdisg201001")
+			|Error in Updating Planned Order Date
+		endif											
+		if	not Update.Nature.of.Indent()	then
+			dal.set.error.message("tdisg201002")
+		endif						
+		if	not Update.CLP.Delivery.Date()	then
+			dal.set.error.message("tdisg201004")
+			|Error in Updating CLP Delivery Date
+		endif	
+		
+			
+		if not isspace(tdpur201.cprj) and not isspace(tdpur201.cspa) then
+			|Get Project Version
+			if not tpisgdll0012.check_sanction_status(tdpur201.cprj,o.vers) then
+				|Update Sanction Amount
+				tpisgdll0012.SanctionControlLine(tdpur201.cprj,o.vers,tdpur201.cspa)
+				tpisgdll0011.insert.sanction.order.relation(
+							tdpur201.cprj,
+							o.vers,
+							tdpur201.cspa,
+							tdisg.item.indent,
+							tdpur201.rqno,
+							tdpur201.pono,
+							tdpur201.oamt)
+			endif
+		endif	
+		
+		select	tccom120.cdf_rtyp,tccom120.cdf_cprj					|#ISGEC001143.sn
+		from	tccom120
+		where	tccom120._index1 = {:tdpur201.otbp}
+		selectdo
+			get.var(pid, "tccom120.cdf_rtyp", v.cdf_rtyp)
+			get.var(pid, "tccom120.cdf_cprj", v.cdf_cprj)
+			
+			v.cdf_rtyp1 = strip$(v.cdf_rtyp)
+			
+			if v.cdf_rtyp1 = "One Time BP" then
+				select	tdpur400.orno
+				from	tdpur400	
+				where	tdpur400._index2 = {:tdpur201.otbp}
+				selectdo
+					dal.set.error.message("tdisg201006")
+					return(DALHOOKERROR)
+				endselect	
+			else	if v.cdf_rtyp1 = "Project" then
+					if not v.cdf_cprj = tdpur201.cprj then
+						dal.set.error.message("tdisg201005")
+						return(DALHOOKERROR)
+					endif	
+				endif
+			endif		
+		endselect									|#ISGEC001143.en
+		
+		if item_price_check(tdpur201.rqno)	then		|#ISGEC01070.sn
+			return(DALHOOKERROR)
+		endif							|#ISGEC01070.en
+	break
+	
+									|#ISGEC015086.sn
+	if	check.project.type()	then
+		return(1)
+	endif
+									|#ISGEC015086.en
+	case DAL_UPDATE:
+		
+		if dal.is.field.changed("tdpur201.item") then
+			dal.set.error.message("@Item Cannot be Changed...")
+			return(DALHOOKERROR)
+		endif
+		
+		if  Update.Actual.Start.Date.In.tppss200() then					
+			|*****Error in Updating Actual Start Date In Activities****
+| 			dal.set.error.message("tpisg200001")
+			return(DALHOOKERROR)
+		endif
+		
+		if	not Update.Planned.Order.Date()	then						
+			dal.set.error.message("tdisg201001")
+			|Error in Updating Planned Order Date
+		endif											
+		if	not Update.Nature.of.Indent()	then
+			dal.set.error.message("tdisg201002")
+		endif
+		if	not Update.CLP.Delivery.Date()	then
+			dal.set.error.message("tdisg201004")
+			|Error in Updating CLP Delivery Date
+		endif	
+			
+| 		
+| 		if check_control_budgeting() then
+| 		
+| 	| 		if  ret_val = 1 then
+| 	| 			dal.set.error.message("tdmsl2010001")
+| 			return(DALHOOKERROR)
+| 		endif
+				|GT.03072014.sn
+		if	tdpur201.rejc = tcyesno.yes then
+			tcisgdll0003.Modify.Indent_Bill_of_Material(tdpur201.rqno,tdpur201.pono,tdpur201.cprj,
+				tdpur201.cspa,tdpur201.item)
+		endif		
+				|GT.03072014.en
+				
+				
+				
+								|#ISGECDV001156.sn
+		if 	dal.is.field.changed("tdpur201.cprj") or 
+			dal.is.field.changed("tdpur201.cspa") or 	
+			dal.is.field.changed("tdpur201.cact") then
+			
+			select 	tdisg003.rqno:o.tdisg003.rqno
+			from	tdisg003
+			where	tdisg003._index1 = {:tdpur201.rqno,:tdpur201.pono}
+			as set with 1 rows
+			selectdo
+				dal.set.error.message("@ Child Item Linked, not allowed to change project/element/activity")
+				return(DALHOOKERROR)
+			endselect
+		endif
+		
+| 		if item_price_check(tdpur201.rqno)	then		|#ISGEC01070.sn
+| 			return(DALHOOKERROR)
+| 		endif							|#ISGEC01070.en
+		
+								|#ISGECDV001156.en
+		if 	dal.is.field.changed("tdpur201.item")  or		|ISGEC01013.sn 
+			dal.is.field.changed("tdpur201.qoor") or
+			dal.is.field.changed("tdpur201.pric")	then
+			select	tdpur200.rqst
+			from	tdpur200
+			where	tdpur200._index1 = {:tdpur201.rqno}
+			and	tdpur200.rqst = tdpur.rqst.approved
+			selectdo
+				dal.set.error.message("@ Record cannot be modified as the Requisition is already approved")
+				return(DALHOOKERROR)
+			endselect	
+		endif					|ISGEC01013.en
+
+		select	tccom120.cdf_rtyp,tccom120.cdf_cprj					|#ISGEC001143.sn
+		from	tccom120
+		where	tccom120._index1 = {:tdpur201.otbp}
+		selectdo
+			get.var(pid, "tccom120.cdf_rtyp", v.cdf_rtyp)
+			get.var(pid, "tccom120.cdf_cprj", v.cdf_cprj)
+			
+			v.cdf_rtyp1 = strip$(v.cdf_rtyp)
+
+			if v.cdf_rtyp1 = "One Time BP" then
+				select	tdpur400.orno
+				from	tdpur400	
+				where	tdpur400._index2 = {:tdpur201.otbp}
+				selectdo
+					dal.set.error.message("tdisg201006")
+					return(DALHOOKERROR)
+				endselect
+			else	if v.cdf_rtyp1 = "Project" then
+					if not v.cdf_cprj = tdpur201.cprj then
+						dal.set.error.message("tdisg201005")
+						return(DALHOOKERROR)
+					endif	
+				endif
+			endif		
+		endselect									|#ISGEC001143.en
+											|# PATCH001047.sn
+		select	tccom100.txta	
+		from	tccom100
+		where	tccom100._index1 = {:tdpur201.otbp}
+		selectdo
+		endselect
+		
+		if tccom100.txta <> 0 then
+			ret_val = text.to.buf("tccom100.txta", language$, 1, approver.remarks)
+			dal.set.error.message("tdisg1111.001", approver.remarks)
+			show.dal.messages()
+		endif	
+											|# PATCH001047.en
+		break
+	endcase
+	
+	|* Sanction Control
+	
+	if project.warehouse.validation(tdpur201.rqno) then
+		return(DALHOOKERROR)
+	endif
+
+	with.object.set.do(tcisgdll0003.Get_Indent,tdpur201.rqno,tdpur201.pono,o.cprj,o.cspa,o.item)
+	
+	if 	o.cprj <> tdpur201.cprj or 
+		o.cspa <> tdpur201.cspa or 
+		o.item <> tdpur201.item then
+		
+		BILL_OF_MATERIAL(tdpur201.cprj,tdpur201.cspa,tdpur201.item,
+				201,indt,tdpur201.rqno,tdpur201.pono,0)	
+	endif			
+	
+							|#ISGEC015086.sn
+	if	check.project.type()	then
+		return(1)
+	endif
+							|#ISGEC015086.en
+
+	return(0)
+}
+
+function extern long ue.after.before.save.object(long mode)
+{
+	on case mode
+	case DAL_NEW:
+	
+		break
+	case DAL_UPDATE:
+		break
+	endcase
+	return(0)
+}
+
+function extern long ue.before.after.save.object(long mode)
+{
+	on case mode
+	case DAL_NEW:
+		break
+	case DAL_UPDATE:
+		break
+	endcase
+	return(0)
+
+	
+
+}
+
+function extern long ue.after.after.save.object(long mode)
+{
+	on case mode
+	case DAL_NEW:
+		
+		break
+	case DAL_UPDATE:
+		break
+	endcase
+	return(0)
+						
+}
+
+function extern long ue.before.before.destroy.object()
+{
+	domain	tcorno		o.vers
+	long	first.val,line.val
+	domain	tdisg.in.type	v.prio
+	domain tcyesno	norm.new,emer.new,norm.asin,emer.asin,urgt.asin
+	
+	tcisgdll0003.Modify.Indent_Bill_of_Material(tdpur201.rqno,tdpur201.pono,tdpur201.cprj,
+				tdpur201.cspa,tdpur201.item)
+				
+	if not isspace(tdpur201.cprj) and not isspace(tdpur201.cspa) then
+		|Get Project Version
+		if not tpisgdll0012.check_sanction_status(tdpur201.cprj,o.vers) then
+| 			|Update Sanction Amount
+			tpisgdll0012.SanctionControlLine(tdpur201.cprj,o.vers,tdpur201.cspa)
+		endif
+	endif
+
+	
+	select	tdpur201.cdf_emer:emer.asin,tdpur201.cdf_norm:norm.asin,tdpur201.urgt:urgt.asin		|#ISGEC001147.sn
+	from	tdpur201
+	where	tdpur201._index1={:tdpur201.rqno}
+	and	tdpur201.pono <> :tdpur201.pono
+	selectdo
+		if emer.asin  = tcyesno.yes then
+			line.val = 3
+		else	
+			if	urgt.asin = tcyesno.yes then
+				line.val = 2
+			else
+				norm.asin  = tcyesno.yes 
+				line.val = 1
+			endif
+		endif	
+		if first.val < line.val	then
+			first.val = line.val
+		endif	
+	endselect
+	
+	on case first.val
+| 	case	1 :			|#ISGEC01033.o
+	case	3 :			|#ISGEC01033.n
+		v.prio = tdisg.in.type.emergency
+	break
+	case	2 :
+		v.prio = tdisg.in.type.urgent
+	break		
+| 	case	3 :			|#ISGEC01033.o
+	case	1 :			|#ISGEC01033.n
+		v.prio = tdisg.in.type.normal
+	break	
+	endcase
+| 	db.retry.point()		|#ISGEC01033.o
+	select	tdisg100.*
+	from	tdisg100 for update
+	where	tdisg100._index1={:tdpur201.rqno}
+	selectdo
+		tdisg100.prio = v.prio
+		db.update(ttdisg100,db.retry)
+	endselect			|#ISGEC001147.en
+	
+	return(0)
+}
+
+function extern long ue.after.before.destroy.object()
+{
+	return(0)
+}
+
+function extern long ue.before.after.destroy.object()
+{
+	return(0)
+}
+
+function extern long ue.after.after.destroy.object()
+{
+	return(0)
+}
+
+
+|****************************** function section *********************
+function long	check_control_budgeting()
+{
+	select	tcibd001.kitm
+	from	tcibd001
+	where	tcibd001._index1 = {:tdpur201.item}
+	selectdo
+		on case	tcibd001.kitm
+		case	tckitm.purchase:
+			get_current_req_qty_with_status_cancel()
+			with.object.set.do(get_current_req_qty_without_status_cancel,tdpur201.rqno,tdpur201.pono)
+			if not isspace(tdpur201.cprj) then
+				if check_data_material_line() then
+| 					show.dal.messages(MSG.ALL)
+					return(DALHOOKERROR)
+				endif
+			endif
+			
+			break
+		case	tckitm.subcontracting:
+			get_current_req_qty_with_status_cancel()
+			with.object.set.do(get_current_req_qty_without_status_cancel,tdpur201.rqno,tdpur201.pono)
+			if not isspace(tdpur201.cprj) then
+				if ret_val = 1 then
+| 					show.dal.messages(MSG.ALL)
+					return(DALHOOKERROR)
+				endif
+			endif
+			break
+		endcase
+	endselect
+	return(0)
+}
+
+function	get_current_req_qty_with_status_cancel()
+{
+	select	sum(tdpur201.qoor):cancel.qnty
+	from	tdpur201,tdpur200
+	where	tdpur201._index2 = {:tdpur201.cprj}
+	and	tdpur201.cspa = :tdpur201.cspa
+	and	tdpur201.ccco = :tdpur201.ccco
+	and	tdpur201.item = :tdpur201.item
+	and	tdpur201.rqno refers to tdpur200
+	and	tdpur200.rqst in (4,6)
+	selectdo
+	selectempty
+		cancel.qnty = 0
+	endselect		
+}
+
+function	get_current_req_qty_without_status_cancel
+				(
+					domain	tcorno		i.rqno,
+					domain	tcpono		i.pono
+				)
+{
+	domain	tcorno		x.rqno
+	domain	tcpono		x.pono
+	domain	tcqrd1		x.qoor
+	ava.qnty = 0
+	
+	select	tdpur201.rqno:x.rqno,
+		tdpur201.pono:x.pono,
+		tdpur201.qoor:x.qoor
+	from	tdpur201,tdpur200
+	where	tdpur201._index2 = {:tdpur201.cprj}
+	and	tdpur201.cspa = :tdpur201.cspa
+	and	tdpur201.ccco = :tdpur201.ccco
+	and	tdpur201.item = :tdpur201.item
+	and	tdpur201.rqno refers to tdpur200
+	and	tdpur200.rqst not in (4,6)
+	selectdo
+		if x.rqno = i.rqno and x.pono = i.pono then
+			continue
+		else
+			ava.qnty = ava.qnty + x.qoor
+		endif
+		
+	selectempty
+		ava.qnty = 0
+	endselect		
+}
+
+function long	check_data_material_line()
+{
+	domain	tppdm.csub	i.csub
+	
+	i.csub	= tdpur201.item(10;47)
+	
+	select	tpptc127.quan:budg.quan
+	from	tpptc127
+	where	tpptc127._index1 = {:tdpur201.cprj,:tdpur201.item}
+	and	tpptc127.cspa = :tdpur201.cspa
+	and	tpptc127.ccco = :tdpur201.ccco
+	selectdo
+		if  (ava.qnty + tdpur201.qoor - cancel.qnty) <= budg.quan  then
+		else
+			dal.set.error.message("tdmsl2010001")
+			return(1)
+		endif
+	selectempty
+		select	tpptc157.quan:budg.quan						
+		from	tpptc157
+		where	tpptc157._index1 = {:tdpur201.cprj,:i.csub}
+		and	tpptc157.cspa = :tdpur201.cspa
+		and	tpptc157.ccco = :tdpur201.ccco
+		selectdo
+			if  (ava.qnty + tdpur201.qoor - cancel.qnty) <= budg.quan  then
+			else
+				dal.set.error.message("tdmsl2010001")
+				return(1)
+			endif
+		selectempty
+			dal.set.error.message("tdmsl2010002")
+			return(1)
+		endselect								
+		
+	endselect
+	return(0)
+}
+
+function long	check_data_subcontracting_line()
+{
+	select	tpptc157.quan:subc.quan
+	from	tpptc157
+	where	tpptc157._index1 = {:tdpur201.cprj,:tdpur201.item}
+	and	tpptc157.cspa = :tdpur201.cspa
+	and	tpptc157.ccco = :tdpur201.ccco
+	selectdo
+		if  (ava.qnty + tdpur201.qoor - cancel.qnty) <= subc.quan  then
+		else
+			dal.set.error.message("tdmsl2010001")	
+			return(1)
+		endif
+	selectempty
+		dal.set.error.message("tdmsl2010002")
+		return(1)
+	endselect
+	return(0)
+}
+
+|*********************************************************************
+function long Update.Actual.Start.Date.In.tppss200()
+{
+
+	domain	tcdate	i.asdt
+	
+	i.asdt = utc.num()
+	
+	if not isspace(tdpur201.cprj) and not isspace(tdpur201.cact) then
+		select	tppdm600.cpla
+		from	tppdm600
+		where	tppdm600._index1 = {:tdpur201.cprj}
+		as set with 1 rows
+		selectdo
+			select	tppss200.asdt
+			from	tppss200 for update
+			where	tppss200._index1 = {:tdpur201.cprj,:tppdm600.cpla}
+			and	tppss200.pact = :tdpur201.cact
+			and	tppss200.cdf_acty = 2
+			selectdo
+| 				if tppss200.asdt = 0 then
+| 					dal.change.object("tppss200")
+| 					
+| 					dal.set.field("tppss200.asdt",i.asdt)
+| 					
+| 					ret_val = dal.save.object("tppss200")
+| 					
+| 					if ret_val  <> 0 then
+| 						return(DALHOOKERROR)
+| 					endif
+| 				endif
+				
+			endselect
+		endselect
+	endif
+	return(0)
+}
+
+function boolean Update.Planned.Order.Date()						
+{
+ 	long	ret,day.new,date.new,time.new								|#ISGEC001140.sn
+	long	pddt.date.new, pddt.date
+	domain	tcitem	item.new
+| 	domain	tcdate	
+	ret = 0
+	item.new = ""
+	time.new = 0
+	tt.align.according.domain(item.new,item.new,"tcitem")
+	date.new = 0
+	tcisg007.oltm = 0
+	pddt.date = 0
+	pddt.date.new = 0
+	day.new = 0
+
+	if	not isspace(tdpur201.item)	then
+		select	tcisg007.oltm
+		from	tcisg007
+		where	tcisg007._index1={:tdpur201.item}
+		as set with 1 rows
+		selectdo
+			date.new = utc.to.local(tdpur200.rdat,day.new,time.new)
+			tcisg007.oltm = tcisg007.oltm + day.new
+			pddt.date.new = local.to.utc(tcisg007.oltm,time.new,pddt.date)
+			ret = put.var(pid,"tdpur201.cdf_pddt",pddt.date)
+		selectempty
+			select	tcibd001.citg
+			from	tcibd001
+			where	tcibd001._index1={:tdpur201.item}
+			selectdo			
+				select	tcisg007.oltm
+				from	tcisg007
+				where	tcisg007._index1 = {:item.new,:tcibd001.citg}
+				selectdo
+					date.new = utc.to.local(tdpur200.rdat,day.new,time.new)
+					tcisg007.oltm = tcisg007.oltm + day.new
+					pddt.date.new = local.to.utc(tcisg007.oltm,time.new,pddt.date)
+					ret = put.var(pid,"tdpur201.cdf_pddt",pddt.date)
+				endselect
+			endselect	
+		endselect
+	
+	endif		
+	return(true)									|#ISGEC001140.en
+| 	if	not isspace(tdpur201.cprj)	and not isspace(tdpur201.cact)	then		|#ISGEC001140.so		
+| 		select	tppss200.ssdt
+| 		from	tppss200
+| 		where	tppss200._index1 = {:tdpur201.cprj}
+| 		and	tppss200.pact = :tdpur201.cact
+| 		and	tppss200.cdf_acty = 3
+| 		as set with 1 rows
+| 		selectdo
+| 			ret = put.var(pid,"tdpur201.cdf_pddt", tppss200.ssdt)
+| 		selectempty
+| 			ret = put.var(pid,"tdpur201.cdf_pddt", 0)
+| 			return(false)
+| 		endselect
+| 	endif
+| 	return(true)										|#ISGEC001140.eo										
+| 	
+}
+
+function boolean Update.CLP.Delivery.Date()
+{
+	long	ret.n,day.new.n,date.new.n,time.new.n								|#ISGEC001140.sn
+	long	cdat.date,cdat.date.new
+	domain	tcitem	item.new.n
+	ret.n = 0
+	item.new.n = ""
+	time.new.n = 0
+	tt.align.according.domain(item.new.n,item.new.n,"tcitem")
+	date.new.n = 0
+	cdat.date = 0
+	cdat.date.new =  0	
+	day.new.n = 0
+	tcisg007.dltm = 0
+	if	not isspace(tdpur201.item)	then
+		select	tcisg007.dltm
+		from	tcisg007
+		where	tcisg007._index1={:tdpur201.item}
+		as set with 1 rows
+		selectdo
+			date.new.n = utc.to.local(tdpur200.rdat,day.new.n,time.new.n)
+			tcisg007.dltm = tcisg007.dltm + day.new.n
+			cdat.date.new = local.to.utc(tcisg007.dltm,time.new.n,cdat.date)
+			ret.n = put.var(pid,"tdpur201.cdf_cdat",cdat.date)
+		selectempty
+			select	tcibd001.citg
+			from	tcibd001
+			where	tcibd001._index1={:tdpur201.item}
+			selectdo			
+				select	tcisg007.dltm
+				from	tcisg007
+				where	tcisg007._index1 = {:item.new.n,:tcibd001.citg}
+				selectdo
+					date.new.n = utc.to.local(tdpur200.rdat,day.new.n,time.new.n)
+					tcisg007.dltm = tcisg007.dltm + day.new.n
+					cdat.date.new = local.to.utc(tcisg007.dltm,time.new.n,cdat.date)
+					ret.n = put.var(pid,"tdpur201.cdf_cdat",cdat.date)
+				endselect
+			endselect	
+		endselect
+	
+	endif		
+	return(true)									|#ISGEC001140.en
+
+
+| 	long	ret									|#ISGEC001140.so
+| 	
+| 	if	not isspace(tdpur201.cprj)	and not isspace(tdpur201.cact)	then
+| 		select	tppss200.ssdt
+| 		from	tppss200
+| 		where	tppss200._index1 = {:tdpur201.cprj}
+| 		and	tppss200.pact = :tdpur201.cact
+| 		and	tppss200.cdf_acty = 6
+| 		as set with 1 rows
+| 		selectdo
+| 			ret = put.var(pid,"tdpur201.cdf_cdat", tppss200.ssdt)
+| 		selectempty
+| 			ret = put.var(pid,"tdpur201.cdf_cdat", 0)
+| 			return(false)
+| 		endselect
+| 	endif
+| 	return(true)									|#ISGEC001140.eo
+}
+
+
+function boolean Update.Nature.of.Indent()
+{
+	long	ret_val_new,first.val,line.val,ret
+	domain	tcdate	v.utc.pddt, v.utc.rodt
+	domain	tfgld.date	v.dldt, v.rdat, v.cdf_rodt, v.cdf_pddt
+	domain	tdisg.in.type	v.prio
+	domain tcyesno	norm.new,emer.new,norm.asin,emer.asin,urgt.asin
+	
+	if	not isspace(tdpur201.rqno)	then
+		select	tdpur200.rdat,tdpur200.rqno
+		from	tdpur200
+		where	tdpur200._index1 = {:tdpur201.rqno}
+		selectdo
+		selectempty
+			tdpur200.rdat = 0
+		endselect
+		
+	endif
+	
+	ret = get.var(pid, "tdpur201.cdf_rodt", v.utc.rodt)
+	ret = get.var(pid, "tdpur201.cdf_pddt", v.utc.pddt)
+	convert_date(tdpur201.dldt, v.dldt)
+	convert_date(tdpur200.rdat, v.rdat)
+	convert_date(v.utc.rodt, v.cdf_rodt)
+	convert_date(v.utc.pddt, v.cdf_pddt)
+	
+	if	v.cdf_rodt >= v.cdf_pddt	then
+		ret = put.var(pid,"tdpur201.cdf_norm", tcyesno.yes)
+		ret = put.var(pid,"tdpur201.cdf_emer", tcyesno.no)
+		tdpur201.urgt = tcyesno.no
+
+		
+	else
+		if	(v.cdf_rodt - v.rdat) > 7	then
+			ret = put.var(pid,"tdpur201.cdf_norm", tcyesno.no)
+			ret = put.var(pid,"tdpur201.cdf_emer", tcyesno.no)
+			tdpur201.urgt = tcyesno.yes
+		else
+			if	(v.cdf_rodt - v.rdat) =< 7	then
+				ret = put.var(pid,"tdpur201.cdf_emer", tcyesno.yes)
+				ret = put.var(pid,"tdpur201.cdf_norm", tcyesno.no)
+				tdpur201.urgt = tcyesno.no
+			endif
+		endif
+	endif
+	
+		
+	get.var(pid,"tdpur201.cdf_emer",emer.new)			|#ISGEC001147.sn
+	get.var(pid,"tdpur201.cdf_norm",norm.new)	
+		
+	if emer.new  = tcyesno.yes then			
+| 		first.val = 1				|#ISGEC01033.o
+		first.val = 3				|#ISGEC01033.o
+	else	
+		if	tdpur201.urgt = tcyesno.yes then
+			first.val = 2		
+		else
+			norm.new  = tcyesno.yes 
+| 			first.val = 3			|#ISGEC01033.o
+			first.val = 1			|#ISGEC01033.n
+		endif
+	endif	
+	
+	select	tdpur201.cdf_emer:emer.asin,tdpur201.cdf_norm:norm.asin,tdpur201.urgt:urgt.asin
+	from	tdpur201
+	where	tdpur201._index1={:tdpur201.rqno}
+	and	tdpur201.pono <> :tdpur201.pono
+	selectdo
+		if emer.asin  = tcyesno.yes then
+| 			line.val = 1				|#ISGEC01033.o
+			line.val = 3				|#ISGEC01033.n
+		else	
+			if	urgt.asin = tcyesno.yes then
+				line.val = 2
+			else
+				norm.asin  = tcyesno.yes 
+| 				line.val = 3			|#ISGEC01033.o
+				line.val = 1			|#ISGEC01033.n
+			endif
+		endif	
+		if first.val < line.val	then
+			first.val = line.val
+		endif	
+	endselect
+	
+	on case first.val
+| 	case	1 :					|#ISGEC01033.o
+	case	3 :					|#ISGEC01033.n
+		v.prio = tdisg.in.type.emergency
+	break
+	case	2 :
+		v.prio = tdisg.in.type.urgent
+	break		
+| 	case	3 :					|#ISGEC01033.o
+	case	1 :					|#ISGEC01033.n
+		v.prio = tdisg.in.type.normal
+	break	
+	endcase
+	
+| 	db.retry.point()			|#ISGEC01033.o
+	select	tdisg100.prio
+	from	tdisg100 for update
+	where	tdisg100._index1={:tdpur201.rqno}
+	selectdo
+		tdisg100.prio = v.prio			
+		db.update(ttdisg100,db.retry)		
+	selectempty				|#ISGEC01033.sn
+		tdisg100.qono = tdpur201.rqno
+		tdisg100.prio = v.prio
+		db.insert(ttdisg100,db.retry)	|#ISGEC01033.en
+	endselect
+		
+	return(true)						|#ISGEC001147.en
+}
+
+function boolean Update.Requested.Order.Date()
+{
+	long	ret
+	domain	tcdate	cdf_rodt
+	
+	select	tdpur200.cdf_rodt:cdf_rodt
+	from	tdpur200
+	where	tdpur200._index1 = {:tdpur201.rqno}
+	selectdo
+	selectempty
+		cdf_rodt = 0
+	endselect
+	if	cdf_rodt = 0	then
+		ret = put.var(pid,"tdpur201.cdf_rodt", utc.num())
+	else
+		ret = put.var(pid,"tdpur201.cdf_rodt", cdf_rodt)
+	endif
+	return(true)
+}
+
+function convert_date(domain	tcdate	tmp.date,
+			ref domain	tfgld.date	ret.date)
+{
+	long	dd, mm, yy, hh, mn, ss
+	
+	utc.to.date(tmp.date, yy, mm, dd, hh, mn, ss)
+	ret.date = date.to.num(yy, mm, dd)
+}
+											
+
+										
+function Defulating_From_Material_Budget_Line
+			(
+				domain 	tcitem		i.item,	|Item
+				domain	tccprj		i.cprj,	|Project Code
+				domain	tppdm.cspa	i.cspa,	|Element
+			ref 	domain	tcqrd1		o.quan,	|Ordered Quantity
+			ref 	domain	tcpric		o.pric	|Price
+			)
+{
+	domain	tppdm.csub	i.csub
+	
+	i.csub	= i.item(10;18)
+	
+	on case tcibd001.kitm						
+	case tckitm.purchase :						
+		select 	tpptc120.quan:o.quan,
+			tpptc120.pric:o.pric
+		from	tpptc120
+		where	tpptc120._index3 = {:i.item,:i.cprj,:i.cspa}
+		as set with 1 rows
+		selectdo
+		selectempty
+			o.quan = 0
+			o.pric = 0
+		endselect
+	break								
+	case tckitm.subcontracting :
+		select	tpptc150.quan:o.quan,
+			tpptc150.pric:o.pric
+		from	tpptc150
+		where	tpptc150._index3 = {:i.csub,:i.cprj,:i.cspa}
+		as set with 1 rows
+		selectdo
+		selectempty
+			o.quan = 0
+			o.pric = 0
+		endselect
+	break
+	endcase							
+		
+}
+
+
+function long project.warehouse.validation
+			(
+				domain	tcrqno		i.rqno		|Requisition
+			)
+{
+	domain	tccwoc		o.cofc
+	domain	tcncmp		curr.comp
+	domain	tcpono		param.levl
+	domain	tppdm.cspa	o.elem
+	domain  tcemm.grid 	enterprise.unit
+	domain  tcemm.grid 	enterprise.unit1
+	long	ret.val
+	
+	curr.comp = get.compnr()
+	
+	select 	tdpur200.cofc:o.cofc
+	from	tdpur200
+	where	tdpur200._index1 = {:i.rqno}
+	as set with 1 rows
+	selectdo
+	endselect
+	
+	ret.val = tdisg.dll0001.project.warehouse.validation(i.rqno, o.cofc, tdpur201.cprj,
+				tdpur201.cspa, tdpur201.cwar)	
+				
+	if	ret.val then
+		return(DALHOOKERROR)
+	endif
+	
+	
+	return(0)
+}
+
+Function long	item_price_check(
+				domain	tcrqno		i.rqno		|Requisition
+				)
+{
+	domain	tcpric	price
+	
+	select	tdpur201.item, tdpur201.pric:price
+	from	tdpur201
+	where	tdpur201._index1 = {:i.rqno}
+	and	tdpur201.item = :tdpur201.item
+	and	tdpur201.cprj = :tdpur201.cprj				|GH345CR643.a
+	and	tdpur201.cspa = :tdpur201.cspa				|GH345CR643.a
+	selectdo
+		if price = tdpur201.pric then
+			dal.set.error.message("tdisg000000012")
+			return(1)
+		endif
+	endselect
+		
+	return(0)
+}
+									|#ISGEC015086.sn
+function	domain	tcbool	check.project.type()
+{
+	domain	tcyesno	v.dome, v.prjs
+	
+	select	tccom100.cdf_dome:v.dome,
+		tccom100.cdf_prjs:v.prjs
+	from	tccom100
+	where	tccom100._index1	=	{:tdpur201.otbp}
+	selectdo
+	selectempty
+		v.dome	=	empty
+		v.prjs	=	empty
+	endselect
+	
+	if	tdpur200.ccur	<>	"INR"		and
+		v.dome		=	tcyesno.yes	then
+		dal.set.error.message("@Supplier is approved only for Domestic Projects.")
+		return(true)
+	endif
+	
+	if	v.prjs	=	tcyesno.yes	then
+		select	tcisg102.cprj
+		from	tcisg102
+		where	tcisg102._index1	=	{:tdpur201.otbp}
+		and	tcisg102.cprj		=	:tdpur201.cprj
+		selectdo
+		selectempty
+			dal.set.error.message("@Selected project not maintained in supplier wise projects.")
+			return(true)
+		endselect
+	endif
+
+	return(false)
+}
+									|#ISGEC015086.en

@@ -1,0 +1,94 @@
+|******************************************************************************
+|* tdmsl5203m000  0  VRC B61U a7 isg 
+|* Update Tax Code/BP Registration to default in PO after chang
+|* Ravi Kumar                    
+|* 2021-03-05
+|******************************************************************************
+|* Main table tdmsl503 Purchase Order Line Extension, Form Type 4
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttdmsl503 | Purchase Order Line Extension
+  table   ttdpur401 
+  table   ttdisg256
+
+   extern 	domain  tcorno         	orno.f
+   extern	domain	tccvat		old.cvat
+   extern	domain	tctax.seqn.l	old.rnsb
+
+|****************************** program section ********************************
+before.program:
+	import("tdpur400.orno", orno.f)
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+
+choice.process:
+before.choice:
+	select	tdpur400.hdst
+	from	tdpur400
+	where	tdpur400._index1 = {:orno.f}
+	and	tdpur400.hdst = tdpur.hdst.modified
+	as set with 1 rows
+	selectdo
+	selectempty
+		message("PO should be Modified State.")
+		choice.again()
+	endselect
+	
+on.choice:
+	process()
+	message("Process Completed")
+	
+functions:
+function process()
+{
+	select	tdpur401.orno,
+		tdpur401.pono,
+		tdpur401.sqnb,
+		tdpur401.cvat,
+		tdpur401.rnsb.l
+	from	tdpur401 for update
+	where	tdpur401._index1 = {:orno.f}
+	selectdo
+		old.cvat = tdpur401.cvat
+		old.rnsb = tdpur401.rnsb.l
+		select	tdmsl503.gstn.b,
+			tdmsl503.cvat
+		from	tdmsl503
+		where	tdmsl503._index1 = {:tdpur401.orno, :tdpur401.pono}
+		as set with 1 rows
+		selectdo
+		endselect
+		
+		if (tdpur401.rnsb.l <> tdmsl503.gstn.b) or (tdpur401.cvat <> tdmsl503.cvat) then
+			tdpur401.cvat = tdmsl503.cvat
+			tdpur401.rnsb.l = tdmsl503.gstn.b
+			db.update(ttdpur401, db.retry)
+			create.log()
+		endif
+	endselect
+}
+
+function create.log()
+{
+	tdisg256.orno = tdpur401.orno
+	tdisg256.pono = tdpur401.pono
+	tdisg256.sqnb = tdpur401.sqnb
+	tdisg256.ocvt = old.cvat
+	tdisg256.orsb = old.rnsb
+	tdisg256.ncvt = tdmsl503.cvat
+	tdisg256.nrsn = tdmsl503.gstn.b
+	tdisg256.user = logname$
+	tdisg256.ddte = utc.num()
+	db.insert(ttdisg256, db.retry)
+	commit.transaction()
+}
+
+

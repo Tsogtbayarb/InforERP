@@ -1,0 +1,373 @@
+|******************************************************************************
+|* tpisg1189m000  0  VRC B61U a7 isg 
+|* Cashflow Budget Header
+|* Ravi Kumar                    
+|* 2019-12-24
+|******************************************************************************
+|* Main table tpisg186 Billing Budget, Form Type 1
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttpisg186 | Contractwise Cashflow Header
+  table   ttccom001
+  table   ttpisg088
+  table   ttpisg089
+  table   ttppdm600
+
+		string	error.message(500)
+	extern	domain	tcmcs.str132	formula.label
+	extern	domain	tcnama		bpid.nama
+	extern	domain	tccom.bpid	bpid
+	extern	domain	tcdsca		cprj.dsca
+	extern	domain	tcamnt		pvfc,pvhc
+	extern	domain	tcratc		rate
+		
+	#include <bic_dam>
+|****************************** program section ********************************
+before.program:
+	formula.label = "* In Billing Outlook Totals : (Total of Actual till previous month) + (Outlook value of current and future months)"
+	
+before.display.object:
+	if tpisg186.stat = tpisg.rvsnstat.approved then
+		enable.commands("complete.revise", "partial.revise")
+		disable.commands(add.set, mark.delete)
+	else
+		disable.commands("complete.revise", "partial.revise")
+		enable.commands(add.set, mark.delete)
+	endif
+	
+	if tpisg186.rtyp = tpisg.rvsntype.complete then
+		if tpisg186.stat = tpisg.rvsnstat.sendforapp or tpisg186.stat = tpisg.rvsnstat.approved then
+			disable.fields("tpisg186.rmks", "tpisg186.ccdt", "tpisg186.addc", "tpisg186.addi")
+		else
+			enable.fields("tpisg186.rmks", "tpisg186.ccdt", "tpisg186.addc", "tpisg186.addi")
+		endif
+	else
+		if tpisg186.stat = tpisg.rvsnstat.sendforapp or tpisg186.stat = tpisg.rvsnstat.approved then
+			disable.fields("tpisg186.rmks", "tpisg186.ccdt", "tpisg186.addc", "tpisg186.addi")
+		else
+			disable.fields("tpisg186.ccdt", "tpisg186.addc", "tpisg186.addi")
+			enable.fields("tpisg186.rmks")
+		endif
+	endif
+	
+	if tpisg186.stat = tpisg.rvsnstat.sendforapp then
+		enable.commands("approve", "reject")
+	else
+		disable.commands("approve", "reject")
+	endif
+	
+	if (tpisg186.stat = tpisg.rvsnstat.free or tpisg186.stat = tpisg.rvsnstat.reject) then
+		enable.commands("send.approval")
+	else
+		disable.commands("send.approval")
+	endif
+	
+	if tpisg186.stat = tpisg.rvsnstat.free then
+		enable.commands("refresh.actual.cashflow")
+	else
+		disable.commands("refresh.actual.cashflow")
+	endif
+
+|****************************** group section **********************************
+
+field.cprj.dsca:
+before.display:
+	select	tcmcs052.dsca:cprj.dsca
+	from	tcmcs052
+	where	tcmcs052._index1 = {:tpisg186.cprj}
+	as set with 1 rows
+	selectdo
+	selectempty
+		cprj.dsca = ""
+	endselect
+	
+| field.bpid:
+| before.display:
+| 	select	tpisg087.cust:bpid
+| 	from	tpisg087
+| 	where	tpisg087._index1 = {:tpisg186.cprj}
+| 	as set with 1 rows
+| 	selectdo
+| 	selectempty
+| 		bpid = ""
+| 	endselect
+| 	
+| field.bpid.nama:
+| before.display:
+| 	select	tpisg087.cust,
+| 		tccom100.nama:bpid.nama
+| 	from	tpisg087, tccom100
+| 	where	tpisg087._index1 = {:tpisg186.cprj}
+| 	and	tpisg087.cust refers to tccom100
+| 	as set with 1 rows
+| 	selectdo
+| 	selectempty
+| 		bpid.nama = ""
+| 	endselect
+
+field.pvfc:
+before.display:
+	select	tppdm600.copr,tppdm600.rate
+	from	tppdm600
+	where	tppdm600._index1 = {:tpisg186.cprj}
+	selectdo
+		pvfc = tppdm600.copr
+	selectempty
+		pvfc = 0
+	endselect
+
+field.rate:
+before.display:
+	rate = tppdm600.rate(1)
+
+field.pvhc:
+before.display:	
+	pvhc = pvfc * rate
+	
+|***************************** FUNCTIONS ***************************************
+
+choice.complete.revise:
+before.choice:
+	if not check.matrix.role.creater() then
+		message("Role Matrix is Not Defined !!!")
+		choice.again()
+	endif
+
+on.choice:
+	tpisgdll0186_Update_History(tpisg186.cprj, tpisg186.rvsn)
+	tpisgdll0186_Update_Status_Type(tpisg186.cprj, tpisg186.rvsn, tpisg.rvsntype.complete, tpisg.rvsnstat.free)
+	tpisgdll0186_Increase_rvsn(tpisg186.cprj, tpisg186.rvsn, 1.0)
+	
+	select	tpisg186.rrby,
+		tpisg186.rrdt,
+		tpisg186.ccdt
+	from	tpisg186 for update
+	where	tpisg186._index1 = {:tpisg186.cprj, :tpisg186.rvsn}
+	as set with 1 rows
+	selectdo
+		if dal.change.object("tpisg186") = 0 then
+			dal.set.field("tpisg186.rrby", logname$)
+			dal.set.field("tpisg186.rrdt", utc.num())
+			dal.set.field("tpisg186.ccdt", tcyesno.yes)
+			if dal.save.object("tpisg186") = 0 then
+				commit.transaction()
+			else
+				abort.transaction()
+				dal.get.error.message(error.message)
+				message(error.message)
+			endif
+		endif
+	endselect
+	
+choice.partial.revise:
+before.choice:
+	if not check.matrix.role.creater() then
+		message("Role Matrix is Not Defined !!!")
+		choice.again()
+	endif
+on.choice:
+	tpisgdll0186_Update_History(tpisg186.cprj, tpisg186.rvsn)
+	tpisgdll0186_Update_Status_Type(tpisg186.cprj, tpisg186.rvsn, tpisg.rvsntype.partial, tpisg.rvsnstat.free)
+	tpisgdll0186_Increase_rvsn(tpisg186.cprj, tpisg186.rvsn, 0.01)
+	
+	select	tpisg186.rrby,
+		tpisg186.rrdt
+	from	tpisg186 for update
+	where	tpisg186._index1 = {:tpisg186.cprj, :tpisg186.rvsn}
+	as set with 1 rows
+	selectdo
+		if dal.change.object("tpisg186") = 0 then
+			dal.set.field("tpisg186.rrby", logname$)
+			dal.set.field("tpisg186.rrdt", utc.num())
+			if dal.save.object("tpisg186") = 0 then
+				commit.transaction()
+			else
+				abort.transaction()
+				dal.get.error.message(error.message)
+				message(error.message)
+			endif
+		endif
+	endselect
+	
+choice.send.approval:
+before.choice:
+	if not check.matrix.role.creater() then
+		message("Role Matrix is Not Defined !!!")
+		choice.again()
+	endif
+	
+on.choice:
+	select	tpisg186.stat,
+		tpisg186.saby,
+		tpisg186.sadt
+	from	tpisg186 for update
+	where	tpisg186._index1 = {:tpisg186.cprj, :tpisg186.rvsn}
+	as set with 1 rows
+	selectdo
+		if dal.change.object("tpisg186") = 0 then
+			dal.set.field("tpisg186.stat", tpisg.rvsnstat.sendforapp)
+			dal.set.field("tpisg186.saby", logname$)
+			dal.set.field("tpisg186.sadt", utc.num())
+			if dal.save.object("tpisg186") = 0 then
+				commit.transaction()
+			else
+				abort.transaction()
+				dal.get.error.message(error.message)
+				message(error.message)
+			endif
+		endif
+	endselect
+	
+choice.approve:
+before.choice:
+	if not check.matrix.role.approve() then
+		message("Approval Matrix is Not Defined !!!")
+		choice.again()
+	endif
+	
+on.choice:
+	select	tpisg186.stat,
+		tpisg186.saby,
+		tpisg186.sadt
+	from	tpisg186 for update
+	where	tpisg186._index1 = {:tpisg186.cprj, :tpisg186.rvsn}
+	as set with 1 rows
+	selectdo
+		if dal.change.object("tpisg186") = 0 then
+			dal.set.field("tpisg186.stat", tpisg.rvsnstat.approved)
+			dal.set.field("tpisg186.raby", logname$)
+			dal.set.field("tpisg186.radt", utc.num())
+			if dal.save.object("tpisg186") = 0 then
+				commit.transaction()
+			else
+				abort.transaction()
+				dal.get.error.message(error.message)
+				message(error.message)
+			endif
+		endif
+	endselect
+	
+choice.reject:
+before.choice:
+	if not check.matrix.role.approve() then
+		message("Approval Matrix is Not Defined !!!")
+		choice.again()
+	endif
+	
+on.choice:
+	select	tpisg186.stat,
+		tpisg186.saby,
+		tpisg186.sadt
+	from	tpisg186 for update
+	where	tpisg186._index1 = {:tpisg186.cprj, :tpisg186.rvsn}
+	as set with 1 rows
+	selectdo
+		if dal.change.object("tpisg186") = 0 then
+			dal.set.field("tpisg186.stat", tpisg.rvsnstat.reject)
+			dal.set.field("tpisg186.raby", logname$)
+			dal.set.field("tpisg186.radt", utc.num())
+			if dal.save.object("tpisg186") = 0 then
+				commit.transaction()
+			else
+				abort.transaction()
+				dal.get.error.message(error.message)
+				message(error.message)
+			endif
+		endif
+	endselect
+	
+| choice.refresh.actual.cashflow:
+| on.choice:
+| 	update.actual.cashflow()
+	
+|*******************************************************Function ************************************
+functions:
+function boolean check.matrix.role.approve()
+{	
+	domain	tclogn	curr_login
+	
+	curr_login = logname$
+	
+	
+	if trim$(curr_login) = "0592" or trim$(curr_login) = "5185" then
+		return(true)
+	else
+		select	tccom001.emno
+		from	tccom001
+		where	tccom001._index4 = {:curr_login}
+		as set with 1 rows
+		selectdo
+			select	tpisg047.*
+			from	tpisg047
+			where	tpisg047._index1 = {:tpisg186.cprj, :tccom001.emno}
+			as set with 1 rows
+			selectdo
+				return(true)
+			endselect
+		endselect
+	endif
+	return(false)
+}
+
+function boolean check.matrix.role.creater()
+{
+	domain	tclogn	curr_login
+	
+	curr_login = logname$
+	
+	if trim$(curr_login) = "0592" or trim$(curr_login) = "5185" then
+		return(true)
+	else
+		select	tccom001.emno
+		from	tccom001
+		where	tccom001._index4 = {:curr_login}
+		as set with 1 rows
+		selectdo
+			select	tpisg046.*
+			from	tpisg046
+			where	tpisg046._index1 = {:tpisg186.cprj, :tccom001.emno}
+			as set with 1 rows
+			selectdo
+				return(true)
+			endselect
+		endselect
+	endif
+	return(false)
+}
+
+| function update.actual.cashflow()
+| {
+| 	domain	tcamnt	act.inflow
+| 	domain	tcamnt	act.outflow
+| 	
+| 	act.inflow = 0
+| 	act.outflow = 0
+| 	
+| 	select	tpisg089.ccod,
+| 		tpisg089.year,
+| 		tpisg089.mnth,
+| 		tpisg089.cmti,
+| 		tpisg089.cmto,
+| 		tpisg089.cnmt
+| 	from	tpisg089 for update
+| 	where	tpisg089._index1 = {:tpisg186.cprj, :tpisg186.rvsn}
+| 	selectdo
+| 		select	sum(tfisg014.iamt):act.inflow,
+| 			sum(tfisg014.oamt):act.outflow
+| 		from	tfisg014
+| 		where	tfisg014._index1 = {:tpisg089.year, :tpisg089.mnth, :tpisg089.ccod}
+| 		selectdo
+| 		
+| 		tpisg089.cmti = act.inflow
+| 		tpisg089.cmto = act.outflow
+| 		tpisg089.cnmt = tpisg089.cmti - tpisg089.cmto
+| 		db.update(ttpisg089, DB.RETRY)
+| 		commit.transaction()
+| 		act.inflow = 0
+| 		act.outflow = 0
+| 	endselect
+| }
+	

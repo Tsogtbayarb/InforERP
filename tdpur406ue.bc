@@ -1,0 +1,685 @@
+|******************************************************************************
+|* tdpur406ue  0  VRC B61U a7 live
+|* User Exit For tdpur406
+|* baan
+|* 14-07-07 [15:07]
+|******************************************************************************
+|* Script Type: Library
+|*
+|* ISGECDV001073,	Sujeet Kumar,		2014-10-04
+|* Tollerance Amount Field is Added on Finance Parameter
+|* If the Receipt Total Amount is Greater Than IR Amount then
+|* We have to Check is any Tollerance Amount is specified or not
+|* If Tollerance Amount is specified and (Receipt Value + Tollerance Amount) is 
+|* Greater than IR Amount, Receipt Will not be Confirmed
+|* Service and Support Case ID : 30289
+|* Functional: Mr. Deepak Rawat
+|*
+|* ISGECDV001084, IT0205, Arjit Gupta, VRC B61U a7 live, Dt. 07-10-2014
+|* If PO last version not approved and workflow intiated status not completed
+|* don't to allow to generate PUR Receipt.
+|* Functional : Mr. Nishant Verma
+|*
+|* ID ISGEC001082,	Sujeet Kumar,	2014-10-09
+|* Remove Tolerrance Check if calling from Inspection session 'whinh3122m000'
+|* Functional : Mr. Nishant Verma
+|*
+|* ID ISGEC001096,	Sujeet Kumar	2014-10-14
+|* Lower Tolerrance Check is Removed.
+|* Incident ID: 30731
+|* Functional: Mr. Nishant Verma
+|*
+|* ID ISGEC001165, Manish Manchanda, 2015-02-25
+|* Received Quantity cannot be 0
+| *********************************************************************************************
+|  IDENT ISGEC001185, GAURAV GUPTA, IT0304, 10-09-2015, b61u a7 isg
+| changes to check link of reciept line in customized table tdisg832
+|*
+|* ID ISGEC016027, Manish Manchanda, 2016-10-10
+|* Modifications - new restriciton on sanction control
+|*
+|* ID:ISGEC016050, Mudit Sharma, 28-12-2016
+|* Modifications 
+|* 
+|* ID: GH294CR597, RAvi Kumar, 03-04-2020
+|* Please provide correction rights in warehouse receipt after confirmation on ID "3717"
+|*
+|* ID: GH319CR616, RAvi Kumar, 23-05-2020
+|* One IR can be linked with One Receipt only
+|*
+|* ID: GH330CR626, RAvi Kumar, 02-06-2020
+|* Rights of purchase receipt correction session
+|*
+|* GH451CR000, RAvi Kumar, 30-11-2020
+|* Exclude WHR correction session from Purchase Receipt blocking on month end
+|*
+|* GH602CR000, RAvi Kumar, 07-07-2021
+|* Purchase Receipt Correction can be done only with zero quantity
+|******************************************************************************
+                                                                                
+#include <bic_dal>
+
+	table	ttdpur406
+	table	twhinh312
+	table	twhisg312
+	table	ttfacp100
+	table	ttfisg000
+	table	ttfisg407
+	table	ttdisg832
+	table	ttccom001
+	
+	domain	tfgld.docn	o.irno
+	domain	tfgld.date	curr.date
+	domain	tfgld.user	curr.user
+	long	dd, mm, yy
+	domain	tcorno		irno.rcno			|GH319CR616.a
+	
+function extern long ue.before.before.save.object(long mode)
+{
+	
+	domain	tcamnt		o.total.amnt
+	domain	tfgld.sess	calling.prog	|#ISGEC001082.sn
+	
+	irno.rcno = ""						|GH319CR616.a
+	get.var(pid,"prog.name$",calling.prog)			|GH319CR616.a
+	on case mode
+	case DAL_NEW:
+		if	isspace(tdpur406.dino)	then
+			dal.set.error.message("@ IR Mandatory !!!")
+			return(DALHOOKERROR)
+		endif
+		if not check.gr.exists() then
+			dal.set.error.message("@ IR Not Available !!!")
+			return(DALHOOKERROR)
+		endif
+		if	not correct.ir.linked()	then
+			dal.set.error.message("@ Link Correct IR !!!")
+			return(DALHOOKERROR)
+		endif
+													|#ISGEC016050.sn
+		if not check.reciept.linked()	then
+			dal.set.error.message("@Reciept Linked to Biling Advice %s, So can not be zero!!!",tdisg832.edrn)
+			return(DALHOOKERROR)
+		endif
+													|#ISGEC016050.en
+								|#ISGECDV001084.sn
+		if	not po.approved.workflow.initiated(tdpur406.orno)	then
+			dal.set.error.message("@ PO not Approved.")
+			return(DALHOOKERROR)
+		endif
+								|#ISGECDV001084.en
+						|#ISGEC00165.sn
+| 		if	check_received_quantity()	then
+| 			dal.set.error.message("titrps01042")
+| 			return(DALHOOKERROR)
+| 		endif
+						|#ISGEC00165.en		
+		if calling.prog = "tdpur4106m000" then								|GH319CR616.a.s
+			if check.irno.exist(tdpur406.dino, irno.rcno) then								
+				dal.set.error.message("@IR " & trim$(tdpur406.dino) & " already linked with Receipt " & trim$(irno.rcno))
+				return(DALHOOKERROR)
+			endif	
+		endif												|GH319CR616.a.e
+		break
+	case DAL_UPDATE:
+					|#SD01112017.sn
+		curr.date = date.num()
+		curr.user = logname$
+		curr.user = trim$(curr.user)
+		
+		dd = 0
+		mm = 0
+		yy = 0
+		
+		num.to.date(curr.date, yy, mm, dd)
+
+		
+		if calling.prog <> "whinh3121s000" then					|GH451CR000.a	
+			if dd >= 26 and tdpur406.conf = tcyesno.yes then
+				if 	curr.user = "9583" or		|* Pankaj Sir
+					curr.user = "3776" or		|* RAvi Kumar
+					curr.user = "0330"  then	|* Veena Mam
+				else
+					dal.set.error.message("@Receipt Can't be Confirmed....")
+					return(DALHOOKERROR)
+				endif
+			endif
+		endif
+					|#SD01112017.en
+					
+		get.var(pid,"prog.name$",calling.prog)								|GH294CR597.a.s
+		
+		if calling.prog = "tdpur4106s100" then
+| 			if curr.user = "3717" or curr.user = "9686" or curr.user = "2320" or curr.user = "3380" then	|GH330CR626.com.s
+| 			else
+| 				dal.set.error.message("@Receipt Correction are not allowed..")
+| 				return(DALHOOKERROR)
+| 			endif												|GH294CR597.a.e
+			if tdpur406.qidl <> 0 then				|GH602CR000.a
+				select	tccom001.emno
+				from	tccom001
+				where	tccom001._index4 = {:curr.user}
+				as set with 1 rows
+				selectdo
+					select	tdisg015.emno
+					from	tdisg015
+					where	tdisg015._index1 = {:tccom001.emno}
+					as set with 1 rows
+					selectdo
+					selectempty
+						dal.set.error.message("@Receipt Correction are not allowed..")
+						return(DALHOOKERROR)
+					endselect
+				endselect
+			endif
+		endif
+														|GH294CR597.a.e
+														
+		if calling.prog = "tdpur4106m000" then									|GH319CR616.a.s
+			if check.irno.exist(tdpur406.dino, irno.rcno) then								
+				dal.set.error.message("@IR " & trim$(tdpur406.dino) & " already linked with Receipt " & trim$(irno.rcno))
+				return(DALHOOKERROR)
+			endif	
+		endif													|GH319CR616.a.e
+		
+		if	isspace(tdpur406.dino)	then
+			dal.set.error.message("@ IR Mandatory !!!")
+			return(DALHOOKERROR)
+		endif
+		if not check.gr.exists() then
+			dal.set.error.message("@ IR Not Available !!!")
+			return(DALHOOKERROR)
+		endif
+		if	not correct.ir.linked()	then
+			dal.set.error.message("@ Link Correct IR !!!")
+			return(DALHOOKERROR)
+		endif
+													|#ISGEC016050.sn
+		if not check.reciept.linked()	then
+			dal.set.error.message("@Reciept Linked to Biling Advice %s, So can not be zero!!!",tdisg832.edrn)
+			return(DALHOOKERROR)
+		endif
+													|#ISGEC016050.en
+							|#ISGEC001082.sn
+		get.var(pid,"prog.name$",calling.prog)
+		
+							
+		if calling.prog = "whinh3122m000" then
+		else
+							|#ISGEC001082.en
+			
+							|#ISGECDV001073.sn
+			if tdpur406.conf = tcyesno.yes then
+				tcmcs.dll0095.read.parm("tfisg000")
+				
+				whisgdll0312.purchase.receipt.line(tdpur406.rcno,o.total.amnt)		
+				
+				select tfacp100.amti
+				from	tfacp100
+				where	tfacp100._index1 = {:1}
+				wherebind (1,lval(tdpur406.dino))
+				selectdo
+				endselect
+				
+				o.total.amnt = round(o.total.amnt,1,2)
+									|#ISGEC001096.sn
+| 				if  o.total.amnt < (tfacp100.amti - tfisg000.tolr) then
+| 		| 				dal.set.error.message("@ Receipt Amount Not Upto Tollerance Limit")
+| 					dal.set.error.message("whisg312.0010",o.total.amnt,(tfacp100.amti - tfisg000.tolr))
+| 					return(DALHOOKERROR)
+| 				endif
+									|#ISGEC001096.en	
+				
+				if  o.total.amnt > (tfacp100.amti + tfisg000.tolr) then
+		| 				dal.set.error.message("@ Receipt Amount Not Upto Tollerance Limit")
+					dal.set.error.message("whisg312.0010",o.total.amnt,(tfacp100.amti - tfisg000.tolr))
+					return(DALHOOKERROR)
+				endif
+				
+										|#ISGECDV001084.sn
+				if	not po.approved.workflow.initiated(tdpur406.orno)	then
+					dal.set.error.message("@ PO not Approved.")
+					return(DALHOOKERROR)
+				endif
+									|#ISGECDV001084.en				
+									
+							|#ISGECGST001.sn
+| 				select	tdpur406.dino
+| 				from	tdpur406
+| 				where	tdpur406._index2 = {:tdpur406.rcno}
+| 				as set with 1 rows
+| 				selectdo
+| 					o.irno = lval(tdpur406.dino)
+| 				endselect
+| 				
+| 				select	tfisg407.ninv
+| 				from	tfisg407
+| 				where	tfisg407._index1 = {:o.irno}
+| 				and	tfisg407.rcno = "         "
+| 				and	tfisg407.rcln = 0
+| 				selectdo
+| 					dal.set.error.message("@All Lines of IR %d have not been linked to Receipt...", tfisg407.ninv)
+| 					return(DALHOOKERROR)
+| 				endselect	
+							|#ISGECGST001.en					
+			endif
+			
+										|#ISGECDV001073.en
+		endif							|#ISGEC001082.n			
+						|#ISGEC00165.sn
+| 		if	check_received_quantity()	then
+| 			dal.set.error.message("titrps01042")
+| 			return(DALHOOKERROR)
+| 		endif
+						|#ISGEC00165.en
+		break
+		
+		
+	endcase
+	return(0)
+}
+
+function extern long ue.after.before.save.object(long mode)
+{
+	on case mode
+	case DAL_NEW:
+		break
+	case DAL_UPDATE:
+		if tdpur406.conf = tcyesno.yes then
+| 			dal.set.error.message("@ Hi Sujeet!! Try to Confirm the Receipt")
+| 			return(DALHOOKERROR)
+			tdpur406.ddte = utc.num()
+		endif
+		break
+	endcase
+	return(0)
+}
+
+function extern long ue.before.after.save.object(long mode)
+{
+	on case mode
+	case DAL_NEW:
+		break
+	case DAL_UPDATE:
+		break
+	endcase
+	return(0)
+}
+
+function extern long ue.after.after.save.object(long mode)
+{
+	domain	tccom.bpid	o.otbp
+	domain	tcitem		o.item
+	domain	tccprj		o.cprj
+	domain	tppdm.cspa	o.cspa
+	domain	tcorno		o.vers
+	domain	tcamnt			o.amnt			|#ISGEC016027.n	
+
+	on case mode
+	case DAL_NEW:
+		select 	tdpur401.otbp:o.otbp,
+			tdpur401.item:o.item
+		from	tdpur401
+		where	tdpur401._index1 = {:tdpur406.orno,:tdpur406.pono,:tdpur406.sqnb}
+		as set with 1 rows
+		selectdo
+		endselect
+		
+		select 	whisg312.rcno
+		from	whisg312 for update
+		where 	whisg312._index1 = {:tdpur406.rcno,:tdpur406.rseq}
+		as set with 1 rows
+		selectdo
+		selectempty	
+| 			dal.new.object("whisg312")
+| 			dal.set.field("whisg312.amnt",tdpur406.damt)
+| 			if tdisgdll0831.insert_pruchase_receipt(
+| 							tdpur406.rcno,
+| 							tdpur406.rseq,
+| 							whinh.oorg.purchase,
+| 							tdpur406.orno,
+| 							tdpur406.pono,
+| 							tdpur406.sqnb,
+| 							tdpur406.rsqn,
+| 							o.otbp,
+| 							o.item,	
+| 							tdpur406.qidl,
+| 							"",
+| 							tdpur406.ddte,
+| 							tdpur406.conf) then
+				insert.whisg312(o.otbp, o.item)
+							
+| 				show.dal.messages(MSG.ALL)
+| 				return(DALHOOKERROR)
+| 			endif
+		endselect
+		break
+	case DAL_UPDATE:
+		
+		
+		
+		if tdpur406.rcno = whinh312.rcno and tdpur406.rseq =  whinh312.rcln then
+		else
+			select 	tdpur401.otbp:o.otbp,
+				tdpur401.item:o.item
+			from	tdpur401
+			where	tdpur401._index1 = {:tdpur406.orno,:tdpur406.pono,:tdpur406.sqnb}
+			as set with 1 rows
+			selectdo
+			endselect
+		
+			select 	whisg312.*
+			from	whisg312 for update
+			where 	whisg312._index1 = {:tdpur406.rcno,:tdpur406.rseq}
+			selectdo
+				dal.change.object("whisg312")
+				dal.set.field("whisg312.amnt",tdpur406.damt)
+					if tdisgdll0831.insert_pruchase_receipt(
+								tdpur406.rcno,
+								tdpur406.rseq,
+								whinh.oorg.purchase,
+								tdpur406.orno,
+								0,
+								tdpur406.pono,
+								tdpur406.sqnb,
+								o.otbp,
+								o.item,	
+								tdpur406.qidl,
+								"",
+								tdpur406.ddte,
+								tdpur406.conf) then
+					show.dal.messages(MSG.ALL)
+					return(DALHOOKERROR)
+				endif
+			endselect
+		endif
+		
+		break
+	endcase
+	
+	if tdpur406.conf = tcyesno.yes then
+		select 	tdpur401.cprj:o.cprj,
+			tdpur401.cspa:o.cspa
+		from	tdpur401
+		where 	tdpur401._index1 = {:tdpur406.orno,:tdpur406.pono}
+		as set with 1 rows
+		selectdo
+		endselect
+		
+		
+		if tpisgdll0012.check_sanction_status(o.cprj,o.vers) then
+		endif
+
+		tpisgdll0012.SanctionControlLine(o.cprj,o.vers,o.cspa)
+		
+		o.amnt = tpisgdll0012.ExhaustedAmount(o.cprj,o.cspa)		|#ISGEC016027.sn
+		if tpisgdll0012.check_sanction_available_amount_for_po(o.cprj,
+						o.vers,o.cspa,o.amnt) then
+			return(1)
+		endif								|#ISGEC016027.en
+	endif
+	
+	return(0)
+}
+
+function extern long ue.before.before.destroy.object()
+{
+										|ISGEC001185.SN
+	domain	tcorno	edrn.v
+	domain	tccprj	cprj.v
+	edrn.v = ""	
+	cprj.v = ""	
+	if check.billing.advice(
+			edrn.v,
+			cprj.v) then
+		dal.set.error.message("@Receipt Line linked to Billing Advice No. %s for Project %s thus can’t be unlinked",edrn.v,cprj.v)
+		return(DALHOOKERROR)								
+	endif
+											|ISGEC001185.EN
+	select 	whisg312.rcno
+	from	whisg312 for update
+	where 	whisg312._index1 = {:tdpur406.rcno,:tdpur406.rseq}
+	selectdo
+		dal.destroy.object("whisg312")
+	endselect
+	
+	return(0)
+}
+
+function extern long ue.after.before.destroy.object()
+{
+	return(0)
+}
+
+function extern long ue.before.after.destroy.object()
+{
+	return(0)
+}
+
+function extern long ue.after.after.destroy.object()
+{
+	return(0)
+}
+
+|****************************** Internal Function ********************
+function boolean check.gr.exists()
+{
+	domain	tfgld.docn	i.irno
+	if	tdpur406.conf = tcyesno.yes	then
+		select a_tfisg001.irno:i.irno
+		from	tfisg001 a_tfisg001
+		where	a_tfisg001._index1 = {:1}
+		wherebind(1, lval(trim$(tdpur406.dino)))
+		selectdo
+			if Update_IR_Receipt_Number(i.irno) then
+				return(DALHOOKERROR)
+			endif
+		selectempty
+			return(false)
+		endselect
+	endif	
+	return(true)
+}
+
+function long Update_IR_Receipt_Number(
+			domain	tfgld.docn	r.irno)
+{
+	long ret_val
+	select	tfisg001.rcno,
+		tfisg001.rcln,
+		tfisg001.stat
+	from	tfisg001 for update
+	where	tfisg001._index1 = {:r.irno}
+	as set with 1 rows
+	selectdo
+		dal.change.object("tfisg001")
+		
+		dal.set.field("tfisg001.rcno",tdpur406.rcno)		
+			
+		dal.set.field("tfisg001.rcln",tdpur406.rseq)		
+			
+		dal.set.field("tfisg001.stat",tfisg.status.gr.receipt)
+			
+		ret_val = dal.save.object("tfisg001")
+			
+		if ret_val <> 0 then
+			return(DALHOOKERROR)
+		endif
+	endselect
+	
+	return(0)
+}
+
+function boolean correct.ir.linked()
+{
+	domain	tfgld.docn	o.docn
+	
+	select	f_tfacp100.ninv:o.docn
+	from	tfacp100 f_tfacp100
+	where	f_tfacp100._index1 = {:1}
+	and	f_tfacp100.cdf_pono = :tdpur406.orno
+	wherebind(1, lval(tdpur406.dino))
+	selectdo
+	selectempty
+		return(false)
+	endselect
+	
+	return(true)
+}
+
+function insert.whisg312(domain tccom.bpid	t.bpid,
+			domain	tcitem		t.item)
+{
+	domain	tccprj		o.cprj		|Project
+	domain	tppdm.cspa	o.cspa		|Element
+	domain	tppdm.cact	o.cact		|Activity
+	domain	tccpcp		o.ccco		|Cost Component
+	
+	long	ret_val
+
+	tdisgdll0831.get.pruchase.order.project.info(tdpur406.orno,tdpur406.pono,
+							tdpur406.sqnb,o.cprj,o.cspa,o.cact,o.ccco)
+	whisg312.rcno = tdpur406.rcno
+	whisg312.rcln = tdpur406.rseq
+	whisg312.oorg = whinh.oorg.purchase
+	whisg312.orno = tdpur406.orno
+	whisg312.oset = tdpur406.rsqn
+	whisg312.line = tdpur406.pono
+	whisg312.seqn = tdpur406.sqnb
+	whisg312.sfbp = t.bpid
+	whisg312.item = t.item
+	whisg312.qrec = tdpur406.qidl
+	whisg312.cprj = o.cprj
+	whisg312.cspa = o.cspa
+	whisg312.cact = o.cact
+	whisg312.ccco = o.ccco
+	whisg312.ardt = tdpur406.ddte
+	whisg312.conf = tdpur406.conf
+	whisg312.amnt = tdpur406.damt
+	db.insert(twhisg312, db.skip.dupl, e)	
+}
+
+						|#ISGECDV001084.sn
+function boolean po.approved.workflow.initiated
+				(
+				domain tcorno	rc.orno
+				)
+{
+	domain	tcsern		rc.vrsn
+	domain	tdmsl.work	rc.work
+	domain	tcyesno		rc.stat
+	domain	tcncmp		curr.comp
+	
+	curr.comp = get.compnr()
+	
+	rc.work = empty
+	rc.stat = empty
+	
+	select	rc_tdmsl400.vrsn:rc.vrsn,
+		rc_tdmsl400.work:rc.work,
+		rc_tdmsl400.stat:rc.stat
+	from	tdmsl400 rc_tdmsl400
+	where	rc_tdmsl400._index1 = {:rc.orno}
+	order by rc_tdmsl400.vrsn desc
+	as set with 1 rows
+	selectdo
+	endselect
+	
+	if	rc.work = tdmsl.work.completed	and	rc.stat = tcyesno.yes	then
+		return(true)
+	endif
+	
+	return(false)
+}
+						|#ISGECDV001084.en
+					|#ISGEC001165.sn
+function	domain	tcbool	check_received_quantity()
+{
+	if	tdpur406.qidl	=	0	then
+		return(true)
+	endif
+	return(false)
+}
+					|#ISGEC001165.en
+											|ISGEC001185.SN
+function 	boolean	check.billing.advice
+				(
+			ref	domain	tcorno	o.edrn,
+			ref	domain	tccprj	o.cprj
+				)
+{
+	
+	select	tdisg832.edrn:o.edrn					|ISGEC001185.SN
+	from	tdisg832
+	where	tdisg832._index4 = {:tdpur406.rcno,:tdpur406.rseq}
+	as set with 1 rows
+	selectdo
+		select	tdpur401.cprj:o.cprj
+		from	tdpur401
+		where	tdpur401._index1 = {:tdpur406.orno,:tdpur406.pono,:tdpur406.sqnb}
+		as set with 1 rows
+		selectdo
+		selectempty
+			o.cprj = ""
+		endselect
+		
+		return(true)
+	selectempty
+		o.edrn = ""
+	endselect
+										
+	return(false)
+}
+											|ISGEC001185.EN
+							|#ISGEC016050.sn
+function boolean check.reciept.linked()
+{
+	select	tdisg832.*
+	from	tdisg832
+	where 	tdisg832._index4 = {:tdpur406.rcno,:tdpur406.rseq}
+	selectdo
+		if tdpur406.qidl = 0	then
+			return(false)
+		endif
+	endselect
+	return(true)
+}
+							|#ISGEC016050.en
+							
+function boolean check.irno.exist(	domain	whinh.pksp	dino.i,					|GH319CR616.a.s
+				ref	domain	tcorno		rno.irno)
+{
+	domain	tclogn	logn.id
+	
+	logn.id = logname$
+	
+	select	whisg000.*
+	from	whisg000
+	where	whisg000._index1 = {:logn.id}
+	selectdo
+	selectempty
+		select	whinh310.rcno:rno.irno
+		from	whinh310
+		where	whinh310.dino = :dino.i
+		and	whinh310._index1 <> :tdpur406.rcno
+		as set with 1 rows
+		selectdo
+			return(true)
+		selectempty
+			select	tdpur406.rcno:rno.irno
+			from	tdpur406
+			where	tdpur406.dino = :dino.i
+			and	tdpur406.qidl <> 0 			|GH602CR000.a
+			and	tdpur406._index2 <> :tdpur406.rcno
+			as set with 1 rows
+			selectdo
+				return(true)
+			selectempty
+				return(false)
+			endselect
+		endselect
+	endselect
+	return(false)
+}
+													|GH319CR616.a.e
+

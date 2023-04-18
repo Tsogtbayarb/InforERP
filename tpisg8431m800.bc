@@ -1,0 +1,301 @@
+|******************************************************************************
+|* tpisg8431m800  0  VRC B61U a7 isg 
+|* Exports Projects GST IRN generation status
+|* Installation user             
+|* 2014-10-21
+|******************************************************************************
+|* Main table tdisg831 Billing Advice, Form Type 4
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+	table   ttdisg831 | Billing Advice
+	table	ttdisg839
+	table	ttcmcs052
+	table	ttppdm740
+	table	ttccom100
+	table	ttdisg842
+	table	tciisg800		|RAvi.a
+	table	tciisg801		|RAvi.a
+
+	extern	domain	tccprj		cprj.f,cprj.t
+	extern	domain	tfgld.date	date.f,date.t
+	string		str(300), err.file(100), file.name(100), line1(2000)
+	long		ret2, stat.fp
+	domain		tcorno	docn.orno.str
+	domain		tfgld.ttyp	ityp
+	domain		tfgld.docn	docn.orno
+	extern	domain	tcyesno		ir.data
+	extern	domain	tfgld.date	irdt.f, irdt.t	
+	extern	domain	tcdate		utc.date.f, utc.date.t		
+			long		dd, mm, yy, dd2, mm2, yy2	
+
+	#include<bic_desktop>
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.cont.process:
+on.choice:
+	generate.file()
+
+
+|****************************** field section *********************************
+
+|****************************** field section *********************************
+field.cprj.f:
+when.field.changes:
+   cprj.t = cprj.f
+   
+field.date.f:
+when.field.changes:
+   date.t = date.f
+   
+field.irdt.f:
+when.field.changes:
+   irdt.t = irdt.f
+
+|****************************** function section ******************************
+
+functions:
+
+function generate.file()
+{
+	open.file()
+	generate.top.header()
+	read.main.table()
+	close.file()
+}
+
+function open.file()
+{
+	err.file = bse.tmp.dir$() & str$(utc.num()) & ".xls"
+	
+	file.name = "c:\temp\" & str$(utc.num())  & ".xls"
+	
+	stat.fp = seq.open(err.file, "w+")
+	if stat.fp >0 then
+ 		seq.seek(0, 0, stat.fp)
+	endif
+}
+
+function	generate.top.header()
+{
+	line1 =	concat$("	",
+		sprintf$("Project"),			|1		
+		sprintf$("Description"),		|2		
+		sprintf$("Country"),			|3		
+		sprintf$("Billing Advice No."),	|4		
+		sprintf$("Final Invoice"),		|5		
+		sprintf$("Final Inv. Date"),		|6
+		sprintf$("Total Billing Value"),	|7
+		sprintf$("Currency"),			|8		
+		sprintf$("Bill of Ladding No."),	|9
+		sprintf$("Date"),		  	|10
+		sprintf$("Supplier Code"),		|11
+		sprintf$("Name"),			|12
+		sprintf$("Custom Invoice No."),	|13
+		sprintf$("Custom Inv. Date"),		|14
+		sprintf$("Custom Inv. Amount"),	|15
+		sprintf$("Shipping Bill No."),		|16
+		sprintf$("Shipping Date"),		|17
+		sprintf$("Port Code"),			|18		|#anadi.n
+		sprintf$("AD Code"),			|19		|#Anadi.n
+		sprintf$("IRN No"),			|19		|RAvi.a.10102020
+		sprintf$("IRN Date"))			|19		|RAvi.a.10102020
+		
+
+	line1 = strip$(shiftl$(line1))		
+	seq.puts(line1, stat.fp)	
+}
+
+
+function read.main.table()
+{
+	num.to.date(irdt.f, yy, mm, dd)
+	num.to.date(irdt.t, yy2, mm2, dd2)
+	
+	utc.date.f = date.to.utc(yy, mm, dd, 5, 30, 0)
+	utc.date.t = date.to.utc(yy2, mm2, dd2, 24, 59, 59)
+	
+	if ir.data = tcyesno.no then
+		select	tdisg831.*
+		from	tdisg831
+		where	tdisg831._index4 inrange {:cprj.f} and {:cprj.t}
+		and	tdisg831.invd	inrange	{:date.f} and {:date.t}
+		selectdo
+	| 		select	tdisg839.*
+	| 		from	tdisg839
+	| 		where	tdisg839._index1 = {:tdisg831.bold}
+	| 		and	tdisg839.pddt between :date.f and :date.t
+	| 		selectdo
+				select	tcmcs052.dsca
+				from	tcmcs052
+				where	tcmcs052._index1 = {:tdisg831.cprj}
+				selectdo
+				selectempty
+					tcmcs052.dsca = ""
+				endselect	
+		
+				select tppdm740.ccur, tppdm740.pfbp, tccom100.nama
+				from   tppdm740, tccom100
+				where  tppdm740._index1 = {:tdisg831.cprj}
+				and	tppdm740.pfbp refers to tccom100
+				selectdo
+				selectempty
+					tppdm740.ccur = ""
+					tccom100.nama = ""
+				endselect
+		
+				select	tdisg842.scod,
+					tdisg842.port,
+					tdisg842.acod
+				from	tdisg842
+				where	tdisg842._index1 = {:tdisg831.sbno}
+				selectdo
+				selectempty
+					tdisg842.scod = ""
+					tdisg842.port = ""
+					tdisg842.acod = ""
+				endselect
+				
+				docn.orno = lval(tdisg831.invn(4;8))			
+				ityp = tdisg831.invn(1;3)	
+				docn.orno.str = str$(docn.orno) & "   "
+				
+				select	ciisg800.comp						
+				from	ciisg800
+				where	ciisg800.tran = :ityp
+				and	ciisg800.docn = :docn.orno.str
+				as set with 1 rows
+				selectdo
+				endselect
+				
+				select	ciisg801.irnn,
+					ciisg801.ackd
+				from	ciisg801
+				where	ciisg801._index1 = {:ciisg800.comp, :ityp, :docn.orno.str}
+				as set with 1 rows
+				selectdo
+				selectempty
+					ciisg801.irnn = ""
+					ciisg801.ackd = 0
+				endselect						
+				
+				print.detail()
+	| 		endselect
+		endselect
+	else
+		select	tdisg831.*,
+			ciisg801.ackd,
+			ciisg801.irnn
+		from	tdisg831, ciisg801
+		where	tdisg831._index4 inrange {:cprj.f} and {:cprj.t}
+		and	tdisg831.invd	inrange	{:date.f} and {:date.t}
+		and	ciisg801.ackd	inrange	{:utc.date.f} and {:utc.date.t}
+		and	tdisg831.invn(1;3) = ciisg801.tran
+		and	tdisg831.invn(4;8) = ciisg801.docn
+		selectdo
+			select	tcmcs052.dsca
+			from	tcmcs052
+			where	tcmcs052._index1 = {:tdisg831.cprj}
+			selectdo
+			selectempty
+				tcmcs052.dsca = ""
+			endselect	
+	
+			select tppdm740.ccur, tppdm740.pfbp, tccom100.nama
+			from   tppdm740, tccom100
+			where  tppdm740._index1 = {:tdisg831.cprj}
+			and	tppdm740.pfbp refers to tccom100
+			selectdo
+			selectempty
+				tppdm740.ccur = ""
+				tccom100.nama = ""
+			endselect
+	
+			select	tdisg842.scod,
+				tdisg842.port,
+				tdisg842.acod
+			from	tdisg842
+			where	tdisg842._index1 = {:tdisg831.sbno}
+			selectdo
+			selectempty
+				tdisg842.scod = ""
+				tdisg842.port = ""
+				tdisg842.acod = ""
+			endselect
+			
+| 			docn.orno = lval(tdisg831.invn(4;8))				
+| 			ityp = tdisg831.invn(1;3)	
+| 			docn.orno.str = str$(docn.orno)
+			
+| 			select	ciisg800.comp						
+| 			from	ciisg800
+| 			where	ciisg800.tran = :ityp
+| 			and	ciisg800.docn = :docn.orno.str
+| 			as set with 1 rows
+| 			selectdo
+| 			endselect
+| 			
+| 			select	ciisg801.irnn,
+| 				ciisg801.ackd
+| 			from	ciisg801
+| 			where	ciisg801._index1 = {:ciisg800.comp, :ityp, :docn.orno.str}
+| 			as set with 1 rows
+| 			selectdo
+| 			selectempty
+| 				ciisg801.irnn = ""
+| 				ciisg801.ackd = 0
+| 			endselect						
+			
+			print.detail()
+		endselect
+	endif
+}
+
+function print.detail()
+{
+	line1 =	concat$("	",
+		sprintf$("%s", tdisg831.cprj),				|1
+		sprintf$("%s", tcmcs052.dsca),				|2				
+		sprintf$("%s", tdisg831.octy),				|3				
+		sprintf$("%s", tdisg831.edrn),				|4				
+		sprintf$("%s", tdisg831.cinv),				|5				
+		sprintf$("%D(%02d/%02m/%04Y)", tdisg831.cind),		|6
+		sprintf$("%f", tdisg831.amti),				|7
+		sprintf$("%s", tppdm740.ccur),				|8				
+		sprintf$("%s", tdisg839.biln),				|9
+		sprintf$("%D(%02d/%02m/%04Y)", tdisg839.pddt),		|10
+		sprintf$("%s", tppdm740.pfbp),				|11	
+		sprintf$("%s", tccom100.nama),				|12
+		sprintf$("%s", tdisg831.invn),				|13
+		sprintf$("%D(%02d/%02m/%04Y)", tdisg831.invd),		|14
+		sprintf$("%f", tdisg831.amti),				|15
+		sprintf$("%s", tdisg842.scod),				|16
+		sprintf$("%D(%02d/%02m/%04Y)", tdisg831.shdt),		|17
+		sprintf$("%s", tdisg842.port),				|18		
+		sprintf$("%s", tdisg842.acod),				|19				
+		sprintf$("%s", ciisg801.irnn),				|20				
+		sprintf$("%u(%02d/%02m/%04Y)", ciisg801.ackd))		|21				
+		
+		line1 = strip$(shiftl$(line1))
+		seq.puts(line1, stat.fp)
+
+}
+
+function close.file()
+{
+	seq.close(stat.fp)
+	ret2 = server2client(err.file,file.name,1)
+	ret2 = app_start(file.name,"c:","","","")
+}
+

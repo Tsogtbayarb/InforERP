@@ -1,0 +1,120 @@
+|******************************************************************************
+|* tpisg6401m000  0  VRC B61U a7 isg 
+|* Outstanding Report
+|* Ravi Kumar                    
+|* 2021-03-02
+|******************************************************************************
+|* Main table tpisg601 BOE Header, Form Type 4
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttpisg601 | BOE Header
+  table   ttpisg605
+
+   extern  domain  tccprj           cprj.f, cprj.t
+   extern	domain	tcorno	cinv.f, cinv.t, boe.f, boe.t, bill.f, bill.t
+   extern	domain	tcdate	cdat.f, cdat.t
+   extern	domain	tcamnt	cal.tot.out.var
+
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.cont.process:
+on.choice:
+   execute(print.data)
+
+choice.print.data:
+on.choice:
+	if rprt_open() then
+		read.main.table()
+		rprt_close()
+	else
+		choice.again()
+	endif
+
+
+|****************************** field section *********************************
+
+field.cprj.f:
+when.field.changes:
+   cprj.t = cprj.f
+   
+field.cinv.f:	
+when.field.changes:	
+	cinv.t = cinv.f
+
+field.boe.f:
+when.field.changes:
+	boe.t = boe.f
+	
+field.bill.f:
+when.field.changes:
+	bill.t = bill.f
+	
+field.cdat.f:
+when.field.changes:
+	cdat.t = cdat.f
+
+|****************************** function section ******************************
+functions:
+function read.main.table()
+{
+	cal.tot.out.var = 0
+	select	tdisg831.*,
+		tpisg605.*
+	from	tpisg605, tdisg831
+	where	tpisg605._index1 inrange {:bill.f, :boe.f} and {:bill.t, :boe.t}
+	and	tpisg605.invn inrange {:cinv.f} and {:cinv.t}
+	and	tdisg831.cprj inrange {:cprj.f} and {:cprj.t}
+	and	tdisg831.cind inrange {:cdat.f} and {:cdat.t}
+	and	tpisg605.cinv = tdisg831.invn
+	selectdo
+		cal.tot.out.var = 0
+		select	tpisg602.*
+		from	tpisg602
+		where	tpisg602._index1 = {:tpisg605.code, :tpisg605.cinv}
+		as set with 1 rows
+		selectdo
+		endselect
+		
+		select	tpisg603.*, 
+			tpisg604.*
+		from	tpisg603, tpisg604
+		where	tpisg603._index1 = {:tpisg605.code}
+		and	tpisg603._index1 refers to tpisg604
+		as set with 1 rows
+		selectdo
+		endselect
+		cal.tot.out.var = cal.tot.out()
+		rprt_send()
+	endselect
+}
+
+function domain	tcamnt net.out.standing()
+{
+	domain	tcamnt	net.out.standing.var
+	net.out.standing.var = 0
+	
+	net.out.standing.var = (tpisg605.camt - tpisg605.rela - tpisg605.bchg - tpisg605.crdr)
+	return(net.out.standing.var)
+}
+
+function domain	tcamnt cal.tot.out()
+{
+	domain	tcamnt	tot.out
+	tot.out = 0
+	
+	tot.out = (net.out.standing() + (tpisg605.ramt))
+	return(tot.out)
+}
+

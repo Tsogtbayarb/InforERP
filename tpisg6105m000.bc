@@ -1,0 +1,549 @@
+|******************************************************************************
+|* tpisg6105m000  0  VRC B61U a7 isg 
+|* Adjustment of Realised Value
+|* Ravi Kumar                    
+|* 2021-02-22
+|******************************************************************************
+|* Main table tpisg605 Bank ID Adjustment, Form Type 1
+|******************************************************************************
+									
+|****************************** declaration section ***************************
+declaration:
+
+	table   ttpisg605 | Bank ID Adjustment
+	table	ttdisg831
+	table	ttdisg860
+	table	ttdisg865
+	table	ttpisg603
+	table	ttpisg602
+	table	ttpisg601
+	
+	extern	domain	tcdate		bank.date
+| 	extern	domain	tccom.cadr	bank.name
+	extern	domain	tcamnt		bank.exp, bank.crgs, crdr.amnt, check.nera, check.crgs, check.amnt,
+					check.nera.adv, check.crgs.adv, check.amnt.adv, tot.advan
+	extern	domain	tcsess		sess.prog
+			long		brp.id, count.cinv
+			
+	extern	domain	tcamnt		tot.amnt, tot.nera, tot.bchg, tot.drcr, tot.out,  
+				tot.rela.line, tot.bchg.line, tot.crdr.line
+				
+	extern	domain	tcamnt		tot.amnt.cus, tot.out.cus, t.net.out.cus, tot.rela.cus,
+					tot.bchg.cus, tot.drcr.cus, tot.rela.cus.ret
+	
+	extern	domain	tdisg.ptyp	ptyp
+	
+	#include <bic_dam>
+
+|****************************** program section ********************************
+before.program:
+	set.synchronized.dialog("tpisg6105m000")
+	fattr.total.line = true
+| 	insert.data()
+	
+on.display.total.line:
+	select	sum(tpisg605.rela):tot.rela.line,
+		sum(tpisg605.bchg):tot.bchg.line,
+		sum(tpisg605.crdr):tot.crdr.line
+	from	tpisg605
+	where	tpisg605._index1 = {:tpisg605.bank, :tpisg605.code}
+	selectdo
+	selectempty
+		tot.rela.line = 0
+		tot.bchg.line = 0
+		tot.crdr.line = 0
+	endselect
+	
+	display.total.fields(	"tpisg605.rela", tot.rela.line,
+				"tpisg605.bchg", tot.bchg.line,
+				"tpisg605.crdr", tot.crdr.line)
+	
+after.form.read:
+	enable.save.on.occ.change()
+	
+before.new.object:
+| 	start.synchronized.child("tpisg6105m100")
+	if choice = add.set then
+		select	tpisg605.srno
+		from	tpisg605
+		where	tpisg605._index1 = {:tpisg605.bank, :tpisg605.code}
+		order by tpisg605.srno desc
+		as set with 1 rows
+		selectdo
+			tpisg605.srno = tpisg605.srno + 1
+		selectempty
+			tpisg605.srno = 1
+		endselect
+	endif
+
+|****************************** group section **********************************
+choice.print.report:
+on.choice:
+	tot.amnt = 0
+	tot.advan = 0
+	spool.preview = true
+	brp.id = brp.open("rtpisg640301000", "P", 0)
+	
+	select	tpisg603.code
+	from	tpisg603
+	where	tpisg603.bank = :tpisg605.bank
+	selectdo
+		select	tpisg601.lcno
+		from	tpisg601
+		where	tpisg601._index1 = {:tpisg603.code}
+		selectdo
+			select	tpisg602.*
+			from	tpisg602
+			where	tpisg602._index1 = {:tpisg603.code}
+			selectdo
+				select	tdisg860.ptcd
+				from	tdisg860
+				where	tdisg860._index1= {:tpisg601.lcno}
+				and	tdisg860.ptyp = tdisg.ptyp.advance
+				selectdo
+					select	tdisg865.amnt
+					from	tdisg865
+					where	tdisg865._index1 = {:tpisg602.cinv, :tpisg601.lcno, :tdisg860.ptcd}
+					selectdo
+						tot.advan = tot.advan + tdisg865.amnt
+					endselect
+				endselect
+			endselect
+		endselect
+		
+		select	tpisg602.amnt,
+			tpisg602.cinv
+		from	tpisg602
+		where	tpisg602._index1 = {:tpisg603.code}
+		selectdo
+			select	count(tpisg602.code):count.cinv
+			from	tpisg602, tpisg603
+			where	tpisg602.cinv = :tpisg602.cinv
+			and	tpisg603.bank = :tpisg605.bank
+			and	tpisg603.code = tpisg602.code
+			selectdo
+			endselect
+			
+			tot.amnt = tot.amnt + (tpisg602.amnt/count.cinv)
+		endselect
+	endselect
+	
+	select	sum(tpisg604.nera):tot.nera,
+		sum(tpisg604.bchg):tot.bchg,
+		sum(tpisg604.drcr):tot.drcr
+	from	tpisg604
+	where	tpisg604.bank = :tpisg605.bank
+	selectdo
+	selectempty
+		tot.nera = 0
+		tot.bchg = 0
+		tot.drcr = 0
+	endselect
+	tpisg603.bank = tpisg605.bank
+	tot.out = tot.amnt - tot.nera - tot.bchg - tot.drcr - tot.advan	
+	brp.ready(brp.id)
+		
+	brp.close(brp.id)
+	
+choice.print.report.cust:
+on.choice:
+	print.custom.wise.report()
+	
+| field.tpisg605.bank:
+| when.field.changes:
+| 	select	tpisg603.code:tpisg605.code
+| 	from	tpisg603
+| 	where	tpisg603._index1 = {:tpisg605.code, :tpisg605.bank}
+| 	as set with 1 rows
+| 	selectdo
+| 	selectempty
+| 		tpisg605.code = "" 
+| 	endselect
+	
+| field.tpisg605.cinv:
+| before.zoom:
+| 	query.extend.where.in.zoom("tdisg831.invn <> " & quoted.string(""))
+| 	
+| when.field.changes:
+| 	select	tdisg831.amti:tpisg605.amnt
+| 	from	tdisg831
+| 	where	tdisg831._index2 = {:tpisg605.cinv}
+| 	as set with 1 rows
+| 	selectdo
+| 	selectempty
+| 		tpisg605.amnt = 0
+| 	endselect
+| 	tpisg605.adva = cal.advance()
+| 	tpisg605.ramt = cal.retention()
+| 	tpisg605.camt = cal.claimed()
+| 	
+| field.tpisg605.invn:
+| before.zoom:
+| 	query.extend.where.in.zoom("tdisg831.cinv <> " & quoted.string("") & " and tdisg831.invn = " & quoted.string(tpisg605.cinv))
+	
+field.bank.date:
+before.display:
+	select	tpisg603.bdte:bank.date
+	from	tpisg603
+	where	tpisg603._index1 = {:tpisg605.code, :tpisg605.bank}
+	as set with 1 rows
+	selectdo
+	selectempty
+		bank.date = 0
+	endselect
+	
+| field.bank.name:
+| before.display:
+| 	select	tpisg603.bnam:bank.name
+| 	from	tpisg603
+| 	where	tpisg603._index1 = {:tpisg605.code, :tpisg605.bank}
+| 	as set with 1 rows
+| 	selectdo
+| 	selectempty
+| 		bank.name = ""
+| 	endselect
+
+field.bank.exp:
+before.display:
+	select	sum(tpisg604.nera):bank.exp
+	from	tpisg604
+	where	tpisg604._index1 = {:tpisg605.code, :tpisg605.bank}
+	as set with 1 rows
+	selectdo
+	selectempty
+		bank.exp = 0
+	endselect
+	
+field.bank.crgs:
+before.display:
+	select	sum(tpisg604.bchg):bank.crgs
+	from	tpisg604
+	where	tpisg604._index1 = {:tpisg605.code, :tpisg605.bank}
+	as set with 1 rows
+	selectdo
+	selectempty
+		bank.crgs = 0
+	endselect
+	
+field.crdr.amnt:
+before.display:
+	select	sum(tpisg604.drcr):crdr.amnt
+	from	tpisg604
+	where	tpisg604._index1 = {:tpisg605.code, :tpisg605.bank}
+	as set with 1 rows
+	selectdo
+	selectempty
+		crdr.amnt = 0
+	endselect
+
+| field.net.crg:
+| before.display:
+| 	net.crg = net.out.standing()
+	
+| field.tot.out:
+| before.display:
+| 	tot.out = cal.tot.out()
+	
+field.ptyp:
+before.display:
+	select	tpisg601.lcno
+	from	tpisg601
+	where	tpisg601._index1 = {:tpisg605.code}
+	as set with 1 rows
+	selectdo
+		select	tdisg860.ptyp:ptyp
+		from	tdisg860
+		where	tdisg860._index1 = {:tpisg601.lcno, :tpisg605.srno}
+		as set with 1 rows
+		selectdo
+		selectempty
+			ptyp = empty
+		endselect
+	selectempty
+		ptyp = empty
+	endselect
+	
+
+| field.tpisg605.rela:
+| check.input:
+| 	select	sum(tpisg604.nera):check.nera
+| 	from	tpisg604
+| 	where	tpisg604._index1 = {:tpisg605.code, :tpisg605.bank}
+| 	as set with 1 rows
+| 	selectdo
+| 	selectempty
+| 		check.nera = 0
+| 	endselect
+| 	
+| 	select	sum(tpisg605.rela):check.nera.adv
+| 	from	tpisg605
+| 	where	tpisg605._index1 = {:tpisg605.bank, :tpisg605.code}
+| 	selectdo
+| 	selectempty
+| 		check.nera.adv = 0
+| 	endselect
+| 	check.nera.adv = check.nera.adv + tpisg605.rela
+| 	if check.nera < check.nera.adv then
+| 		message("Total Realised Amount should not be greater than " & str$(check.nera))
+| 		set.input.error("", e)
+| 	endif
+	
+field.tpisg605.bchg:
+check.input:
+	select	sum(tpisg604.bchg):check.crgs
+	from	tpisg604
+	where	tpisg604._index1 = {:tpisg605.code, :tpisg605.bank}
+	as set with 1 rows
+	selectdo
+	selectempty
+		check.crgs = 0
+	endselect
+	
+	select	sum(tpisg605.bchg):check.crgs.adv
+	from	tpisg605
+	where	tpisg605._index1 = {:tpisg605.bank, :tpisg605.code}
+	selectdo
+	selectempty
+		check.crgs.adv = 0
+	endselect
+	check.crgs.adv = check.crgs.adv + tpisg605.bchg
+	
+	if check.crgs < check.crgs.adv then
+		message("Total Bank Charges Amount should not be greater than " & str$(check.crgs))
+		set.input.error("", e)
+	endif
+	
+field.tpisg605.crdr:
+check.input:
+	select	sum(tpisg604.drcr):check.amnt
+	from	tpisg604
+	where	tpisg604._index1 = {:tpisg605.code, :tpisg605.bank}
+	as set with 1 rows
+	selectdo
+	selectempty
+		check.amnt = 0
+	endselect
+	
+	select	sum(tpisg605.crdr):check.amnt.adv
+	from	tpisg605
+	where	tpisg605._index1 = {:tpisg605.bank, :tpisg605.code}
+	selectdo
+	selectempty
+		check.amnt.adv = 0
+	endselect
+	check.amnt.adv = check.amnt.adv + tpisg605.crdr
+	
+	if check.amnt < check.amnt.adv then
+		message("Total DR CR Adjustment Amount should not be greater than " & str$(check.amnt))
+		set.input.error("", e)
+	endif
+|*************************************************Functions***************************
+functions:
+| function domain	tcamnt net.out.standing()
+| {
+| 	domain	tcamnt	net.out.standing.var
+| 	net.out.standing.var = 0
+| 	
+| 	net.out.standing.var = (tpisg605.camt - tpisg605.rela - tpisg605.bchg)
+| 	return(net.out.standing.var)
+| }
+
+| function domain	tcamnt cal.tot.out()
+| {
+| 	domain	tcamnt	tot.out
+| 	tot.out = 0
+| 	
+| 	tot.out = (net.out.standing() + (tpisg605.ramt - tpisg605.retn))
+| 	return(tot.out)
+| }
+
+| function domain	tcamnt	cal.advance()
+| {
+| 	domain	tcamnt	tot.advan
+| 	tot.advan = 0 
+| 	
+| 	select	tdisg831.amti,
+| 		tdisg831.lcno
+| 	from	tdisg831
+| 	where	tdisg831._index2 = {:tpisg605.cinv}
+| 	as set with 1 rows
+| 	selectdo
+| 		select	tdisg860.pval
+| 		from	tdisg860
+| 		where	tdisg860._index1= {:tdisg831.lcno}
+| 		and	tdisg860.ptyp = tdisg.ptyp.advance
+| 		selectdo
+| 			tot.advan = tot.advan + (tdisg831.amti * tdisg860.pval/100)
+| 		endselect
+| 	endselect
+| 	return(tot.advan)
+| }
+
+| function domain	tcamnt	cal.retention()
+| {
+| 	domain	tcamnt	tot.reten
+| 	tot.reten = 0 
+| 	
+| 	select	tdisg831.amti,
+| 		tdisg831.lcno
+| 	from	tdisg831
+| 	where	tdisg831._index2 = {:tpisg605.cinv}
+| 	as set with 1 rows
+| 	selectdo
+| 		select	tdisg860.pval
+| 		from	tdisg860
+| 		where	tdisg860._index1= {:tdisg831.lcno}
+| 		and	tdisg860.ptyp = tdisg.ptyp.retention
+| 		selectdo
+| 			tot.reten = tot.reten + (tdisg831.amti * tdisg860.pval/100)
+| 		endselect
+| 	endselect
+| 	return(tot.reten)
+| }
+
+| function domain	tcamnt	cal.claimed()
+| {
+| 	domain	tcamnt	tot.claimed
+| 	tot.claimed = 0
+| 	
+| 	select	tdisg831.cinv,
+| 		tdisg831.lcno
+| 	from	tdisg831
+| 	where	tdisg831._index2 = {:tpisg605.cinv}
+| 	as set with 1 rows
+| 	selectdo
+| 		select	tdisg865.lcno,
+| 			tdisg865.amnt,
+| 			tdisg865.ptcd
+| 		from	tdisg865
+| 		where	tdisg865._index1 = {:tdisg831.cinv, :tdisg831.lcno}
+| 		selectdo
+| 			select	tdisg860.ptcd
+| 			from	tdisg860
+| 			where	tdisg860._index1 = {:tdisg865.lcno, :tdisg865.ptcd}
+| 			and	tdisg860.ptyp = tdisg.ptyp.advance
+| 			selectdo
+| 				tot.claimed = tot.claimed + tdisg865.amnt
+| 			endselect
+| 		endselect
+| 	endselect
+| 	return(tot.claimed)
+| }
+
+function print.custom.wise.report()
+{
+	tot.amnt.cus = 0
+	t.net.out.cus = 0 
+	tot.out.cus  = 0
+	tot.rela.cus  = 0
+	tot.bchg.cus  = 0
+	tot.drcr.cus  = 0
+	spool.preview = true
+	spool.paper.type = "A4L"
+	brp.id = brp.open("rtpisg640501000", "P", 0)
+	
+| 	select	tpisg603.code
+| 	from	tpisg603
+| 	where	tpisg603.bank = :tpisg605.bank
+| 	selectdo
+| 		select	tpisg602.amnt,
+| 			tpisg602.cinv
+| 		from	tpisg602
+| 		where	tpisg602._index1 = {:tpisg603.code}
+| 		selectdo
+| 			select	count(tpisg602.code):count.cinv
+| 			from	tpisg602, tpisg603
+| 			where	tpisg602.cinv = :tpisg602.cinv
+| 			and	tpisg603.bank = :tpisg605.bank
+| 			and	tpisg603.code = tpisg602.code
+| 			selectdo
+| 			endselect	
+| 			tot.amnt.cus = tot.amnt.cus + (tpisg602.amnt/count.cinv)
+| 		endselect
+| 	endselect
+| 	
+| 	select	sum(tpisg605.rela):tot.rela.cus,
+| 		sum(tpisg605.bchg):tot.bchg.cus,
+| 		sum(tpisg605.crdr):tot.drcr.cus
+| 	from	tpisg605
+| 	where	tpisg605._index1 = {:tpisg605.bank, :tpisg605.code}
+| 	selectdo
+| 	selectempty
+| 		tot.rela.cus  = 0
+| 		tot.bchg.cus  = 0
+| 		tot.drcr.cus  = 0
+| 	endselect
+| 	tot.out.cus = tot.amnt.cus - tot.rela.cus - tot.bchg.cus - tot.drcr.cus
+	
+	select	tpisg601.lcno
+	from	tpisg601
+	where	tpisg601._index1 = {:tpisg605.code}
+	as set with 1 rows
+	selectdo
+	endselect
+	
+	select	tpisg603.bnam
+	from	tpisg603
+	where	tpisg603._index1 = {:tpisg605.code, :tpisg605.bank}
+	as set with 1 rows
+	selectdo
+	endselect
+			
+	select	tpisg605.*
+	from	tpisg605
+	where	tpisg605._index1 = {:tpisg605.bank, :tpisg605.code}
+	selectdo
+| 		t.net.out.cus = tpisg605.amnt - tpisg605.rela - tpisg605.crdr - tpisg605.bchg - tpisg605.adva
+| 		tot.rela.cus = tot.rela.cus + tpisg605.rela
+| 		tot.bchg.cus = tot.bchg.cus + tpisg605.bchg
+| 		tot.drcr.cus = tot.drcr.cus + tpisg605.crdr
+		tot.rela.cus.ret = 0
+		tot.rela.cus = 0
+		tot.bchg.cus = 0
+		tot.drcr.cus = 0
+		select	tdisg860.ptcd
+		from	tdisg860
+		where	tdisg860._index1 = {:tpisg601.lcno}
+		and	tdisg860.ptyp = tdisg.ptyp.retention
+		as set with 1 rows
+		selectdo
+			select	tpisg605.rela
+			from	tpisg605
+			where	tpisg605.cinv = :tpisg605.cinv
+			and	tpisg605.invn = :tpisg605.invn
+			and	tpisg605.srno = :tdisg860.ptcd
+			selectdo
+				tot.rela.cus.ret = tot.rela.cus.ret + tpisg605.rela
+			endselect
+		endselect
+		
+		select	tdisg860.ptcd
+		from	tdisg860
+		where	tdisg860._index1 = {:tpisg601.lcno}
+		and	tdisg860.ptyp = tdisg.ptyp.netpay
+		as set with 1 rows
+		selectdo
+			select	tpisg605.rela
+			from	tpisg605
+			where	tpisg605.cinv = :tpisg605.cinv
+			and	tpisg605.invn = :tpisg605.invn
+			and	tpisg605.srno = :tdisg860.ptcd
+			selectdo
+				tot.rela.cus = tot.rela.cus + tpisg605.rela
+			endselect
+		endselect
+		
+		select	tpisg605.crdr,
+			tpisg605.bchg
+		from	tpisg605
+		where	tpisg605.cinv = :tpisg605.cinv
+		and	tpisg605.invn = :tpisg605.invn
+		selectdo
+			tot.drcr.cus = tot.drcr.cus + tpisg605.crdr
+			tot.bchg.cus = tot.bchg.cus + tpisg605.bchg
+		endselect	
+		t.net.out.cus = tpisg605.amnt - tot.rela.cus - tot.rela.cus.ret - tot.drcr.cus - tot.bchg.cus - tpisg605.adva
+		brp.ready(brp.id)
+	endselect
+	brp.close(brp.id)
+}
