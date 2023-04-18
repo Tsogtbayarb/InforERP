@@ -1,0 +1,435 @@
+|******************************************************************************
+|* tfisg6400m009  0  VRC B61U a7 live
+|* Print Remittance Letters for cheque printing
+|* Installation user             
+|* 2014-07-21
+|******************************************************************************
+|* Form Type 4
+|******************************************************************************
+|* ISGEC001060, IT0205, Arjit Gupta, VRC B61U a7 live Dt. 29-09-2014
+|* If tax amount available then it should be included with Line amount,
+|* For non-one time BP address will be printed as PO Report
+|******************************************************************************
+|* ISGEC001075, IT0327, Ritu Shrivastava, 07-10-2014
+|* Modifications to print multiple cheques
+|*
+|*ID : PATCH001045.n,	Sujeet Kumar,		2015-03-23
+|* Intercompany logic.
+|* Functional: Mr. Deepak Rawat
+|* 
+|* ISGEC015037,	IT0308,	Somal Mondal, 	07-08-2015	VRC B61U a7 isg
+|* Added Intercompany logic in the report from Cashflow  session and Payment Advice session.
+|* Functional: Bandita Borah
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttccom100		|Business Partner
+	table	ttcmcs002		|Currencies
+	table	ttcmcs010		|Countries		
+	table	ttfacp200		|Suppliers
+	table	ttfacp202		|Sundry Suppliers
+	table	ttfacp300		|Subcontractors
+	table	ttfacp100		|Received Purchase Invoices
+	table	ttfacp301		|Industrial Assurance Boards
+	table	ttfacr200		|Customers
+	table	ttfacr202		|Sundry Customers
+	table	ttfcmg000		|Parameters CMG		
+	table	ttfcmg001		|Bank Relations
+	table	ttfcmg002		|Reasons for Foreign Payments
+	table	ttfcmg003		|Payment Methods
+	table	ttfcmg006		|Data per Bank/payment Method
+	table	ttfcmg100		|Cheque Master
+	table	ttfcmg101		|Payment Advices
+	table	ttfcmg103		|Composed Payments
+	table	ttfcmg104		|Standing Orders
+	table	ttfcmg105		|Standing Orders (Payment Schedule)
+	table	ttfcmg108		|Sundry Suppliers Standing Orders
+	table	ttfcmg113		|Payment Documents
+	table	ttfgld004		|Financial Company	
+	table	ttipcs020		|Projects 
+	table	ttfcmg011		|Bank Branches
+	table	ttccom130		|Addresses
+	table	ttfisg001		|IR Details
+	table	ttcmcs052		|Projects
+	table	ttfmsl020		|Advance Request
+	table	ttfmsl037		|Cash Flow
+	table	ttccom124
+	table	ttfcmg118
+	table	ttfgld008
+	
+	extern	domain	tfgld.btno	btno
+
+		long    lfn.brpfile
+		long    data.printed
+
+		domain	tcbool		test.made
+		domain	tcbool		reprint.factcomp	
+		domain	tcbool		reprint.postal		
+
+	extern	domain	tcnamd		payable.at
+	extern	domain	tcbool		test
+	extern	domain	tcbool		details
+	extern	domain	tcbool		fact.comp		
+	extern	domain	tcnama		suppl.name		
+	extern	domain	tfgld.btno    	batch
+	extern	domain	tfgld.date	payment.date
+	extern	domain	tcmcs.str20	suno.key fixed		
+	extern	domain	tcmcs.str215	cash.str,pay_to_bp	
+	extern	domain	tfgld.amnt	amount.hc
+	extern	domain	tfgld.amnt	check.amount
+	
+	extern	domain	tcnama		name1
+	extern	domain	tcnama		name2
+	extern	domain	tcncmp		v.comp
+	extern	domain	tfgld.docn	v.irno,v.docn	
+	extern	domain	tccprj		v.cprj
+	extern	domain	tcorno		v.orno
+	extern	domain	tcmcs.str25	var.refrnce
+	extern	domain	tcmcs.str80	v.ln01,v.ln02,v.ln03,v.ln04
+	extern	domain	tcmcs.str80	v.ln05,v.ln06				|#ISGEC001060.n
+	extern domain  tfgld.amnt	hold.m					|#ISGEC001075.n
+	
+	
+|****************************** program     section ***************************
+before.program:
+	v.comp = get.compnr()
+|****************************** form        section ***************************
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+choice.cont.process:
+on.choice:
+   execute(print.data)
+
+choice.print.data:
+on.choice:
+	if rprt_open() then
+		read.main.table()
+		rprt_close()
+	else
+		choice.again()
+	endif
+
+|****************************** field section ***************************
+field.btno:
+before.zoom:
+	query.extend.where.in.zoom("tfcmg109.stpp = 6")
+
+|****************************** function    section ***************************
+functions:
+function read.main.table()					
+{
+
+	select	tfcmg103.*, tccom100.*,tccom124.cadr|, tcmcs010.dsca
+	from	tfcmg103, tccom100,tccom124|, tcmcs010
+								
+	where	tfcmg103._index1 = {:btno}
+	and	tfcmg103.paid = tcyesno.yes
+	and	tfcmg103.amnt <> 0				
+	and	tfcmg103.ptbp refers to tccom100
+	and	tfcmg103.ptbp refers to tccom124
+	order by tfcmg103._index1
+	selectdo
+| 		get.bp.address(tccom100.cadr)
+		get.bp.address(tccom124.cadr)
+		if tccom100.sndr = tcyesno.yes then
+			replace.bp.name()
+		endif	
+	
+		print.cheque.details(btno)			
+| 		read.master.data()
+		read.details()
+	endselect
+}
+function read.details()
+{
+
+	select	tfcmg101.*,					
+		tcmcs002.*					
+	from	tfcmg101,					
+		tcmcs002					
+	where	tfcmg101._index4 = {	:tfcmg103.btno, :tfcmg103.ptbp,
+					:tfcmg103.ccur, :tfcmg103.paym,
+					:tfcmg103.basu, :tfcmg103.plan}
+| 					:tfcmg103.reas }
+	and     tfcmg101.ptyp = :tfcmg103.ttyp 					|#ISGEC001075.sn
+	and     tfcmg101.pdoc = :tfcmg103.docn					|#ISGEC001075.en
+	and 	tfcmg101.ccur refers to tcmcs002		
+	order by tfcmg101._index4
+	selectdo
+		get.lines.details()
+		tfacp200.orno = ""	
+		suno.key = tfcmg101.ifbp &
+				   edit$(etol(tfcmg101.tadv),"99") &
+				   tfcmg101.ttyp & str$(tfcmg101.ninv)
+				   
+		select	tfacp200.orno,tfacp200.isup,tfacp200.refr
+		from	tfacp200
+		where	tfacp200._index1={:tfcmg101.ttyp,:tfcmg101.ninv} 
+		and	tfacp200._compnr = :tfcmg103.icmp			|#PATCH001045.n
+		as set with 1 rows
+		selectdo
+		selectempty
+		endselect
+		
+							|#ISGEC001060.sn
+		if	tfcmg101.vata <> 0	then
+			tfcmg101.amnt = tfcmg101.amnt + tfcmg101.vata
+		endif	
+							|#ISGEC001060.en
+		
+		select	tfacp100.ninv 
+		from	tfacp100
+		where	tfacp100.isup = :tfacp200.isup
+		and	tfacp100.refr = :tfacp200.refr
+		and	tfacp100._compnr = :tfcmg103.icmp			|#PATCH001045.n
+		selectdo
+		endselect
+		
+		if not isspace(v.cprj) then
+			tcmcs052.dsca = ""
+			get.project.description(v.cprj)
+		else
+			tcmcs052.dsca = ""
+			get.project.from.CashFlow(tfcmg103.btno)
+		endif
+		var.refrnce = enum.descr$("tfcmg.tadv",tfcmg101.tadv)
+		if tccom100.sndr = tcyesno.yes then
+			replace.bp.name()
+		endif	
+		rprt_send()
+		
+		if tfcmg101.whti <> 0 or tfcmg101.scti <> 0 and tfcmg101.scei <> 0 then
+			select 	tfcmg118.vamt,
+				tfcmg118.leac,tfgld008.desc
+			from	tfcmg118,tfgld008
+			where	tfcmg118._index1 = {:tfcmg101.btno,:tfcmg101.ifbp,:tfcmg101.comp,
+						:tfcmg101.tadv,:tfcmg101.ttyp,:tfcmg101.ninv,
+						:tfcmg101.schn,:tfcmg101.srno}
+			and	tfcmg118.leac refers to tfgld008
+			selectdo
+				tfcmg101.amnt = tfcmg118.vamt * (-1)
+				tcmcs052.dsca = strip$(tfcmg118.leac) & " " & strip$(tfgld008.desc)
+				rprt_send()
+			endselect
+		endif
+		
+						
+	endselect
+}
+
+function print.cheque.details(domain	tfgld.btno	hold.btno)
+{
+	select	tfcmg100.*,tfcmg003.desc, tccom100.nama
+	from	tfcmg100,tfcmg003, tccom100
+	where	tfcmg100._index4 = {:hold.btno}
+	and 	tfcmg100.typo = :tfcmg103.ttyp 
+	and 	tfcmg100.doco = :tfcmg103.docn 
+	and	tfcmg100.paym refers to tfcmg003 UNREF CLEAR
+	and	tfcmg100.ptbp refers to tccom100 UNREF CLEAR
+	order by tfcmg100._index4
+	selectdo
+		
+		hold.m = tfcmg100.amnt		 				|#ISGEC001075.n
+					|tfcmg100.amth = amnt.hc
+		select	tfcmg001.brch,tfcmg001.desc
+		from	tfcmg001
+		where	tfcmg001._index1 = {:tfcmg103.bank}
+		selectdo
+			select	tfcmg011.bank,tfcmg011.desc,tfcmg011.btyp,tfcmg011.badr,tfcmg011.bnam
+			from	tfcmg011
+			where	tfcmg011._index1 = {:tfcmg001.brch}
+			selectdo
+				select	tccom130.*
+				from	tccom130
+				where	tccom130._index1 = {:tfcmg011.badr}
+				selectdo
+					payable.at = strip$(tccom130.dsca)&"-"&strip$(tccom130.pstc)
+				selectempty
+					payable.at = ""
+				endselect
+			selectempty
+				payable.at = ""
+			endselect
+		selectempty
+			payable.at = ""
+		endselect	
+	endselect
+}
+function get.lines.details()
+{
+	extern domain tcmcs.str30 tfacp100.cdf_pono,tfacp100.cdf_cprj 
+	on case	tfcmg101.tadv
+	case 	tfcmg.tadv.purinv:
+	case 	tfcmg.tadv.purcred:
+			select	tfisg001.irno,tfisg001.cprj,tfisg001.invt,tfisg001.pinv,tfisg001.orno
+			from	tfisg001
+			where	tfisg001.invt = :tfcmg101.ttyp
+			and	tfisg001.pinv = :tfcmg101.ninv
+| 			and	tfisg001.ncmp = :tfcmg103.icmp				|#PATCH001045.n |ISGEC015037.o
+			and	tfisg001.ncmp = :tfcmg101.comp				|ISGEC015037.n
+			selectdo
+				v.irno = tfisg001.irno
+				v.docn = tfisg001.pinv
+				v.cprj = tfisg001.cprj
+				v.orno = tfisg001.orno
+			selectempty
+				select	tfacp100.ninv,tfacp100.cdf_cprj,tfacp100.cdf_irdt,tfacp100.cdf_pono,tfacp100.cinv
+				from	tfacp100
+				where	tfacp100.ctyp = :tfcmg101.ttyp
+				and	tfacp100.cinv = :tfcmg101.ninv
+| 				and	tfacp100._compnr = :tfcmg103.icmp		|#PATCH001045.n |ISGEC015037.o
+				and	tfacp100._compnr = :tfcmg101.comp		|ISGEC015037.n
+				selectdo
+					v.irno = tfacp100.ninv
+					v.docn = tfacp100.cinv
+					v.cprj = tfacp100.cdf_cprj
+					v.orno = tfacp100.cdf_pono
+				selectempty
+					v.irno = 0
+					v.docn = 0
+					v.cprj = ""
+					v.orno = ""
+				endselect 		
+			endselect		
+			break
+			
+	case 	tfcmg.tadv.advance:
+			tfcmg101.refr = "Advance"
+			tfacp100.ninv = 0
+			
+			select	tfmsl020.btno,tfmsl020.paym,tfmsl020.orno,tfmsl020.cprj
+			from	tfmsl020
+			where	tfmsl020.btno = :tfcmg101.btno
+			and	tfmsl020.paym = tfpaym.advice
+			selectdo
+				v.cprj = tfmsl020.cprj
+				v.orno = tfmsl020.orno
+			selectempty
+				v.irno = 0
+				v.docn = 0
+				v.cprj = ""
+				v.orno = ""
+			endselect
+			break
+			
+	case 	tfcmg.tadv.unallocated:
+			tfcmg101.refr = "Unallocated"
+			tfacp100.ninv = 0
+			
+			select	tfmsl020.btno,tfmsl020.paym,tfmsl020.orno,tfmsl020.cprj
+			from	tfmsl020
+			where	tfmsl020.btno = :tfcmg101.btno
+			and	tfmsl020.paym = tfpaym.advice
+			selectdo
+				v.cprj = tfmsl020.cprj
+				v.orno = tfmsl020.orno
+			selectempty
+				v.irno = 0
+				v.docn = 0
+				v.cprj = ""
+				v.orno = ""
+			endselect		
+			break
+			
+	case 	tfcmg.tadv.alone:
+| 			tfcmg101.refr = "Stand-alone"
+			tfacp100.ninv = 0	
+			break
+	endcase	
+}
+
+function get.project.description(domain	tccprj	i.cprj)
+{
+	select	tcmcs052.dsca
+	from	tcmcs052
+	where	tcmcs052._index1 = {:i.cprj}
+	selectdo
+	selectempty
+		tcmcs052.dsca = ""
+	endselect		
+}
+function get.bp.address(domain	 tccom.cadr	i.cadr)
+{
+| 	select	tccom130.ln01:v.ln01,tccom130.ln02:v.ln02,tccom130.ln03:v.ln03,tccom130.ln04:v.ln04	|#ISGEC001060.o
+	select	tccom130.nama, tccom130.namb, tccom130.namc, tccom130.namd,	|#ISGEC001060.n
+		tccom130.namf, tccom130.pstc, tccom130.telp, tccom130.tefx,	|#ISGEC001060.n
+		tccom130.ln01, tccom130.ln02,					|#ISGEC001075.n
+		tccom130.dsca							|# Ajayji.sujeet.n
+	from	tccom130
+	where	tccom130._index1 = {:i.cadr}
+	selectdo
+						|#ISGEC001060.sn
+		v.ln01 = trim$(tccom130.nama) & " " & trim$(tccom130.namb)			|#ISGEC001075.o
+| 		v.ln01 = trim$(tccom130.ln01) & " " & trim$(tccom130.ln02)			|#ISGEC001075.n
+		v.ln02 = trim$(tccom130.namc)
+		v.ln03 = trim$(tccom130.namd)
+| 		v.ln04 = trim$(tccom130.namf) & " " & trim$(tccom130.pstc)			|# Ajayji.sujeet.o
+		v.ln04 = trim$(tccom130.dsca) & " " & trim$(tccom130.pstc)			|# Ajayji.sujeet.n
+		v.ln05 = "Ph." & trim$(tccom130.telp)
+		v.ln06 = "Fax." & trim$(tccom130.tefx)
+		pay_to_bp = trim$(v.ln01)
+							|#ISGEC001060.en
+| 		pay_to_bp = trim$(v.ln01) & " " & trim$(v.ln02)		|#ISGEC001060.o
+		
+	selectempty
+		pay_to_bp = ""
+		v.ln01 = ""
+		v.ln02 = ""
+		v.ln03 = ""
+		v.ln04 = ""
+		v.ln05 = ""		|#ISGEC001060.n
+		v.ln06 = ""		|#ISGEC001060.n
+	endselect	
+}
+function get.project.from.CashFlow(domain	tfgld.btno	i.btno)
+{
+	select	tfmsl037.*
+	from	tfmsl037
+	where	tfmsl037._index1 = {:i.btno}
+	and	tfmsl037.mode = tfmode.advice.paym
+	selectdo
+		v.cprj = tfmsl037.cprj
+		get.project.description(tfmsl037.cprj)
+	endselect	
+}
+function replace.bp.name()
+{
+	select	tfcmg108.*
+	from	tfcmg108
+	where	tfcmg108._index1 = {:tfcmg103.btno}
+	selectdo
+| 		select	tccom130.nama
+		select	tccom130.ln01:v.ln01,tccom130.ln02:v.ln02,tccom130.ln03:v.ln03,tccom130.ln04:v.ln04
+		from	tccom130
+		where	tccom130._index1 = {:tfcmg108.bpad}
+		selectdo
+| 			tccom100.nama = tccom130.nama	|Commented by GT.25082014
+			pay_to_bp = trim$(v.ln01) & " " & trim$(v.ln02)	|Added by GT.25082014
+		selectempty			
+		endselect	
+	selectempty
+		select	tfcmg101.ttyp,tfcmg101.ninv
+		from	tfcmg101
+		where	tfcmg101._index1 = {:tfcmg103.btno}
+		and     tfcmg101.ptyp = :tfcmg103.ttyp				|#ISGEC001075.sn
+		and     tfcmg101.pdoc = :tfcmg103.docn				|#ISGEC001075.en
+		selectdo
+		endselect
+		
+		select	tfacp202.cadr
+		from	tfacp202
+		where	tfacp202._index1 = {:tfcmg101.ttyp,:tfcmg101.ninv}
+		selectdo
+			select	tccom130.ln01:v.ln01,tccom130.ln02:v.ln02,tccom130.ln03:v.ln03,tccom130.ln04:v.ln04
+			from	tccom130
+			where	tccom130._index1 = {:tfacp202.cadr}
+			selectdo
+				pay_to_bp = trim$(v.ln01) & " " & trim$(v.ln02)	|Added by GT.25082014
+			selectempty			
+			endselect	
+		endselect	
+	endselect	
+}

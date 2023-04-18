@@ -1,0 +1,194 @@
+|******************************************************************************
+|* tfisg2400m026  0  VRC B61U a7 isg 
+|* Print RTGS(Bank Format)
+|* Installation user             
+|* 2014-12-26
+|******************************************************************************
+|* Main table tfcmg101 Payment/Trade Notes Payable Advice, Form Type 4
+|*ISGEC001200
+|*Sandhya
+|*Report Devlopement
+|*26-12-2014
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttfcmg101 | Payment/Trade Notes Payable Advice
+	table	ttfcmg103
+	table	ttfcmg109	
+
+	extern  domain  tfgld.btno       payt.f
+	extern  domain  tfgld.btno       payt.t
+	extern  domain  tfgld.btno       btno.new
+	extern  domain  tfcmg.paym       paym
+	extern  domain  tfgld.date       date.f
+	extern  domain  tfgld.date       date.t  
+#include<bic_desktop> 
+|*************** File Handling Variables *******************
+	string		str(300), err.file(100), file.name(100),tadv.new(50)
+	string		cust.new(15),line3(3000), line4(3000),docn.str(10)
+	long		ret2, stat.fp
+|************** File Utilization Variables *******************************
+	extern	domain	tfcmg.topy	topy.new
+	extern	domain	tfgld.date	date.new
+	extern	domain	tccom.bpid	bpid.new
+	extern	domain	tfgld.amnt	amnt.new
+	extern	domain	tfgld.ttyp	ttyp.new
+	extern	domain	tfgld.docn	docn.new
+	
+	
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+
+choice.print.data:
+on.choice:
+	generate.file()
+
+	
+|****************************** field section *********************************
+
+field.payt.f:
+when.field.changes:
+   payt.t = payt.f
+   
+before.zoom:
+	query.extend.where.in.zoom("tfcmg109.stpp=tfcmg.stpp.posted")
+
+field.date.f:
+when.field.changes:
+   date.t = date.f
+   
+field.payt.t:
+before.zoom:
+	query.extend.where.in.zoom("tfcmg109.stpp=tfcmg.stpp.posted")
+
+
+
+
+|****************************** function section ******************************
+
+functions:
+
+
+function generate.file()
+{
+	open.file()
+	generate.header()
+	read.main.table()
+	close.file()
+}
+
+
+function open.file()
+{
+	err.file = bse.tmp.dir$() & str$(utc.num()) & ".xls"
+	
+	file.name = "c:\temp\" & str$(utc.num())  & ".xls"
+	
+	stat.fp = seq.open(err.file, "w+")
+	if stat.fp >0 then
+ 		seq.seek(0, 0, stat.fp)
+	endif
+}
+
+function close.file()
+{
+	seq.close(stat.fp)
+	ret2 = server2client(err.file,file.name,1)
+	ret2 = app_start(file.name,"c:","","","")
+}
+
+function Initialize.variable()
+{
+	topy.new = " "
+	date.new = 0
+	tadv.new = " "
+	bpid.new = " "
+	docn.str = " "
+	cust.new = " "
+	amnt.new = 0
+}
+
+function read.main.table()
+{
+    	btno.new = 0
+	select	tfcmg101.*,tfcmg109.stpp
+	from	tfcmg101,tfcmg109
+	where	tfcmg101._index1 inrange {:payt.f} and {:payt.t}
+	and	tfcmg101.paym= :paym 
+	and	tfcmg101.pdat inrange :date.f and :date.t
+	and	tfcmg101.btno refers to tfcmg109
+	and	tfcmg109.stpp = tfcmg.stpp.posted
+	selectdo
+		Initialize.variable()
+		topy.new = tfcmg101.topy
+		date.new = tfcmg101.pdat	
+		bpid.new = tfcmg101.ptbp
+		tadv.new = enum.descr$("tfcmg.tadv",tfcmg101.tadv)
+		
+		select	tfcmg103.btno,tfcmg103.amnt,tfcmg103.ttyp,tfcmg103.docn
+		from	tfcmg103
+		where	tfcmg103._index3 = {:tfcmg101.btno,:tfcmg101.paym} 
+		selectdo
+			if btno.new = tfcmg101.btno  then
+				continue
+			else
+				btno.new = tfcmg103.btno
+				docn.str = str$(tfcmg101.pdoc)
+				cust.new =  tfcmg103.ttyp &" "& str$(docn.str)
+				amnt.new = tfcmg103.amnt
+ 			endif
+		print.detail()
+		endselect
+		
+    endselect	    
+    
+}
+
+
+function	generate.header()
+{
+	line4 =	concat$("	",
+		sprintf$("Payment Type"),		|1
+		sprintf$("Payment Date"),		|2
+		sprintf$("Payee ID"),			|3
+		sprintf$("Payment Amount"),		|4
+		sprintf$("Customer Ref"),		|5
+		sprintf$("Payment Detail"),		|6	
+		sprintf$("Delivery Method"),		|7
+		sprintf$("Delivery To"),		|8
+		sprintf$("Print Location"),		|9
+		sprintf$("Payble Location"),		|10
+		sprintf$("POP Code"))			|11
+	line4 = strip$(shiftl$(line4))		
+	seq.puts(line4, stat.fp)	
+}
+
+function	print.detail()
+{	
+	line3 =	concat$("	",
+		sprintf$("%s", topy.new),				|1
+		sprintf$("%D(%02d/%02m/%04Y)",date.new),		|2
+		sprintf$("%s", bpid.new),				|3
+		sprintf$("%d", amnt.new),				|4
+		sprintf$("%s", cust.new),				|5
+		sprintf$("%s", tadv.new),				|6
+		sprintf$("%s", " "),					|7
+		sprintf$("%s", " "),					|8
+		sprintf$("%s", " "),					|9
+		sprintf$("%s", " "),					|10
+		sprintf$("%s", "SUPP"))				|11
+	line3 = strip$(shiftl$(line3))
+	seq.puts(line3, stat.fp)
+}	
+

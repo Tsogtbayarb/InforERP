@@ -1,0 +1,554 @@
+|******************************************************************************
+|* tpisg2210m000  0  VRC B61U a7 isg 
+|* Export Product Activity Relationship
+|* merino1                       
+|* 2018-02-15
+|******************************************************************************
+|* Main table tpisg210 Product Wise Activity Relationship., Form Type 4
+|******************************************************************************
+|* ID: ISGEC01117, Sahil Sharma, VRC B61U a7 isg, 24-Oct-2018
+|* New Development
+|****************************** declaration section ***************************
+declaration:
+
+#pragma used dll ottdllbw
+#include <bic_dam>
+
+	table	ttpisg210 | Product Wise Activity Relationship
+	table	ttpisg200 | Product Wise Activity Master
+	table	ttpisg221
+	table	ttpisg220
+
+	|--------------------- Form Variables ----------------------------------
+	
+	extern	domain	tcorno		f.pcod		fixed
+	extern	domain	tcdsca		cprd.desc	fixed
+	extern	domain	tcmcs.str100m	file.path
+	extern	domain	tccprj		proj.f
+	extern	domain	tcdsca		dsca
+	extern	domain	tcyesno		onetime
+	extern	domain	tcyesno		regular
+	
+	
+	|--------------------- File Upload Variables --------------------------
+	
+	string	export.file(100), client.file(100), line(3500)
+	long	ret_val1,file_pntr,flag
+	
+	|---------------------- Script Variables -------------------------------
+	
+	domain	tcmcs.long	id_data
+	domain	tcmcs.str256m	name_data
+	domain	tcmcs.str256m	pred_data,var_pred.data
+	domain	tcmcs.str30	cact_data,old_cact
+	domain	tcmcs.str30	dura_data
+	domain	tcmcs.str30	stat_data, acsd_data, str.date
+	domain	tcmcs.str30	fins_data, acfn_data
+	domain	tcmcs.str30	sucs_data
+	domain	tcmcs.str30	outl_data	
+	domain	tcmcs.str30	pact_data							|#ISGECMOD027.sn
+	domain	tcorno		dept_data
+	domain	tcorno		acty_data							|#ISGECMOD027.en
+	domain	tcmcs.long	o.actp,i.lent,							|#ISGECMOD024.sn
+				name_actp							
+	domain	tcmcs.str2	i.rltp								|#ISGECMOD024.en							
+	domain	tcmcs.str215	mess.show						
+	long 			g.count, progress.perc,g.total,ret
+	domain	tcmcs.double	slck_data, roundedcpgv
+	domain	tcmcs.str10	str.cpgv
+	domain	tcpono		truncatedcpgv, found
+	domain	tcqiv1		cpgv_data
+	domain	tfgld.date	chk.date,
+				mosd_data,	|#Atul.14.11.2018.sn
+				moed_data	|#Atul.14.11.2018.en
+|****************************** program section ********************************
+
+before.program:
+	chk.date =  date.to.num(2000,01,01)
+	str.date = str$(chk.date)
+|****************************** group section **********************************
+
+group.1:
+init.group:
+	get.screen.defaults()
+
+|***************************** field section ***********************************
+field.onetime:
+when.field.changes:
+	if onetime = tcyesno.yes then
+		regular = tcyesno.no
+		disable.fields("regular")
+	else
+		enable.fields("regular")
+	endif
+	
+field.regular:
+when.field.changes:
+	
+	if regular = tcyesno.yes then
+		onetime = tcyesno.no
+		disable.fields("onetime")
+		
+	else
+		enable.fields("onetime")
+	endif
+
+field.all:
+before.input:
+	refresh.parent(-1)
+|********************************** choice section *********************************
+
+choice.update:
+before.choice:
+	check.all.input()
+
+on.choice:
+	ret = create.progress.indicator ("Export Project Activity Wise Relationship",
+                                                 PROGRESS.BAR + PROGRESS.STOP)
+
+	export.product.wise.activity.relationship()
+|******************************* function section ************************
+
+functions:
+
+function export.product.wise.activity.relationship()
+{	
+	export.file = bse.dir$() & strip$(str$(utc.num()))&".xls"
+	
+	client.file = "c:\temp\" & "ActualProgress_to_MSP" & ".xls"
+
+	file_pntr  = seq.open(export.file, "w+")
+	if file_pntr >= 1 then
+
+		read.main.table()
+		seq.close(file_pntr)
+		
+		ret_val1 = server2client(export.file,client.file,1)
+		ret_val1 = app_start(client.file,"c:","","","")
+		file.rm(export.file)
+	endif
+}
+
+function read.main.table()
+{
+
+	id_data = 0
+	
+	generate.header()
+	
+	flag = 0 
+	
+	if flag = 0 then									|#Anadi.sn 24-07-2018
+		select	tpisg220.pcod,
+			tpisg220.cact,
+			tpisg220.actp
+		from	tpisg220
+		where	tpisg220._index1 = {:proj.f}
+		group by tpisg220.pcod, tpisg220.cact, tpisg220.actp
+		order by tpisg220.actp
+		selectdo
+			g.total = g.total + 1 
+		endselect
+		flag = flag + 1
+		tpisg220.pcod = ""
+		tpisg220.cact = ""
+		tpisg220.actp = 0
+	endif	
+	
+	
+	select	tpisg220.pcod,
+		tpisg220.cact,
+		tpisg220.actp
+	from	tpisg220
+	where	tpisg220._index1 = {:proj.f}
+	group by tpisg220.pcod, tpisg220.cact, tpisg220.actp
+	order by tpisg220.actp
+	selectdo
+		id_data = id_data + 1
+		
+		
+		
+		g.count = g.count + 1								|#Anadi.sn 24-07-2018
+		progress.perc = (g.count * 100.0) / (g.total * 1.0)
+		if progress.perc > 100 then
+			progress.perc = 100
+		endif
+		ret = change.progress.indicator (progress.perc)				|#Anadi.en 24-07-2018
+		
+		
+	
+
+		select	tpisg221.pcod, tpisg221.cprj, tpisg221.cact
+		from	tpisg221
+		where	tpisg221._index1 = {:proj.f,:tpisg220.pcod,:tpisg220.cact}
+		group by tpisg221.pcod, tpisg221.cprj, tpisg221.cact
+		order by tpisg221.pcod, tpisg221.cprj, tpisg221.cact
+		selectdo
+	
+
+			initialize()
+			cact_data = tpisg221.cact
+			pred_data = ""
+			
+			if old_cact = tpisg220.cact then
+				message("found")
+			endif
+				old_cact = tpisg220.cact
+
+			
+			select	tpisg220.sdst:stat_data,
+				tpisg220.desc:name_data,
+				tpisg220.actp:name_actp,
+				tpisg220.pact:pact_data,
+				tpisg220.dept:dept_data,
+				tpisg220.acty:acty_data,
+				tpisg220.sdfn:fins_data,
+				tpisg220.dura:dura_data,
+				tpisg220.pred:var_pred.data,
+				tpisg220.slck:slck_data,		
+				tpisg220.cpgv:cpgv_data,		
+				tpisg220.acsd:acsd_data,		
+				tpisg220.acfn:acfn_data,		
+				tpisg220.outl,
+				tpisg220.cprj,
+				tpisg220.mosd:mosd_data,		|#Atul.14.11.2018.sn
+				tpisg220.moed:moed_data			|#Atul.14.11.2018.en
+			from	tpisg220
+			where	tpisg220._index1 = {:proj.f,:tpisg220.pcod,:tpisg220.cact}
+			selectdo
+				outl_data = str$(tpisg220.outl)
+			selectempty
+				stat_data = ""
+				fins_data = ""
+				name_data = ""
+				outl_data = ""
+				pact_data = ""							|#ISGECMOD027.sn
+				dept_data = ""
+				acty_data = ""
+				name_actp = 0
+				mosd_data = 0				|#Atul.14.11.2018.sn
+				moed_data = 0				|#Atul.14.11.2018.en
+			endselect
+			
+			roundedcpgv = 0
+			truncatedcpgv = 0
+			
+			if cpgv_data < 99.5 then
+				roundedcpgv = round(cpgv_data,0,1)
+			else
+				roundedcpgv = round(cpgv_data,0,0)
+			endif
+			
+			if (roundedcpgv = 100) then
+				if (acsd_data < str.date) or (acfn_data < str.date) then
+					roundedcpgv = 0
+					acsd_data = ""
+					acfn_data = ""
+				endif
+			else
+				if (roundedcpgv = 0) then
+					acsd_data = ""
+					acfn_data = ""
+				else
+					if (roundedcpgv <> 0) and (acsd_data < str.date) then
+						roundedcpgv = 0
+						acsd_data = ""
+						acfn_data = ""
+					endif
+				endif
+			endif
+			
+			if trim$(acty_data) = "PARENT" 	then
+				roundedcpgv = 0
+				acsd_data = ""
+				acfn_data = ""
+			endif
+			
+| 			found = 0
+| 			if (roundedcpgv > 0) and (roundedcpgv < 100) then
+| 				if (acsd_data = "0") then
+| 					found = 1
+| 				else
+| 					found = 0
+| 				endif
+| 			endif
+			
+			if roundedcpgv <> 0 then
+				str.cpgv = str$(roundedcpgv)&"%"
+			else
+				str.cpgv = ""
+			endif
+			
+			select	tpisg221.*
+			from	tpisg221
+			where	tpisg221._index1 = {:tpisg221.cprj,:tpisg221.pcod,:tpisg221.cact}
+			selectdo
+
+				if not isspace(tpisg221.pact) then
+
+
+					get.activity.position(tpisg221.cprj,
+							      tpisg221.pcod,
+							      tpisg221.pact,
+							      o.actp)
+				else			      
+
+					get.activity.position(tpisg221.cprj,
+							      tpisg221.pcod,
+							      tpisg221.cact,
+							      o.actp)
+				endif			      
+												|#ISGECMOD024.en
+
+				on case etol(tpisg221.rltp)
+				case 1 :	|* Stat-to-Start (tppss.rsty.stst)
+					i.rltp = "SS"
+					break
+				case 2 :	|* Start-to-Finish (tppss.rsty.stfi)
+					i.rltp = "SF"
+					break
+				case 3 :	|* Finish-to-Start (tppss.rsty.fist)
+					i.rltp = "FS"
+					break
+				case 4 :	|* Finish-to-Finish (tppss.rsty.fifi)
+					i.rltp = "FF"
+					break
+				default :
+					i.rltp = ""
+				endcase
+				
+				if tpisg221.lelg = 0	then
+					if i.rltp = "FS"	then
+						pred_data = trim$(pred_data) & str$(o.actp) 
+						pred_data = trim$(pred_data) & "|"
+					else
+						pred_data = trim$(pred_data) & str$(o.actp) 
+						pred_data = trim$(pred_data) & i.rltp & "|"
+					endif
+				else if tpisg221.lelg < 0	then
+					pred_data = trim$(pred_data) & str$(o.actp) 
+					pred_data = trim$(pred_data) & i.rltp 
+					pred_data = trim$(pred_data) & str$(tpisg221.lelg) & " days|"
+				else if tpisg221.lelg > 0	then
+					pred_data = trim$(pred_data) & str$(o.actp) 
+					pred_data = trim$(pred_data) & i.rltp & "+" 
+					if tpisg221.lelg = 1 then							|#ISEC01097.sn								
+						pred_data = trim$(pred_data) & str$(tpisg221.lelg) & " day|"		
+					else
+						pred_data = trim$(pred_data) & str$(tpisg221.lelg) & " days|"		
+					endif										|#ISEC01097.en
+				endif
+				endif
+				endif
+			endselect
+			
+			i.lent = len(trim$(pred_data))
+			
+			if i.lent > 0	then
+				pred_data = pred_data(1;(i.lent-1))
+			else
+				pred_data = ""
+			endif
+		
+			if i.lent > 255 then										|#ISGEC01097.sn
+				mess.show = "The Length of Precessor Data for the Product "&tpisg221.pcod&
+						" and Activity "&tpisg221.cact&" with Description"&
+						name_data&" is exceeding 255 characters"
+				message(mess.show)
+			endif			
+															|#ISGEC01097.en
+			sucs_data = ""
+			
+			
+			pred_data = shiftl$(strip$(pred_data))
+			
+			line =	concat$("	",				
+				sprintf$("%d",name_actp),	|1
+| 				sprintf$("%f",cpgv_data),	|2
+| 				sprintf$("%@ZZZZVDZZ@",roundedcpgv),	|2
+				sprintf$("%s", str.cpgv),	|2
+| 				sprintf$("%D(%02d/%02m/%04Y)",acsd_data),	|3
+| 				sprintf$("%D(%02d/%02m/%04Y)",acfn_data))	|4
+				sprintf$("%D(%02d/%02m/%04Y)",mosd_data),	|3	|#Atul.14.11.2018.sn
+				sprintf$("%D(%02d/%02m/%04Y)",moed_data))	|4	|#Atul.14.11.2018.en
+				
+
+			line = shiftl$(strip$(line))
+			
+			seq.puts(line,file_pntr)
+			
+		selectempty									|#ISGECMOD024.sn
+			print.no.pre.data()
+		endselect									
+	endselect										|#ISGECMOD024.en	
+	
+	message("%d Records Processed....", id_data)
+}
+
+function generate.header()
+{
+	line = ""
+	line =	concat$("	",
+		sprintf$("Id"),						|1
+		sprintf$("Actual Progress Percentage Completed"),		|2
+| 		sprintf$("Actual Start"),					|3
+| 		sprintf$("Actual Finish"))					|4
+		sprintf$("Manual Outlook Start Date"),				|3		|#Atul.14.11.2018.sn
+		sprintf$("Manual Outlook End Date"))				|4
+												|#Atul.14.11.2018.en
+											
+											
+	
+	line = shiftl$(strip$(line))
+	
+	seq.puts(line,file_pntr)
+}
+
+function get.activity.position(
+		domain	tccprj		i.cprj,
+		domain	tcorno		i.pcod,
+		domain	tcmcs.str30	i.cact,
+	ref	domain	tcmcs.long	o.actp)
+{
+
+	select	tpisg220.actp:o.actp
+	from	tpisg220
+	where	tpisg220._index1 = {:i.cprj,:i.pcod,:i.cact}
+	selectdo
+	selectempty
+		o.actp = 0
+	endselect
+}
+
+function initialize()
+{
+	dura_data = ""
+	stat_data = ""
+	fins_data = ""
+	sucs_data = ""
+	outl_data = ""
+	name_data = ""
+	cact_data = ""
+	pred_data = ""
+	pact_data = ""								|#ISGECMOD027.sn
+	dept_data = ""
+	acty_data = ""
+	name_actp = 0 								|#ISGECMOD027.en
+	mosd_data = 0								|#Atul.14.11.2018.sn
+	moed_data = 0	
+										|#Atul.14.11.2018.en
+}
+										|#ISGECMOD024.sn
+function print.no.pre.data()
+{
+	initialize()
+	cact_data = tpisg220.cact
+	pred_data = ""
+	i.rltp = ""
+	o.actp = 0
+	
+
+	
+	select	tpisg220.sdst:stat_data,
+		tpisg220.desc:name_data,
+		tpisg220.actp:name_actp,
+		tpisg220.pact:pact_data,
+		tpisg220.dept:dept_data,
+		tpisg220.acty:acty_data,
+		tpisg220.sdfn:fins_data,
+		tpisg220.dura:dura_data,
+		tpisg220.pred:var_pred.data,
+		tpisg220.slck:slck_data,
+		tpisg220.cpgv:cpgv_data,		
+		tpisg220.acsd:acsd_data,		
+		tpisg220.acfn:acfn_data,	
+		tpisg220.outl,
+		tpisg220.mosd:mosd_data,	|#Atul.14.11.2018.sn
+		tpisg220.moed:moed_data		|#Atul.14.11.2018.en
+	from	tpisg220
+	where	tpisg220._index1 = {:proj.f,:tpisg220.pcod,:tpisg220.cact}
+	selectdo
+		outl_data = str$(tpisg220.outl)
+	selectempty
+		stat_data = ""
+		fins_data = ""
+		name_data = ""
+		outl_data = ""
+		pact_data = ""
+		dept_data = ""
+		acty_data = ""
+		name_actp = 0
+		mosd_data = 0			|#Atul.14.11.2018.sn
+		moed_data = 0			|#Atul.14.11.2018.en
+	endselect
+	
+	roundedcpgv = 0
+	truncatedcpgv = 0
+	
+	if cpgv_data < 99.5 then
+		roundedcpgv = round(cpgv_data,0,1)
+	else
+		roundedcpgv = round(cpgv_data,0,0)
+	endif
+	
+	
+	if (roundedcpgv = 100) then
+		if (acsd_data < str.date) or (acfn_data < str.date) then
+			roundedcpgv = 0
+			acsd_data = ""
+			acfn_data = ""
+		endif
+	else
+		if (roundedcpgv = 0) then
+			acsd_data = ""
+			acfn_data = ""
+		else
+			if (roundedcpgv <> 0) and (acsd_data < str.date) then
+				roundedcpgv = 0
+				acsd_data = ""
+				acfn_data = ""
+			endif
+		endif
+	endif
+	
+	if trim$(acty_data) = "PARENT" 	then
+		roundedcpgv = 0
+		acsd_data = ""
+		acfn_data = ""
+	endif
+	
+| 	if (roundedcpgv > 0) and (roundedcpgv < 100) then
+| 		if (acsd_data = "0") then
+| 			found = 1
+| 		else
+| 			found = 0
+| 		endif
+| 	endif
+	
+	if roundedcpgv <> 0 then
+		str.cpgv = str$(roundedcpgv)&"%"
+	else
+		str.cpgv = ""
+	endif
+	
+	pred_data = shiftl$(strip$(pred_data)) 
+	
+| 	if found = 0 then
+		line =	concat$("	",
+
+			sprintf$("%d",name_actp),	|1
+| 			sprintf$("%f",cpgv_data),	|2
+| 			sprintf$("%@ZZZZVDZZ@",roundedcpgv),	|2
+			sprintf$("%s",str.cpgv),	|2
+| 			sprintf$("%D(%02d/%02m/%04Y)",acsd_data),	|3
+| 			sprintf$("%D(%02d/%02m/%04Y)",acfn_data))	|4
+			sprintf$("%D(%02d/%02m/%04Y)",mosd_data),	|3		|#Atul.14.11.2018.sn
+			sprintf$("%D(%02d/%02m/%04Y)",moed_data))	|4		|#Atul.14.11.2018.o
+			
+		line = shiftl$(strip$(line))
+		seq.puts(line,file_pntr)
+| 	endif
+}
+										
+
+|******************************* END *************************************

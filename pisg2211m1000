@@ -1,0 +1,124 @@
+|******************************************************************************
+|* tpisg2211m100  0  VRC B61U a7 isg 
+|* Update Material Cost [Fiscal Year-Period-Date]
+|* Installation user             
+|* 2014-10-15
+|******************************************************************************
+|* Form Type 4
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+	table	ttpppc211
+	table	ttfgld005
+	table	ttdisg831
+	table	ttdisg832
+	
+	extern	domain	tccprj		cprj.f
+	extern	domain	tccprj		cprj.t
+	extern	domain	tfgld.year	year.f
+	extern	domain	tfgld.prod	peri.f
+	extern	domain	tfgld.year	f.fyer.f
+	extern	domain	tfgld.prod	f.peri.f
+	extern	domain	tfgld.date	f.rgdt.f
+	extern	domain	tcdate		utc_date
+	long ret_val
+	boolean found
+	
+	
+	long yearno
+	long monthno
+	long month_dayno
+	long hours
+	long minutes
+	long seconds
+	
+	domain	tfgld.date		local.date
+
+|****************************** program section ********************************
+
+field.cprj.f:
+when.field.changes:
+	cprj.t = cprj.f
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+
+
+choice.cont.update:
+on.choice:
+| 	ret_val = local.to.utc(f.rgdt.f,0,utc_date) 
+
+	
+	select 	tpppc211.cprj,
+		tpppc211.item,
+		tpppc211.sern,
+		tpppc211.orno,
+		tpppc211.pono
+	from	tpppc211
+	where	tpppc211._index1 inrange {:cprj.f} and {:cprj.t}
+| 	and	tpppc211.year = :year.f
+| 	and	tpppc211.peri = :peri.f
+	and	tpppc211.tetb = tpppc.tetb.stock
+	selectdo
+		found = false
+		select 	tdisg832.worn,
+			tdisg832.wlin,
+			tdisg831.ivdt
+		from	tdisg832,tdisg831
+		where	tdisg832.worn = :tpppc211.orno
+		and	tdisg832.wlin = :tpppc211.pono
+		and	tdisg832.edrn refers to tdisg831
+		selectdo
+		selectempty
+			found = true
+		endselect
+		
+		if found then
+			continue
+		endif
+		
+		
+		utc.to.date  (tdisg831.ivdt,  yearno,  monthno,month_dayno, hours,minutes, seconds)
+
+		local.date = date.to.num  ( yearno,  monthno,  month_dayno)
+		
+		select 	tfgld005.year,
+			tfgld005.prno,
+			tfgld005.stdt
+		from	tfgld005
+		where	tfgld005._index1 = {1}
+		and	tfgld005.stdt <= :local.date
+		order by tfgld005.stdt desc
+		as set with 1 rows
+		selectdo
+		endselect
+		
+	
+		select 	tpppc211.year,
+			tpppc211.peri,
+			tpppc211.fyea,
+			tpppc211.fper,
+			tpppc211.ltdt,
+			tpppc211.rgdt,
+			tpppc211.rdat
+		from	tpppc211 for update
+		where	tpppc211._index1 = {:tpppc211.cprj,:tpppc211.item,:tpppc211.sern}
+		as set with 1 rows
+		selectdo
+			tpppc211.year = tfgld005.year
+			tpppc211.peri = tfgld005.prno
+			tpppc211.fyea = tfgld005.year
+			tpppc211.fper = tfgld005.prno
+| 			tpppc211.ltdt = tdisg831.ivdt
+			tpppc211.rgdt = local.date
+| 			tpppc211.rdat = tdisg831.ivdt
+			db.update(ttpppc211,db.retry,e)
+			commit.transaction()
+		endselect
+	endselect
+	
+		

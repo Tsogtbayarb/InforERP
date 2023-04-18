@@ -1,0 +1,108 @@
+|******************************************************************************
+|* tfisg2400m030  0  VRC B61U a7 isg 
+|* Print outstanding Advance
+|* Installation user             
+|* 2014-12-22
+|******************************************************************************
+|* Form Type 4
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+	table	ttfacp200
+	table	ttccom100
+	table	ttcmcs052
+	table	ttdpur400
+	
+	extern	domain	tccprj		o.cprj
+	extern	domain	tccprj		cprj.f,cprj.t
+	extern	domain	tccom.bpid	ifbp.f,ifbp.t
+	extern	domain	tfgld.amnt	adv.adj.amnt
+	extern	domain	tcorno		o.orno
+
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.cont.process:
+on.choice:
+   execute(print.data)
+
+choice.print.data:
+on.choice:
+   if rprt_open() then
+       read.main.table()
+       rprt_close()
+   else
+       choice.again()
+   endif
+
+
+|****************************** field section *********************************
+
+field.cprj.f:
+when.field.changes:
+	cprj.t = cprj.f
+
+field.ifbp.f:
+when.field.changes:
+	ifbp.t = ifbp.f
+	
+|****************************** function section ******************************
+
+functions:
+
+function read.main.table()
+{
+	select 	tfacp200.cdf_cprj:o.cprj,
+		tfacp200.cdf_prno:o.orno,
+		tfacp200.amth,
+		tfacp200.ifbp,
+		tfacp200.balh,
+		tccom100.nama
+	from	tfacp200,tccom100
+	where	tfacp200._index2 inrange {:ifbp.f} and {:ifbp.t}
+	and	tfacp200.cdf_cprj inrange :cprj.f and :cprj.t
+	and	tfacp200.tpay = tfacp.tpay.advance
+	and	tfacp200.balh(1) <> 0
+	and	tfacp200.ifbp refers to tccom100
+	selectdo
+		
+		
+		if not isspace(o.cprj) then
+			select 	tcmcs052.dsca
+			from	tcmcs052
+			where	tcmcs052._index1 = {:o.cprj}
+			as set with 1 rows
+			selectdo
+			selectempty
+				tcmcs052.dsca = ""
+			endselect
+		endif
+		
+		tdpur400.odat = 0 
+		if not isspace(o.orno) then
+			select 	tdpur400.odat
+			from	tdpur400
+			where	tdpur400._index1 = {:o.orno}
+			as set with 1 rows
+			selectdo
+			selectempty
+				tdpur400.odat = 0
+			endselect
+		endif
+		adv.adj.amnt = 0
+		
+		adv.adj.amnt = tfacp200.amth(1) - tfacp200.balh(1)
+		
+		rprt_send()
+	endselect
+
+}

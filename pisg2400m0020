@@ -1,0 +1,363 @@
+|******************************************************************************
+|* tfisg2400m002  0  VRC B61U a7 live
+|* Print 
+|* Tools                         
+|* 2014-05-31	
+|******************************************************************************
+|* Main table tfacp200 Open Items (Purchase Invoices &amp; Payments), Form Type 4
+|******************************************************************************
+|* IDENT ISGEC001036, Ritu Shrivastava, 31-05-2014, B61U a7 live   
+|*******************************************************************************
+|* IDENT ISGEC01050,  Mani sharma , 05-02-2015, B61U a7 isg
+|* Print correct Project and date
+|*
+|* ID ISGEC01081,	Sujeet Kumar,	2015-10-06
+|*
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttfacp200 | Open Items (Purchase Invoices &amp; Payments)
+  table	   ttdpur400
+  table	   ttfmsl020
+  table   ttfcmg100
+  table   ttfcmg112
+  table   ttfacp203
+  table   ttfgld106
+
+	extern	domain	tccom.bpid	otbp.f,otbp.t
+	extern	domain	tcorno		orno.f,orno.t
+	extern	domain	tccprj		cprj.f,cprj.t
+	extern	domain	tcorno		pur.orno
+	extern	domain	tccprj		pur.cprj
+	extern	domain	tfgld.date	pur.odat,v.date
+	extern	domain	tfgld.amnt	link.amnt(3) 
+	extern	domain	tcamnt		balance.amnt, link.amnt.var 
+	extern	domain	tfgld.amnt	total.link
+	extern	domain	tfgld.amnt	total.link.po
+	extern	domain	tfgld.amnt	total.link.bp
+	extern	domain	tfgld.amnt	po.amnt
+	extern	domain	tfgld.amnt	bp.amnt
+	extern	domain	tcmcs.str20	tran_doc,typa_doca,prnt.doc
+	extern	domain	tfcmg.cheq	i.cheq
+	extern	domain	tfcmg.bank	v.bank,v.bank1
+	extern domain  tccprj          cprj.var
+	extern domain  tcorno          order.var
+	extern domain  tcdate          date.var
+	extern domain  tfgld.amnt      amnt.with.tds,tds.amount,new.amnt
+	long v  
+	
+	extern	domain	tcncmp		cono.f			|#36142.n
+|****************************** program section ********************************
+before.program:
+	v.date = date.num()
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.cont.process:
+on.choice:
+   execute(print.data)
+
+choice.print.data:
+on.choice:
+		
+								|#36142.sn
+	select 	tfgld001.ncmp
+	from	tfgld001
+	where	tfgld001._index1 = {:cono.f}
+	as set with 1 rows
+	selectdo
+	selectempty
+		message("Enter Valid Financial Company")
+		choice.again()
+	endselect
+	
+								|#36142.en
+   if rprt_open() then
+       read.main.table()
+       rprt_close()
+   else
+       choice.again()
+   endif
+
+
+|****************************** field section *********************************
+
+field.otbp.f:
+when.field.changes:
+	otbp.t = otbp.f
+
+field.orno.f:
+when.field.changes:
+	orno.t = orno.f
+
+field.cprj.f:
+when.field.changes:
+	cprj.t = cprj.f
+
+
+|****************************** function section ******************************
+
+functions:
+
+function read.main.table()
+{
+							|#36142.n
+	domain	tcncmp		i.curr.comp
+	
+	i.curr.comp = get.compnr()
+	
+	if i.curr.comp <> cono.f then
+		switch.to.company(cono.f)
+	endif
+							|#36142.n
+	domain	tfgld.amnt		actual.amnt
+	new.amnt = 0
+	select 	tfacp200.*,
+		tccom100.nama
+	from	tfacp200,tccom100
+	where	tfacp200._index2 inrange {:otbp.f} and {:otbp.t}
+	and	tfacp200.cdf_prno inrange :orno.f and :orno.t
+	and	tfacp200.cdf_cprj inrange :cprj.f and :cprj.t
+	and	tfacp200.tpay in (tfacp.tpay.advance, tfacp.tpay.advance.ant)
+	and	tfacp200.docn = 0
+| 	and	(tfacp200.balc <> 0 or tfacp200.bala <> 0)			|#ISGEC01081.o
+	and	tfacp200.ifbp refers to tccom100
+	selectdo
+										|#ISGEC01081.so
+		if tfacp200.tpay = tfacp.tpay.advance.ant and (tfacp200.balh(1) + tfacp200.bahc(1) = 0) then
+			continue
+		endif
+										|#ISGEC01081.so
+		
+		 v = get.var(pid,"tfacp200.cdf_cprj",cprj.var)			|ISGEC01050.sn
+		 v = get.var(pid,"tfacp200.cdf_prno",order.var)
+		new.amnt = abs(tfacp200.amth(1))
+		select 	tdpur400.odat:date.var
+		from	tdpur400
+		where	tdpur400._index1 = {:order.var}
+		and	tdpur400._compnr = 200				|#36142.n
+		as set with 1 rows
+		selectdo
+		selectempty
+			date.var = 0
+		endselect							|ISGEC01050.en
+		
+		select tfmsl020.orno:pur.orno,
+		        tfmsl020.bpid,
+			tfmsl020.cprj:pur.cprj
+		from   tfmsl020
+		where  tfmsl020._index4 = {:tfacp200.ttyp,:tfacp200.ninv,:tfacp200.line}     |ISGEC01050.n
+		selectdo			
+			select 	tdpur400.odat:pur.odat
+			from	tdpur400
+			where	tdpur400._index1 = {:pur.orno}
+			and	tdpur400._compnr = 200				|#36142.n
+			as set with 1 rows
+			selectdo
+			endselect
+		selectempty
+			pur.orno = ""
+			pur.cprj = ""
+			pur.odat = 0
+			select tfcmg112.tdoc,tfcmg112.pdoc
+			from   tfcmg112
+			where  tfcmg112._index2 = {:tfacp200.ttyp,:tfacp200.ninv,:tfacp200.line}
+			selectdo
+				tran_doc = tfcmg112.tdoc & "/" & str$(tfcmg112.pdoc)| & "/" & str$(tfacp200.line)
+				select tfmsl020.orno:pur.orno,
+					tfmsl020.bpid,
+					tfmsl020.cprj:pur.cprj
+				from   tfmsl020
+				where  tfmsl020._index4 = {:tfcmg112.tdoc,:tfcmg112.pdoc}
+				selectdo
+					select 	tdpur400.odat:pur.odat
+					from	tdpur400
+					where	tdpur400._index1 = {:pur.orno}
+					and	tdpur400._compnr = 200				|#36142.n
+					as set with 1 rows
+					selectdo
+					endselect
+				selectempty
+					pur.orno = ""
+					pur.cprj = ""
+					pur.odat = 0
+				endselect
+			selectempty
+				pur.orno = ""
+				pur.cprj = ""
+				pur.odat = 0
+			endselect
+		endselect
+		
+		tran_doc = tfacp200.ttyp & "/" & str$(tfacp200.ninv) & "/" & str$(tfacp200.line)
+		link.amnt(1) = 0
+		balance.amnt = 0
+| 		balance.amnt = abs(tfacp200.amnt)	|test.n
+		total.link = 0
+		typa_doca = ""
+		i.cheq = ""
+		
+		select 	tfacp200.typa,tfacp200.doca,tfacp200.pdoc
+		from	tfacp200
+		where	tfacp200.tdoc = :tfacp200.ttyp
+		and	tfacp200.docn = :tfacp200.ninv
+		and	tfacp200.lino = :tfacp200.line
+		and     tfacp200.tpay in (tfacp.tpay.advance, tfacp.tpay.advance.ant, tfacp.tpay.assignment)  
+		selectdo
+			if tfacp200.doca <> 0 then
+				typa_doca = tfacp200.typa & "/" & str$(tfacp200.doca)
+				i.cheq = tfacp200.pdoc
+			endif	
+		selectempty
+			select tfcmg112.tdoc,tfcmg112.pdoc
+			from   tfcmg112
+			where  tfcmg112._index2 = {:tfacp200.ttyp,:tfacp200.ninv,:tfacp200.line}
+			as set with 1 rows
+			selectdo
+				if tfcmg112.pdoc <> 0 then
+					typa_doca = tfcmg112.tdoc & "/" & str$(tfcmg112.pdoc)
+				endif	
+			endselect	
+		endselect	
+		
+		if isspace(i.cheq) then
+			select tfcmg112.tdoc,tfcmg112.pdoc
+			from   tfcmg112
+			where  tfcmg112._index2 = {:tfacp200.ttyp,:tfacp200.ninv,:tfacp200.line}
+			selectdo
+				v.bank = get_reference(tfcmg112.tdoc,tfcmg112.pdoc)
+				
+				if not isspace(v.bank) then
+					select 	tfcmg100.cheq
+					from   	tfcmg100
+					where  	tfcmg100.typo = :tfcmg112.tdoc
+					and    	tfcmg100.doco = :tfcmg112.pdoc
+					and	tfcmg100.bank = :v.bank
+					selectdo
+						i.cheq = tfcmg100.cheq
+					selectempty
+						i.cheq = ""
+					endselect
+				endif	
+			selectempty
+				v.bank = get_reference(tfacp200.typa,tfacp200.doca)
+				
+				if not isspace(v.bank) then
+					select 	tfcmg100.cheq
+					from   	tfcmg100
+					where  	tfcmg100.typo = :tfacp200.typa
+					and    	tfcmg100.doco = :tfacp200.doca
+					and	tfcmg100.bank = :v.bank
+					selectdo
+						i.cheq = tfcmg100.cheq
+					selectempty
+						i.cheq = ""
+					endselect
+				endif	
+			endselect
+		endif	
+		
+		if isspace(typa_doca) then
+			select 	tfacp200.typa,tfacp200.doca
+			from	tfacp200
+			where	tfacp200._index1 = {:tfacp200.ttyp,:tfacp200.ninv,:tfacp200.line}
+			and	tfacp200.typa = :tfacp200.ttyp
+			and	tfacp200.doca = :tfacp200.ninv
+			and     tfacp200.tpay in (tfacp.tpay.advance.ant, tfacp.tpay.advance.ant, tfacp.tpay.assignment)  
+			selectdo
+| 				tran_doc = ""			|#sujeet
+				typa_doca = tfacp200.typa & "/" & str$(tfacp200.doca)
+			endselect
+		endif	
+		
+		if isspace(tran_doc) then
+			prnt.doc = typa_doca
+		else
+			prnt.doc = tran_doc
+		endif
+	
+		tds.amount = 0
+		select tfacp203.amti,tfacp203.txtp
+		from   tfacp203
+		where  tfacp203._index1 = {:tfacp200.ttyp,:tfacp200.ninv,:tfacp200.line}
+		selectdo
+			if etol(tfacp203.txtp) = 5  then
+				tds.amount = tds.amount + tfacp203.amti
+			endif
+		endselect
+		link.amnt(1)=0	
+		amnt.with.tds = 0
+		
+		if tfacp200.balh(1) = 0 then		|temp.n
+			tfacp200.balh(1) = tfacp200.bahc(1)
+		endif					|temp.n
+		
+		select 	tfacp200.tdoc,
+			tfacp200.docn,
+			tfacp200.amth,									|ankit.o
+			tfacp200.pada
+		from	tfacp200
+		where	tfacp200._index1 = {:tfacp200.ttyp,:tfacp200.ninv,:tfacp200.line}
+		and	tfacp200.docn <> 0
+		and     tfacp200.tpay in (tfacp.tpay.advance, tfacp.tpay.advance.ant, tfacp.tpay.assignment)
+		selectdo
+			link.amnt(1) = tfacp200.amth(1) + tds.amount
+			balance.amnt = balance.amnt  + link.amnt(1)	
+| 			balance.amnt = link.amnt(1) - balance.amnt  
+			total.link = total.link + link.amnt(1)
+			amnt.with.tds = abs(tfacp200.amth(1))| + tds.amount
+			
+| 			if balance.amnt <> 0 then
+				rprt_send()
+| 			endif
+		selectempty
+| 			total.amount()
+| 			if balance.amnt <> 0 then				|#ISGEC01081.o
+				amnt.with.tds = abs(tfacp200.amnt)| + tds.amount
+				balance.amnt = balance.amnt + tds.amount
+| 				link.amnt(1) = abs(tfacp200.amnt) + tds.amount				|ankit.o
+				rprt_send()					|temp.mani
+| 			endif							|#ISGEC01081.o
+		endselect
+	endselect
+	
+}
+
+function total.amount()
+{
+	if isspace(pur.orno) then
+		po.amnt = 0
+		total.link.po = 0
+	else
+		po.amnt = abs(tfacp200.amth(1))
+		total.link.po = total.link
+	endif
+	
+	if isspace(tfacp200.ifbp) then
+		bp.amnt = 0
+		total.link.bp = 0
+	else
+		bp.amnt = abs(tfacp200.amth(1))
+		total.link.bp = total.link
+	endif
+}
+
+function	string	get_reference(domain tfgld.ttyp		in.ttyp,domain tfgld.docn	in.docn)
+{
+	v.bank1 = ""
+	select	tfgld106.refr
+	from	tfgld106
+	where	tfgld106._index1 = {:in.ttyp,:in.docn}
+	as set with 1 rows
+	selectdo
+		v.bank1 = tfgld106.refr(1;3)
+		return(v.bank1)
+	endselect
+	
+	return(v.bank1)
+}	

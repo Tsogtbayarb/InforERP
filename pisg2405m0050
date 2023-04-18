@@ -1,0 +1,190 @@
+|******************************************************************************
+|* ciisg2405  0  VRC B61U a7 live
+|* Invoice - E
+|* Installation user             
+|* 2014-08-11
+|******************************************************************************
+|* Main table cisli205 Invoice-Source Relations, Form Type 4
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+  table   tcisli205 | Invoice - Source Relations
+  table   tcisli206 | Invoice Tax Amounts by Tax Code 
+  table   tcisli235 | Project Sales Invoice Details
+  table   ttcmcs052 | Projects
+  table   ttfgld018 | Documents
+  table   ttccom130 | Addresses
+  table   ttccom100 | Business Partners
+  table   ttpisg039 | Installment Wise Receipt
+  table   ttdisg832 | Billing Advice Lines
+  table   ttpisg030 | Reimbursement
+  table   ttcibd001 | Items - General
+  table   ttpptc100 | Elements
+  table   ttcmcs036 | Tax Codes by Country
+  table   ttppin020 | Installments
+  table   ttctax400 | Registration Numbers by Business Partners
+  table   ttttxt010 | Texts
+  table   ttppdm740 | Project Business Partners
+  table   ttfisg001 | IR Details
+  table   ttfisg002 | Maintain IR Wise	GR Details
+  table   ttfisg003 | GR Details
+  table   ttcmcs143 | State/Provinces
+  table   twhinh310 | Maintain Receipt Headers
+  table   tciisg000 | Imbursment Parameter
+  table   ttfacr200 | Open Items (Sales Invoices & Receipts)
+  table   ttpisg045 | Project Wise Address
+
+extern	domain	tctran		tran.f,i.ityp
+extern	domain	tfgld.docn	docn.f,i.idoc
+
+extern	domain	tcncmp		v.sfcp,curr.comp
+extern	domain	tcmcs.str12	v.invn
+extern	domain	tcmcs.str40	item.desc,v.ln01,v.ln02,v.ln03,v.ln04,v.ln05,v.rtyp,v.rtyp1,v1.ln01,v1.ln02,
+				v1.ln03,v1.ln04,v1.nama,v.nama
+extern	domain	tcdsca		v.txid.desc1,v.txid.desc2,v.txid.desc3,v.txid.desc4
+extern	domain	tcnama		v.itbp,v.nama1
+extern	domain	tcamnt		v.txah1,v.txah2,v.txah3,v.txah4,total,gross.invoice,hold.rval,v.rval
+		long		i,flag,rpt.no,rpt.no1,j,k,rpt.no2,flag1
+extern	domain	tcoqan		v.nins,p,v.nins1	
+extern	domain	tcyesno		v.remb,v.remb1
+extern	domain	tctax.txnb	var.cst,var.lst
+extern	domain	tcmcs.str215	var.text,var.text1
+extern	domain	tcorno		v.rcno,v.rcno1
+extern	domain	tcpono		v.rcln,v.rcln1		
+extern	domain	tcdsca		v.plcf,v.plct
+extern	domain	tcmcs.str30	hold.rtyp(10)		
+extern	domain	tcamnt		hold.rval1(10)	
+extern	domain	tfgld.amnt	var.advn,var.retn	
+extern	domain	tppdm.aalc	var.ed.tax,var.cst.tax,a,ed.tax,edu.cess,she.cess	
+extern	domain	tcmcs.str30	new.einv.l,old.einv.l	
+extern	domain	tfacp.isup	new.grno,old.grno
+extern	domain	tcmcs.str215	text.m1,text.m2
+
+|****************************** program section ********************************
+before.program:
+	curr.comp = get.compnr()
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+choice.cont.process:
+on.choice:
+   execute(print.data)
+
+choice.print.data:
+on.choice:
+   if rprt_open() then
+	read.main.table()
+       rprt_close()
+   else
+       choice.again()
+   endif
+
+|****************************** field section *********************************
+field.docn.f:
+before.zoom:	
+	query.extend.where.in.zoom("cisli205.ityp = "&quoted.string(tran.f))
+
+|****************************** function section ******************************
+functions:
+function read.main.table()
+{
+	select	cisli205.*
+	from 	cisli205
+	where  	cisli205._index1 = {:curr.comp,:tran.f,:docn.f}
+	order by cisli205._index1
+	selectdo
+		v.invn = cisli205.ityp&" "&str$(cisli205.idoc)
+		select	cisli235.*
+		from	cisli235
+		where	cisli235._index2 = {:cisli205.sfcp,:cisli205.ityp,:cisli205.idoc}
+		and	cisli235.invt = tcinvt.installment
+		as set with 1 rows
+		selectdo
+			switch.to.company(cisli235.slcp)
+			get.receipt.no(cisli235.cprj,cisli235.ofbp,cisli235.nins)		|Get Receipt No.
+			if not isspace(v.rcno) and v.remb = tcyesno.yes then
+				get.IR.details()
+			endif
+			switch.to.company(curr.comp)  
+		endselect
+	endselect	
+}
+function get.IR.details()									|IR Detials
+{
+	select	tfisg001.*,tccom100.nama:v.nama1
+	from	tfisg001, tccom100
+	where	tfisg001.rcno = :v.rcno
+	and	tfisg001.bpid refers to tccom100 unref clear
+	as set with 1 rows	
+	selectdo
+		old.grno = ""
+		new.grno = ""
+		get.gr()
+	endselect	
+}
+function get.gr()
+{
+	select	tfisg002.*
+	from	tfisg002
+	where	tfisg002._index1 = {:tfisg001.irno}
+	selectdo
+		get.GR.details()
+		new.grno = tfisg002.grno
+		if new.grno <> old.grno then
+			rprt_send()
+		endif
+		old.grno = new.grno
+		new.grno = ""				
+	endselect	
+}
+function get.GR.details()									|GR NO & Place from-Place To
+{
+	select	tfisg003.*,tccom100.nama
+	from	tfisg003,tccom100
+	where	tfisg003._index3 = {:tfisg001.irno}
+	and	tfisg003.bpid refers to tccom100
+	selectdo
+		v.plcf = get.place.data(tfisg003.cctf,tfisg003.plcf)
+		v.plct = get.place.data(tfisg003.cctf,tfisg003.plct)
+	endselect	
+}
+function string	get.place.data( domain	tcccty		i.cctf,				|Place Description
+					domain	tcmcs.cste	i.plct)
+{
+	select	tcmcs143.dsca
+	from	tcmcs143
+	where	tcmcs143._index1 = {:i.cctf,:i.plct}
+	selectdo
+	selectempty
+		tcmcs143.dsca = ""
+	endselect
+	return(tcmcs143.dsca)
+}
+function get.receipt.no(domain tccprj		i.cprj,					|Receipt No, Line, Reimbursement Data
+			 domain tccom.bpid	i.ofbp,
+			 domain tppdm.nins	i.nins)
+{
+	select	tpisg039.rcno:v.rcno,tpisg039.rcln:v.rcln,tpisg039.remb:v.remb,tpisg039.remb:v.nins
+	from	tpisg039
+	where	tpisg039._index1 = {:cisli235.cprj,:cisli235.ofbp,:cisli235.nins}
+	selectdo
+	selectempty
+	endselect	
+}
+function get.project.desc(domain  tccprj	i.cprj)					|Project Description
+{
+	select	tcmcs052.dsca
+	from	tcmcs052
+	where	tcmcs052._index1 = {:i.cprj}
+	selectdo	
+	selectempty
+		tcmcs052.dsca = ""
+	endselect	
+}

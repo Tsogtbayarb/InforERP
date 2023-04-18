@@ -1,0 +1,685 @@
+|******************************************************************************
+|* tdisg2401m002  0  VRC B61U a7 live
+|* Pending Indent Report
+|* Tools                         
+|* 2014-05-08
+|******************************************************************************
+|* Main table tdpur201 Purchase Requisition Lines, Form Type 4
+|******************************************************************************
+|* IDENT ISG001024  	Somak Mondal  14-05-2014	   VRC B61U a7 live 
+|*
+|* IDENT ISG001030 	Ritu Sharma   19-05-2014	   VRC B61U a7 live  
+|*
+|* IDENT AKG31052014	Arjit Kumar Gupta	31-05-2014	VRC B61U a7 live
+|* Allow Blank project also to print.
+|*
+|* ISGEC001126, IT0205, Arjit Gupta, VRC B61U a7 isg, Dt. 27-10-2014
+|* Logic change of calculating Tenure days, diff. between indent approval date
+|* (if approval date not present then Indent Creation Date) and Current Date
+|****************************** declaration section ***************************
+declaration:
+#ident "@ AKG31052014, Arjit Kumar Gupta 31-05-2014, VRC B61U a7 live"	
+	
+	table  	ttdpur201 | Purchase Requisition Lines
+	table	ttdpur200 | Purchase Requisitions 
+	table	ttdpur202 | Linked Requisition Line Data
+	table	ttccom001 | Employees - General
+	table	ttcmcs052 | Projects
+	table	ttdpur400 | Purchase Orders
+	table	ttfacp004 | Aging Analysis Data
+	table	ttdpur402 | Linked Order Line Data		|#ISG001030.n
+	table	ttfacp004 | Display aging analysis Data		|#ISG001030.n
+	table	ttdpur203					|#ISGEC001126.n
+
+	extern 	domain 	tcemno          nama.f
+	extern 	domain 	tcemno          nama.t
+	extern 	domain 	tccprj          cprj.f,var.cprj,new.cprj,prev.cprj
+	extern 	domain 	tccprj          cprj.t
+	extern 	domain 	tcrqno          rqno.f ,var.rqno,hold.rqno,v.rqno.t     
+	extern 	domain 	tfacp.agan	v.agan               
+	extern 	domain 	tcrqno          rqno.t    
+	extern 	domain 	tcyesno 	pdng
+	extern 	domain 	tcdate          date.f
+	extern 	domain 	tcdate          date.t
+	extern	domain	tcdate		var.date
+	extern	domain	tcdate		var.date1
+	
+	extern 	domain 	tcamnt          var.oamt,v.amnt,var.val1,var.val2,var.val3,var.val4,tot.val,g.tot.val,g.var.total,
+					var.val5,var.val6
+	
+	extern	domain	tcpono		hold.pono,var.count,var.count1,var.count2,var.count3,
+					var.count4,var.count5,var.total,v.indent,srno
+	
+	extern	domain	tcamnt		c1.val.tot,c1.count.tot,g.c1.val.tot,g.c1.count.tot,
+					c2.val.tot,c2.count.tot,g.c2.val.tot,g.c2.count.tot,
+					c3.val.tot,c3.count.tot,g.c3.val.tot,g.c3.count.tot,
+					c4.val.tot,c4.count.tot,g.c4.val.tot,g.c4.count.tot,
+					c5.val.tot,c5.count.tot,g.c5.val.tot,g.c5.count.tot,
+					c6.val.tot,c6.count.tot,g.c6.val.tot,g.c6.count.tot
+			
+			long 		ret.val, sql.by.level(99999),sql.x,i
+			long 		file_ptr
+			long		tenure			
+			string		kitm(25)
+			string		category(25)
+			string 		file_name(50),rec(1024)
+			string		err(100), error(100), c.file(70), s.file(70)
+			string 		line(1500), err.file(100), file.name(100),line1(2000),line2(2000),line3(1000),
+					line4(1000),line5(1000),line7(2000)
+			long		ret.insert, ret,ret2, line.no, stat.fp, fp, var.long	
+			string 		data(1000),data1(1000),data2(500)
+			long 		flag						|#ISG0010030.n
+		domain	tcdsca 		dsca.o						|#ISG0010030.sn
+		domain	tcamnt 		tot.val.cprj, var.total.cprj, v.amnt.a,var.v1,var.v2,var.v3,var.v4,
+					var.v5,var.v6
+		domain tcamnt		var.c1,var.c2,var.c3,var.c4,var.c5,v.indent.v	|#ISG0010030.en
+								
+
+#pragma used dll ottdllbw
+
+
+extern domain    tcmcs.str15    prog.name		|#ISGEC.sn
+
+|****************************** program section ********************************
+before.program:
+	import("prog.name$",prog.name)
+	if strip$(prog.name) = "tdpur2501m000" then
+		import("tdpur200.rqno",rqno.f)
+		import("tdpur200.rqno",rqno.t)
+	endif						|#ISGEC.en
+	
+|****************************** group section **********************************
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+choice.cont.generate:
+before.choice:
+	if isspace(v.agan) then
+		message("Aging Analysis can't be blank")
+		choice.again()
+	else
+		select	tfacp004.ptyp
+		from	tfacp004
+		where	tfacp004._index1 = {:v.agan}
+		and	tfacp004.ptyp = tfacp.ptyp.days
+		selectdo
+		selectempty
+			message("Enter Valid Aging Analysis")
+			choice.again()
+		endselect
+	endif	
+on.choice:
+	generate.file()
+  
+|****************************** field section *********************************
+field.rqno.f:
+when.field.changes:
+   rqno.t = rqno.f
+
+field.cprj.f:
+when.field.changes:
+   cprj.t = cprj.f
+
+field.date.f:
+when.field.changes:
+   date.t = date.f
+
+field.nama.f:
+when.field.changes:
+   nama.t = nama.f
+
+field.v.agan:
+after.field:
+	select	tfacp004.desc  					| Ageing Template Description
+	from	tfacp004
+	where	tfacp004._index1 = {:v.agan}
+	selectdo
+	selectempty
+		tfacp004.desc = ""
+	endselect
+	
+|****************************** function section ******************************
+functions:
+function extern generate.file()
+{	
+	err.file = bse.tmp.dir$() & str$(utc.num()) & ".xls"
+	
+	file.name = "c:\temp\" & str$(utc.num())  & ".xls"
+	
+	stat.fp = seq.open(err.file, "w+")
+	if stat.fp >0 then
+ 		seq.seek(0, 0, stat.fp)
+	endif	
+	read.main.table()
+	
+	seq.close(stat.fp)
+	ret2 = server2client(err.file,file.name,1)
+	ret2 = app_start(file.name,"c:","","","")
+}
+
+function read.main.table()
+{
+	select	tfacp004.*			|Aging Template
+	from	tfacp004
+	where	tfacp004._index1 = {:v.agan}
+	selectdo
+	endselect
+
+	generate.header()			| Header Text - Call 
+	init.variables()			| Initialization - Call
+	init.variables2()
+	select 	tdpur201.cprj,tdpur201.rqno,tdpur201.pono
+		,tdpur200.rdat,tdpur200.ccon, tcmcs052.dsca				|#ISG001030.n
+| 	from	tdpur201						|#ISG001030.o
+	from	tdpur201, tdpur200, tcmcs052					|#ISG001030.n
+	where	tdpur201._index2 inrange {:cprj.f,:rqno.f} and {:cprj.t,:rqno.t}
+	and	tdpur201.rejc = tcyesno.no
+	and	tdpur201.rqno refers to tdpur200			|#ISG001030.sn
+	and	tdpur200._index6 inrange :nama.f and :nama.t
+	and	tdpur201.cprj refers to tcmcs052
+	and	tdpur200.rdat inrange :date.f and :date.t
+	order by tdpur201.cprj						|#ISG001030.en	
+| 	group by tdpur201.cprj,tdpur201.rqno,tdpur201.pono		|#ISG001030.o
+	selectdo
+					|#ISGEC001126.sn
+		select	tdpur203.trdt
+		from	tdpur203
+		where	tdpur203._index1 = {:tdpur201.rqno}
+		and	tdpur203.rqst = tdpur.rqst.approved
+		selectdo
+		selectempty
+			tdpur203.trdt = 0
+		endselect
+					|#ISGEC001126.en
+		new.cprj = tdpur201.cprj				|#ISG001030.n
+| 		if prev.cprj <> new.cprj  and not isspace(prev.cprj) then	|#ISG001030.sn	|#AKG31052014.o
+		if (prev.cprj <> new.cprj  and not isspace(prev.cprj)) or isspace(new.cprj) then	|#AKG31052014.n
+			write.data1()
+			new.cprj = ""
+			prev.cprj = new.cprj
+			var.total.cprj = 0
+			tot.val.cprj = 0
+			total.grand()
+			init.variables2()	
+		endif								|#ISG001030.en
+		
+| 		select 	tcmcs052.dsca,tdpur200.rdat,tdpur200.ccon	|#ISG001030.so
+| 		from	tcmcs052,tdpur200
+| 		where	tdpur200._index6 inrange :nama.f and :nama.t
+| 		and	tdpur200._index1 = :tdpur201.rqno 
+| 		and	tcmcs052._index1 = :tdpur201.cprj
+| 		selectdo						|#ISG001030.eo
+		select	tdpur202.prno,							|#ISG001030.sn
+			tdpur202.ppon,
+			tdpur202.qono,
+			tdpur202.qpon,
+			tdpur202.qseq
+		from	tdpur202 
+		where	tdpur202._index1 = {:tdpur201.rqno,:tdpur201.pono}
+		as set with 1 rows
+		selectdo
+		  if isspace(tdpur202.prno) then
+		    if not isspace(tdpur202.qono) then
+			select	tdpur402.orno,tdpur402.pono
+			from	tdpur402
+			where	tdpur402._index6 = {:tdpur202.qono,:tdpur202.qpon}
+			selectdo
+			selectempty							|#ISG001030.en									
+| 				new.cprj = tdpur201.cprj				|#ISG001030.so
+| 				if prev.cprj <> new.cprj then
+| 					srno = srno + 1
+| 					init.variables2()
+| 					set.fmax(v.rqno.t,"tcrqno")
+| 					if isspace(rqno.f) and rqno.t = v.rqno.t then
+| 						select	count(tdpur201.pono):v.indent,sum(tdpur201.oamt):v.amnt
+| 						from	tdpur201
+| 						where	tdpur201._index2 = {:tdpur201.cprj}
+| 						selectdo
+| 						selectempty
+| 							v.indent = 0
+| 							v.amnt = 0.00
+| 						endselect
+| 					else
+| 						select	count(tdpur201.pono):v.indent,sum(tdpur201.oamt):v.amnt
+| 						from	tdpur201
+| 						where	tdpur201._index2 = {:tdpur201.cprj,:tdpur201.rqno}
+| 						selectdo
+| 						selectempty
+| 							v.indent = 0
+| 							v.amnt = 0.00
+| 						endselect
+| 					endif
+| 					
+| 					var.oamt = v.amnt / 100000
+| 					tenure = (var.date - tdpur200.rdat)/(24*60*60)
+| 					for i = 1 to tfacp004.nper
+| 						on case i
+| 						case 1:
+| 							if (tenure < tfacp004.per1) then
+| 								var.count = v.indent
+| 								var.val1 = var.oamt
+| 							endif
+| 						break
+| 						case 2:
+| 							if (tenure >=tfacp004.per1 and tenure<tfacp004.per2) then
+| 								var.count1 = v.indent
+| 								var.val2 = var.oamt
+| 							endif
+| 						break
+| 						case 3:
+| 							if (tenure >=tfacp004.per2 and tenure<tfacp004.per3) then
+| 								var.count2 = v.indent
+| 								var.val3 = var.oamt
+| 							endif
+| 						break
+| 						case 4:
+| 							if (tenure >=tfacp004.per3 and tenure<tfacp004.per4) then
+| 								var.count3 = v.indent
+| 								var.val4 = var.oamt
+| 							endif
+| 						break
+| 						case 5:
+| 							if (tenure >=tfacp004.per4 and tenure<tfacp004.per5) then
+| 								var.count4 = v.indent
+| 								var.val5 = var.oamt
+| 							endif
+| 						break
+| 						case 6:
+| 							if (tenure >= tfacp004.per6) then
+| 								var.count5 = v.indent
+| 								var.val6 = var.oamt
+| 							endif
+| 						break
+| 						endcase
+| 					endfor
+| 					
+| 					tot.val = var.val1 + var.val2 + var.val3 + var.val4 + var.val5 + var.val6
+| 					var.total = var.count + var.count1 + var.count2 + var.count3 + var.count4 + var.count5
+| 					
+| 					c1.val.tot = c1.val.tot + var.val1
+| 					c2.val.tot = c2.val.tot + var.val2
+| 					c3.val.tot = c3.val.tot + var.val3
+| 					c4.val.tot = c4.val.tot + var.val4
+| 					c5.val.tot = c5.val.tot + var.val5
+| 					c6.val.tot = c6.val.tot + var.val6
+| 					
+| 					c1.count.tot = c1.count.tot + var.count		|* Grand Indent Value 1
+| 					c2.count.tot = c2.count.tot + var.count1       	|* Grand Indent Value 2
+| 					c3.count.tot = c3.count.tot + var.count2       	|* Grand Indent Value 3
+| 					c4.count.tot = c4.count.tot + var.count3       	|* Grand Indent Value 4
+| 					c5.count.tot = c5.count.tot + var.count4       	|* Grand Indent Value 5
+| 					c6.count.tot = c6.count.tot + var.count5       	|* Grand Indent Value 6
+| 										   
+| 					g.c1.val.tot = g.c1.val.tot + c1.val.tot 	|* Grand Total Value 1
+| 					g.c2.val.tot = g.c2.val.tot + c2.val.tot 	|* Grand Total Value 2
+| 					g.c3.val.tot = g.c3.val.tot + c3.val.tot	|* Grand Total Value 3 
+| 					g.c4.val.tot = g.c4.val.tot + c4.val.tot 	|* Grand Total Value 4
+| 					g.c5.val.tot = g.c5.val.tot + c5.val.tot 	|* Grand Total Value 5
+| 					g.c6.val.tot = g.c6.val.tot + c6.val.tot 	|* Grand Total Value 6
+
+| 					g.tot.val = g.tot.val + tot.val			|*Grand Total  Value	
+| 					g.var.total = g.var.total + var.total		|*Grand Total Indent
+| 					
+| 					write.data1()					| Detail Data - Call
+| 					
+| 					prev.cprj = new.cprj
+| 					new.cprj = ""
+| 				endif							|#ISG001030.eo
+				do.processing()						|#ISG001030.sn
+		        endselect
+		    else
+				do.processing()			
+		    endif
+						
+		   endif	
+		selectempty
+		        do.processing() 
+		endselect								|#ISG001030.en						
+| 		endselect								|#ISG001030.o
+	selecteos									|#ISG001030.sn
+		if flag = 1 then
+			write.data1()
+			total.grand()
+			init.variables2()
+		endif								|#ISG001030.en
+	endselect
+	write.data.grand.tot()							| Grand Total LINE - Call
+}
+
+
+function generate.header()							| Header Text
+{
+	get.dynamic.header()
+	
+	line1= 	concat$("	",
+		sprintf$("Srl. No"),						|1
+		sprintf$("Project No."),					|1.5
+		sprintf$("Project Name"),			      		|2
+		sprintf$("%s", data),
+		sprintf$("Total No. of Indent"),				|11
+		sprintf$("Total Value"))					|12										
+		
+	line1 = strip$(shiftl$(line1))		
+	seq.puts(line1, stat.fp)	
+}
+
+function get.dynamic.header()
+{
+	long i
+	
+	for i = 1 to tfacp004.nper
+		on case i
+		case 1:	
+			data = "No. of Indent  " & strip$(tfacp004.chd1)				|3
+			data = strip$(data) & chr$(9) & "Value "  & strip$(tfacp004.chd1)		|4
+		break
+		case 2:
+			data = strip$(data) & chr$(9) & "No. of Indent  " & strip$(tfacp004.chd2)	|5
+			data = strip$(data) & chr$(9) & "Value "  & strip$(tfacp004.chd2)		|6
+		break
+		case 3:
+			data = strip$(data) & chr$(9) & "No. of Indent  " & strip$(tfacp004.chd3)	|7
+			data = strip$(data) & chr$(9) & "Value "  & strip$(tfacp004.chd3)		|8	
+		break
+		case 4:
+			data = strip$(data) & chr$(9) & "No. of Indent  " & strip$(tfacp004.chd4) 	|9
+			data = strip$(data) & chr$(9) & "Value "  & strip$(tfacp004.chd4)		|10
+		break
+		case 5:
+			data = strip$(data) & chr$(9) & "No. of Indent  " & strip$(tfacp004.chd5)	|9.2
+			data = strip$(data) & chr$(9) & "Value "  & strip$(tfacp004.chd5)		|10.2
+		break
+		case 6:
+			data = strip$(data) & chr$(9) & "No. of Indent  " & strip$(tfacp004.chd6)	|9.3
+			data = strip$(data) & chr$(9) & "Value "  & strip$(tfacp004.chd6)		|10.4
+		break
+		endcase
+	endfor	
+	data = strip$(data)
+}
+function write.data1()						| Detail Data
+{	
+	get.dynamic.data()
+	srno = srno + 1						|#ISG001030.n
+	line2 =	concat$("	",				
+		sprintf$("%d",srno),				|1
+| 		sprintf$("%s",tdpur201.cprj),			|1.5	|#ISG001030.o
+		sprintf$("%s",prev.cprj),			|1.5	|#ISG001030.n
+| 		sprintf$("%s",tcmcs052.dsca),			|2	|#ISG001030.o
+		sprintf$("%s",dsca.o),				|2	|#ISG001030.n
+		sprintf$("%s",data1),
+		sprintf$("%d",var.total),			|11	|#ISG001030.o	
+		sprintf$("%s",tot.val))				|#ISG001030.o
+| 		sprintf$("%d",var.total.cprj),			|11	|#ISG001030.n
+| 		sprintf$("%s",tot.val.cprj))			|12	|#ISG001030.n
+				
+		line2 = strip$(shiftl$(line2))
+		seq.puts(line2, stat.fp)
+}	
+
+function get.dynamic.data()
+{
+	long i 
+	for i = 1 to tfacp004.nper
+		on case i
+		case 1:
+			data1 = str$(var.count)				|3
+			data1 = strip$(data1) & chr$(9) & str$(var.val1)	|4
+		break
+		case 2:
+			data1 = strip$(data1) & chr$(9) & str$(var.count1)	|5
+			data1 = strip$(data1) & chr$(9) & str$(var.val2)	|6
+		break
+		case 3:
+			data1 = strip$(data1) & chr$(9) & str$(var.count2)	|7
+			data1 = strip$(data1) & chr$(9) & str$(var.val3)	|8
+		break
+		case 4:
+			data1 = strip$(data1) & chr$(9) & str$(var.count3)	|9
+			data1 = strip$(data1) & chr$(9) & str$(var.val4)	|10
+		break
+		case 5:
+			data1 = strip$(data1) & chr$(9) & str$(var.count4)	|9.2
+			data1 = strip$(data1) & chr$(9) & str$(var.val5)	|10.2
+		break
+		case 6:
+			data1 = strip$(data1) & chr$(9) & str$(var.count5)	|9.3
+			data1 = strip$(data1) & chr$(9) & str$(var.val6)	|10.3
+		break
+		endcase
+	endfor	
+	data1 = strip$(data1)
+}
+
+function write.data.grand.tot()				| Grand Total LINE
+{	
+	get.dynamic.grand.tot()
+	line7 =	concat$("	",
+		sprintf$("%s",""),				|1
+		sprintf$("%s",""),				|1.5
+		sprintf$("%s","Grand Total"),			|2
+		sprintf$("%s",data2),
+		sprintf$("%s",g.var.total),			|11
+		sprintf$("%s",g.tot.val))			|12	
+				
+		line7 = strip$(shiftl$(line7))
+		seq.puts(line7, stat.fp)
+}
+
+function get.dynamic.grand.tot()
+{
+	long i
+	for i = 1 to tfacp004.nper
+		on case i
+		case 1:
+			data2 = str$(c1.count.tot)					|3
+| 			data2 = strip$(data2) & chr$(9) & str$(g.c1.val.tot)		|4
+			data2 = strip$(data2) & chr$(9) & str$(c1.val.tot)		|4
+		break	
+		case 2:
+			data2 = strip$(data2) & chr$(9) & str$(c2.count.tot)		|5
+| 			data2 = strip$(data2) & chr$(9) & str$(g.c2.val.tot)		|6
+			data2 = strip$(data2) & chr$(9) & str$(c2.val.tot)		|6
+		break	
+		case 3:
+			data2 = strip$(data2) & chr$(9) & str$(c3.count.tot)		|7
+| 			data2 = strip$(data2) & chr$(9) & str$(g.c3.val.tot)		|8
+			data2 = strip$(data2) & chr$(9) & str$(c3.val.tot)		|8
+		break	
+		case 4:
+			data2 = strip$(data2) & chr$(9) & str$(c4.count.tot)		|9
+| 			data2 = strip$(data2) & chr$(9) & str$(g.c4.val.tot)		|10
+			data2 = strip$(data2) & chr$(9) & str$(c4.val.tot)		|10
+		break	
+		case 5:
+			data2 = strip$(data2) & chr$(9) & str$(c5.count.tot)		|9.2	
+| 			data2 = strip$(data2) & chr$(9) & str$(g.c5.val.tot)		|10.2
+			data2 = strip$(data2) & chr$(9) & str$(c5.val.tot)		|10.2
+		break	
+		case 6:
+			data2 = strip$(data2) & chr$(9) & str$(c6.count.tot)		|9.3
+| 			data2 = strip$(data2) & chr$(9) & str$(g.c6.val.tot)		|10.3
+			data2 = strip$(data2) & chr$(9) & str$(c6.val.tot)		|10.3
+		break
+		endcase
+	endfor
+}
+
+function init.variables()					|Initialization 
+{
+	srno = 0
+	var.date = utc.num()
+	var.count = 0
+	var.count1 = 0
+	var.count2 = 0
+	var.count3 = 0
+	var.val1 = 0.00
+	var.val2 = 0.00
+	var.val3 = 0.00
+	var.val4 = 0.00
+	var.val5 = 0.00
+	var.val6 = 0.00
+	tot.val = 0.00
+	c1.val.tot = 0.00
+	c2.val.tot = 0.00
+	c3.val.tot = 0.00
+	c4.val.tot = 0.00
+	c5.val.tot = 0.00
+	c6.val.tot = 0.00
+	
+	c1.count.tot = 0.00
+	c2.count.tot = 0.00
+	c3.count.tot = 0.00
+	c4.count.tot = 0.00
+	c5.count.tot = 0.00
+	c6.count.tot = 0.00
+	
+	g.c1.val.tot = 0.00
+	g.c2.val.tot = 0.00	
+	g.c3.val.tot = 0.00	 
+	g.c4.val.tot = 0.00	
+	g.c5.val.tot = 0.00	
+	g.c6.val.tot = 0.00	
+	
+	g.c1.count.tot = 0.00
+	g.c2.count.tot = 0.00
+	g.c3.count.tot = 0.00
+	g.c4.count.tot = 0.00
+	g.c5.count.tot = 0.00
+	g.c6.count.tot = 0.00
+	
+	g.tot.val = 0.00	
+	g.var.total =0.00
+	
+	new.cprj = ""
+	prev.cprj = ""
+	flag  = 0				|#ISG001030.n
+}
+
+function init.variables2()
+{
+	var.count = 0
+	var.count1 = 0
+	var.count2 = 0
+	var.count3 = 0
+	var.count4 = 0
+	var.count5 = 0
+	var.val1 = 0.00
+	var.val2 = 0.00
+	var.val3 = 0.00
+	var.val4 = 0.00
+	var.val5 = 0.00
+	var.val6 = 0.00
+	v.indent = 0
+	v.amnt = 0.00
+					
+}
+
+
+function do.processing()					|ISG0010303.sn
+{
+	new.cprj = tdpur201.cprj
+
+| 		srno = srno + 1
+
+		set.fmax(v.rqno.t,"tcrqno")
+								
+			select	count(tdpur201.pono):v.indent,sum(tdpur201.oamt):v.amnt
+			from	tdpur201
+			where	tdpur201._index2 = {:tdpur201.cprj,:tdpur201.rqno,:tdpur201.pono}
+			selectdo
+			selectempty
+				v.indent = 0
+				v.amnt = 0.00
+			endselect
+									
+		
+		var.oamt = v.amnt / 100000
+		
+		if	tdpur203.trdt = 0 then		|#ISGEC001126.n
+			tenure = (var.date - tdpur200.rdat)/(24*60*60)	
+										|#ISGEC001126.sn
+		else	
+			tenure = (var.date - tdpur203.trdt)/(24*60*60)	
+		endif
+										|#ISGEC001126.en
+		for i = 1 to tfacp004.nper
+			on case i
+			case 1:
+				if (tenure < tfacp004.per1) then
+					var.count = var.count + v.indent
+					var.val1 = var.val1 + var.oamt
+				endif
+			break
+			case 2:
+				if (tenure >=tfacp004.per1 and tenure<tfacp004.per2) then
+| 					var.count1 = v.indent
+| 					var.val2 = var.oamt
+					var.count1 = var.count1 + v.indent
+					var.val2 = var.val2 + var.oamt
+				endif
+			break
+			case 3:
+				if (tenure >=tfacp004.per2 and tenure<tfacp004.per3) then
+| 					var.count2 = v.indent
+| 					var.val3 = var.oamt
+					var.count2 = var.count2 + v.indent
+					var.val3 = var.val3 + var.oamt
+				endif
+			break
+			case 4:
+				if (tenure >=tfacp004.per3 and tenure<tfacp004.per4) then
+					var.count3 = var.count3 + v.indent
+					var.val4 = var.val4 + var.oamt
+				endif
+			break
+			case 5:
+				if (tenure >=tfacp004.per4 and tenure<tfacp004.per5) then
+					var.count4 = var.count4 + v.indent
+					var.val5 = var.val5 + var.oamt
+				endif
+			break
+			case 6:
+				if (tenure >= tfacp004.per6) then
+					var.count5 = var.count5 + v.indent
+					var.val6 = var.val6  + var.oamt
+				endif
+			break
+			endcase
+		endfor
+		
+		tot.val = var.val1 + var.val2 + var.val3 + var.val4 + var.val5 + var.val6				
+		var.total = var.count + var.count1 + var.count2 + var.count3 + var.count4 + var.count5	
+		
+		tot.val.cprj = tot.val.cprj + tot.val				
+		var.total.cprj = var.total.cprj + var.total			
+
+		prev.cprj = new.cprj
+		dsca.o = tcmcs052.dsca
+
+		flag = 1
+
+}
+
+function total.grand()
+{
+	c1.val.tot = c1.val.tot + var.val1
+	c2.val.tot = c2.val.tot + var.val2
+	c3.val.tot = c3.val.tot + var.val3
+	c4.val.tot = c4.val.tot + var.val4
+	c5.val.tot = c5.val.tot + var.val5
+	c6.val.tot = c6.val.tot + var.val6
+	
+	c1.count.tot = c1.count.tot + var.count		|* Grand Indent Value 1
+	c2.count.tot = c2.count.tot + var.count1       	|* Grand Indent Value 2
+	c3.count.tot = c3.count.tot + var.count2       	|* Grand Indent Value 3
+	c4.count.tot = c4.count.tot + var.count3       	|* Grand Indent Value 4
+	c5.count.tot = c5.count.tot + var.count4       	|* Grand Indent Value 5
+	c6.count.tot = c6.count.tot + var.count5 
+	
+	
+	g.tot.val = g.tot.val + tot.val			
+	g.var.total = g.var.total + var.total
+}										|ISG0010303.en	

@@ -1,0 +1,189 @@
+|******************************************************************************
+|* tfisg2200m300  0  VRC B61U a7 isg 
+|* Update Project & PO
+|* Installation User             
+|* 2015-03-17
+|******************************************************************************
+|* Main table tfacp200 Open Items (Purchase Invoices &amp; Payments), Form Type 4
+|******************************************************************************
+|* PATCH001030,Dharmendra, 17-03-2015 
+|
+|* ID ISGEC015038, Ankit Sharma, 20-11-2015, VRC B61U a7 isg
+|* Correction in message at the time of wrong updation
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttfacp200 | Open Items (Purchase Invoices &amp; Payments)
+  table		ttfacr200
+  table		ttfgld018
+	extern	domain	tcbprl	btype
+	extern	domain	tfgld.ttyp	ttyp
+	extern	domain	tfgld.docn	ninv
+	extern	domain	tfgld.lino	line
+	extern	domain	tccprj		cprj
+	extern	domain	tcorno	orno
+	extern	domain	tcncmp	i.ncmp
+
+|****************************** program section ********************************
+before.program:
+	i.ncmp = get.compnr()
+	
+before.display.object:
+	set.enum.values.for.field("btype", tcbprl.customer, tcbprl.supplier)
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** field section **********************************
+field.btype:
+after.field:
+	if btype = tcbprl.supplier then
+		enable.fields("orno")
+	else
+		disable.fields("orno")
+	endif
+
+field.ttyp:
+before.zoom:
+	on case btype
+	case tcbprl.supplier:
+		query.extend.where.in.zoom("tfgld011.catg = tfgld.catg.cash or tfgld011.catg = tfgld.catg.purchase.inv or tfgld011.catg = tfgld.catg.purchase.cred")	
+		break
+	case tcbprl.customer:	
+		query.extend.where.in.zoom("tfgld011.catg = tfgld.catg.sales.inv or tfgld011.catg = tfgld.catg.sales.cred or tfgld011.catg = tfgld.catg.cash")	
+		break	
+	endcase
+
+
+field.ninv:
+before.zoom:
+	tfgld018.ttyp = ttyp
+field.line:	
+after.input:
+	on case btype
+	case tcbprl.supplier:
+		get.project.purchase()
+		break
+	case tcbprl.customer:
+		get.project()
+		break
+	endcase	
+	
+field.cprj:
+before.zoom:
+	switch.to.company(200)
+	
+after.zoom:
+	switch.to.company(i.ncmp)
+	
+field.orno:
+before.zoom:
+	switch.to.company(200)
+	query.extend.where.in.zoom("tdpur400.otbp = " & quoted.string(tfacp200.ifbp))
+	
+after.zoom:
+	switch.to.company(i.ncmp)
+|****************************** choice section **********************************
+choice.update:
+before.choice:
+	on case btype
+	case tcbprl.supplier:
+		if isspace(cprj) then
+			message("Enter Project Code")
+			choice.again()
+		else if isspace(orno) then
+			message("Enter Purchase Order")
+			choice.again()
+		endif
+		endif
+		break
+	case tcbprl.customer:
+		if isspace(cprj) then
+			message("Enter Project Code")
+			choice.again()
+		endif		
+		break
+	endcase	
+		
+on.choice:
+	on case btype
+	case tcbprl.supplier:
+		update.record.tfacp200()
+		break
+	case tcbprl.customer:	
+		update.record.tfacr200()
+		break
+	endcase	
+| 	message("Updated Successfully",1)							|#ISGEC015038.o
+	
+|****************************** functions **************************************
+Functions:
+
+function update.record.tfacp200()
+{
+	select	tfacp200.cdf_cprj, tfacp200.cdf_prno
+	from	tfacp200 for update
+	where	tfacp200._index1 = {:ttyp, :ninv, :line}
+	and	tfacp200.docn = 0
+	and	tfacp200._compnr = :i.ncmp
+	selectdo
+		put.var(pid,"tfacp200.cdf_prno", orno)
+		put.var(pid,"tfacp200.cdf_cprj", cprj)
+		db.update(ttfacp200,db.retry,e)
+		commit.transaction()								|#ISGEC015038.sn
+		message("Updated Successfully")
+	selectempty
+		message("Invalid Input")							|#ISGEC015038.en	
+	endselect	
+| 	commit.transaction()									|#ISGEC015038.o
+}
+
+function update.record.tfacr200()
+{
+	select	tfacr200.cdf_cprj
+	from	tfacr200 for update
+	where	tfacr200._index1 = {:ttyp, :ninv, :line}
+	and	tfacr200.docn = 0
+	and	tfacr200._compnr = :i.ncmp
+	selectdo
+		put.var(pid,"tfacr200.cdf_cprj", cprj)
+		db.update(ttfacr200,db.retry,e)
+		commit.transaction()								|#ISGEC015038.sn
+		message("Updated Successfully")
+	selectempty
+		message("Invalid Input")							|#ISGEC015038.en
+	endselect	
+| 	commit.transaction()									|#ISGEC015038.o
+
+}
+
+function get.project.purchase()
+{
+	select	tfacp200.cdf_cprj, tfacp200.cdf_prno, tfacp200.ifbp
+	from	tfacp200
+| 	where	tfacp200._index1 = {:ttyp, :ninv}
+	where	tfacp200._index1 = {:ttyp, :ninv,:line}
+	and	tfacp200.docn = 0
+	and	tfacp200._compnr = :i.ncmp
+	selectdo
+		get.var(pid,"tfacp200.cdf_prno", orno)
+		get.var(pid,"tfacp200.cdf_cprj", cprj)
+	endselect		
+}
+
+function get.project()
+{
+	select	tfacr200.cdf_cprj
+	from	tfacr200
+	where	tfacr200._index1 = {:ttyp, :ninv}
+	and	tfacr200.docn = 0
+	and	tfacr200._compnr = :i.ncmp
+	selectdo
+		get.var(pid,"tfacr200.cdf_cprj", cprj)
+	endselect
+
+}
+

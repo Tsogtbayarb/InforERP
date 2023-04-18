@@ -1,0 +1,113 @@
+|******************************************************************************
+|* tfisg2400m010  0  VRC B61U a7 live
+|* Print Payment Advice (Advance)
+|* Installation user             
+|* 2014-07-29
+|******************************************************************************
+|* Main table tfmsl020 Advance Request, Form Type 4
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+table	ttfmsl020	| Advance Request
+table	ttccom100	| Business Partner
+table	ttcmcs052	| General Project
+table	ttccom001	| Employee
+table	ttfcmg006	| Payment Method
+table	ttdpur400	| Purchase Order
+table	ttdmsl400
+
+extern 	domain	tcorno		orno    	fixed
+extern	domain	tcmcs.str215	cash.str
+extern	domain	tcorno		i.adrq
+extern	domain	tcmcs.str35	company.name
+extern	domain	tcrefb		o.tdpur400.refb
+
+|****************************** program section ********************************
+before.program:
+import("tfmsl020.adrq", i.adrq)
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.cont.process:
+on.choice:
+   execute(print.data)
+
+choice.print.data:
+on.choice:
+   if rprt_open() then
+       read.main.table()
+       rprt_close()
+   else
+       choice.again()
+   endif
+
+
+|****************************** field section *********************************
+
+field.orno:
+before.field:
+	orno = i.adrq
+
+|****************************** function section ******************************
+
+functions:
+
+function read.main.table()
+{
+	company.name = "ISGEC HEAVY ENGINEERING LIMITED"
+	select 	tfmsl020.*,
+		tccom100.nama,
+		tcmcs052.dsca,
+		tccom001.nama,
+		tfcmg003.desc,
+		tdpur400.refb,
+		tdpur400.cdf_refb:o.tdpur400.refb
+	from 	tfmsl020,tccom100,tcmcs052,tccom001,tfcmg003,tdpur400
+	where	tfmsl020._index1 = {:orno}
+| 	and	tfmsl020.optn = tfoption.advance
+	and	tfmsl020.bpid refers to tccom100
+	and	tfmsl020.cprj refers to tcmcs052
+	and	tfmsl020.rqpr refers to tccom001
+	and	tfmsl020.meth refers to tfcmg003
+	and	tfmsl020.orno refers to tdpur400
+	as set with 1 rows
+	selectdo
+		
+		tfgld.dll9999.1.in.words(tfmsl020.aamt,cash.str)
+| 		select 	tccom100.nama
+| 		from	tccom100
+| 		where	tccom100._index1 = {:tfmsl020.bpid}
+| 		selectdo
+| 		selectempty
+| 			tccom100.nama = ""
+| 		endselect
+
+| 		select 	tcmcs052.dsca
+| 		from	tcmcs052
+| 		where	tcmcs052._index1 = {:tfmsl020.cprj}
+| 		selectdo
+| 		selectempty
+| 			tcmcs052.dsca = ""
+| 		endselect
+		select	tdmsl400.vrsn
+		from	tdmsl400
+		where	tdmsl400._index1 = {:tfmsl020.orno}
+		and	tdmsl400.stat = tcyesno.yes
+		and	tdmsl400.work = tdmsl.work.completed
+		order by tdmsl400.vrsn desc
+		as set with 1 rows
+		selectdo
+		endselect
+		
+		
+		rprt_send()
+	endselect
+}

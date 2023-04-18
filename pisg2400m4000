@@ -1,0 +1,135 @@
+|******************************************************************************
+|* tfisg2400m400  0  VRC B61U a7 isg 
+|* Print Unadjusted Purchase Invoice & Payment
+|* Installation user             
+|* 2014-12-08
+|******************************************************************************
+|* Form Type 4
+|******************************************************************************
+|* ID ISGECFIN005,	Sujeet Kumar,		2014-12-08
+|* New Report Development.
+|*
+|****************************** declaration section ***************************
+declaration:
+	table	ttfacp200
+	table	ttfgld018
+	
+	extern	domain	tccom.bpid	bpid.f
+	extern	domain	tccom.bpid	bpid.t
+	extern	domain	tfgld.ttyp	ttyp.f
+	extern	domain	tfgld.ttyp	ttyp.t
+	extern	domain	tfgld.docn	docn.f
+	extern	domain	tfgld.docn	docn.t
+	extern	domain	tfgld.date	dcdt.f
+	extern	domain	tfgld.date	dcdt.t
+	
+
+
+|****************************** report variables ********************************
+
+	extern	domain	tccprj		rep.cprj
+	extern	domain	tcorno		rep.orno
+	extern	domain	tcmcs.str15	rep.docn
+	extern	domain	tcmcs.str15	rep.docn1, typa.doc
+	extern	domain	tfgld.amnt	rep.balance, rep.adv.amnt
+	
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+	get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.cont.process:
+on.choice:
+	execute(print.data)
+
+choice.print.data:
+on.choice:
+	if rprt_open() then
+		read.main.table()
+		rprt_close()
+	else
+		choice.again()
+	endif
+
+
+|****************************** field section *********************************
+
+field.bpid.f:
+when.field.changes:
+	bpid.t = bpid.f
+
+field.ttyp.f:
+when.field.changes:
+	ttyp.t = ttyp.f
+
+field.docn.f:
+when.field.changes:
+	docn.t = docn.f
+before.zoom:
+	tfgld018.ttyp = ttyp.f
+
+field.docn.t:
+before.zoom:
+	tfgld018.ttyp = ttyp.t
+field.dcdt.f:
+when.field.changes:
+	dcdt.t = dcdt.f
+
+
+|****************************** function section ******************************
+
+functions:
+
+function read.main.table()
+{
+	select 	tfacp200.ifbp,
+		tfacp200.ttyp,
+		tfacp200.ninv,
+		tfacp200.docd,
+		tfacp200.cdf_cprj:rep.cprj,
+		tfacp200.cdf_prno:rep.orno,
+		tfacp200.refr,
+		tfacp200.amth,
+		tfacp200.balh,
+		tfacp200.bahc,
+		tfacp200.tpay,
+		tccom100.nama
+	from	tfacp200,tccom100
+	where	tfacp200._index5 inrange {:bpid.f,:dcdt.f,:ttyp.f,:docn.f}
+				and	{:bpid.t,:dcdt.t,:ttyp.t,:docn.t}
+| 	and	(tfacp200.tpay = tfacp.tpay.advance.ant or tfacp200.tpay = tfacp.tpay.unallocated.ant)
+| 	and	tfacp200.docn = 0
+	and	(tfacp200.balh(1) <> 0 
+		or 	tfacp200.bahc(1) <>0)
+	and	tfacp200.ifbp refers to tccom100
+	selectdo
+		on case tfacp200.tpay
+		case	tfacp.tpay.advance.ant:
+		case	tfacp.tpay.unallocated.ant:
+			rep.docn = tfacp200.ttyp & " " & str$(tfacp200.ninv)
+			rep.docn1 = ""
+			break
+		default:
+			rep.docn = ""
+			rep.docn1 = tfacp200.ttyp & " " & str$(tfacp200.ninv)
+		endcase
+		if tfacp200.balh(1) <> 0 then
+			rep.balance = tfacp200.balh(1)
+		else if tfacp200.bahc(1) then
+			rep.balance = tfacp200.bahc(1)
+		endif
+		endif
+		
+		rprt_send()
+	endselect
+		
+}
+
+
+						

@@ -1,0 +1,140 @@
+ |******************************************************************************
+|* tfisg2400m008  0  VRC B61U a7 live
+|* Print IR Status
+|* Installation user             
+|* 2014-07-19
+|******************************************************************************
+|* Main table tfisg001 IR Details, Form Type 4
+|******************************************************************************
+|* IDENT ISG001033	Somak Mondal	19-07-2014	VRC B61U a7	live
+|* New Development
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttfisg001 | IR Details
+  table   ttccom100 | Business Partner
+  table   ttfacp100 | Received Purchase Invoices
+  table   ttcmcs052 | Projects
+  table   twhinh312 | Receipt Lines
+
+extern	domain	tccprj		cprj.f
+extern	domain	tccprj		cprj.t
+extern	domain	tccom.bpid	bpid.f
+extern	domain	tccom.bpid	bpid.t
+extern	domain	tcdate		date.f
+extern	domain	tcdate		date.t
+extern	domain	tffbs.vaco	pinv.crdt
+
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+choice.cont.process:
+on.choice:
+   execute(print.data)
+
+choice.print.data:
+on.choice:
+   if rprt_open() then
+       read.main.table()
+       rprt_close()
+   else
+       choice.again()
+   endif
+
+|****************************** field section *********************************
+field.cprj.f:
+when.field.changes:
+	cprj.t = cprj.f
+   
+field.bpid.f:
+when.field.changes:
+	bpid.t = bpid.f
+
+|****************************** function section ******************************
+functions:
+function read.main.table()
+{	
+	if pinv.crdt = tffbs.vaco.no then
+		select	tfisg001.*
+		from	tfisg001
+		where	tfisg001.cprj inrange {:cprj.f} and {:cprj.t}
+		and	tfisg001.bpid inrange {:bpid.f} and {:bpid.t}
+		and	tfisg001.irdt inrange {:date.f} and {:date.t}
+		and	tfisg001.pinv = 0
+		order by tfisg001.cprj,tfisg001.irno
+		selectdo
+			get.additional.data()
+| 			get.rec.date(tfisg001.rcno,tfisg001.rcln)
+			rprt_send()
+		endselect
+	else
+		if pinv.crdt = tffbs.vaco.yes then
+			select	tfisg001.*
+			from	tfisg001
+			where	tfisg001.cprj inrange {:cprj.f} and {:cprj.t}
+			and	tfisg001.bpid inrange {:bpid.f} and {:bpid.t}
+			and	tfisg001.irdt inrange {:date.f} and {:date.t}
+			and	tfisg001.pinv <> 0
+			order by tfisg001.cprj,tfisg001.irno
+			selectdo
+| 				get.rec.date(tfisg001.rcno,tfisg001.rcln)
+				get.additional.data()
+				rprt_send()
+			endselect
+		else
+			select	tfisg001.*
+			from	tfisg001
+			where	tfisg001.cprj inrange {:cprj.f} and {:cprj.t}
+			and	tfisg001.bpid inrange {:bpid.f} and {:bpid.t}
+			and	tfisg001.irdt inrange {:date.f} and {:date.t}
+			order by tfisg001.cprj,tfisg001.irno
+			selectdo
+| 				get.rec.date(tfisg001.rcno,tfisg001.rcln)
+				get.additional.data()
+				rprt_send()
+			endselect
+		endif	
+	endif	
+}
+function get.additional.data()
+{
+	select	tcmcs052.dsca
+	from	tcmcs052
+	where	tcmcs052._index1 = {:tfisg001.cprj}
+	selectdo
+	selectempty
+		tcmcs052.dsca = ""
+	endselect
+	
+	select	tccom100.nama
+	from	tccom100
+	where	tccom100._index1 = {:tfisg001.bpid}
+	selectdo
+	selectempty
+		tccom100.nama = ""
+	endselect
+	
+	select	tfacp100.isup,tfacp100.invd,tfacp100.amth,tfacp100.refr
+	from	tfacp100
+	where	tfacp100._index1 = {:tfisg001.irno}
+	selectdo
+	endselect
+}
+| function get.rec.date(domain	whinh.shpm	i.rcno,
+| 			domain	tcpono		i.rcln)
+| {
+| 	select	whinh312.rcno,whinh312.rcln,whinh312.ardt
+| 	from	whinh312
+| 	where	whinh312._index1 = {:i.rcno,:i.rcln}
+| 	selectdo
+| 	selectempty
+| 		whinh312.rcno = ""
+| 		whinh312.rcln = 0
+| 	endselect	
+| }

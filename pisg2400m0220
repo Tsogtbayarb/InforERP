@@ -1,0 +1,917 @@
+|******************************************************************************
+|* tfisg2400m002  0  VRC B61U a7 live
+|* Print 
+|* Tools                         
+|* 2015-06-09	
+|******************************************************************************
+|* IDENT ISGEC01050,  Mani sharma , 09-06-2015, B61U a7 isg
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttfacp200 | Open Items (Purchase Invoices &amp; Payments)
+  table	   ttdpur400
+  table	   ttfmsl020
+  table   ttfcmg100
+  table   ttfcmg112
+  table   ttfacp203
+  table   ttfgld106
+  table   ttfgld005
+  table   ttccom100
+  table   ttccom130
+  table   ttccom122
+  table   ttfacp001
+  table   ttccom130
+						|#20150615.sg.sn
+  table		ttfacp601
+  table		ttfgld006
+						|#20150615.sg.en
+						
+	extern	domain	tccom.bpid	otbp.f,otbp.t
+	extern	domain	tcorno		orno.f,orno.t
+	extern	domain	tccprj		cprj.f,cprj.t
+	extern domain  tfgld.prod      prod.f,prod.t
+	extern domain  tfgld.year      year.f,year.t
+	extern domain  tfacr.ficu      ficu.f,ficu.t
+	extern  domain tfgld.date      docd.f,docd.t
+	extern	domain	tcorno		pur.orno
+	extern	domain	tccprj		pur.cprj
+	extern	domain	tfgld.date	pur.odat,v.date
+	extern	domain	tfgld.amnt	link.amnt(3)
+	extern	domain	tfgld.amnt	balance.amnt
+	extern	domain	tfgld.amnt	total.link
+	extern	domain	tfgld.amnt	total.link.po
+	extern	domain	tfgld.amnt	total.link.bp
+	extern	domain	tfgld.amnt	po.amnt
+	extern	domain	tfgld.amnt	bp.amnt
+	extern	domain	tcmcs.str20	tran_doc,typa_doca,prnt.doc
+	extern	domain	tfcmg.cheq	i.cheq
+	extern	domain	tfcmg.bank	v.bank,v.bank1
+	extern domain  tccprj          cprj.var
+	extern domain  tcorno          order.var
+	extern domain  tcdate          date.var
+	extern domain  tfgld.amnt      amnt.with.tds,tds.amount
+	extern domain  tcmcs.str50m    addr1,addr2,addr3, addr4,addr5,addr6 ,tpay.str
+	extern domain  tfgld.prod      u.month 
+	extern domain   tcmcs.str20m   str.temp
+	extern domain	tfgld.amnt		actual.amnt,credit.amnt,debit.amnt
+	extern domain	tfgld.date	date.f
+	extern domain	tfgld.date	date.t
+	extern domain	tfgld.year	tmp.yr,in.year
+	extern domain	tfgld.prod	tmp.prd,in.prd
+	long	yy, mm, dd
+	long v  
+	
+	extern	domain	tcyesno			datc.f				|#20150615.sg.sn
+	extern	domain	tfacp.isup	repo.isup
+		domain	tfgld.ttyp	vari.ttyp
+		domain	tfgld.docn	vari.docn
+		domain	tfgld.lino	vari.line
+|****************************** program section ********************************
+before.program:
+	v.date = date.num()
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.cont.process:
+on.choice:
+   execute(print.data)
+
+choice.print.data:
+on.choice:
+	if rprt_open() then
+| 		read.main.table()					|#20150615.sg.o
+									|#20150615.sg.sn
+		if datc.f = tcyesno.yes then
+			read.main.table.document.date.based()
+		else
+			read.main.table.year.period.based()
+		endif
+									|#20150615.sg.en	
+		rprt_close()
+	else
+		choice.again()
+	endif
+
+
+|****************************** field section *********************************
+									|#20150615.sg.sn
+field.datc.f:
+after.field:
+	
+	if datc.f = tcyesno.yes then
+		disable.fields("year.f")
+		disable.fields("year.t")
+		disable.fields("prod.f")
+		disable.fields("prod.t")
+		enable.fields("docd.f")
+		enable.fields("docd.t")
+		
+		select		min(tfgld006.year)	:year.f,
+				max(tfgld006.year)	:year.t
+		from		tfgld006
+		selectdo
+		endselect
+		
+		display("year.f")
+		display("year.t")
+		
+		select		min(tfgld005.prno)	:prod.f
+		from		tfgld005
+		where		tfgld005._index1 = {tfgld.ptyp.financial, :year.f}
+		and		tfgld005.corr = tcyesno.no
+		selectdo
+		endselect
+		
+		select		max(tfgld005.prno)	:prod.t
+		from		tfgld005
+		where		tfgld005._index1 = {tfgld.ptyp.financial, :year.t}
+		and		tfgld005.corr = tcyesno.no
+		selectdo
+		endselect
+		
+		display("prod.f")
+		display("prod.t")
+		
+	else
+		enable.fields("year.f")
+		enable.fields("year.t")
+		enable.fields("prod.f")
+		enable.fields("prod.t")
+		disable.fields("docd.f")
+		disable.fields("docd.t")
+		
+		docd.f = 0
+		docd.t = date.num()
+		
+		display("docd.f")
+		display("docd.t")
+		
+	endif
+										|#20150615.sg.en
+field.ficu.f:
+when.field.changes:
+	ficu.t = ficu.f
+	
+field.year.f:
+when.field.changes:
+	year.t = year.f
+
+check.input:
+	select	tfgld006.year
+	from	tfgld006
+	where	tfgld006._index1 = {:year.f}
+	selectdo
+	selectempty
+		message("Please Input correct Fiscal Year")
+		set.input.error("", e)
+	endselect
+										|#20150615.sg.sn
+field.year.t:
+check.input:
+	select	tfgld006.year
+	from	tfgld006
+	where	tfgld006._index1 = {:year.t}
+	selectdo
+	selectempty
+		message("Please Input correct Fiscal Year")
+		set.input.error("", e)
+	endselect
+										|#20150615.sg.en
+field.otbp.f:
+when.field.changes:
+	otbp.t = otbp.f
+
+field.prod.f:
+when.field.changes:
+	prod.t = prod.f
+
+check.input:
+	select	tfgld005.prno
+	from	tfgld005
+	where	tfgld005._index1 = {tfgld.ptyp.financial, :year.f, :prod.f}
+	and	tfgld005.corr = tcyesno.no
+	selectdo
+	selectempty
+		message("Please Input correct Fiscal Period")
+		set.input.error("", e)
+	endselect
+	
+before.zoom:
+	tfgld005.ptyp = tfgld.ptyp.financial
+	tfgld005.year = year.f	
+	
+field.prod.t:
+before.zoom:
+	tfgld005.ptyp = tfgld.ptyp.financial
+	tfgld005.year = year.f
+										|#20150615.sg.sn
+check.input:
+	select	tfgld005.prno
+	from	tfgld005
+	where	tfgld005._index1 = {tfgld.ptyp.financial, :year.t, :prod.t}
+	and	tfgld005.corr = tcyesno.no
+	selectdo
+	selectempty
+		message("Please Input correct Fiscal Period")
+		set.input.error("", e)
+	endselect
+										|#20150615.sg.en
+
+|****************************** function section ******************************
+
+functions:
+
+| function read.main.table()							|#20150615.sg.o
+function read.main.table.document.date.based()					|#20150615.sg.n
+{
+	
+	
+	select 	tfacp200.*
+	from	tfacp200
+	where	tfacp200._index5 inrange {:otbp.f,:docd.f} and {:otbp.t,:docd.t}
+										|#20150615.sg.so
+| 	and     tfacp200.year    inrange {:year.f} and  {:year.t}
+| 	and      tfacp200.prod   inrange {:prod.f} and  {:prod.t}
+										|#20150615.sg.en
+	and	tfacp200.tpay in (tfacp.tpay.advance, tfacp.tpay.advance.ant)
+	and	tfacp200.docn = 0
+	and	(tfacp200.balc <> 0 or tfacp200.bala <> 0)
+	order by tfacp200.year,tfacp200.prod
+	selectdo
+		select tccom122.ifbp,tccom100.nama,tccom100.cadr 
+		from   tccom122,tccom100
+		where  tccom122.cfsg inrange {:ficu.f} and {:ficu.t}
+		and    tccom122._index1 = {:tfacp200.ifbp}
+		and	tccom122.ifbp refers to tccom100
+		selectdo
+			initial()
+| 			select	tfgld005.desc, tfgld005.stdt
+| 			from	tfgld005
+| 			where	tfgld005._index1 = {tfgld.ptyp.financial, :tfacp200.year, :tfacp200.prod}
+| 			and	tfgld005.corr = tcyesno.no
+| 			selectdo
+| 				date.f = tfgld005.stdt
+| 				num.to.date(date.f, yy, mm, dd)
+| 			endselect
+
+| 			if	in.prd = 12	then
+| 				tmp.yr = tfacp200.year + 1
+| 				tmp.prd = 1
+| 			else
+| 				tmp.yr = tfacp200.year
+| 				tmp.prd = tfacp200.prod + 1
+| 			endif
+| 				
+| 			select	tfgld005.stdt
+| 			from	tfgld005
+| 			where	tfgld005._index1 = {tfgld.ptyp.financial, :tmp.yr, :tmp.prd}
+| 			and	tfgld005.corr = tcyesno.no
+| 			selectdo
+| 				date.t = tfgld005.stdt - 1
+| 				num.to.date(date.f, yy, mm, dd)
+| 			selectempty
+| 				num.to.date(date.f, yy, mm, dd)
+| 				date.t = date.to.num(mm<12?yy:yy+1, mm<12?mm+1:1, 1) - 1
+| 			endselect
+			
+			 v = get.var(pid,"tfacp200.cdf_cprj",cprj.var)			
+			 v = get.var(pid,"tfacp200.cdf_prno",order.var)
+			
+			get.address()
+			
+			link.amnt(1) = tfacp200.amth(1)					
+			
+			select tfmsl020.orno:pur.orno,
+				tfmsl020.bpid,
+				tfmsl020.cprj:pur.cprj
+			from   tfmsl020
+			where  tfmsl020._index4 = {:tfacp200.ttyp,:tfacp200.ninv,:tfacp200.line}     
+			selectdo
+
+			selectempty
+				pur.orno = ""
+				pur.cprj = ""
+				pur.odat = 0
+				select tfcmg112.tdoc,tfcmg112.pdoc
+				from   tfcmg112
+				where  tfcmg112._index2 = {:tfacp200.ttyp,:tfacp200.ninv,:tfacp200.line}
+				selectdo
+					tran_doc = tfcmg112.tdoc & "/" & str$(tfcmg112.pdoc)| & "/" & str$(tfacp200.line)
+					select tfmsl020.orno:pur.orno,
+						tfmsl020.bpid,
+						tfmsl020.cprj:pur.cprj
+					from   tfmsl020
+					where  tfmsl020._index4 = {:tfcmg112.tdoc,:tfcmg112.pdoc}
+					selectdo
+						select 	tdpur400.odat:pur.odat
+						from	tdpur400
+						where	tdpur400._index1 = {:pur.orno}
+						as set with 1 rows
+						selectdo
+						endselect
+					selectempty
+						pur.orno = ""
+						pur.cprj = ""
+						pur.odat = 0
+					endselect
+				selectempty
+					pur.orno = ""
+					pur.cprj = ""
+					pur.odat = 0
+				endselect
+			endselect
+			credit.amnt = 0
+			debit.amnt = 0
+			tran_doc = tfacp200.ttyp & "/" & str$(tfacp200.ninv) & "/" & str$(tfacp200.line)
+			
+			repo.isup = select.purchase.invoice(tfacp200.ttyp, tfacp200.ninv, tfacp200.line)	|#20150615.sg.sn
+			
+			i.cheq = ""
+			vari.ttyp = ""
+			vari.docn = 0
+			vari.line = 0
+			
+			select 	tfacp200.typa,tfacp200.doca,tfacp200.pdoc,
+				tfacp200.ttyp	:vari.ttyp, 
+				tfacp200.ninv	:vari.docn, 
+				tfacp200.line	:vari.line
+			from	tfacp200
+			where	tfacp200.tdoc = :tfacp200.ttyp
+			and	tfacp200.docn = :tfacp200.ninv
+			and	tfacp200.lino = :tfacp200.line
+			and     tfacp200.tpay in (tfacp.tpay.advance, tfacp.tpay.advance.ant, tfacp.tpay.assignment)  
+			selectdo
+				if tfacp200.doca <> 0 then
+					typa_doca = tfacp200.typa & "/" & str$(tfacp200.doca)
+					i.cheq = tfacp200.pdoc
+				endif	
+				
+					
+				
+			selectempty
+				select tfcmg112.tdoc,tfcmg112.pdoc
+				from   tfcmg112
+				where  tfcmg112._index2 = {:tfacp200.ttyp,:tfacp200.ninv,:tfacp200.line}
+				as set with 1 rows
+				selectdo
+					if tfcmg112.pdoc <> 0 then
+						typa_doca = tfcmg112.tdoc & "/" & str$(tfcmg112.pdoc)
+					endif	
+				endselect	
+			endselect	
+			
+			if isspace(i.cheq) then
+				select tfcmg112.tdoc,tfcmg112.pdoc
+				from   tfcmg112
+				where  tfcmg112._index2 = {:tfacp200.ttyp,:tfacp200.ninv,:tfacp200.line}
+				selectdo
+					v.bank = get_reference(tfcmg112.tdoc,tfcmg112.pdoc)
+					
+					if not isspace(v.bank) then
+						select 	tfcmg100.cheq
+						from   	tfcmg100
+						where  	tfcmg100.typo = :tfcmg112.tdoc
+						and    	tfcmg100.doco = :tfcmg112.pdoc
+						and	tfcmg100.bank = :v.bank
+						selectdo
+							i.cheq = tfcmg100.cheq
+						selectempty
+							i.cheq = ""
+						endselect
+					endif	
+				selectempty
+					v.bank = get_reference(tfacp200.typa,tfacp200.doca)
+					
+					if not isspace(v.bank) then
+						select 	tfcmg100.cheq
+						from   	tfcmg100
+						where  	tfcmg100.typo = :tfacp200.typa
+						and    	tfcmg100.doco = :tfacp200.doca
+						and	tfcmg100.bank = :v.bank
+						selectdo
+							i.cheq = tfcmg100.cheq
+						selectempty
+							i.cheq = ""
+						endselect
+					endif	
+				endselect
+			endif	
+		
+			if isspace(typa_doca) then
+				select 	tfacp200.typa,tfacp200.doca
+				from	tfacp200
+				where	tfacp200._index1 = {:tfacp200.ttyp,:tfacp200.ninv,:tfacp200.line}
+				and	tfacp200.typa = :tfacp200.ttyp
+				and	tfacp200.doca = :tfacp200.ninv
+				and     tfacp200.tpay in (tfacp.tpay.advance.ant, tfacp.tpay.advance.ant, tfacp.tpay.assignment)  
+				selectdo
+					tran_doc = ""
+					typa_doca = tfacp200.typa & "/" & str$(tfacp200.doca)
+				endselect
+			endif	
+			
+			if isspace(tran_doc) then
+				prnt.doc = typa_doca
+			else
+				prnt.doc = tran_doc
+			endif
+		
+			tds.amount = 0
+| 			select tfacp203.amti,tfacp203.txtp
+| 			from   tfacp203
+| 			where  tfacp203._index1 = {:tfacp200.ttyp,:tfacp200.ninv,:tfacp200.line}
+| 			selectdo
+| 				if etol(tfacp203.txtp) = 5  then
+| 					tds.amount = tds.amount + tfacp203.amti
+| 				endif
+| 			endselect
+			tpay.str = ""
+			tpay.str = enum.descr$("tfacp.tpay",tfacp200.tpay,"2")
+			 str.temp = str$(link.amnt(1))
+				if str.temp(1;1) = "-" then
+					credit.amnt = link.amnt(1)
+				else
+					debit.amnt = link.amnt(1) 
+				endif
+			rprt_send()
+			link.amnt(1) = 0
+			balance.amnt = 0
+			balance.amnt = abs(tfacp200.amnt)
+			total.link = 0
+			typa_doca = ""
+			select 	tfacp200.tdoc,
+				tfacp200.docn,
+				tfacp200.lino,
+				tfacp200.amth,									|ankit.o
+				tfacp200.pada,
+				tfacp200.tpay,
+				tfacp200.docd,
+				tfacp200.btno
+			from	tfacp200
+			where	tfacp200._index1 = {:tfacp200.ttyp,:tfacp200.ninv,:tfacp200.line}
+			and	tfacp200.docn <> 0
+			and     tfacp200.tpay in (tfacp.tpay.advance, tfacp.tpay.advance.ant, tfacp.tpay.assignment)
+			selectdo
+				tpay.str = ""
+				credit.amnt = 0
+				debit.amnt = 0
+				tpay.str = enum.descr$("tfacp.tpay",tfacp200.tpay,"2")
+				link.amnt(1) = tfacp200.amth(1)
+				balance.amnt = balance.amnt  + link.amnt(1)	
+				total.link = total.link + link.amnt(1)
+				amnt.with.tds = abs(tfacp200.amth(1))
+				 str.temp = str$(link.amnt(1))
+				tran_doc = tfacp200.tdoc & "/" & str$(tfacp200.docn) & "/" & str$(tfacp200.lino)
+				repo.isup = select.purchase.invoice(tfacp200.tdoc, tfacp200.docn, tfacp200.lino)	|#20150615.sg.sn
+				if str.temp(1;1) = "-" then
+					credit.amnt = link.amnt(1)
+				else
+					debit.amnt = link.amnt(1)
+				endif
+				i.cheq = ""
+				if balance.amnt <> 0 then
+					rprt_send()
+				endif
+			selectempty
+				tran_doc = tfacp200.tdoc & "/" & str$(tfacp200.docn) & "/" & str$(tfacp200.lino)
+				repo.isup = select.purchase.invoice(tfacp200.tdoc, tfacp200.docn, tfacp200.lino)	|#20150615.sg.sn
+				credit.amnt = 0
+				debit.amnt = 0
+				if balance.amnt <> 0 then
+					amnt.with.tds = abs(tfacp200.amnt)
+					balance.amnt = balance.amnt + tds.amount
+					 str.temp = str$(link.amnt(1))
+					i.cheq = ""
+					if str.temp(1;1) = "-" then
+						credit.amnt = link.amnt(1)
+					else
+						debit.amnt = link.amnt(1)
+					endif
+					rprt_send()					
+				endif
+			endselect
+		endselect
+	endselect
+	
+}
+												|#20150615.sg.sn
+function read.main.table.year.period.based()
+{
+	
+	domain	tfgld.date	ddat.f
+	domain	tfgld.date	ddat.t
+	
+	ddat.f = select.table.period(year.f, prod.f, "S")
+	ddat.t = select.table.period(year.t, prod.t, "E")
+	
+	select 	tfacp200.*
+	from	tfacp200
+	where	tfacp200._index5 inrange {:otbp.f,:ddat.f} and {:otbp.t,:ddat.t}
+	and	tfacp200.tpay in (tfacp.tpay.advance, tfacp.tpay.advance.ant)
+	and	tfacp200.docn = 0
+	and	(tfacp200.balc <> 0 or tfacp200.bala <> 0)
+	order by tfacp200.year,tfacp200.prod
+	selectdo
+		select tccom122.ifbp,tccom100.nama,tccom100.cadr 
+		from   tccom122,tccom100
+		where  tccom122.cfsg inrange {:ficu.f} and {:ficu.t}
+		and    tccom122._index1 = {:tfacp200.ifbp}
+		and	tccom122.ifbp refers to tccom100
+		selectdo
+			initial()
+| 			select	tfgld005.desc, tfgld005.stdt
+| 			from	tfgld005
+| 			where	tfgld005._index1 = {tfgld.ptyp.financial, :tfacp200.year, :tfacp200.prod}
+| 			and	tfgld005.corr = tcyesno.no
+| 			selectdo
+| 				date.f = tfgld005.stdt
+| 				num.to.date(date.f, yy, mm, dd)
+| 			endselect
+
+| 			if	in.prd = 12	then
+| 				tmp.yr = tfacp200.year + 1
+| 				tmp.prd = 1
+| 			else
+| 				tmp.yr = tfacp200.year
+| 				tmp.prd = tfacp200.prod + 1
+| 			endif
+| 				
+| 			select	tfgld005.stdt
+| 			from	tfgld005
+| 			where	tfgld005._index1 = {tfgld.ptyp.financial, :tmp.yr, :tmp.prd}
+| 			and	tfgld005.corr = tcyesno.no
+| 			selectdo
+| 				date.t = tfgld005.stdt - 1
+| 				num.to.date(date.f, yy, mm, dd)
+| 			selectempty
+| 				num.to.date(date.f, yy, mm, dd)
+| 				date.t = date.to.num(mm<12?yy:yy+1, mm<12?mm+1:1, 1) - 1
+| 			endselect
+			
+			 v = get.var(pid,"tfacp200.cdf_cprj",cprj.var)			
+			 v = get.var(pid,"tfacp200.cdf_prno",order.var)
+			
+			get.address()
+			
+			link.amnt(1) = tfacp200.amth(1)					
+			
+			select tfmsl020.orno:pur.orno,
+				tfmsl020.bpid,
+				tfmsl020.cprj:pur.cprj
+			from   tfmsl020
+			where  tfmsl020._index4 = {:tfacp200.ttyp,:tfacp200.ninv,:tfacp200.line}     
+			selectdo
+
+			selectempty
+				pur.orno = ""
+				pur.cprj = ""
+				pur.odat = 0
+				select tfcmg112.tdoc,tfcmg112.pdoc
+				from   tfcmg112
+				where  tfcmg112._index2 = {:tfacp200.ttyp,:tfacp200.ninv,:tfacp200.line}
+				selectdo
+					tran_doc = tfcmg112.tdoc & "/" & str$(tfcmg112.pdoc)| & "/" & str$(tfacp200.line)
+					select tfmsl020.orno:pur.orno,
+						tfmsl020.bpid,
+						tfmsl020.cprj:pur.cprj
+					from   tfmsl020
+					where  tfmsl020._index4 = {:tfcmg112.tdoc,:tfcmg112.pdoc}
+					selectdo
+						select 	tdpur400.odat:pur.odat
+						from	tdpur400
+						where	tdpur400._index1 = {:pur.orno}
+						as set with 1 rows
+						selectdo
+						endselect
+					selectempty
+						pur.orno = ""
+						pur.cprj = ""
+						pur.odat = 0
+					endselect
+				selectempty
+					pur.orno = ""
+					pur.cprj = ""
+					pur.odat = 0
+				endselect
+			endselect
+			credit.amnt = 0
+			debit.amnt = 0
+			tran_doc = tfacp200.ttyp & "/" & str$(tfacp200.ninv) & "/" & str$(tfacp200.line)
+			
+			repo.isup = select.purchase.invoice(tfacp200.ttyp, tfacp200.ninv, tfacp200.line)
+			
+			i.cheq = ""
+			vari.ttyp = ""
+			vari.docn = 0
+			vari.line = 0
+			
+			select 	tfacp200.typa,tfacp200.doca,tfacp200.pdoc,
+				tfacp200.ttyp	:vari.ttyp, 
+				tfacp200.ninv	:vari.docn, 
+				tfacp200.line	:vari.line
+			from	tfacp200
+			where	tfacp200.tdoc = :tfacp200.ttyp
+			and	tfacp200.docn = :tfacp200.ninv
+			and	tfacp200.lino = :tfacp200.line
+			and     tfacp200.tpay in (tfacp.tpay.advance, tfacp.tpay.advance.ant, tfacp.tpay.assignment)  
+			selectdo
+				if tfacp200.doca <> 0 then
+					typa_doca = tfacp200.typa & "/" & str$(tfacp200.doca)
+					i.cheq = tfacp200.pdoc
+				endif	
+				
+					
+				
+			selectempty
+				select tfcmg112.tdoc,tfcmg112.pdoc
+				from   tfcmg112
+				where  tfcmg112._index2 = {:tfacp200.ttyp,:tfacp200.ninv,:tfacp200.line}
+				as set with 1 rows
+				selectdo
+					if tfcmg112.pdoc <> 0 then
+						typa_doca = tfcmg112.tdoc & "/" & str$(tfcmg112.pdoc)
+					endif	
+				endselect	
+			endselect	
+			
+			if isspace(i.cheq) then
+				select tfcmg112.tdoc,tfcmg112.pdoc
+				from   tfcmg112
+				where  tfcmg112._index2 = {:tfacp200.ttyp,:tfacp200.ninv,:tfacp200.line}
+				selectdo
+					v.bank = get_reference(tfcmg112.tdoc,tfcmg112.pdoc)
+					
+					if not isspace(v.bank) then
+						select 	tfcmg100.cheq
+						from   	tfcmg100
+						where  	tfcmg100.typo = :tfcmg112.tdoc
+						and    	tfcmg100.doco = :tfcmg112.pdoc
+						and	tfcmg100.bank = :v.bank
+						selectdo
+							i.cheq = tfcmg100.cheq
+						selectempty
+							i.cheq = ""
+						endselect
+					endif	
+				selectempty
+					v.bank = get_reference(tfacp200.typa,tfacp200.doca)
+					
+					if not isspace(v.bank) then
+						select 	tfcmg100.cheq
+						from   	tfcmg100
+						where  	tfcmg100.typo = :tfacp200.typa
+						and    	tfcmg100.doco = :tfacp200.doca
+						and	tfcmg100.bank = :v.bank
+						selectdo
+							i.cheq = tfcmg100.cheq
+						selectempty
+							i.cheq = ""
+						endselect
+					endif	
+				endselect
+			endif	
+		
+			if isspace(typa_doca) then
+				select 	tfacp200.typa,tfacp200.doca
+				from	tfacp200
+				where	tfacp200._index1 = {:tfacp200.ttyp,:tfacp200.ninv,:tfacp200.line}
+				and	tfacp200.typa = :tfacp200.ttyp
+				and	tfacp200.doca = :tfacp200.ninv
+				and     tfacp200.tpay in (tfacp.tpay.advance.ant, tfacp.tpay.advance.ant, tfacp.tpay.assignment)  
+				selectdo
+					tran_doc = ""
+					typa_doca = tfacp200.typa & "/" & str$(tfacp200.doca)
+				endselect
+			endif	
+			
+			if isspace(tran_doc) then
+				prnt.doc = typa_doca
+			else
+				prnt.doc = tran_doc
+			endif
+		
+			tds.amount = 0
+| 			select tfacp203.amti,tfacp203.txtp
+| 			from   tfacp203
+| 			where  tfacp203._index1 = {:tfacp200.ttyp,:tfacp200.ninv,:tfacp200.line}
+| 			selectdo
+| 				if etol(tfacp203.txtp) = 5  then
+| 					tds.amount = tds.amount + tfacp203.amti
+| 				endif
+| 			endselect
+			tpay.str = ""
+			tpay.str = enum.descr$("tfacp.tpay",tfacp200.tpay,"2")
+			 str.temp = str$(link.amnt(1))
+				if str.temp(1;1) = "-" then
+					credit.amnt = link.amnt(1)
+				else
+					debit.amnt = link.amnt(1) 
+				endif
+			rprt_send()
+			link.amnt(1) = 0
+			balance.amnt = 0
+			balance.amnt = abs(tfacp200.amnt)
+			total.link = 0
+			typa_doca = ""
+			select 	tfacp200.tdoc,
+				tfacp200.docn,
+				tfacp200.lino,
+				tfacp200.amth,									|ankit.o
+				tfacp200.pada,
+				tfacp200.tpay,
+				tfacp200.docd,
+				tfacp200.btno
+			from	tfacp200
+			where	tfacp200._index1 = {:tfacp200.ttyp,:tfacp200.ninv,:tfacp200.line}
+			and	tfacp200.docn <> 0
+			and     tfacp200.tpay in (tfacp.tpay.advance, tfacp.tpay.advance.ant, tfacp.tpay.assignment)
+			selectdo
+				tpay.str = ""
+				credit.amnt = 0
+				debit.amnt = 0
+				tpay.str = enum.descr$("tfacp.tpay",tfacp200.tpay,"2")
+				link.amnt(1) = tfacp200.amth(1)
+				balance.amnt = balance.amnt  + link.amnt(1)	
+				total.link = total.link + link.amnt(1)
+				amnt.with.tds = abs(tfacp200.amth(1))
+				 str.temp = str$(link.amnt(1))
+				tran_doc = tfacp200.tdoc & "/" & str$(tfacp200.docn) & "/" & str$(tfacp200.lino)
+				repo.isup = select.purchase.invoice(tfacp200.tdoc, tfacp200.docn, tfacp200.lino)	
+				if str.temp(1;1) = "-" then
+					credit.amnt = link.amnt(1)
+				else
+					debit.amnt = link.amnt(1)
+				endif
+				i.cheq = ""
+				if balance.amnt <> 0 then
+					rprt_send()
+				endif
+			selectempty
+				tran_doc = tfacp200.tdoc & "/" & str$(tfacp200.docn) & "/" & str$(tfacp200.lino)
+				repo.isup = select.purchase.invoice(tfacp200.tdoc, tfacp200.docn, tfacp200.lino)	
+				credit.amnt = 0
+				debit.amnt = 0
+				if balance.amnt <> 0 then
+					amnt.with.tds = abs(tfacp200.amnt)
+					balance.amnt = balance.amnt + tds.amount
+					 str.temp = str$(link.amnt(1))
+					i.cheq = ""
+					if str.temp(1;1) = "-" then
+						credit.amnt = link.amnt(1)
+					else
+						debit.amnt = link.amnt(1)
+					endif
+					rprt_send()					
+				endif
+			endselect
+		endselect
+	endselect
+	
+}
+															
+function domain tfacp.isup select.purchase.invoice(domain tfgld.ttyp ttyp, domain tfgld.docn docn, domain tfgld.lino line)
+{
+	domain	tfacp.isup	isup
+	domain	tfgld.ttyp	ityp
+	domain	tfgld.docn	idoc
+	domain	tfgld.lino	ilin
+	domain	tcncmp		comp
+	
+	comp = get.compnr()
+	isup = ""
+	ityp = ""
+	idoc = 0
+	ilin = 0
+	
+	select		tfacp601.ityp	:ityp,
+			tfacp601.idoc	:idoc,
+			tfacp601.ilin	:ilin,
+			tfacp601.doct
+	from		tfacp601
+	where		tfacp601._index1 = {:comp, :ttyp, :docn} 
+	and		tfacp601.pays = :line
+	selectdo
+		if tfacp601.doct = tfcmg.prad.purinv or tfacp601.doct = tfcmg.prad.purcred then
+			isup = strip$(ityp) & "/" & strip$(str$(idoc)) & "/" & strip$(str$(ilin))
+		endif
+	endselect
+	return (isup)
+}
+													|#20150615.sg.sn
+function total.amount()
+{
+	if isspace(pur.orno) then
+		po.amnt = 0
+		total.link.po = 0
+	else
+		po.amnt = abs(tfacp200.amth(1))
+		total.link.po = total.link
+	endif
+	
+	if isspace(tfacp200.ifbp) then
+		bp.amnt = 0
+		total.link.bp = 0
+	else
+		bp.amnt = abs(tfacp200.amth(1))
+		total.link.bp = total.link
+	endif
+}
+
+function	string	get_reference(domain tfgld.ttyp		in.ttyp,domain tfgld.docn	in.docn)
+{
+	v.bank1 = ""
+	select	tfgld106.refr
+	from	tfgld106
+	where	tfgld106._index1 = {:in.ttyp,:in.docn}
+	as set with 1 rows
+	selectdo
+		v.bank1 = tfgld106.refr(1;3)
+		return(v.bank1)
+	endselect
+	
+	return(v.bank1)
+}	
+
+function get.address()
+{	
+	addr1 = ""
+	addr2 = ""
+	addr3 = ""
+	addr4 = ""
+	addr5 = ""
+	addr6 = ""
+	
+	select tccom130.ln01:addr1,
+		tccom130.ln02:addr2,
+		tccom130.ln03:addr3,
+		tccom130.ln04:addr4,
+		tccom130.ln05:addr5,
+		tccom130.ln06:addr6
+	from   tccom130
+	where  tccom130._index1 = {:tccom100.cadr}
+	selectdo
+		
+	endselect
+
+}
+
+function initial()
+{
+	yy = 0
+	mm = 0
+	dd = 0
+	date.f = 0
+	date.t = 0
+	tmp.yr = 0
+	tmp.prd = 0
+}
+												|#20150615.sg.sn
+
+function domain tfgld.date select.table.period(domain tfgld.year year, domain tfgld.prod prod, domain tcmcs.str1 char)
+{
+
+	domain tfgld.date	ddat
+ 
+	ddat = 0
+	
+	on case char
+		case "S":
+			select		tfgld005.*
+			from		tfgld005
+			where		tfgld005._index1 = {tfgld.ptyp.financial, :year, :prod}
+			and		tfgld005.corr = tcyesno.no
+			order by 	tfgld005._index1
+			selectdo
+				ddat = tfgld005.stdt
+			endselect
+		break
+		case "E":
+			if prod.t = 12 then
+				select		tfgld006.*
+				from		tfgld006
+				where		tfgld006._index1 = {:year}
+				order by	tfgld006._index1
+				selectdo
+					ddat = tfgld006.fpdt
+				endselect
+			else
+				select		tfgld005.*
+				from		tfgld005
+				where		tfgld005._index1 = {tfgld.ptyp.financial, :year, :prod + 1}
+				and		tfgld005.corr = tcyesno.no
+				order by	tfgld005._index1
+				selectdo
+					ddat = tfgld005.stdt - 1
+				endselect
+			endif
+		break
+	endcase
+	
+	return (ddat)
+}
+												|#20150615.sg.en

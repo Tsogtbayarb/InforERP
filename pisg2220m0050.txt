@@ -1,0 +1,273 @@
+|******************************************************************************
+|* tpisg2220m005  0  VRC B61U a7 isg 
+|* Add Activity in Project
+|* merino1                       
+|* 2018-08-14
+|******************************************************************************
+|* Form Type 4
+|******************************************************************************
+| ID: ISGEC01100, Sahil Sharma, VRC B61U a7 isg, 26-09-2018
+| New Development
+|****************************** declaration section ***************************
+declaration:
+	table	ttpisg220
+	table	ttpisg200
+	table	ttpisg221
+	table	ttpisg210
+	
+	extern	domain	tccprj			cprj
+	extern	domain	tcmcs.str30		cact, pact
+	extern	domain	tcmcs.str20		amod, pcbs
+	extern	domain	tcmcs.str50		bohd
+	extern	domain	tcorno			pcod, dept, acty
+	extern	domain	tcyesno			vali
+	extern	domain	tcmcs.str256m		desc, all.pred.acts, all.prnt.acts
+	extern	domain	tcmcs.long		actp, flag, outl
+	extern	domain	tcmcs.s200u		sub1
+	extern	domain	tcmcs.st150m		sub2, sub3, sub4
+	extern	domain	tpexp.dom		exdo
+	extern	domain	tcsess			sess.code
+	
+|****************************** program section ********************************
+before.program:
+	import("prog.name$", sess.code)
+	if sess.code = "tpisg2120m000" then
+		import("tpisg220.pcod", pcod)
+		import("tpisg220.cprj", cprj)
+	else
+		message("This session opens from another session")
+		end()
+	endif
+	
+|****************************** group section **********************************
+
+|****************************** Field section **********************************
+field.cact:
+before.zoom:
+	tpisg200.cprd = pcod
+	
+check.input:
+	select tpisg200.cact
+	from	tpisg200
+	where	tpisg200._index1 = {:pcod,:cact}
+	selectdo
+	selectempty
+		message("Invalid Input")
+		set.input.error("")
+	endselect
+
+after.field:
+	select	tpisg200.*
+	from	tpisg200
+	where	tpisg200._index1 = {:pcod,:cact}
+	selectdo
+		desc = tpisg200.desc
+		pact = tpisg200.pact
+		bohd = tpisg200.bohd
+		dept = tpisg200.dept
+		vali = tpisg200.vali
+		sub1 = tpisg200.sub1
+		sub2 = tpisg200.sub2
+		sub3 = tpisg200.sub3
+		sub4 = tpisg200.sub4
+		amod = tpisg200.amod
+		pcbs = tpisg200.pcbs
+		exdo = tpisg200.exdo
+		acty = tpisg200.acty
+		outl = tpisg200.outl
+	endselect
+	
+|************************* Choice section **************************************
+choice.add.newact:
+on.choice:
+	check.all.input()
+	all.pred.acts = ""
+	all.prnt.acts = ""
+	select	tpisg210.pact
+	from	tpisg210
+	where	tpisg210._index1 = {:pcod,:cact}
+	selectdo
+		select	tpisg220.cact
+		from	tpisg220
+		where	tpisg220._index1 = {:cprj,:pcod,:tpisg210.pact}
+		selectdo
+		selectempty
+			if isspace(all.pred.acts) then
+				all.pred.acts = tpisg210.pact
+			else
+				all.pred.acts = all.pred.acts&","&tpisg210.pact
+			endif
+		endselect
+	endselect
+	
+	select	tpisg200.pact
+	from	tpisg200
+	where	tpisg200._index1 = {:pcod,:cact}
+	selectdo
+		select	tpisg220.cact
+		from	tpisg220
+		where	tpisg220._index1 = {:cprj,:pcod,:tpisg210.pact}
+		selectdo
+		selectempty
+			if isspace(all.prnt.acts) then
+				all.prnt.acts = tpisg200.pact
+			else
+				all.prnt.acts = all.prnt.acts&","&tpisg200.pact
+			endif
+		endselect
+	endselect
+	
+	if isspace(all.pred.acts) and isspace(all.prnt.acts) then
+| 		add.new.activity()
+| 		add.all.relationships()
+	else
+		if not isspace(all.pred.acts)	then
+			message(trim$(all.pred.acts)&". "&"Predecessor Activities are Present!")
+		endif
+		
+		if not isspace(all.prnt.acts)	then
+			message(trim$(all.prnt.acts)&"."&"Parent Activities are Present!")
+		endif	
+	endif
+	
+	add.new.activity()
+	add.all.relationships()
+	check.and.add.parent.activity.in.relationships(cact)	|#Atul.14.11.2018.n
+	
+|************************* Functions ****************************************
+functions:
+
+function add.new.activity()
+{
+	flag = 0
+	select	tpisg220.*
+	from	tpisg220
+	where	tpisg220._index1 = {:cprj,:pcod,:cact}
+	selectdo
+		message("Record Already Exists!")
+	selectempty
+		flag = 1
+		tpisg220.cprj = cprj
+		tpisg220.pcod = pcod
+		tpisg220.cact = cact
+		tpisg220.desc = desc
+		tpisg220.pact = pact
+		tpisg220.bohd = bohd
+		tpisg220.dept = dept
+		tpisg220.vali = vali
+		tpisg220.sub1 = sub1
+		tpisg220.sub2 = sub2
+		tpisg220.sub3 = sub3
+		tpisg220.sub4 = sub4
+		tpisg220.amod = amod
+		tpisg220.pcbs = pcbs
+		tpisg220.exdo = exdo
+		tpisg220.acty = acty
+		tpisg220.outl = outl
+		db.insert(ttpisg220, db.skip.dupl, e)
+	endselect
+	
+	if not e and (flag = 1) then
+		commit.transaction()
+		renumber.in.220(cprj,pcod)
+		message("Added Succesfully!")
+	endif
+}
+
+function add.all.relationships()
+{	
+	flag = 0
+	select	tpisg210.*
+	from	tpisg210
+	where	tpisg210._index1 = {:pcod,:cact}
+	selectdo
+		if activity.exist.in.tpisg220(cprj,tpisg210.cprd,tpisg210.cact,tpisg210.pact) then		|#Atul.14.11.2018.n
+			select	tpisg221.*
+			from	tpisg221
+| 	 		where	tpisg221._index1 = {:cprj,:tpisg210.cprd,:tpisg210.cact}			|#Atul.14.11.2018.o
+			where	tpisg221._index1 = {:cprj,:tpisg210.cprd,:tpisg210.cact,:tpisg210.pact}	|#Atul.14.11.2018.n
+			selectdo
+			selectempty
+				flag = 1
+				tpisg221.cprj = cprj
+				tpisg221.pcod = tpisg210.cprd
+				tpisg221.cact = tpisg210.cact
+				tpisg221.pact = tpisg210.pact
+				tpisg221.sact = tpisg210.sact
+				tpisg221.rltp = tpisg210.rltp
+				tpisg221.lelg = tpisg210.lead
+				db.insert(ttpisg221, db.skip.dupl, e)
+			endselect
+		endif												|#Atul.14.11.2018.n
+	endselect
+	
+	if not e and (flag = 1) then
+		commit.transaction()
+	endif
+
+}
+
+				|#Atul.14.11.2018.sn
+function boolean activity.exist.in.tpisg220(
+		domain	tccprj		e.cprj,
+		domain	tcorno		e.pcod,
+		domain	tcmcs.str30	e.cact,
+		domain	tcmcs.str30	e.pact)
+{
+	select	atpisg220.acty
+	from	tpisg220 atpisg220
+	where	atpisg220._index1 = {:e.cprj,:e.pcod,:e.pact}
+	selectdo
+	selectempty
+		return(false)
+	endselect
+
+	return(true)
+}
+
+function check.and.add.parent.activity.in.relationships(domain	tcmcs.str30	c.pact)
+{
+	select	tpisg210.*
+	from	tpisg210
+	where	tpisg210._index1 = {:pcod}
+	and	tpisg210.pact = :c.pact
+	selectdo
+		if parent.activity.in.relationship() then
+			select	tpisg221.*
+			from	tpisg221
+			where	tpisg221._index1 = {:cprj,:pcod,:tpisg210.cact,:c.pact}
+			selectdo
+			selectempty	
+				tpisg221.cprj = cprj
+				tpisg221.pcod = tpisg210.cprd
+				tpisg221.cact = tpisg210.cact
+				tpisg221.pact = tpisg210.pact
+				tpisg221.sact = tpisg210.sact
+				tpisg221.rltp = tpisg210.rltp
+				tpisg221.lelg = tpisg210.lead
+				db.insert(ttpisg221, db.skip.dupl, e)
+			endselect
+		endif		
+	endselect
+	
+	if not e then
+		commit.transaction()
+	else
+		abort.transaction()
+	endif	
+}
+
+function boolean parent.activity.in.relationship()
+{
+	select	atpisg221.pact
+	from	tpisg221 atpisg221
+	where	atpisg221._index1 = {:cprj,:pcod,:tpisg210.cact}
+	as set with 1 rows
+	selectdo
+	selectempty
+		return(false)
+	endselect
+	
+	return(true)
+}
+				|#Atul.14.11.2018.en

@@ -1,0 +1,109 @@
+|******************************************************************************
+|* tdisg2201m200  0  VRC B61U a7 live
+|* Rejected Indent Child Item Free
+|* Installation user             
+|* 2014-09-09
+|******************************************************************************
+|* Main table tdpur201 Purchase Requisition Lines, Form Type 4
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttdpur201 | Purchase Requisition Lines
+	table	ttcisg004	
+	table	ttcisg005	
+	table	tdmisg005	
+
+	extern	domain	tccprj		cprj.f
+   
+#include <bic_dam>
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+group.1:
+init.group:
+   get.screen.defaults()
+|****************************** Choice section **********************************
+choice.update:
+on.choice:
+	read.main.table()
+
+|****************************** Function section **********************************
+
+functions:
+
+function read.main.table()
+{
+	db.retry.point()
+	select 	tdpur201.*
+	from	tdpur201 for update
+	where	tdpur201._index2 = {:cprj.f}
+	and	tdpur201.rejc = tcyesno.yes
+	and	tdpur201.rqno(1;1) <> "R"
+	and	tdpur201.pric = 0
+	and	tdpur201.oamt = 0
+	order by tdpur201.cprj asc
+	selectdo
+		if	tdpur201.rqno(1;1) <> "R"	then
+			Item_Release_Line(tdpur201.rqno, tdpur201.pono, tdpur201.cprj, tdpur201.cspa, tdpur201.item)
+			commit.transaction()
+		endif
+	endselect		
+}
+
+
+function Item_Release_Line(
+			domain	tcrqno		i.rqno,
+			domain	tcpono		i.pono,
+			domain	tccprj		i.cprj,
+			domain	tppdm.cspa	i.cspa,
+			domain	tcitem		i.loti
+			)
+{
+	select	tcisg004.docn, tcisg004.rvid, tcisg004.item
+	from	tcisg004 for update
+	where	tcisg004._index1 = {:i.cprj, :i.cspa, :i.loti}
+	and	tcisg004.refq = tcyesno.no
+	and	tcisg004.orno = tcyesno.no
+	and	tcisg004.rcpt = tcyesno.no
+	and	tcisg004.indt = tcyesno.yes
+	selectdo
+		select	tcisg005.type
+		from	tcisg005 for update
+		where	tcisg005._index1 = {:i.cprj, :i.cspa, :i.loti, :tcisg004.item, tdisg.item.indent, :i.rqno, :i.pono}
+		selectdo
+			Update.lot.item(tcisg004.docn, tcisg004.rvid, i.cprj, i.cspa, i.loti, tcisg004.item)
+			dal.destroy.object("tcisg005")
+			dal.destroy.object("tcisg004")
+		selectempty
+			Update.lot.item(tcisg004.docn, tcisg004.rvid, i.cprj, i.cspa, i.loti, tcisg004.item)
+			dal.destroy.object("tcisg004")
+		endselect	
+	endselect	
+}
+		
+
+function Update.lot.item(
+			domain	dmdoc.docid	il.docn,
+			domain	dmdoc.revv	il.revi,
+			domain	tccprj		il.cprj,
+			domain	tppdm.cspa	il.cspa,
+			domain	tcitem		il.loti,
+			domain	tcitem		il.item
+			)
+{
+	long	e.ret
+	
+	select	dmisg005.stat
+	from	dmisg005 for update
+	where	dmisg005._index1 = {:il.cprj, :il.cspa, :il.docn, :il.revi, :il.item}
+	and	dmisg005.loti = :il.loti
+	selectdo
+		dal.change.object("dmisg005")
+		dal.set.field("dmisg005.stat", dmstat.process)		|Drawing Release
+		e.ret = dal.save.object("dmisg005")
+	endselect	
+}			
+

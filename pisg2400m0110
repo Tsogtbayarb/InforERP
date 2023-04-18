@@ -1,0 +1,413 @@
+|******************************************************************************
+|* tfgld14027  0  VRC B40O c4 SIS 
+|* Print Interunit Debit/Credit Note
+|* Veena Development User        
+|* 2007-06-28
+|******************************************************************************
+|* Main table tfgld102 Non-finalized Transactions, Form Type 4
+|******************************************************************************
+|* Ported from	BaaN.  
+|*
+|* ID   ISGEC001050,	Sujeet Kumar,		2014-09-23
+|* Amount field not initialized.
+|* Functional: Mr. Deepak Rawat
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttfgld102	| Non-finalized Transactions
+	table	ttfgld106	| finalized Transactions
+	table	ttccom000
+	table	ttfgld018
+	table	ttfgld112
+	table	ttttxt010
+	
+	extern	domain	tfgld.ttyp    	ttyp.f	fixed
+	extern	domain	tfgld.docn    	docn.f
+	extern	domain	tfgld.lino    	lino.f
+	extern	domain	tcmcs.int      	refr.m
+	extern	domain	tcntnr		iucd.m
+	extern	domain	tcmcs.str30	messrs1.m
+	extern	domain	tcmcs.str50	messrs2.m
+	extern	domain	tcmcs.str215	cash.str
+	extern	domain	tcmcs.str50	grpnama.m
+	extern	domain	tcmcs.str30	createdby.m
+	extern	domain	tcmcs.str35	nama.m
+	extern	domain	tcmcs.str30	namb.m
+	extern	domain	tcmcs.str132	line1.m
+	extern	domain	tcmcs.str132	line2.m	
+	extern	domain	tccom.cadr	addr	
+	extern	domain	tfgld.date	dcdt.m	
+	extern	domain	tcmcs.str215	txta.m
+	extern	domain	tcyesno		final.m	
+	extern	domain	tcmcs.long	comp.m,comp.m1
+	extern	domain	tfgld.serl	serl.f
+	extern	domain	tcmcs.int	i
+	extern	domain	tcyesno		text.m
+	extern	domain	tcamnt		var.amth,var.amth
+	extern	domain	tfgld.leac	new.leac,old.leac
+			long		k
+
+|****************************** program section **********************************
+before.program:
+	messrs1.m = "Accounts Dept."
+|****************************** form section **********************************
+form.1:
+init.form:
+	get.screen.defaults()
+
+|****************************** choice section ********************************
+choice.cont.process:
+on.choice:
+	execute(print.data)
+
+choice.print.data:
+on.choice:
+	if rprt_open() then
+		if final.m = tcyesno.no then	
+			read.main.table()		|Non-Finalized Transactions
+			rprt_close()
+		else
+			read.main.table.106()		|Finalized Transactions
+			rprt_close()
+		endif	
+	else
+		choice.again()
+	endif
+
+|****************************** field section *********************************
+field.iucd.m:
+check.input:
+	select	tcemm170.comp
+	from	tcemm170
+	where	tcemm170._index1 = {:iucd.m}
+	selectdo
+	selectempty
+		message("Invalid Company Code")
+		set.input.error("",e)
+	endselect	
+
+after.input:
+	switch.to.company(iucd.m)
+	
+| field.ttyp.f:
+| before.zoom:
+| on case final.m
+| 	case tcyesno.no:
+| 		attr.zoomsession$ = "tfgld1502m003"
+| 		break
+| 	case tcyesno.yes:
+| 		attr.zoomsession$ = "tfgld1506m002"
+| 		break	
+| 	endcase
+
+field.docn.f:
+before.zoom:
+	tfgld018.ttyp = ttyp.f
+| after.zoom:
+| display.all()
+
+| field.refr.m:
+|check.input:
+| before.display:
+| 	on case refr.m
+| 	case 1:
+| 		messrs1.m = "Accounts Dept."
+| 		break
+| 	case 2:
+| 		messrs1.m = "Commercial Dept."
+| 		break
+| 	default:
+| 		message("Invalid option")
+| 		set.input.error("")
+| 	endcase
+
+field.lino.f:
+before.zoom:
+	if final.m = tcyesno.yes then
+		tfgld106.otyp = ttyp.f
+		tfgld106.odoc = docn.f
+		attr.zoomsession$ = "tfgld1509m000"
+		attr.zoomreturn$ = "tfgld106.olin"
+	else
+		tfgld102.ttyp = ttyp.f
+		tfgld102.docn = docn.f		
+		attr.zoomsession$ = "tfgld1508m000"
+		attr.zoomreturn$ = "tfgld102.lino"
+	endif	
+|****************************** function section ******************************
+functions:
+function read.main.table()
+{	
+	domain	tcmcs.long	len.m	
+	domain	tcmcs.str20	cash.str1
+	domain	tcmcs.str132	cash.str2
+	comp.m = get.compnr()
+	line1.m = ""
+	line2.m = ""
+	get.amount1()
+	select	tccom130.nama:messrs2.m
+	from	tccom130
+	where	tccom130._index1 = {:addr}
+	selectdo
+	selectempty
+		messrs2.m = ""
+	endselect
+	
+	select	tfgld102.*
+	from	tfgld102
+	where	tfgld102.ttyp = :ttyp.f
+	and	tfgld102.docn = :docn.f
+ 	and	tfgld102.lino = :lino.f
+	and	tfgld102.cono = :comp.m
+	and	tfgld102.leac between "30000000" and "3999999"	
+	selectdo
+		dcdt.m = tfgld102.dcdt
+		get.text.desc(tfgld102.txta)		
+		
+		createdby.m = ""
+		tfgld018.user = ""
+		
+		select	tfgld018.user 
+		from 	tfgld018 
+		where 	tfgld018.ttyp = :tfgld102.ttyp 
+		and 	tfgld018.docn = :tfgld102.docn 
+		selectdo 
+		endselect
+		
+		select	ttaad200.name:createdby.m 
+		from	ttaad200 
+		where 	ttaad200.user = :tfgld018.user 
+		and	ttaad200._compnr = 0
+		selectdo 
+		endselect
+		
+		tccom000.nama = ""
+| 		tccom000.namb = ""
+		grpnama.m = ""
+		
+		select	tccom000.nama,tfgld004.gcmp 
+		from	tccom000, tfgld004 
+		where 	tccom000.ncmp = tfgld004.gcmp 
+		selectdo 
+| 			grpnama.m = strip$(tccom000.nama) & " " & strip$(tccom000.namb)
+			grpnama.m = strip$(tccom000.nama) 
+		endselect
+		
+		nama.m = ""
+		namb.m = ""
+		
+		select	tccom000.nama:nama.m
+		from 	tccom000 
+		where 	tccom000.ncmp = :comp.m
+		selectdo 
+		endselect
+		
+		cash.str = ""
+		cash.str1 = ""
+		cash.str2 = ""
+		
+		tfgld.dll9999.1.in.words(abs(var.amth),cash.str)
+		if var.amth > 0 then
+			tfgld106.dbcr = tfgld.dbcr.credit
+		else
+			tfgld106.dbcr = tfgld.dbcr.debit
+		endif
+		
+		len.m = len(cash.str)
+		if len.m <= 18 then
+			cash.str1 = cash.str(1;len.m)
+			line1.m = "We have to advice having this day "&strip$(enum.descr$("tfgld.dbcr",tfgld102.dbcr))&"ed your Account with a sum of Rs. "&strip$(shiftl$(sprintf$("%A095",abs(var.amth))))&" (Rupees "&strip$(cash.str1)&")."
+			line2.m = " As per details given below : "
+		else
+			for i = 17 to 1 step -1
+				if cash.str(i;1) = " " then 
+					break 
+				endif
+			endfor
+			
+			cash.str1 = cash.str(1;i)
+			
+			i = i + 1
+			
+			line1.m = "We have to advice having this day "&strip$(enum.descr$("tfgld.dbcr",tfgld102.dbcr))&"ed your Account with a sum of Rs. "&strip$(shiftl$(sprintf$("%A095",abs(var.amth))))&" (Rupees "&strip$(cash.str1)
+			cash.str2 = cash.str(i;len.m)&")."
+			line2.m = strip$(cash.str2)&" As per details given below : "
+		endif	
+	selecteos	
+		rprt_send()		
+	selectempty
+	endselect
+}
+
+function read.main.table.106()
+{	
+	domain	tcmcs.long	comp.m
+	domain	tcmcs.long	len.m	
+	domain	tcmcs.str20	cash.str1
+	domain	tcmcs.str132	cash.str2
+	
+	comp.m = get.compnr()
+	
+	select	tccom130.nama:messrs2.m
+	from	tccom130
+	where	tccom130._index1 = {:addr}
+	selectdo
+	selectempty
+		messrs2.m = ""
+	endselect
+	get.amount()
+	
+	select	tfgld106.*
+	from	tfgld106
+	where	tfgld106.otyp = :ttyp.f
+	and	tfgld106.odoc = :docn.f
+ 	and	tfgld106.olin = :lino.f	
+	and	tfgld106.leac between "30000000" and "3999999"
+	selectdo
+		dcdt.m = tfgld106.dcdt
+		get.text.desc(tfgld106.txta)
+		createdby.m = ""
+		select	ttaad200.name:createdby.m 
+		from 	ttaad200 
+		where 	ttaad200.user = :tfgld106.user 
+		and	ttaad200._compnr = 0 
+		selectdo 
+		endselect
+		
+		tccom000.nama = ""
+| 		tccom000.namb = ""
+		grpnama.m = ""
+		select	tccom000.nama,tfgld004.gcmp 
+		from 	tccom000, tfgld004 
+		where 	tccom000.ncmp = tfgld004.gcmp 
+		selectdo 
+| 			grpnama.m = strip$(tccom000.nama) & " " & strip$(tccom000.namb)
+			grpnama.m = strip$(tccom000.nama)
+		endselect
+		
+		nama.m = ""
+		namb.m = ""
+		select	tccom000.nama:nama.m
+		from 	tccom000 
+		where	tccom000.ncmp = :comp.m
+		selectdo 
+		endselect
+		
+		cash.str = ""
+		cash.str1 = ""
+		cash.str2 = ""
+		tfgld.dll9999.1.in.words(abs(var.amth),cash.str)
+		if var.amth > 0 then
+			tfgld106.dbcr = tfgld.dbcr.credit
+		else
+			tfgld106.dbcr = tfgld.dbcr.debit
+		endif
+		len.m = len(cash.str)
+		if len.m <= 18 then
+			cash.str1 = cash.str(1;len.m)
+			line1.m = "We have to advice having this day "&strip$(enum.descr$("tfgld.dbcr",tfgld106.dbcr))&
+				"ed your Account with a sum of Rs. "&strip$(shiftl$(sprintf$("%A095",abs(var.amth))))&" (Rupees "&strip$(cash.str1)&")."
+				line2.m = " As per details given below : "
+		else
+			for i = 17 to 1 step -1
+				if cash.str(i;1) = " " then 
+					break 
+				endif
+			endfor
+			
+			cash.str1 = cash.str(1;i)
+			i = i + 1
+			
+			line1.m = "We have to advice having this day "&strip$(enum.descr$("tfgld.dbcr",tfgld106.dbcr))&
+				"ed your Account with a sum of Rs. "&strip$(shiftl$(sprintf$("%A095",abs(var.amth))))&" (Rupees "&strip$(cash.str1)
+			cash.str2 = cash.str(i;len.m)&")."
+			line2.m = strip$(cash.str2)&" As per details given below : "
+		endif	
+	selecteos	
+		rprt_send()		
+	endselect
+}
+function  get.text.desc(domain	 tttxt.ctxt	i.txta)
+{
+	select	tttxt010.text:txta.m
+	from	tttxt010
+	where	tttxt010._index1 = {:i.txta,"2"}
+	selectdo
+	selectempty
+		txta.m = ""
+	endselect
+}
+function get.amount()
+{
+	k = 0
+				|#ISGEC001050.sn
+	new.leac = ""
+	var.amth = 0
+	old.leac = ""
+				|#ISGEC001050.en
+	select	tfgld106.*
+	from	tfgld106
+	where	tfgld106.otyp = :ttyp.f
+	and	tfgld106.odoc = :docn.f
+ 	and	tfgld106.olin = :lino.f	
+	and	tfgld106.leac between "30000000" and "3999999"
+	selectdo
+		k = k + 1
+		if k = 1 then
+			if tfgld106.dbcr = tfgld.dbcr.credit  then
+				var.amth = tfgld106.amth(1) 
+			else
+				var.amth =  - (tfgld106.amth(1)) 
+			endif	
+		endif
+		new.leac = tfgld106.leac
+		if new.leac = old.leac then
+			if tfgld106.dbcr = tfgld.dbcr.credit then
+				var.amth = var.amth + tfgld106.amth(1) 
+			else
+				var.amth = var.amth - tfgld106.amth(1) 
+			endif	
+		endif	
+		old.leac = new.leac
+		new.leac = ""
+	selectempty
+		var.amth = 0	
+	endselect		
+}
+function get.amount1()
+{
+	k = 0
+			|#ISGEC001050.sn
+	var.amth = 0
+	new.leac = ""
+	old.leac = ""
+			|#ISGEC001050.en
+	select	tfgld102.*
+	from	tfgld102
+	where	tfgld102.ttyp = :ttyp.f
+	and	tfgld102.docn = :docn.f
+ 	and	tfgld102.lino = :lino.f
+	and	tfgld102.leac between "30000000" and "3999999"	
+	selectdo
+		k = k + 1
+		if k = 1 then
+			if tfgld102.dbcr = tfgld.dbcr.credit  then
+				var.amth = tfgld102.amth(1) 
+			else
+				var.amth =  - (tfgld102.amth(1)) 
+			endif	
+		endif
+		new.leac = tfgld102.leac
+		if new.leac = old.leac then
+			if tfgld102.dbcr = tfgld.dbcr.credit then
+				var.amth = var.amth + tfgld102.amth(1) 
+			else
+				var.amth = var.amth - tfgld102.amth(1) 
+			endif	
+		endif	
+		old.leac = new.leac
+		new.leac = ""	
+	selectempty
+		var.amth = 0	
+	endselect		
+}

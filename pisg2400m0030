@@ -1,0 +1,140 @@
+|******************************************************************************
+|* tfisg2400m003  0  VRC B61U a7 live
+|* 
+|* Tools                         
+|* 2014-06-04
+|******************************************************************************
+|* Main table tfacp200 Open Items (Purchase Invoices &amp; Payments), Form Type 4
+|******************************************************************************
+|* IDENT ISGEC001040, Neerav Singh, 04-06-2014, B61U a7 live   
+|******************************************************************************
+|* IDENT ISG001030	Somak Mondal	17-06-2014	VRC B61U a7 live
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttfacp200 | Open Items (Purchase Invoices &amp; Payments)
+  table   ttfgld482 |
+  table   ttccom100 |
+  table   ttfacp250 |
+  table   ttpppc215 |
+  table   ttfgld482 |
+
+   extern  domain  tfgld.docn       docn.f
+   extern  domain  tfgld.docn       docn.t
+   extern  domain  tfgld.ttyp       ttyp.f    fixed
+   extern  domain  tfgld.ttyp       ttyp.t    fixed
+   extern  domain  tccom.bpid       supp.f	    	
+   extern  domain  tccom.bpid       supp.t
+   extern  domain  tcdate           date.f
+   extern  domain  tcdate           date.t
+   extern  domain  tcncmp           comp.i
+   extern  domain  tfgld.amnt       amth.a,v.amth
+   extern  domain  tcmcs.str20	     docn.i   
+   extern  domain  tcmcs.str20	     docn.o
+|****************************** program section ********************************
+before.program:
+comp.i=get.compnr()
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.cont.process:
+on.choice:
+   execute(print.data)
+
+choice.print.data:
+on.choice:
+   if rprt_open() then
+       read.main.table()
+       rprt_close()
+   else
+       choice.again()
+   endif
+
+
+|****************************** field section *********************************
+field.supp.f:
+when.field.changes:
+   supp.t = supp.f
+   
+field.ttyp.f:
+when.field.changes:
+   ttyp.t = ttyp.f
+
+field.docn.f:
+when.field.changes:
+   docn.t = docn.f
+
+field.date.f:
+when.field.changes:
+   date.f = date.f
+
+|****************************** function section ******************************
+functions:
+function read.main.table()
+{
+	amth.a=0	
+	select	tfacp200.*
+	from  	tfacp200 
+	where 	tfacp200._index6 inrange {:supp.f,:ttyp.f,:docn.f,:date.f}
+					and {:supp.t,:ttyp.t,:docn.t,:date.t}
+	and tfacp200.tpay in(1,4) 
+	and tfacp200.docn = 0 
+	and tfacp200.appr in(2,10)
+	order by tfacp200._index1
+	selectdo
+		select	tccom100.bpid,tccom100.nama 
+		from  	tccom100
+		where	tccom100._index1={:tfacp200.ifbp}
+		selectdo
+		selectempty
+			tccom100.bpid = ""					|ISG001030.sn
+			tccom100.nama = ""					|ISG001030.en
+		endselect
+	  
+		select	tfacp250.tapr,tfacp250.dapr,tfacp250.data,tfacp250.orno,tfacp250.pono,tfacp250.sqnb,tfacp250.amth
+		from  	tfacp250
+		where 	tfacp250._index1={:comp.i,:tfacp200.ttyp,:tfacp200.ninv}
+		selectdo
+			select	tpppc215.guid
+			from  	tpppc215
+			where 	tpppc215._index5={:tfacp250.orno,:tfacp250.pono,:tfacp250.sqnb}
+|			and 	tpppc215.tetd = 4
+			selectdo
+				select	tfgld482.buid,tfgld482.ttyp,tfgld482.docn,tfgld482.lino,tfgld482.trdt,tfgld482.amth
+				from	tfgld482
+				where	tfgld482.buid = :tpppc215.guid
+				and  	tfgld482.dbcr = tfgld.dbcr.credit 
+				selectdo
+					if not isspace(tfgld482.ttyp) and tfgld482.docn <> 0 then
+						docn.i = tfgld482.ttyp & "/" & str$ (tfgld482.docn) & "/" & str$(tfgld482.lino)
+					endif
+				selectempty
+					docn.i = ""					|ISG001030.sn
+					tfgld482.trdt = 0 
+					tfgld482.amth(1) = 0.00				|ISG001030.en	
+				endselect
+			endselect
+		selectempty
+			docn.o = ""
+			tfacp250.data = 0
+			tfacp250.amth(1) = 0.00						|ISG001030.n
+			v.amth = 0.00							|ISG001030.n
+		endselect
+		if not	isspace(tfacp250.tapr) and tfacp250.dapr <> 0 Then		|ISG001030.sn
+			docn.o = tfacp250.tapr & "/" & str$(tfacp250.dapr)
+			v.amth = tfacp250.amth(1)
+		else
+			docn.o = ""
+			tfacp250.data = 0
+			v.amth = 0.00							|ISG001030.en
+		endif
+
+		rprt_send()
+	endselect
+}

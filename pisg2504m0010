@@ -1,0 +1,131 @@
+|******************************************************************************
+|* tdisg2504m001  0  VRC B61U a7 live
+|* Display Vendor Rating
+|* Tools                         
+|* 2014-07-22
+|******************************************************************************
+|* Main table tdisg204 Vendor Rating, Form Type 1
+|******************************************************************************
+| IDENT #ISG001087, GAURAV GUPTA, IT0304, 22-07-2014  VRC B61U a7 live   
+|*
+|* ISGEC001194, IT0205, Arjit Gupta, VRC B61U a7 isg, Dt. 24-12-2014
+|* Validation when freezing Vendor rating, it should scores min. 3 criterion.
+|******************************************************************************
+|* PATCH002022, IT0376, Mani sharma , Dt.31-04-2015, VRC B61U a7 isg   
+|* send supplier on holiday after freeze 
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttdisg204 | Vendor Rating
+  table   ttdisg205
+  table   ttdisg202
+  table   ttdisg203
+  
+  #include <bic_dam>
+  
+ extern domain tcqiv1 tot.rate
+	extern	domain	tcqiv1		rate.wght	|#ISGEC001194.n
+	extern	domain	tcqiv1		crtr.wght	|#ISGEC001194.n
+long ret_val
+|****************************** program section ********************************
+|****************************** choice section ********************************
+choice.freeze:
+						|#ISGEC001194.sn
+before.choice:
+	if	Total_Criteria(tdisg204.orno, tdisg204.type)	< 3	then
+		message("Min. no. of criteria must be 3")
+		choice.again()
+	endif	
+						|#ISGEC001194.en
+						
+on.choice:
+	select	tdisg204.frez
+	from	tdisg204 for update
+	where	tdisg204._index2= {:tdisg204.orno,:tdisg204.type}
+	and	tdisg204.frez = tcyesno.no
+	selectdo
+		tdisg204.frez = tcyesno.yes
+		db.update(ttdisg204, db.retry)
+	endselect
+	commit.transaction()
+	calculate.rating()
+
+after.choice:
+	dal.start.business.method("tdisg204","check.holiday.criteria",ret_val)		|PATCH002022.sn
+	if ret_val = 0 then
+		commit.transaction()
+	else
+		abort.transaction()
+	endif											|PATCH002022.en
+|****************************** group section **********************************
+|****************************** function section **********************************
+functions:
+function calculate.rating()
+{
+	tot.rate = 0
+	rate.wght = 0			|#ISGEC001194.n
+	crtr.wght = 0			|#ISGEC001194.n
+	select tdisg204.*
+	from	tdisg204
+	where	tdisg204._index2 = {:tdisg204.orno, :tdisg204.type}
+	selectdo
+		select	tdisg203.wght
+		from	tdisg203
+		where	tdisg203._index1 = {:tdisg204.rate}
+		selectdo
+		endselect
+		
+		select	tdisg202.wght
+		from	tdisg202
+		where	tdisg202._index1 = {:tdisg204.type, :tdisg204.code}
+		selectdo
+		endselect
+		
+		crtr.wght = crtr.wght + tdisg202.wght			|#ISGEC001194.n
+		
+		tot.rate = tot.rate + ((tdisg203.wght * tdisg202.wght)/100)		
+	endselect
+								|#ISGEC001194.sn
+	if	crtr.wght <> 0	then
+		tot.rate = (tot.rate / crtr.wght) * 100	
+	endif
+								|#ISGEC001194.en
+	insert.tdisg205()
+}
+
+function insert.tdisg205()
+{
+	select	tdisg205.*
+	from	tdisg205
+	where	tdisg205._index1 = {:tdisg204.orno,:tdisg204.type}
+	selectdo
+	selectempty
+		tdisg205.orno = tdisg204.orno
+		tdisg205.type = tdisg204.type
+		tdisg205.rate = tot.rate
+		tdisg205.bpid = tdisg204.supp
+		db.insert(ttdisg205, db.skip.dupl)
+		commit.transaction()
+	endselect
+}
+
+						|#ISGEC001194.sn
+function long	Total_Criteria(
+			domain	tcorno	i.orno,
+			domain	tdtype	i.type
+				)
+{
+	domain	tcmcs.long	cnt.rec
+	
+	cnt.rec = 0
+	select	count(cr_tdisg204.code):cnt.rec
+	from	tdisg204 cr_tdisg204
+	where	cr_tdisg204._index2 = {:i.orno, :i.type}
+	selectdo
+	endselect
+	
+	return(cnt.rec)
+}
+						|#ISGEC001194.en
+
+

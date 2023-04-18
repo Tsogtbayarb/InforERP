@@ -1,0 +1,415 @@
+|******************************************************************************
+|* tfisg2400m013  0  VRC B61U a7 live
+|* Print Voucher
+|* Tools                         
+|* 2014-08-25
+|******************************************************************************
+|* Main table tfacp200 Open Items (Purchase Invoices &amp; Payments), Form Type 4
+|******************************************************************************
+|*
+|* ISGEC001119, Dharmendra, 20-1--2-14
+|* New report for Invoice Format
+|*
+|* ID ISGEC001166,	Sujeet Kumar,		2014-11-25
+|* Report Layout Changes
+|* Debit/Credit Note of Report Lable Changes
+|* Functional: Mr. Deepak Rawat
+|******************************************************************************
+|* IDENT ISG001040,Mani sharma, 2-01-2015
+|* Change credit/debit value
+|****************************************************************************
+|*IDENT ISGEC01019, Shilpa Janardanan, 2015-01-14
+|* Amount in words
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttfacp200 | Open Items (Purchase Invoices &amp; Payments)
+	table	ttfgld018
+	table	ttfgld102
+	table	ttfgld106
+	table	ttccom100
+	table	ttccom130
+	table	ttfacr200					|ISGEC001119.sn
+	table	ttpisg045					|ISGEC001119.en
+
+	|**************** Form Variable ***************
+	extern	domain	tfgld.docn	var.docn
+	extern	domain	tfgld.ttyp	var.ttyp
+	extern	domain	tcncmp		var.ncmp
+	extern	domain	tccom.cadr	var.cadr
+	
+	|************** Report Variable ****************
+	extern	domain	tcmcs.str10	docn.type
+	extern	domain	tcmcs.str100m	adr.line01
+	extern	domain	tcmcs.str60	repo.desc
+	extern	domain	tcmcs.str30	bpid.desc
+	extern	domain	tfgld.amnt	repo.amnt
+	extern	domain	tcmcs.s130m	repo.amt.words
+	extern	domain	tcmcs.str35	project.code
+	
+	extern	domain	tcmcs.str11	text1			|#ISGEC001166.n
+	
+	|************** Script Variable ****************
+	extern	domain	tcncmp		curr.comp
+	
+
+|****************************** program section ********************************
+before.program:
+	curr.comp = get.compnr()
+
+|****************************** group section **********************************
+group.1:
+init.group:
+	get.screen.defaults()
+
+|****************************** choice section ********************************
+choice.cont.process:
+on.choice:
+	execute(print.data)
+
+choice.print.data:
+on.choice:
+	project.code = ""					|ISGEC001119.n
+	
+	if rprt_open() then
+		if reportno = 1 then
+			read.main.table()
+		else
+			read.main.table()
+		endif
+		rprt_close()
+	else
+		choice.again()
+	endif
+
+|****************************** field section *********************************
+field.var.ttyp:
+before.zoom:
+	switch.to.company(var.ncmp)
+	query.extend.where.in.zoom("tfgld011.catg in (tfgld.catg.sales.inv, tfgld.catg.sales.cred, tfgld.catg.purchase.inv, tfgld.catg.purchase.cred)")
+
+after.zoom:
+	switch.to.company(curr.comp)
+
+field.var.docn:
+before.zoom:
+	switch.to.company(var.ncmp)
+	tfgld018.ttyp = var.ttyp
+
+after.zoom:
+	switch.to.company(curr.comp)
+	
+check.input:
+	select	tfgld018.docn
+	from	tfgld018
+	where	tfgld018._index1 = {:var.ttyp, :var.docn}
+	and	tfgld018._compnr = :var.ncmp
+	selectdo
+	selectempty
+		message("Document not found")
+		set.input.error("", e)
+	endselect	
+
+field.var.cadr:
+before.zoom:
+	switch.to.company(var.ncmp)
+
+after.zoom:
+	switch.to.company(curr.comp)
+|****************************** function section ******************************
+functions:
+
+function read.main.table()
+{
+	switch.to.company(var.ncmp)
+	select	tfgld018.trun
+	from	tfgld018
+	where	tfgld018._index1 = {:var.ttyp, :var.docn}
+	selectdo
+		var.cadr = ""
+		if reportno = 2 then					|ISGEC001119.sn
+			var.cadr = ""
+			get.project.code()
+			var.cadr = tpisg045.cadr			|#ISGEC001166.n
+		endif							|ISGEC001119.en
+		
+		
+		if	tfgld018.trun = 0	then
+			print.main.tfgld102()	|Non Finalized
+		else
+			print.main.tfgld106()	|Finalized
+		endif
+	endselect	
+	switch.to.company(curr.comp)
+}
+
+function print.main.tfgld106()
+{
+	select	tfgld106.*, tccom100.cadr, tccom100.nama
+	from	tfgld106, tccom100
+	where	tfgld106._index1 = {:var.ttyp, :var.docn}
+	and	tfgld106.cont = tcyesno.yes
+	and	tfgld106.bpid refers to tccom100 Unref Clear
+	and	tfgld106.catg in (tfgld.catg.sales.inv, tfgld.catg.sales.cred, tfgld.catg.purchase.inv, tfgld.catg.purchase.cred)
+	as set with 1 rows
+	selectdo
+		docn.type = ""
+		repo.desc = ""
+		bpid.desc = ""
+		repo.amnt = 0
+		repo.amt.words = ""
+| 		Get_Reportdesc(tfgld106.catg, repo.desc, bpid.desc)
+		Get_Reportdesc(tfgld106.catg,tfgld106.dbcr,repo.desc, bpid.desc)
+		Get_Document(tfgld106.catg, tfgld106.dbcr, docn.type)
+		Get_Amount_Finalized(var.ttyp, var.docn, repo.amnt)
+		Get_Amount_In_Words(repo.amnt, repo.amt.words)
+		if	isspace(var.cadr)	then
+			var.cadr = tccom100.cadr
+		endif
+		adr.line01 = ""
+		db.set.to.default(ttccom130)	
+		select	tccom130.ln01, tccom130.ln02, tccom130.ln03, tccom130.ln04,
+			tccom130.ln05, tccom130.ln06
+		from	tccom130
+		where	tccom130._index1 = {:var.cadr}
+		selectdo
+			adr.line01 = trim$(tccom130.ln01) & " " & trim$(tccom130.ln02)
+		endselect
+		rprt_send()	
+	endselect
+}
+
+function print.main.tfgld102()
+{
+	select	tfgld102.*, tccom100.cadr, tccom100.nama
+	from	tfgld102, tccom100
+	where	tfgld102._index2 = {:var.ncmp, :var.ttyp, :var.docn}
+	and	tfgld102.cont = tcyesno.yes
+	and	tfgld102.bpid refers to tccom100 Unref Clear
+	and	tfgld102.catg in (tfgld.catg.sales.inv, tfgld.catg.sales.cred, tfgld.catg.purchase.inv, tfgld.catg.purchase.cred)
+	as set with 1 rows
+	selectdo
+		tfgld106.dcdt = tfgld102.dcdt
+		tfgld106.fprd = tfgld102.fprd
+		tfgld106.fyer = tfgld102.fyer
+		tfgld106.vprd = tfgld102.vprd
+		tfgld106.vyer = tfgld102.vyer
+		tfgld106.rprd = tfgld102.rprd
+		tfgld106.ryer = tfgld102.ryer
+		tfgld106.txta = tfgld102.txta
+		tfgld106.obat = tfgld102.btno
+		tfgld106.amth = tfgld102.amth
+		docn.type = ""
+		repo.desc = ""
+		bpid.desc = ""
+		repo.amnt = 0
+		repo.amt.words = ""
+		Get_Reportdesc(tfgld102.catg,tfgld102.dbcr, repo.desc, bpid.desc)
+		Get_Document(tfgld102.catg, tfgld102.dbcr, docn.type)
+		Get_Amount_NonFinalized(var.ttyp, var.docn, repo.amnt)
+		Get_Amount_In_Words(repo.amnt, repo.amt.words)
+		if	isspace(var.cadr)	then
+			var.cadr = tccom100.cadr
+		endif
+		adr.line01 = ""
+		db.set.to.default(ttccom130)	
+		select	tccom130.ln01, tccom130.ln02, tccom130.ln03, tccom130.ln04,
+			tccom130.ln05, tccom130.ln06
+		from	tccom130
+		where	tccom130._index1 = {:var.cadr}
+		selectdo
+			adr.line01 = trim$(tccom130.ln01) & " " & trim$(tccom130.ln02)
+		endselect
+		rprt_send()
+	endselect
+}
+
+function Get_Document(domain	tfgld.catg	i.catg,
+			domain	tfgld.dbcr	i.dbcr,
+		ref	domain	tcmcs.str10	i.dtype)
+{
+	i.dtype = ""
+	on case i.catg
+		case tfgld.catg.sales.inv:	|3
+		case tfgld.catg.purchase.cred:	|7
+			if	i.dbcr = tfgld.dbcr.debit	then
+| 				i.dtype = "Credited"						|ISG001040.o	
+				i.dtype = "Debited"						|ISG001040.n
+			else
+				i.dtype = "Credited"						|ISG001040.o
+			endif
+			break
+		case tfgld.catg.sales.cred:	|4
+		case tfgld.catg.purchase.inv:	|6
+			if	i.dbcr = tfgld.dbcr.debit	then
+| 				i.dtype = "Credited"						|ISG001040.o
+				i.dtype  = "Debited"
+			else
+| 				i.dtype = "Debited"						|ISG001040.o
+				i.dtype = "Credited"						|ISG001040.o
+			endif	
+			break
+	ENDCASE
+}
+
+function Get_Reportdesc(domain	tfgld.catg	i.catg,
+			 domain tfgld.dbcr   v.dbcr  ,
+		ref	domain	tcmcs.str60	i.rpdc,
+		ref	domain	tcmcs.str30	i.bpdc)
+{
+	i.rpdc = ""
+	i.bpdc = ""
+	on case i.catg
+		case	tfgld.catg.sales.inv:
+		case	tfgld.catg.sales.cred:
+			i.rpdc = "Sales Debit/Credit Note Voucher"
+			i.bpdc = "Customer Name and Address"
+			break
+		case	tfgld.catg.purchase.inv:
+		case	tfgld.catg.purchase.cred:
+		        if v.dbcr = tfgld.dbcr.debit then
+| 				i.rpdc = "Purchase Debit/Credit Note Voucher"				|ISG001040.o
+				i.rpdc = "Purchase Debit Note "					|ISG001040.n
+			else
+				i.rpdc = "Purchase Credit Note "
+			endif
+		
+			i.bpdc = "Supplier Name and Address"
+			break	
+	ENDCASE
+								|ISGEC001119.sn
+	if reportno = 2 then
+		if var.ttyp = "SDN" then
+			i.rpdc = "DEBIT NOTE"
+			text1 = "Debit Note"
+		else
+			i.rpdc = "CREDIT NOTE"
+			text1 = "Credit Note"
+		endif
+	endif	
+								|ISGEC001119.en
+}
+
+function Get_Amount_Finalized(domain	tfgld.ttyp	i.ttyp,
+				domain	tfgld.docn	i.docn,
+			ref	domain	tfgld.amnt	o.amnt)
+{
+	o.amnt = 0
+	select	tfgld106.catg, tfgld106.amth, tfgld106.dbcr
+	from	tfgld106
+	where	tfgld106._index1 = {:i.ttyp, :i.docn}
+	and	tfgld106.cont = tcyesno.yes
+	and	tfgld106.catg in (tfgld.catg.sales.inv, tfgld.catg.sales.cred, tfgld.catg.purchase.inv, tfgld.catg.purchase.cred)
+	selectdo
+		if	tfgld106.dbcr = tfgld.dbcr.credit	then
+			o.amnt = o.amnt + (-1 * tfgld106.amth(1))
+		else
+			o.amnt = o.amnt + tfgld106.amth(1)
+		endif
+	endselect	
+}			
+
+function Get_Amount_NonFinalized(domain	tfgld.ttyp	i.ttyp,
+				domain	tfgld.docn	i.docn,
+			ref	domain	tfgld.amnt	o.amnt)
+{
+	o.amnt = 0
+	select	tfgld102.catg, tfgld102.amth, tfgld102.dbcr
+	from	tfgld102
+	where	tfgld102._index2 = {:var.ncmp, :i.ttyp, :i.docn}
+	and	tfgld102.cont = tcyesno.yes
+	and	tfgld102.catg in (tfgld.catg.sales.inv, tfgld.catg.sales.cred, tfgld.catg.purchase.inv, tfgld.catg.purchase.cred)
+	selectdo
+		if	tfgld102.dbcr = tfgld.dbcr.credit	then
+			o.amnt = o.amnt + (-1 * tfgld102.amth(1))
+		else
+			o.amnt = o.amnt + tfgld106.amth(1)
+		endif
+	endselect	
+}
+
+function Get_Amount_In_Words(domain 	tfgld.amnt	i.amnt,
+			ref	domain	tcmcs.s130m	o.amt.wrds)
+{
+	domain	tcmcs.st65m	amount1, amount2
+	domain	tcmcs.s130m	decode0, decode1, decode2, decode3, decode4, decode5, decode6, decode7
+	domain	tcamnt		decc
+	
+	|*********ISGEC01019.sn *********************
+	domain	tcmcs.str15	v.lacs
+	domain	tcmcs.str20	lacs
+	domain	tcamnt lac
+		v.lacs = ""
+		
+		lac = i.amnt/100000
+		if lac < 0 then
+			lac = lac * -1
+		endif	
+			
+	tcmcs.dll0006.decode(lac,2,decode0,decode1,decode2,decode3,language$)
+	lacs=decode0
+	if isspace(lacs) or lacs="zero" then
+		v.lacs = ""
+	else
+		v.lacs = "LAC"
+	endif
+	
+	i.amnt=i.amnt\100000
+	
+	tcmcs.dll0006.decode(i.amnt,2,decode0,decode1,decode2,decode3,language$)
+   
+	decc = lval(decode3)*1
+	tcmcs.dll0006.decode(decc,2,decode4,decode5,decode6,decode7,language$)
+
+	if decc<>0  then
+		o.amt.wrds = "Rs." & "" &toupper$(strip$(lacs)) & " " & toupper$(strip$(shiftl$(v.lacs))) & " "& toupper$(strip$(decode0) & " and " & strip$(decode4) & " Paise"& " " & "ONLY")
+
+	else    if lac>=0 and i.amnt<>0 then
+		o.amt.wrds = "Rs" & "" &toupper$(strip$(lacs)) & " "& toupper$(strip$(shiftl$(v.lacs)))  & " "& toupper$(strip$(decode0)) & " " & "ONLY"
+	else
+		o.amt.wrds= "Rs" & "" &toupper$(strip$(lacs)) & " "& toupper$(strip$(shiftl$(v.lacs)))  & "  " & "ONLY"
+	endif
+	endif
+	|*******  ISGEC01019 *****************
+| 	o.amt.wrds = ""			|ISGEC01019.so
+| 	
+| 	tcmcs.dll0006.decode(i.amnt,2,decode0,decode1,decode2,decode3, language$)
+| 	decc= lval(decode3) * 1
+| 	tcmcs.dll0006.decode(decc,2,decode4,decode5,decode6,decode7, language$)
+| 	if isspace(decode3)  then
+| 		amount1=toupper$("Rs. " & strip$(decode0))                       
+| 		amount2 =toupper$(" and " & strip$(decode4) & " Paise" &" ONLY") 
+| 	
+| 	endif
+| 	if not isspace(decode3)  then
+| 		amount1=toupper$("Rs. " & strip$(decode0))                         
+| 		amount2=toupper$(" and " & strip$(decode4)  & " Paise" &  " ONLY") 
+| 		
+| 	endif
+| 	o.amt.wrds = trim$(amount1) & " " & trim$(amount2)		|ISGEC01019.eo
+}			
+							|ISGEC001119.sn
+function get.project.code()
+{
+	select	tfacr200.cdf_cprj:project.code
+	from	tfacr200
+	where	tfacr200._index1 = {:var.ttyp, :var.docn}
+	and	tfacr200.docn = 0
+	selectdo
+	selectempty
+		project.code = ""
+	endselect
+	
+	select	tpisg045.refr,
+		tpisg045.cadr			|#ISGEC001166.n
+	from	tpisg045
+	where	tpisg045._index1 = {:project.code}
+	selectdo
+	selectempty
+		tpisg045.refr = ""
+		tpisg045.cadr = ""
+	endselect
+	
+
+}
+							|ISGEC001119.en

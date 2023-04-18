@@ -1,0 +1,156 @@
+|******************************************************************************
+|* tfisg2400m600  0  VRC B61U a7 isg 
+|* Detail of Debit / Credit Notes
+|* Installation user             
+|* 2014-12-09
+|******************************************************************************
+|* Form Type 4
+|******************************************************************************
+|* ID ISGECFIN005,	Sujeet Kumar,	2015-12-09
+|* New Report Development
+|* Functional:Mr. Deepak Rawat
+|*******************************************************************************
+|* ID ISGEC01041, Mani sharma , 03-02-2015
+|* Report Modification
+|* Functional: Ms. Bandita 
+|
+|* ID ISGEC001152, Abhishek Singh , 20/2/2015
+|* Add new logic against project field
+|*
+|* ID ISGEC015032, Ankit Sharma , 29/07/2015
+|* Add new filter for intercompany data 
+|****************************** declaration section ***************************
+declaration:
+	table	ttfacr200
+	table	ttccom100
+	table	ttcmcs052
+	table	ttfgld001				|#ISGEC015032.n
+	
+	extern	domain	tccom.bpid	bpid.f
+	extern	domain	tccom.bpid	bpid.t
+	extern	domain	tccprj		cprj.f
+	extern	domain	tccprj		cprj.t
+	extern	domain	tfgld.date	dcdt.f
+	extern	domain	tfgld.date	dcdt.t,v.date
+
+|****************************** report variables ********************************
+
+	extern	domain	tccprj		rep.cprj,v.rep.cprj,v.proj
+	extern	domain	tcdsca		rep.cprj.dsca
+	extern	domain	tcncmp		i.comp,i.comp.t,curr.comp				|#ISGEC015032.n
+	
+|****************************** program section ********************************
+
+before.program:
+	curr.comp = get.compnr()								|#ISGEC015032.n
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+	get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.cont.process:
+on.choice:
+   execute(print.data)
+
+choice.print.data:
+on.choice:
+	v.date = date.num()
+	if rprt_open() then
+		read.main.table()
+		rprt_close()
+	else
+		choice.again()
+	endif
+
+
+|****************************** field section *********************************
+field.bpid.f:
+when.field.changes:
+	bpid.t = bpid.f
+
+field.cprj.f:
+when.field.changes:
+	cprj.t = cprj.f
+
+field.dcdt.f:
+when.field.changes:
+	dcdt.t = dcdt.f
+
+field.i.comp:								|#ISGEC015032.sn
+when.field.changes:
+	i.comp.t = i.comp						|#ISGEC015032.en
+
+|****************************** function section ******************************
+
+functions:
+
+function read.main.table()
+{
+	|write your select statement here
+	select tfgld001.ncmp									|#ISGEC015032.sn
+	from   tfgld001
+	where  tfgld001._index1 inrange {:i.comp} and {:i.comp.t}
+	and    tfgld001.ncmp not in (100,900)
+	selectdo										
+		switch.to.company(tfgld001.ncmp)						|#ISGEC015032.en		
+
+		select 	tfacr200.itbp,
+			tfacr200.cdf_cprj:v.rep.cprj,
+			tfacr200.proj:v.proj,
+			tfacr200.ttyp,
+			tfacr200.ninv,
+			tfacr200.docd,
+			tfacr200.amth,
+			tfacr200.text,
+			tfacr200.refr,
+			tfacr200.trec,									|ISGEC01041.n
+			tccom100.nama
+		from	tfacr200,tccom100
+		where	tfacr200._index4 inrange {:bpid.f,:dcdt.f} and	{:bpid.t,:dcdt.t}
+		and	((tfacr200.cdf_cprj inrange :cprj.f and :cprj.t) or (tfacr200.proj inrange :cprj.f and :cprj.t))	|*ISGEC001152.n
+		and	tfacr200.docn = 0
+		and	tfacr200.trec in (1,4) 						|ISGEC01041.5-2-2015.n
+		and	tfacr200.itbp refers to tccom100
+		selectdo
+			if not isspace(v.proj) then							|ISGEC001152.sn
+				rep.cprj = v.proj
+			else
+				rep.cprj = v.rep.cprj
+			endif											|ISGEC001152.en
+			
+			if tfacr200.ttyp = "SDN" or tfacr200.ttyp = "SCN" then				|ISGEC01041.sn
+					rep.cprj.dsca = ""
+				if not isspace(rep.cprj) then
+					rep.cprj.dsca = get.project.description(rep.cprj)
+				endif
+				rprt_send()
+			else
+				continue
+			endif										|ISGEC01041.en
+		endselect
+	endselect											|#ISGEC015032.sn
+	switch.to.company(curr.comp)									|#ISGEC015032.en
+}
+
+
+function domain tcdsca get.project.description
+			(
+				domain	tccprj		i.cprj
+			)
+{
+	select 	tcmcs052.dsca
+	from	tcmcs052
+	where	tcmcs052._index1 = {:i.cprj}
+	as set with 1 rows
+	selectdo
+	selectempty
+		tcmcs052.dsca = ""
+	endselect
+	
+	return(tcmcs052.dsca)
+}

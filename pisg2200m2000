@@ -1,0 +1,126 @@
+|******************************************************************************
+|* tfisg2200m200  0  VRC B61U a7 isg 
+|* Update Project Dimension (Sales Tax)
+|* Installation User             
+|* 2015-03-04
+|******************************************************************************
+|* Main table tfacp200 Open Items (Purchase Invoices &amp; Payments), Form Type 4
+|******************************************************************************
+|* ISGEC01078, Mani sharma , IT0376,  DT-04-03-2015      
+|*
+|* ID: PATCH001008, Incident: 168,	Sujeet Kumar,		2015-03-11
+|* Functional: Mr. Deepak Rawat
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttfacp200 | Open Items (Purchase Invoices &amp; Payments)
+  table   ttfacp936
+  table   ttdpur401
+  table   ttcmcs036
+  table   ttfgld107
+  table   ttfgld010
+  
+  
+   extern  domain  tfgld.docn       ninv
+   extern  domain  tfgld.ttyp       ttyp
+   
+   extern  domain  tfgld.ttyp       i.ttyp
+   extern  domain  tfgld.docn       i.ninv
+   extern  domain  tcncmp           current.company
+							|#PATCH001008.sn	
+   extern	domain	tfacp.stap		import.stap
+   long found
+							|#PATCH001008.en
+|****************************** program section ********************************
+before.program:
+	import("tfacp200.ttyp",i.ttyp)
+	import("tfacp200.ninv",i.ninv)
+	import("tfacp200.stap",import.stap)			|#PATCH001008.sn
+	
+	if import.stap = tfacp.stap.approved then
+		current.company = get.compnr()
+		check.data()
+	else
+		message("%s Document Not Yet Approved",i.ttyp)
+	endif
+								|#PATCH001008.en
+	exit()
+|****************************** group section **********************************
+
+| group.1:
+| init.group:
+|    get.screen.defaults()
+
+|***************************** function section ********************************
+functions:
+
+function check.data()
+{
+	found = 0
+	
+	select tfacp200.ttyp,tfacp200.ninv,tfacp200.pcom
+	from   tfacp200
+	where  tfacp200._index1 = {:i.ttyp,:i.ninv}
+	and    tfacp200.docn = 0
+	and    tfacp200.tpay in(1,4)
+	and    tfacp200.papr = 1
+	selectdo
+		select tfacp936.ttyp,tfacp936.ninv,tfacp936.orno,tfacp936.pono,tfacp936.sqnb,tfacp936.vatc,tfacp936.cvat,tfacp936.lcmp,
+			tfacp936.lino
+		from    tfacp936
+		where   tfacp936._index1 = {:tfacp200.pcom,:tfacp200.ttyp,:tfacp200.ninv}
+		selectdo
+			select tcmcs036.ccty,tcmcs036.cvat
+			from   	tcmcs036
+			where  	tcmcs036._index1 = {:tfacp936.vatc,:tfacp936.cvat}
+			and    	tcmcs036.ktax = 1
+| 			and     tcmcs036.indt.l in (2,26,30)
+			and    	tcmcs036.indt.l = 3
+			and	tcmcs036.extx = 2
+			selectdo
+| 				switch.to.company(tfacp936.lcmp)
+				select tdpur401.cprj
+ 	 			from   tdpur401
+ 	 			where  tdpur401._compnr = {:tfacp936.lcmp} 
+				and 	tdpur401._index1 = {:tfacp936.orno,:tfacp936.pono,:tfacp936.sqnb}
+ 	 		
+ 	 			selectdo
+ 	 				select tfgld010.dtyp,tfgld010.dimx
+ 	 				from    tfgld010
+ 	 				where   tfgld010._index1 = {1,:tdpur401.cprj}
+ 	 				selectdo
+						select tfgld107.typ1,tfgld107.dim1
+						from    tfgld107 for update
+						where  tfgld107._index1 = {:current.company,:tfacp936.ttyp,:tfacp936.ninv,:tfacp936.lino}
+						selectdo
+							found = found + 1
+							tfgld107.typ1 = 1
+							tfgld107.dim1 = tdpur401.cprj
+							db.update(ttfgld107,db.retry,e)
+							if not e then
+								commit.transaction()
+							else
+								abort.transaction()
+							endif	
+						endselect	
+ 	 				selectempty
+|  	 					message("Project code & Type  not found in Dimensions")	|#PATCH001008.o
+ 	 					message("Project code not found in Dimension")|#PATCH001008.n
+ 	 				endselect
+ 	 			endselect	
+			selectempty
+| 				message("Country & Tax code is not found for 2,26,30 Indirect Tax")	|#PATCH001008.o
+			endselect
+		endselect	
+	selectempty
+| 		message("Document not found in Transaction Master")					|#PATCH001008.o
+	endselect	
+
+													|#PATCH001008.sn
+	if found then
+		message("Process Completed!!!")
+	else
+		message("CST Tax Code Not Found")
+	endif
+													|#PATCH001008.en
+}

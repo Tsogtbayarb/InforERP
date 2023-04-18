@@ -1,0 +1,101 @@
+|******************************************************************************
+|* tfisg2403m000  0  VRC B61U a7 isg 
+|* Print Tax Report
+|* Installation user             
+|* 2014-10-06
+|******************************************************************************
+|* Main table tfacp203 Withholding Tax Amounts, Form Type 4
+|******************************************************************************
+|* ISGECDV001093, IT0205, Arjit Gupta, VRC B61U a7 live, Dt. 09-10-2014
+|* Logic to be included when transaction type is "CASH" and when it's reconcillation 
+|* is not there then report will get printed.
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttfacp203 | Withholding Tax Amounts
+	table	ttfgld005
+	table	ttfgld018
+	table	ttccom100
+	table	ttfgld011		|#ISGECDV001093.n
+	table	ttfcmg112		|#ISGECDV001093.n
+
+	extern	domain	tfgld.year	var.year
+	extern	domain	tfgld.prod	var.prod
+	
+	|**************** Report Variables ************
+	extern	domain	tcdsca		leac.desc
+	
+
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.cont.process:
+on.choice:
+	execute(print.data)
+
+choice.print.data:
+on.choice:
+	if	rprt_open() then
+		read.main.table()
+		rprt_close()
+	else
+		choice.again()
+	endif
+
+
+|****************************** field section *********************************
+field.var.prod:
+before.zoom:
+	tfgld005.ptyp = tfgld.ptyp.vat
+	tfgld005.year = var.year
+
+check.input:
+	select	tfgld005.prno
+	from	tfgld005
+	where	tfgld005._index1 = {tfgld.ptyp.vat, :var.year} 
+	and	tfgld005.corr = tcyesno.no
+	selectdo
+	selectempty
+		message("Please Select Correct Tax Period")
+		set.input.error("", e)
+	endselect
+	
+|****************************** function section ******************************
+
+functions:
+
+function read.main.table()
+{
+	select	tfgld018.ttyp, tfgld018.docn, tfgld018.vyer, tfgld018.vprd,
+		tfacp203.*, tccom100.nama, tfgld008.desc:leac.desc, tfgld011.catg
+	from	tfgld018, tfacp203, tccom100, tfgld008, tfgld011
+	where	tfgld018.vyer = :var.year
+	and	tfgld018.vprd = :var.prod
+	and	tfacp203.ttyp = tfgld018.ttyp
+	and	tfacp203.ninv = tfgld018.docn
+	and	tfacp203.ifbp refers to tccom100 Unref Clear
+	and	tfacp203.leac refers to tfgld008 Unref Clear
+	and	tfgld018.ttyp refers to tfgld011 			|#ISGECDV001093.n
+	and	tfgld011.catg = tfgld.catg.cash				|#ISGECDV001093.n
+	selectdo
+								|#ISGECDV001093.sn
+		select	tfcmg112.ctyp, tfcmg112.cdoc
+		from	tfcmg112
+		where	tfcmg112.tdoc = :tfgld018.ttyp	
+		and	tfcmg112.pdoc = :tfgld018.docn
+		and	tfcmg112.ctyp = "   "
+		and	tfcmg112.cdoc = 0
+		selectdo
+								|#ISGECDV001093.en
+			rprt_send()
+		endselect					|#ISGECDV001093.n
+	endselect
+}

@@ -1,0 +1,146 @@
+|******************************************************************************
+|* tfisg2400m200  0  VRC B61U a7 isg 
+|* Detention Report - Quarterly
+|* Installation user             
+|* 2015-01-16
+|******************************************************************************
+|* Main table tfacp200 Open Items (Purchase Invoices &amp; Payments), Form Type 4
+|******************************************************************************
+|*IDENT	ISGEC001144,Sandhyarani,17-01-2015                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttfacp200 | Open Items (Purchase Invoices &amp; Payments)
+	table	ttfacp251
+	table	ttccom100
+	table	ttcmcs052
+	table	ttdpur401
+	table	ttfgld005
+	table	ttfgld006
+	
+	extern	domain	tfgld.year	year, yearno
+	extern	domain	tfgld.prod	prod.f,prod.t
+	extern	domain	tcncmp		comp.new
+	extern	domain	tcamnt		amnt.new,detn.new ,amnt.rate
+	extern	domain	tcmcs.str15	sanc.new
+	extern domain  tccprj		v.cprj
+	
+	long	monthno ,month_dayno
+	
+|****************************** program section ********************************
+before.program:
+	comp.new = get.compnr()
+	num.to.date  (date.num(),yearno, monthno, month_dayno)
+	
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+   year = yearno
+
+|****************************** choice section ********************************
+
+choice.cont.process:
+on.choice:
+   execute(print.data)
+
+choice.print.data:
+on.choice:
+   if rprt_open() then
+       read.main.table()
+       rprt_close()
+   else
+       choice.again()
+   endif
+
+
+|****************************** field section *********************************
+
+field.prod.f:
+when.field.changes:
+   prod.t = prod.f
+
+before.zoom:
+	tfgld005.year = year
+
+field.prod.t:
+before.zoom:
+	tfgld005.year = year
+
+|****************************** function section ******************************
+
+functions:
+
+function read.main.table()
+{
+	sanc.new = " "
+	detn.new = 0
+	amnt.new = 0
+	amnt.rate = 0
+	
+	select	tfacp200.year,tfacp200.prod,tfacp200.docd,tccom100.nama,
+		tfacp200.refr,tfacp200.ttyp,tfacp200.amth(1):amnt.new,
+		tfacp200.ninv,tfacp200.ifbp,tfacp200.cdf_detn,
+		tfacp200.cdf_sanc,tfacp200.cdf_amnt,tfacp200.cdf_cprj
+	from	tfacp200,tccom100
+	where	tfacp200._index4={:year}
+	and	tfacp200.prod inrange	{:prod.f} and	{:prod.t}
+	and	(tfacp200.tpay = tfacp.tpay.invoice or tfacp200.tpay = tfacp.tpay.credit)
+	and	tfacp200.ifbp	refers to	tccom100 
+	and	tfacp200.amth(1) <> 0
+	and	tfacp200.docn = 0
+	selectdo
+		get.var(pid,"tfacp200.cdf_cprj",v.cprj)
+		get.var(pid,"tfacp200.cdf_amnt",amnt.rate)
+		get.var(pid,"tfacp200.cdf_sanc",sanc.new)
+		get.var(pid,"tfacp200.cdf_detn",detn.new)
+		
+		select	tfacp251.orno,tfacp251.pono
+		from	tfacp251
+		where	tfacp251._index1={:comp.new,:tfacp200.ttyp,:tfacp200.ninv}
+		and	tfacp251.otyp = tfacp.otyp.purchase
+		as set with 1 rows
+		selectdo
+			select	tdpur401.cprj
+			from	tdpur401
+			where	tdpur401._index1={:tfacp251.orno,:tfacp251.pono}
+			selectdo
+				select	tcmcs052.dsca
+				from	tcmcs052
+				where	tcmcs052._index1={:tdpur401.cprj}
+				selectdo
+				selectempty
+					tcmcs052.dsca = " "
+				endselect		
+			selectempty
+| 				tcmcs052.dsca = " "
+| 				tdpur401.cprj = " "
+				tdpur401.cprj = v.cprj
+				
+				select	tcmcs052.dsca
+				from	tcmcs052
+				where	tcmcs052._index1={:tdpur401.cprj}
+				selectdo
+				selectempty
+					tcmcs052.dsca = " "
+				endselect
+			endselect
+				
+		selectempty
+			tdpur401.cprj = v.cprj
+				
+			select	tcmcs052.dsca
+			from	tcmcs052
+			where	tcmcs052._index1={:tdpur401.cprj}
+			selectdo
+			selectempty
+				tcmcs052.dsca = " "
+			endselect	
+		endselect	
+		
+		rprt_send()
+		
+	endselect		
+}

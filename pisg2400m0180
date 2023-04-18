@@ -1,0 +1,349 @@
+|******************************************************************************
+|* tfisg2400m018  0  VRC B61U a7 isg 
+|* Print IR
+|* Installation user             
+|* 2014-10-29
+|******************************************************************************
+|* Main table tfisg001 IR Details, Form Type 4
+|******************************************************************************
+|* ID: ISGEC001132, IT0327, Ritu Shrivastava, Dt. 29-10-2014, VRC B61U a7 isg
+|* New report                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttfisg001 | IR Details
+  table   twhinh310
+  table   ttdpur406
+  table   ttdpur401
+  table   ttcmcs052
+  table   ttcmcs036
+  table   ttccom100
+  table   ttfacp100
+  table   ttfacp935
+  table   ttclct200
+  
+  
+   extern  domain  tfgld.docn       irno.f
+   extern  domain  tfgld.docn       irno.t
+   extern  domain  tftfboth          stat
+   extern  domain  tcamnt          i.damt
+   extern  domain  tcamnt	    damt.tot
+   extern  domain  tfgld.amnt      gros.amnt.total
+   extern  domain  tfgld.amnt	    rep.exc.amnt
+   extern  domain  tfgld.amnt	    rep.ot.amnt
+   extern  domain  tfgld.amnt	    rep.st.amnt
+   extern  domain  tfgld.amnt     less.amnt
+   extern  domain  tfgld.amnt	   gros.less.amnt 
+   extern  domain  tcmcs.str20	   status
+   extern domain   tcyesno        comp
+   
+   
+   extern	domain	tccprj		cprj.f,cprj.t
+   extern	domain	tcorno		orno.f,orno.t
+   extern	domain	tcmcs.cbtp	cbtp.f, cbtp.t
+   extern	domain	tcdate		irdt.f, irdt.t
+   extern	domain	tfgld.date	invd.f, invd.t
+   
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.cont.process:
+on.choice:
+   execute(print.data)
+
+choice.print.data:
+on.choice:
+   if rprt_open() then
+       read.main.table()
+       rprt_close()
+   else
+       choice.again()
+   endif
+
+
+|****************************** field section *********************************
+field.irno.f:
+when.field.changes:
+	irno.t = irno.f
+
+field.cbtp.f:
+when.field.changes:
+	cbtp.t	=	cbtp.f
+
+field.cprj.f:
+when.field.changes:
+	cprj.t = cprj.f
+	
+field.orno.f:
+when.field.changes:
+	orno.t = orno.f
+
+field.irdt.f:
+when.field.changes:
+	irdt.t	=	irdt.f
+
+field.invd.f:
+when.field.changes:
+	invd.t	=	invd.f
+	
+|****************************** function section ******************************
+
+functions:
+
+function read.main.table()
+{
+domain tcdsca  i.irno
+	select tfisg001.*, tccom120.otbp, tfacp100.isup,tfacp100.invd,tfacp100.amth,tfacp100.refr
+	from   tfisg001, tccom120, tfacp100
+	where  tfisg001._index1 inrange {:irno.f} and {:irno.t}
+	and	tccom120.cbtp inrange :cbtp.f and :cbtp.t
+	and	tfisg001.cprj inrange :cprj.f and :cprj.t
+	and	tfisg001.orno inrange :orno.f and :orno.t
+	and	tfisg001.irdt inrange :irdt.f and :irdt.t
+	and	tfisg001.bpid		=	{tccom120.otbp}
+	and	tfacp100._index1	= 	{tfisg001.irno}
+	and	tfacp100.invd	inrange	:invd.f	and	:invd.t
+	order by tfisg001._index1
+	selectdo
+		i.irno = str$(tfisg001.irno)
+		select	tcmcs052.dsca
+		from	tcmcs052
+		where	tcmcs052._index1 = {:tfisg001.cprj}
+		selectdo
+		selectempty
+			tcmcs052.dsca = ""
+		endselect
+		
+		select	tccom100.nama
+		from	tccom100
+		where	tccom100._index1 = {:tfisg001.bpid}
+		selectdo
+		selectempty
+			tccom100.nama = ""
+		endselect
+		
+| 		select	tfacp100.isup,tfacp100.invd,tfacp100.amth,tfacp100.refr
+| 		from	tfacp100
+| 		where	tfacp100._index1 = {:tfisg001.irno}
+| 		and	tfacp100.invd	inrange	:invd.f	and	:invd.t
+| 		selectdo
+| 		endselect
+			
+		get.receipt.details(i.irno,whinh.rhst.confirmed)		
+		
+	endselect
+}
+
+function get.receipt.details(domain whinh.pksp	 i.dino,
+			      domain whinh.rhst i.stat)
+{
+		select whinh310.rcno,
+		        whinh310.cwar,
+			whinh310.stat
+		from   whinh310
+		where  whinh310.dino = :i.dino
+		selectdo
+			if whinh310.stat = i.stat then
+				if stat = tftfboth.yes then
+					initialize.variable()
+					status = "Confirmed"
+					calculate_receipt_amnt(i.dino,tcyesno.yes)
+					rprt_send()
+				endif
+			else
+				if stat = tftfboth.no then
+					if whinh310.stat = whinh.rhst.open then
+						status = "Open"
+					else if whinh310.stat = whinh.rhst.under.review then
+						status = "Under Review"
+					else if whinh310.stat = whinh.rhst.not.appl then
+						status = "Not Appl"
+					endif
+					endif
+					endif
+				
+					rprt_send()
+				endif
+			endif
+			if	stat	=	tftfboth.both	then
+				if	whinh310.stat	=	i.stat	then
+					initialize.variable()
+					status = "Confirmed"
+					calculate_receipt_amnt(i.dino,tcyesno.yes)
+					rprt_send()
+				else
+					on	case	whinh310.stat 
+					case	whinh.rhst.open:
+						status = "Open"
+						break
+					case	whinh.rhst.under.review:
+						status = "Under Review"
+						break
+					case	whinh.rhst.not.appl:
+						status = "Not Appl"
+						break
+					endcase
+					rprt_send()
+				endif
+			endif
+		selectempty
+			select tdpur406.* 
+			from   tdpur406
+			where  tdpur406.dino = :i.dino
+			selectdo
+				if tdpur406.conf = tcyesno.yes then
+					if stat = tftfboth.yes then
+						initialize.variable()
+						status = "Confirmed"
+						calculate_receipt_amnt(i.dino,tcyesno.yes)
+						rprt_send()
+					endif
+				else
+					if stat = tftfboth.no then
+						status = "Open"
+						rprt_send()
+					endif
+				endif	
+				if	stat	=	tftfboth.both	then
+					if tdpur406.conf = tcyesno.yes then
+						initialize.variable()
+						status = "Confirmed"
+						calculate_receipt_amnt(i.dino,tcyesno.yes)
+						rprt_send()
+					else
+						status = "Open"
+						rprt_send()
+					endif
+				endif
+			selectempty
+				if stat = tftfboth.no then
+					status = "Receipt not Linked"
+					tfisg001.invt =	""
+					tfisg001.pinv = 0
+					tfacp100.invd = 0
+					tfisg001.orno = ""
+					tfisg001.rcno = ""
+					i.damt = 0
+					damt.tot = 0
+					rprt_send()
+				endif
+				if	stat	=	tftfboth.both	then
+					status = "Receipt not Linked"
+					tfisg001.invt =	""
+					tfisg001.pinv = 0
+					tfacp100.invd = 0
+					tfisg001.orno = ""
+					tfisg001.rcno = ""
+					i.damt = 0
+					damt.tot = 0
+					rprt_send()
+				endif
+			endselect
+		endselect
+}
+
+function calculate_receipt_amnt(
+				 domain whinh.pksp  dino,
+				 domain tcyesno	     i.conf)
+{
+	select tdpur406.* 
+	from   tdpur406
+	where  tdpur406.dino = :dino
+	and    tdpur406.conf = :i.conf
+	selectdo
+		calculate_freight()
+		get.tax.from.tfacp935()
+		
+		select tdpur401.pric
+		from   tdpur401
+		where	tdpur401._index1 = {:tdpur406.orno, :tdpur406.pono, :tdpur406.sqnb}
+		selectdo
+		endselect
+		
+		i.damt = (rep.ot.amnt + rep.exc.amnt + rep.st.amnt) + (tdpur406.qiap * tdpur401.pric)	
+		
+		damt.tot = damt.tot + i.damt 
+	selectempty
+		i.damt = 0 
+		damt.tot = 0
+	endselect
+	
+}
+
+function calculate_freight()
+{
+	domain tcamnt	additional.amount
+	
+	select 	tclct200.lcos, 
+	        sum(tclct200.lcam):additional.amount
+	from	tclct200
+	where	tclct200._index1 = {21, 100, :tdpur406.rcno, :1}
+	group by tclct200.lcos
+	wherebind(1, str$(tdpur406.rseq))
+	selectdo
+		rep.ot.amnt = rep.ot.amnt + additional.amount
+	endselect
+}
+
+
+function get.tax.from.tfacp935()
+{
+	domain	tcamnt	amount
+	
+	rep.exc.amnt = 0
+	rep.st.amnt = 0
+	
+	select	tfacp935.ccty, tfacp935.cvat, sum(tfacp935.vamt):amount
+	from	tfacp935
+	where	tfacp935.rcno = :tdpur406.rcno
+	and	tfacp935.rseq = :tdpur406.rseq
+	and	tfacp935.orno = :tdpur406.orno		
+	and	tfacp935.pono = :tdpur406.pono		
+	and	tfacp935.sqnb = :tdpur406.sqnb		
+	group by tfacp935.ccty, tfacp935.cvat
+	selectdo
+		select	tcmcs036.indt.l,tcmcs036.dsca
+		from	tcmcs036
+		where	tcmcs036._index1 = {:tfacp935.ccty, :tfacp935.cvat}
+		selectdo
+			on case etol(tcmcs036.indt.l)
+			case 1:				|Service
+			case 4:				|Basic Excise Duty
+			case 9:				|Basic Custom Duty	
+			case 10:			|Countervailing Duty
+			case 14:			|ECess CVD
+			case 15:			|ECess on Custom
+			case 16:			|Ecess on Service
+			case 17:			|Ecess on Excise
+			case 19:			|SHE Cess on CVD
+			case 20:			|SHE Cess on Excise
+			case 21:			|SHE Cess on Service
+			case 22:			|SHE Cess on Custom
+				rep.exc.amnt = rep.exc.amnt + amount
+				break
+			case 2:				|Local Sales Tax	
+			case 3:				|Central Sales Tax
+			case 26:			|VAT
+			case 30:			|Not Applicable
+				rep.st.amnt = rep.st.amnt + amount
+			endcase
+		endselect
+	endselect
+}
+
+function initialize.variable()
+{
+	rep.exc.amnt = 0
+	rep.ot.amnt = 0
+	rep.st.amnt = 0 
+	i.damt = 0
+	damt.tot = 0
+}

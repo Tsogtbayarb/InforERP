@@ -1,0 +1,208 @@
+|******************************************************************************
+|* tfisg2200m000  0  VRC B61U a7 isg 
+|* Control Account Update
+|* Installation user             
+|* 2014-08-30
+|******************************************************************************
+|* Main table tfacr200 Open Items (Sales Invoices & Receipts), Form Type 4
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+  table		ttfacr200 | Open Items (Sales Invoices & Receipts)
+  table 	ttfacp200
+  table		ttfgld106
+  table		ttfcmg112
+   
+
+extern	domain	tfgld.ttyp		ttyp.f,ttyp.t
+extern	domain	tfgld.docn		docn.f,docn.t
+|****************************** program section ********************************
+
+field.ttyp.f:
+when.field.changes:
+	ttyp.t = ttyp.f
+
+field.docn.f:
+when.field.changes:
+	docn.t = docn.f
+
+
+choice.cont.generate.1:
+on.choice:
+	select 	tfacp200.ttyp,
+		tfacp200.ninv
+	from	tfacp200 
+	where	tfacp200._index1 inrange {:ttyp.f,:docn.f} and {:ttyp.t,:docn.t}
+	and	tfacp200.docn = 0
+	selectdo
+		select 	tfgld106.leac
+		from	tfgld106
+		where	tfgld106._index1 = {:tfacp200.ttyp,:tfacp200.ninv,0}
+		and	tfgld106.cont = tcyesno.yes
+		as set with 1 rows
+		selectdo
+		selectempty
+			tfgld106.leac = ""
+		endselect
+		
+		if not isspace(tfgld106.leac) then
+			
+			select tfacp200.leac
+			from	tfacp200 for update
+			where	tfacp200._index1 = {:tfacp200.ttyp,:tfacp200.ninv}
+			and	tfacp200.docn = 0
+			selectdo
+				tfacp200.leac = tfgld106.leac
+				db.update(ttfacp200,db.retry,e)
+			endselect
+		endif	
+		
+	
+	endselect
+	
+	commit.transaction()
+	
+choice.cont.generate.2:
+on.choice:
+	select 	tfacr200.ttyp,
+		tfacr200.ninv
+	from	tfacr200 
+	where	tfacr200._index1 inrange {:ttyp.f,:docn.f} and {:ttyp.t,:docn.t}
+	and	tfacr200.docn = 0
+	selectdo
+		select 	tfgld106.leac
+		from	tfgld106
+		where	tfgld106._index1 = {:tfacr200.ttyp,:tfacr200.ninv,1}
+		and	tfgld106.cont = tcyesno.yes
+		as set with 1 rows
+		selectdo
+		selectempty
+			tfgld106.leac = ""
+		endselect
+		
+		if not isspace(tfgld106.leac) then
+			
+			select tfacr200.leac
+			from	tfacr200 for update
+			where	tfacr200._index1 = {:tfacr200.ttyp,:tfacr200.ninv}
+			and	tfacr200.docn = 0
+			selectdo
+				tfacr200.leac = tfgld106.leac
+				db.update(ttfacr200,db.retry,e)
+			endselect
+		endif	
+		
+	
+	endselect
+	
+	commit.transaction()
+
+choice.cont.generate.3:
+on.choice:
+	update.advance.receipt.ledger()
+	
+choice.cont.advance.payable:
+on.choice:
+	update.advance.payment()
+	
+choice.cont.po.summary:
+on.choice:
+	update.linking.document()
+|****************************** group section **********************************
+
+
+functions:
+
+function update.advance.receipt.ledger()
+{
+	select 	tfacr200.ttyp,
+		tfacr200.ninv,
+		tfacr200.amnt
+	from	tfacr200 
+	where	tfacr200._index1 inrange {:ttyp.f,:docn.f} and {:ttyp.t,:docn.t}
+	and	tfacr200.docn = 0
+	and	(tfacr200.trec = tfacr.trec.advance or tfacr200.trec = tfacr.trec.unallocated)
+	selectdo 
+		select tfacr200.leac,tfacr200.step
+		from	tfacr200 for update
+		where	tfacr200._index1 = {:tfacr200.ttyp,:tfacr200.ninv}
+		and	tfacr200.docn = 0
+		and	(tfacr200.trec = tfacr.trec.advance or tfacr200.trec = tfacr.trec.unallocated)
+		and	tfacr200.amnt = :tfacr200.amnt
+		selectdo
+			if tfacr200.trec = tfacr.trec.unallocated then
+				tfacr200.leac = "1520122"
+			endif
+| 			tfacr200.step = tfcmg.step.empty
+| 			tfacr200.step = tfcmg.step.doc.paid
+			db.update(ttfacr200,db.retry,e)
+		endselect
+	endselect
+	
+	commit.transaction()
+}
+
+
+function update.advance.payment()
+{
+	
+	select tfacp200.step
+	from	tfacp200 for update
+	where	tfacp200._index1 inrange {:ttyp.f,:docn.f} and {:ttyp.t,:docn.t}
+	and	tfacp200.docn = 0
+	and	(tfacp200.tpay = tfacp.tpay.advance or tfacp200.tpay = tfacp.tpay.unallocated)
+	and 	tfacp200.step = empty
+	selectdo
+		tfacp200.step = tfcmg.step.doc.paid
+		db.update(ttfacp200,db.retry,e)
+	endselect
+	
+	commit.transaction()
+}
+
+
+
+function update.linking.document()
+{
+	domain	tccprj		o.cprj
+	domain	tcorno		o.orno
+	
+	select 	tfacp200.ttyp,
+		tfacp200.ninv,
+		tfacp200.line,
+		tfacp200.cdf_cprj:o.cprj,
+		tfacp200.cdf_prno:o.orno
+	from	tfacp200
+	where	tfacp200._index1 inrange {:ttyp.f,:docn.f} and {:ttyp.t,:docn.t}
+	and	tfacp200.docn = 0
+	and	(tfacp200.tpay = tfacp.tpay.advance or 
+		tfacp200.tpay = tfacp.tpay.advance.ant or
+		tfacp200.tpay = tfacp.tpay.unallocated or
+		tfacp200.tpay = tfacp.tpay.unallocated.ant) 
+	selectdo
+		select 	tfcmg112.ctyp,
+			tfcmg112.cdoc,
+			tfcmg112.clin
+		from	tfcmg112
+		where	tfcmg112.tdoc = :tfacp200.ttyp
+		and	tfcmg112.pdoc = :tfacp200.ninv
+		and	tfcmg112.scom = :tfacp200.line
+		and	tfcmg112.cdoc <> 0 
+		as set with 1 rows
+		selectdo
+			select 	tfacp200.ttyp
+			from	tfacp200 for update
+			where	tfacp200._index1 = {:tfcmg112.ctyp,:tfcmg112.cdoc,:tfcmg112.clin}
+			and	tfacp200.docn = 0
+			selectdo
+				put.var(pid,"tfacp200.cdf_prno",o.orno)
+				put.var(pid,"tfacp200.cdf_cprj",o.cprj)
+				db.update(ttfacp200,db.retry,e)
+			endselect
+		endselect
+		
+	endselect
+	commit.transaction()
+}

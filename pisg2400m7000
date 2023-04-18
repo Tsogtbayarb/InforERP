@@ -1,0 +1,194 @@
+|******************************************************************************
+|* tfisg2400m700  0  VRC B61U a7 isg 
+|* Supplier Detail of Retention P.O. Wise
+|* Installation user             
+|* 2014-12-09
+|******************************************************************************
+|* Form Type 4
+|******************************************************************************
+|* ID ISGECFIN005,	Sujeet Kumar,		2015-12-09
+|* New Report Development
+|* Functional: Mr. Deepak Rawat
+|*
+|* ID PATCH001040,	Sujeet Kumar,		2015-03-19
+|* Functional: Mr. Deepak Rawat
+|
+|* ID ISGEC01106, Mani sharma ,    15-06-2015 
+|* Case Id : 6866
+|* Change on report filter 
+|****************************** declaration section ***************************
+declaration:
+	table	ttfacp200
+	table	ttfacp201
+	table	ttfacp002
+	table  ttccom100
+	table	ttcmcs052
+	
+	extern	domain	tcorno		orno.f
+	extern	domain	tcorno		orno.t
+	extern	domain	tccom.bpid	bpid.f
+	extern	domain	tccom.bpid	bpid.t
+	extern	domain	tccprj		cprj.f
+	extern	domain	tccprj		cprj.t
+	extern	domain	tcorno		bloc.f
+	extern	domain	tcorno		bloc.t
+	
+
+|****************************** report variables ********************************
+
+	extern	domain	tcorno		rep.orno
+	extern	domain	tccprj		rep.cprj
+	extern	domain	tfgld.amnt	rep.amnt
+	extern domain  tfacp.bloc	rep.bloc
+	
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.cont.process:
+on.choice:
+   execute(print.data)
+
+choice.print.data:
+on.choice:
+   if rprt_open() then
+       read.main.table()
+       rprt_close()
+   else
+       choice.again()
+   endif
+
+
+|****************************** field section *********************************
+field.orno.f:
+when.field.changes:
+	orno.t = orno.f
+	
+field.bpid.f:
+when.field.changes:
+	bpid.t = bpid.f
+	
+field.cprj.f:
+when.field.changes:
+	cprj.t = cprj.f
+	
+field.bloc.f:
+when.field.changes:
+	bloc.t = bloc.f
+	
+
+|****************************** function section ******************************
+
+functions:
+
+function read.main.table()
+{
+	|write your select statement here
+	
+	domain	tcamnt		temp.rep.paia
+	domain	tcamnt		temp.rep.amnt
+	select 	tfacp200.isup,
+		tfacp200.ttyp,
+		tfacp200.ninv,
+		tfacp200.docd,
+		tfacp200.ifbp,
+		tfacp200.cdf_prno:rep.orno,
+		tfacp200.cdf_cprj:rep.cprj
+	from	tfacp200
+	where	tfacp200._index2 inrange {:bpid.f} and {:bpid.t}
+	and	tfacp200.cdf_cprj inrange :cprj.f and :cprj.t
+	and	tfacp200.cdf_prno inrange :orno.f and :orno.t
+| 	and	tfacp200.cdf_bloc inrange :bloc.f and :bloc.t
+	and	tfacp200.docn = 0
+	and	(tfacp200.tpay = 1 or tfacp200.tpay = 4)
+	selectdo
+		rep.amnt = 0
+		
+		select tccom100.nama
+		from   tccom100
+		where  tccom100._index1 = {:tfacp200.ifbp}
+		selectdo
+		selectempty
+			tccom100.nama = ""
+		endselect
+		
+		select tcmcs052.dsca
+		from   tcmcs052
+		where  tcmcs052._index1 = :rep.cprj
+		selectdo
+		selectempty
+			tcmcs052.dsca = ""
+		endselect
+								|#PATCH001040.so
+		rep.amnt = 0
+		select 	sum(tfacp201.amnt):temp.rep.amnt,
+			sum(tfacp201.paia):temp.rep.paia,
+			tfacp201.cdf_bloc:rep.bloc
+		from	tfacp201
+		where	tfacp201._index1 = {:tfacp200.ttyp,:tfacp200.ninv}
+		and	tfacp201.cdf_bloc inrange :bloc.f and :bloc.t
+		and	tfacp201.balc <> 0
+| 		and	(tfacp201.amnt <> tfacp201.paia)| or tfacp201.cdf_bloc <> "")	
+		group by tfacp201.cdf_bloc
+		selectdo
+			select tfacp002.desc
+			from   tfacp002
+			where  tfacp002._index1 = {:rep.bloc}
+			selectdo
+			selectempty
+				tfacp002.desc = ""
+			endselect
+			rep.amnt = temp.rep.amnt - temp.rep.paia
+			if rep.amnt <> 0 then
+				rprt_send()
+			endif
+			
+		endselect
+								|#PATCH001040.eo
+								|#PATCH001040.sn	
+| 		select	tfacp201.cdf_bloc:rep.bloc
+| 		from	tfacp201
+| 		where	tfacp201._index1 = {:tfacp200.ttyp,:tfacp200.ninv}
+| 		and	tfacp201.cdf_bloc inrange :bloc.f and :bloc.t
+| 		group by tfacp201.cdf_bloc
+| 		selectdo
+| 			select tfacp002.desc
+| 			from   tfacp002
+| 			where  tfacp002._index1 = {:rep.bloc}
+| 			selectdo
+| 			selectempty
+| 				tfacp002.desc = ""
+| 			endselect
+| 			
+| 			rep.amnt = 0
+| 			select 	tfacp201.amnt,
+| 				tfacp201.paia
+| 			from	tfacp201
+| 			where	tfacp201._index1 = {:tfacp200.ttyp,:tfacp200.ninv}
+| 			and	tfacp201.cdf_bloc = :rep.bloc
+| 			selectdo
+| 				if tfacp201.amnt <> tfacp201.paia then
+| 					rep.amnt = rep.amnt + tfacp201.amnt
+| 				else if not isspace(rep.bloc) then
+| 					rep.amnt = rep.amnt + tfacp201.amnt
+| 				endif
+| 				endif
+| 			endselect
+| 			if rep.amnt <> 0 then
+| 				rprt_send()
+| 			endif
+| 			
+| 		endselect
+| 		
+								|#PATCH001040.en
+		
+	endselect
+	
+}

@@ -1,0 +1,270 @@
+|******************************************************************************
+|* tfmsl2400m0016  0  VRC B61U a7 live 
+|* Print Cash Inflow For Export Project(Through Direct Debit Advice)
+|* tools1 Development User        
+|* 2014-10-15
+|******************************************************************************
+|* Main table tfmsl037 Cash Flow, Form Type 4
+|******************************************************************************
+|* ID: ISGECDV001109, IT0327, Ritu Shrivastava, VRC B61U a7 live Dt. 15-10-2014
+|*
+|* ISGEC001154, IT0205, Arjit Gupta, VRC B61U a7 live, Dt. 12-11-2014
+|* Print only if Project Is export
+|****************************** declaration section ***************************
+declaration:
+	table	ttfcmg401	| Direct Debit Advice
+	table	ttfcmg403	
+	table	ttccom000	| Companies
+	table	ttccom100	| Companies
+	table	ttppdm600
+	table	ttfmsl037
+	table	ttcmcs052
+	table	ttppdm740
+	table  ttfgld100				
+	table  ttfgld005
+	table  ttfgld001
+	table  ttfcmg100
+	table  ttdisg831
+	
+	extern	domain	tccom.bpid      bpid.f	fixed
+	extern	domain	tccom.bpid     	bpid.t	fixed
+	extern	domain	tccprj		cprj.f
+	extern	domain	tccprj		cprj.t
+	extern	domain	tfgld.date	plan.f
+	extern	domain	tfgld.date	plan.t,r.date
+	extern domain  tfttrn		tadv.f		
+	extern domain  tfttrn		tadv.t		
+	extern	domain	tppdm.desc	pdes.m
+	extern	domain	tppdm.dscl	sdes.m
+	extern	domain 	tcncmp 		cCmp.m
+	extern	domain 	tcncmp 		pCmp.m
+	extern	domain	tcmcs.str25	v.tadv,v.tadv1
+	extern	domain	tfcmg.dbdv	var.tadv,tadv.f2,tadv.t2
+	extern	domain	tfttrn		tfmsl.tadv
+	extern domain  tfgld.year 	fyer.f		
+	extern domain  tfgld.prod	fprd.f
+	extern domain  tfgld.prod	fprd.t		
+			long		tadv.f1,tadv.t1
+|****************************** form section **********************************
+form.1:
+init.form:
+	get.screen.defaults()
+|****************************** choice section ********************************
+choice.cont.process:
+on.choice:
+	execute(print.data)
+choice.print.data:
+on.choice:
+	if rprt_open() then
+		read.main.table()				
+		rprt_close()
+	else
+		choice.again()
+	endif
+|****************************** field section *********************************
+field.cprj.f:
+when.field.changes:
+	cprj.t = cprj.f
+before.zoom:
+	tppdm600.cprj=cprj.f
+field.cprj.t:
+before.zoom:
+	tppdm600.cprj=cprj.t
+
+field.bpid.f:
+when.field.changes:
+	bpid.t = bpid.f
+
+field.plan.f:
+when.field.changes:
+	plan.t = plan.f
+	
+field.fprd.f:							
+before.zoom:
+	tfgld005.year = fyer.f
+
+when.field.changes:
+	fprd.t = fprd.f
+	
+field.fprd.t:
+before.zoom:
+	tfgld005.year = fyer.f					
+|****************************** function section ******************************
+functions:
+
+function read.main.table()										
+{
+	r.date = date.num()
+	select tfgld001.ncmp
+	from   tfgld001
+	selectdo
+		switch.to.company(tfgld001.ncmp)
+		
+		initialize.variables()
+		
+		select tfmsl037.* 
+		from   tfmsl037
+		where  tfmsl037._index2 inrange {:fyer.f,:fprd.f} and {:fyer.f,:fprd.t}
+		and    tfmsl037.cprj inrange :cprj.f and :cprj.t
+		and    tfmsl037.ifbp inrange :bpid.f and :bpid.t
+		and    tfmsl037.tadv inrange :tadv.f and :tadv.t
+		and    tfmsl037.cflo = tfcash.flow.in
+		and    tfmsl037.mode <> tfmode.advice.paym
+		selectdo
+			select tdisg831.cprj
+			from   tdisg831
+			where  tdisg831._index4 = {:tfmsl037.cprj}
+			and    tdisg831.type = tdisg.type.export
+			as set with 1 rows				|#ISGEC001154.n
+			selectdo
+				
+				on case (tfmsl037.mode)
+					case tfmode.advice.rec:
+						select	tfcmg401.*
+						from	tfcmg401
+						where	tfcmg401._index1 = {:tfmsl037.btno}
+						selectdo
+							
+						endselect
+				
+					break
+
+					case tfmode.direct.paym:
+						
+						select tfgld100.*
+						from   tfgld100
+						where  tfgld100.btno = :tfmsl037.btno
+						selectdo
+							tfcmg401.plan = tfgld100.tedt
+							tfcmg401.refr = tfgld100.bref
+						endselect
+						
+						break
+						
+					case tfmode.journal:
+						select tfgld100.*
+						from   tfgld100
+						where  tfgld100.btno = :tfmsl037.btno
+						selectdo
+							tfcmg401.plan = tfgld100.tedt
+							tfcmg401.refr = tfgld100.bref
+						endselect
+						break
+					endcase
+					
+									|#ISGEC001154.sn
+					select	tccom100.nama
+					from	tccom100
+					where	tccom100._index1 = {:tfmsl037.ifbp}
+					selectdo
+					selectempty
+						tccom100.nama = ""
+					endselect
+					
+					select	tcmcs052.dsca 
+					from	tcmcs052
+					where	tcmcs052._index1 = {:tfmsl037.cprj}
+					selectdo
+					selectempty
+						tcmcs052.dsca = ""
+					endselect
+					
+					select	tppdm740.tins
+					from	tppdm740
+					where	tppdm740._index1 = {:tfmsl037.cprj,:tfcmg401.itbp}
+					selectdo
+					endselect
+					
+					tfmsl037.tadv = ltoe(set.enum1(tfmsl037.tadv))
+						
+					rprt_send()		
+									|#ISGEC001154.en
+					
+				endselect
+				
+								|#ISGEC001154.so
+| 				select	tccom100.nama
+| 				from	tccom100
+| 				where	tccom100._index1 = {:tfmsl037.ifbp}
+| 				selectdo
+| 				selectempty
+| 					tccom100.nama = ""
+| 				endselect
+| 				
+| 				select	tcmcs052.dsca 
+| 				from	tcmcs052
+| 				where	tcmcs052._index1 = {:tfmsl037.cprj}
+| 				selectdo
+| 				selectempty
+| 					tcmcs052.dsca = ""
+| 				endselect
+| 				
+| 				select	tppdm740.tins
+| 				from	tppdm740
+| 				where	tppdm740._index1 = {:tfmsl037.cprj,:tfcmg401.itbp}
+| 				selectdo
+| 				endselect
+| 				
+| 				tfmsl037.tadv = ltoe(set.enum1(tfmsl037.tadv))
+								|#ISGEC001154.eo
+				
+| 				if tfmsl037.pdoc <> 0 then
+| 					select tfcmg100.cheq
+| 					from   tfcmg100
+| 					where  tfcmg100.typo = :tfmsl037.ptyp
+| 					and    tfcmg100.doco = :tfmsl037.pdoc
+| 					selectdo
+| 					endselect
+| 				else
+| 					tfcmg100.cheq = ""
+| 				endif
+				
+| 				rprt_send()
+| 			endselect
+| 			rprt_send()			|#ISGEC001154.o
+		endselect
+	endselect
+}														
+
+function long set.enum1(domain tfttrn i.tadv)    | tfttrn  --> tfcmg.dbdv
+{
+	on case i.tadv
+	case tfttrn.purinv:
+		tadv.t1 = 1
+		break		
+	case tfttrn.purcred:
+		tadv.t1 = 2
+		break		
+	case tfttrn.slsinv:
+		tadv.t1 = 3
+		break		
+	case tfttrn.slscred:
+		tadv.t1 = 4
+		break		
+	case tfttrn.advance.rec:
+		tadv.t1 = 5
+		break		
+	case tfttrn.unalloc.rec:
+		tadv.t1 = 6
+		break
+	endcase
+	return(tadv.t1)	
+}
+
+function initialize.variables()
+{
+	tfmsl037.btno = 0
+	tfcmg401.plan = 0
+	tfmsl037.cprj = ""
+	tcmcs052.dsca = ""
+	tfmsl037.ifbp = ""
+	tccom100.nama = ""
+	tfmsl037.resn = empty
+	tfmsl037.tadv = empty
+	tfmsl037.ccur = ""
+	tfmsl037.amti = 0
+	tfmsl037.amth = 0
+	tfmsl037.ptyp = ""
+	tfmsl037.pdoc = 0
+	
+}

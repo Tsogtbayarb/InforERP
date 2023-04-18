@@ -1,0 +1,416 @@
+|******************************************************************************
+|* tpisg220  0  VRC B61U a7 isg 
+|* tpisg220 - DAL2
+|* merino1
+|* 18-02-08 [12:47]
+|******************************************************************************
+|* Script Type: DAL
+|******************************************************************************
+|* ID: ISGECMOD011, Gokul Chaurasia, 08-02-2018, VRC B61U a7 isg
+|* New Devlopment
+|*
+|* ID: ISGEC01128, Prasanna Bhuyan, VRC B61U a7 isg, 28-11-2018
+|* Modifications
+|*
+|* ID: ISGEC016016, Sahil Sharma,  VRC B61U a7 isg, 24-01-2019
+|* Modifications
+|*
+|* ID: ISGEC01179, Prasanna Bhuyan, VRC B61U a7 isg, 28-03-2019
+|* Insertion in log table "tpisg253" when something is updated in session "tpisg2120m014"
+|*
+|******************************************************************************
+|------------------------ Declaration Section ---------------------------------
+#include <bic_dal2>
+	
+	table	ttpisg220 | Project Activity Master
+	table	ttpisg200 | Product Wise Activity Master
+	table	ttpisg240
+	table	ttpisg241
+	table	ttpisg221
+	table	ttpisg253 | Project activity Master Log			|#ISGEC01179.n
+	
+	
+	domain	tcmcs.str30	var.cact, parent.act, chk.pact
+	domain	tcpono		flag
+	domain	tcmcs.long	pact.len
+	domain	tcsess		sess.code, sess.code1
+	domain	tcmcs.long	idno
+	extern	domain	tccprj		i.cprj, t.cprj, imp.cprj
+	extern	domain	tcorno		i.pcod, i.acty, t.pcod, imp.pcod
+	extern	domain	tcmcs.str30	t.cact, t.pact, imp.cact, imp.pact
+	
+|-------------------------- Object Hooks --------------------------------------
+
+function extern long before.open.object.set()
+{
+	import("prog.name$", sess.code)
+	get.var(pid,"prog.name$",sess.code1)			|#ISGEC016016.n
+	handle.field.dependencies()
+	return(0)
+}
+
+function extern long before.save.object(long type)
+{
+	if sess.code1 = "tpisg2120m014" then							|#ISGEC01179.sn				
+		on case type										
+			case DAL_UPDATE :
+					with.old.object.values.do(insert.old.values.in.log.file)
+				break
+			endcase										
+	endif											|#ISGEC01179.en
+	return(0)
+}
+
+function extern long after.save.object(long type)
+{
+| 	on case type
+| 		case 	DAL_NEW :
+| 		case	DAL_UPDATE :
+| 				if not valid.finish.date(tpisg220.cpgv) then
+| 					if	tpisg220.acfn	<>	0	then
+| 						return(DALHOOKERROR)
+| 					endif
+| 				endif
+| 			break
+| 	endcase
+	return(0)
+}
+
+function extern long before.destroy.object()
+{
+	t.cprj = tpisg220.cprj
+	t.pcod = tpisg220.pcod
+	t.cact = tpisg220.cact
+	t.pact = tpisg220.pact
+	return(0)
+}
+
+function extern long after.destroy.object()
+{
+| 	with.old.object.values.do(	delete.predecessors.activity,
+| 					t.cprj,
+| 					t.pcod,
+| 					t.cact,
+| 					t.pact)
+
+| 	if not renumber.in.220(tpisg220.cprj, tpisg220.pcod) then
+| 		commit.transaction()
+| 	else
+| 		return(DALHOOKERROR)
+| 	endif
+	 
+
+	return(0)
+}
+
+
+| function extern boolean method.is.allowed(long type)		|#ISGEC01128.sn
+| {
+| 	on case type
+| 	case DAL_NEW :
+| 			return(false)
+| 	endcase
+| 	return(true)
+| }									|#ISGEC01128.sn
+|------------------------------ Field Hooks ------------------------------------
+
+|* [tpisg220.cprj]
+
+function extern boolean tpisg220.cprj.is.mandatory(long mode)
+{
+
+	return(true)
+}
+
+|* [tpisg220.pcod]
+
+function extern boolean tpisg220.pcod.is.mandatory(long mode)
+{
+	
+	return(true)
+}
+
+
+
+function extern void tpisg220.pcod.update(long mode)
+{
+	select	dmisg140.pcod:tpisg220.pcod
+	from	dmisg140
+	where	dmisg140._index2 = {:tpisg220.cprj}
+	as set with 1 rows
+	selectdo
+	selectempty
+		tpisg220.pcod = ""
+	endselect
+}
+
+
+
+
+|* [tpisg220.cact]
+
+function extern boolean tpisg220.cact.is.mandatory(long mode)
+{
+	return(true)
+}
+
+|* [tpisg220.acfn]
+
+| function extern boolean tpisg220.acfn.is.mandatory(long mode)
+| {
+| 	if	tpisg220.cpgv <> 100	then
+| 		return(false)
+| 	endif
+| 	
+| 	return(true)
+| }
+
+function extern boolean tpisg220.cact.is.valid(long mode)
+{
+	if not check.activity.code(tpisg220.pcod,
+				    tpisg220.cact)	then
+		dal.set.error.message("@Please Select Valid Activity Code")
+		return(DALHOOKERROR)
+	endif
+	
+	return(true)
+}
+
+|* [tpisg220.pact]
+
+function extern boolean tpisg220.pact.is.valid(long mode)
+{
+	if not isspace(tpisg220.pact)	then
+| 		if not check.predecessor.activity(tpisg220.cprj,
+| 						   tpisg220.pcod,
+| 						   tpisg220.schd,
+| 						   tpisg220.pact) then
+		if not check.activity.code(tpisg220.pcod,
+					tpisg220.pact)	then
+			dal.set.error.message("@Please Select Valid Predecessor Activity")
+			return(DALHOOKERROR)
+		endif
+	endif
+	
+	
+	return(true)
+}
+
+| function extern boolean tpisg220.sele.is.valid(long mode)
+| {
+| 	if tpisg220.sele = tcyesno.yes then
+| 		check.child()
+| 		if flag = 1 then 
+| 			dal.set.error.message("@Invalid Selection")
+| 			return(DALHOOKERROR)
+| 		endif
+| 	endif
+| 	return(true)
+| }
+
+|* [tpisg220.bcod]
+
+| function extern boolean tpisg220.bcod.is.valid(long mode)						|#Anadi.so
+| {
+| 	if not isspace(tpisg220.bcod)	then
+| 		if not check.basis.code(tpisg220.cprj,
+| 					tpisg220.pcod,
+| 					tpisg220.bcod)	then
+| 			dal.set.error.message("@Please Select Valid Lead Time Basis")
+| 			return(DALHOOKERROR)
+| 		endif
+| 	endif
+
+| 	return(true)
+| }													|#anadi.eo
+
+|----------------------------- Function Section ---------------------------------
+
+function handle.field.dependencies()
+{
+	dal.field.depends.on("tpisg220.pcod",HOOK_UPDATE,"tpisg220.cprj")
+ 	dal.field.depends.on("tpisg220.manu",HOOK_IS_READONLY,"tpisg220.frez")				|#ISGEC01128.sn
+ 	dal.field.depends.on("tpisg220.rmcm",HOOK_IS_READONLY,"tpisg220.frez")				 
+}
+
+ function extern boolean tpisg220.rmcm.is.readonly()
+{
+	if sess.code1 <> "tpisg2120m014" then					|#ISGEC016016.n
+| 		if	tpisg220.frez <> tcyesno.yes	then			|#ISGEC016016.o
+		if	tpisg220.frez = tcyesno.yes	then			|#ISGEC016016.n
+			return(true)
+		endif
+
+| 		return(true)							|#ISGEC016016.o
+	endif
+	
+	return(false)
+}
+
+ function extern boolean tpisg220.manu.is.readonly()
+{
+	if sess.code1 <> "tpisg2120m014" then					|#ISGEC016016.n
+| 		if	tpisg220.frez <> tcyesno.yes	then			|#ISGEC016016.o
+		if	tpisg220.frez = tcyesno.yes	then			|#ISGEC016016.n
+			return(true)
+		else
+			if trim$(tpisg220.acty) = "PARENT" then
+				return(true)
+			endif
+		endif
+	endif	
+| 		return(true)							|#ISGEC016016.o
+	return(false)
+}													|#ISGEC01128.en
+													|#ISGEC01128.en
+
+
+
+| function boolean check.parent()
+| {
+| 	while(tpisg220.pact <> var.cact)
+| 		select	tpisg220.pact,
+| 			tpisg220.sele
+| 		from	tpisg220
+| 		where	tpisg220.cact = :var.cact
+| 		selectdo
+| 			
+| 			var.cact = tpisg220.pact
+| 			
+| 			if  tpisg220.sele = tcyesno.no then
+| 				return(false)
+| 			endif
+| 			
+| 			
+| 		endselect
+| 	endwhile
+| 	
+| 	return(true)
+| }
+
+
+function boolean check.activity.code(
+		domain	tcorno		i.pcod,
+		domain	tcmcs.str30	i.cact)
+{
+	select	tpisg200.cact
+	from	tpisg200
+	where	tpisg200._index1 = {:i.pcod,
+				    :i.cact}
+	selectdo
+	selectempty
+		return(false)
+	endselect
+	
+	return(true)
+}
+
+function boolean check.predecessor.activity(
+		domain	tccprj		i.cprj,
+		domain	tcorno		i.pcod,
+		domain	tcyesno		i.schd,
+		domain	tcmcs.str30	i.pact)
+{
+	domain	tcmcs.str30		dummy.cact
+	
+	dummy.cact = ""
+
+	select	a_tpisg220.cact:dummy.cact
+	from	tpisg220	a_tpisg220
+	where	a_tpisg220._index1 = {:i.cprj,
+				      :i.pcod}
+	and	a_tpisg220.schd = :i.schd
+	and	a_tpisg220.pact = :i.pact
+	selectdo
+	selectempty
+		return(false)
+	endselect
+	
+	return(true)
+}
+
+function boolean check.basis.code(
+		domain	tccprj		i.cprj,
+		domain	tcorno		i.pcod,
+		domain	tcorno		i.bcod)
+{
+	select	tpisg219.bcod
+	from	tpisg219
+	where	tpisg219._index1 = {:i.cprj,
+				    :i.pcod,
+				    :i.bcod}
+	selectdo
+	selectempty
+		return(false)
+	endselect
+	
+	return(true)
+}
+
+function delete.predecessors.activity(	domain	tccprj		del.cprj,
+					domain	tcorno		del.pcod,
+					domain	tcmcs.str30	del.cact,
+					domain	tcmcs.str30	del.pact,
+					domain	tcmcs.s200u	del.iref)
+{	
+	pact.len = len(trim$(del.cact))
+	
+	select	tpisg220.*
+	from	tpisg220   for update
+	where	tpisg220._index1 = {:del.cprj}
+	and	tpisg220.sub1 =:del.iref
+	selectdo
+		var.cact = tpisg220.cact(1;pact.len)
+		if trim$(del.cact) = trim$(var.cact) then
+			select	tpisg221.*
+			from	tpisg221 for update
+			where	tpisg221._index1 = {:t.cprj,:t.pcod,:tpisg220.cact}
+			selectdo
+				db.delete(ttpisg221,db.retry,e)
+			endselect
+			
+			db.delete(ttpisg220,db.retry,e)
+			commit.transaction()
+		endif
+	endselect
+}
+
+function insert.old.values.in.log.file()					|#ISGEC01179.sn
+{
+	domain	tcdate curr.date
+	
+	curr.date = utc.num()
+	
+	select	tpisg253.*
+	from	tpisg253
+	where	tpisg253._index1 = {:tpisg220.cprj, :tpisg220.pcod, :tpisg220.cact, :curr.date}
+	selectdo
+	selectempty
+		tpisg253.cprj = tpisg220.cprj
+		tpisg253.pcod = tpisg220.pcod
+		tpisg253.cact = tpisg220.cact
+		tpisg253.actp = tpisg220.actp
+		tpisg253.desc = tpisg220.desc
+		tpisg253.dept = tpisg220.dept
+		tpisg253.sub1 = tpisg220.sub1
+		tpisg253.manu = tpisg220.manu
+		tpisg253.rmcm = tpisg220.rmcm
+		tpisg253.updt = curr.date
+		tpisg253.user = logname$
+		db.insert(ttpisg253,db.skip.dupl,e)
+	endselect
+}										|#ISGEC01179.en
+| function boolean valid.finish.date
+| 					(
+| 						domain	tcamnt		i.cpgv
+| 						)
+| {
+| 	if	i.cpgv	<	100.0	then
+| 		dal.set.error.message("@ Finish Date Not Allowed")
+| 		return(false)
+| 	endif
+| 	
+| 	return(true)
+| }
+
+|---------------------------------- END ----------------------------------------

@@ -1,0 +1,499 @@
+|******************************************************************************
+|* tpisg2220m000  0  VRC B61U a7 isg 
+|* Generate Project CLP
+|* merino1                       
+|* 2018-02-08
+|******************************************************************************
+|* Main table tpisg220 Project Activity Master, Form Type 4
+|******************************************************************************
+|* ID: ISGECMOD011, Gokul Chaurasia, 08-02-2018, VRC B61U a7 isg
+|* New Devlopment.
+|* ID: Anadi Shankar,24-07-2018,VRC B61U a7 isg
+|* Modifications.
+|* ID: ISGEC01100, Sahil Sharma, VRC B61U a7 isg, 17-08-2018
+|* Modifications in logic for insertion in "tpisg220" and "tpisg239"
+|****************************** declaration section ***************************
+declaration:
+
+#include <bic_dam>
+
+	table	ttpisg220 | Project Activity Master
+	table	ttpisg200 | Product Wise Activity Master
+	table	ttpisg210 | Product Wise Activity Relationship
+	table	ttpisg217 | Select Product Wise Parent Activity
+	table 	ttpisg218
+	table	ttpisg232
+	table	ttpisg236
+	table	ttpisg239
+	|---------------------- Form Variables --------------------------------
+	
+	extern	domain	tcorno		f.pcod
+	extern	domain	tccprj		f.cprj
+	extern	domain	tcpono		f.cont
+	
+	extern	domain	tcdsca		pcod.dsca
+	extern	domain	tcdsca		cprj.dsca
+	extern	domain	tpexp.dom	expt
+	
+	|---------------------- Script Variables ------------------------------
+	
+	extern	domain	tclogn		curr.user
+	extern	domain	tcmcs.str30		test.cact
+		domain	tcmcs.str100m	mess.err,err.mess
+		long			err.cont, ret_val, i.flag
+		long g.count, progress.perc,g.total,ret, actp_id
+	
+|****************************** program section ********************************
+
+before.program:
+	curr.user = logname$	
+|****************************** group section **********************************
+
+group.1:
+init.group:
+	get.screen.defaults()
+
+|****************************** field section ************************************
+
+field.pcod.dsca:
+before.display:
+	select	dmisg145.name:pcod.dsca
+	from	dmisg145
+	where	dmisg145._index1 = {:f.pcod}
+	selectdo
+	selectempty
+		pcod.dsca =""
+	endselect
+	
+field.cprj.dsca:
+before.display:
+	select	tcmcs052.dsca:cprj.dsca
+	from	tcmcs052
+	where	tcmcs052._index1 = {:f.cprj}
+	selectdo
+	selectempty
+		cprj.dsca = ""
+	endselect
+
+field.f.pcod:
+after.field:
+	get.parent.activity.count()
+	
+	display("f.cont")
+
+field.expt:
+before.field:
+	set.enum.values.for.field("expt",tpexp.dom.exp,tpexp.dom.dom)
+check.input:
+	if expt = empty then
+		message("Please select Export/Domestic")
+		set.input.error("",e)
+	endif
+|****************************** choice section ***********************************
+
+choice.generate_button:
+before.choice:
+	ret = create.progress.indicator ("Generate",						|#Anadi.sn
+                                                 PROGRESS.BAR + PROGRESS.STOP)
+| 	| 	ret = change.progress.indicator (0)							|#Anadi.en
+	
+	get.parent.activity.count()
+
+	if not check.before.generate()	then
+		choice.again()
+	endif
+	
+	if f.cont = 0	then
+		message("Please Select Parent Activity for Product %s",f.pcod)
+		choice.again()
+	endif
+
+on.choice:
+	copy.activities.from.product.to.project(f.pcod,f.cprj)
+	insert.data.to.239()
+	message("Succesfully Generated")
+
+choice.select_pact:
+| choice.tpisg2136m000:
+on.choice:
+	insert.parent.activity(curr.user,f.pcod)
+	insert.product.refernce(f.pcod)
+	
+	start.session(MODAL_OVERVIEW,"tpisg2136m000","","")
+| 	start.session(MULTI_OCC,"tpisg2136m000","","")
+
+after.choice:
+	get.parent.activity.count()
+	display("f.cont")
+
+|******************************** function section *********************************
+
+functions:
+
+function get.parent.activity.count()
+{
+
+	select	count(*):f.cont
+	from	tpisg236
+	where	tpisg236._index1 = {:curr.user,:f.pcod}
+	and	tpisg236.sele = tcyesno.yes
+	selectdo
+	selectempty
+		f.cont = 0 
+	endselect
+}
+
+function boolean check.before.generate()
+{
+	if isspace(f.cprj) or isspace(f.pcod)	then
+		message("Product or Project Cannot be blank")
+		return(false)
+	else
+		select	dmisg140.pcod
+		from	dmisg140
+		where	dmisg140._index1 = {:f.pcod,
+					    :f.cprj}
+		as set with 1 rows
+		selectdo
+		selectempty
+			message("PMDL not maintain for Product & Project")
+			return(false)
+		endselect
+	endif
+	
+	return(true)
+}
+
+function copy.activities.from.product.to.project(	
+			domain	tcorno		i.pcod,
+			domain	tccprj		i.cprj)
+{
+	
+	
+	copy.product.activities.to.project(i.pcod,i.cprj)
+	
+	copy.product.relationship.to.project(i.pcod,i.cprj)
+	
+| 	progress.perc = 100
+| 	
+| 	ret = change.progress.indicator (progress.perc)			
+	
+}
+
+function copy.product.activities.to.project(
+		domain	tcorno		i.pcod,
+		domain	tccprj		i.cprj)
+{
+	mess.err = ""
+	err.mess = ""
+	err.cont = 0
+	i.flag = 0
+	
+
+| 	select	tpisg236.iref 									|#ISGEC01100.so
+| 	from	tpisg236 
+| 	where 	tpisg236._index1 = {:curr.user,:i.pcod}
+| 	and	tpisg236.sele = tcyesno.yes
+| 	selectdo
+| 		select	tpisg200.*
+| 		from	tpisg200
+| 		where	tpisg200._index1 = {:i.pcod}
+| 		and	tpisg200.sub1 = :tpisg236.iref
+| 		and	(tpisg200.exdo = :expt or tpisg200.exdo = tpexp.dom.both) 
+| 		selectdo									|#ISGEC01100.eo
+		actp_id = 0									|#ISGEC01100.sn
+		
+		select	tpisg200.*
+		from	tpisg200
+		where	tpisg200._index1 = {:i.pcod}
+		and	tpisg200.sub1 in       (select	tpisg236.iref 
+						from	tpisg236 
+						where	tpisg236._index1 = {:curr.user,:i.pcod} 
+						and	tpisg236.sele = tcyesno.yes)
+						
+		and	(tpisg200.exdo = :expt or tpisg200.exdo = tpexp.dom.both)
+		order by tpisg200.actp
+		selectdo									|#ISGEC01100.en
+| 			progress.indicator()
+			
+
+			select	tpisg220.*
+			from	tpisg220
+			where	tpisg220._index1 =  {:i.cprj,
+						    :tpisg200.cprd,
+						    :tpisg200.cact}
+			selectdo
+			selectempty
+						
+				actp_id = actp_id + 1					|#ISGEC01100.n
+				dal.new.object("tpisg220")
+				dal.set.field("tpisg220.cprj",i.cprj)
+				dal.set.field("tpisg220.pcod",tpisg200.cprd)
+				dal.set.field("tpisg220.schd",tcyesno.no)
+				dal.set.field("tpisg220.cact",tpisg200.cact)
+| 				dal.set.field("tpisg220.actp",tpisg200.actp)		|#ISGEC01100.o
+				dal.set.field("tpisg220.actp",actp_id)			|#ISGEC01100.n
+				dal.set.field("tpisg220.pact",tpisg200.pact)
+				dal.set.field("tpisg220.bohd",tpisg200.bohd)		|#Anadi.sn 06-06-2018
+	| 			dal.set.field("tpisg220.iref",tpisg200.iref)		|#Anadi.en 06-06-2018
+				dal.set.field("tpisg220.desc",tpisg200.desc)		|#Anadi.sn 05-07-2018
+				dal.set.field("tpisg220.acty",tpisg200.acty)
+				dal.set.field("tpisg220.dept",tpisg200.dept)
+				dal.set.field("tpisg220.vali",tpisg200.vali)
+				dal.set.field("tpisg220.outl",tpisg200.outl)
+				dal.set.field("tpisg220.sub1",tpisg200.sub1)
+				dal.set.field("tpisg220.sub2",tpisg200.sub2)
+				dal.set.field("tpisg220.sub3",tpisg200.sub3)
+				dal.set.field("tpisg220.sub4",tpisg200.sub4)
+				dal.set.field("tpisg220.amod",tpisg200.amod)
+				dal.set.field("tpisg220.pcbs",tpisg200.pcbs)
+				dal.set.field("tpisg220.sitm",tpisg200.sitm)
+				
+				dal.set.field("tpisg220.exdo",tpisg200.exdo)		|#Anadi.en 06-06-2018
+	| 			dal.set.field("tpisg220.bcod",tpisg218.bcod)		|#Anadi.o 19-07-2018
+				
+				
+				ret_val = dal.save.object("tpisg220",e)
+				
+				if not ret_val	then
+					commit.transaction()
+				else
+					err.cont = dal.count.error.messages()
+					
+					for i.flag = 1 to err.cont
+						dal.get.error.message(err.mess)
+						mess.err = trim$(mess.err) & err.mess
+					endfor
+					
+					message("%s",mess.err)
+					abort.transaction()
+				endif
+				
+				
+			endselect
+		endselect
+| 	endselect
+}
+
+function copy.product.relationship.to.project(
+		domain	tcorno		i.pcod,
+		domain	tccprj		i.cprj)
+{
+	mess.err = ""
+	err.mess = ""
+	err.cont = 0
+	i.flag = 0
+	
+| 	select	tpisg210.*, tpisg217.*
+| 	from	tpisg210, tpisg217
+| 	where	tpisg210._index1 = {:i.pcod}
+| 	and	tpisg217.user = :curr.user
+| 	and	tpisg217.pcod = :i.pcod
+| 	and	tpisg217.pact = tpisg210.pact
+| 	and	tpisg217.sele = tcyesno.yes
+	
+	
+		select	tpisg220.*
+		from	tpisg220
+		where	tpisg220._index1 = {:i.cprj,:i.pcod}
+		selectdo
+	
+			select	tpisg210.*
+			from	tpisg210
+			where	tpisg210._index1 = {:i.pcod,:tpisg220.cact}
+			selectdo
+				if check.activity(i.pcod,i.cprj,tpisg210.pact) then			|#ISGEC01100.n
+					select	tpisg221.*
+					from	tpisg221
+					where	tpisg221._index1 = {:i.cprj,
+								    :tpisg210.cprd,
+								    :tpisg210.cact,
+								    :tpisg210.pact}
+					selectdo
+					selectempty
+						dal.new.object("tpisg221")
+						dal.set.field("tpisg221.cprj",i.cprj)
+						dal.set.field("tpisg221.pcod",tpisg210.cprd)
+						dal.set.field("tpisg221.cact",tpisg210.cact)
+						dal.set.field("tpisg221.pact",tpisg210.pact)
+						dal.set.field("tpisg221.sact",tpisg210.sact)
+						dal.set.field("tpisg221.rltp",tpisg210.rltp)
+						dal.set.field("tpisg221.lelg",tpisg210.lead)
+						
+						ret_val = dal.save.object("tpisg221",e)
+						
+						if not ret_val	then
+							commit.transaction()
+						else
+							err.cont = dal.count.error.messages()
+							
+							for i.flag = 1 to err.cont
+								dal.get.error.message(err.mess)
+								mess.err = trim$(mess.err) & err.mess
+							endfor
+							
+							message("%s",mess.err)
+							abort.transaction()
+						endif
+					endselect
+				endif
+			endselect
+		endselect
+}
+
+function insert.parent.activity(
+		domain	tclogn		i.logn,
+		domain	tcorno		i.pcod)
+{
+	select	tpisg200.pact
+	from	tpisg200
+	where	tpisg200._index1 = {:i.pcod}
+	group by tpisg200.pact
+	order by tpisg200.pact
+	selectdo
+		select	tpisg217.*
+		from	tpisg217
+		where	tpisg217._index1 = {:i.logn,
+					    :i.pcod,
+					    :tpisg200.pact}
+		selectdo
+		selectempty
+			tpisg217.user = i.logn
+			tpisg217.pcod = i.pcod
+			tpisg217.pact = tpisg200.pact
+			tpisg217.sele = tcyesno.no
+			
+			db.insert(ttpisg217,db.skip.dupl,e)
+			commit.transaction()
+		endselect
+	endselect
+}
+
+function insert.product.refernce(
+		domain	tcorno		i.pcod)
+{
+| 	select	tpisg200.pact
+| 	from	tpisg200
+| 	where	tpisg200._index1 = {:i.pcod}
+| 	group by tpisg200.pact
+| 	order by tpisg200.pact
+| 	selectdo
+| 		select	tpisg217.*
+| 		from	tpisg217
+| 		where	tpisg217._index1 = {:i.logn,
+| 					    :i.pcod,
+| 					    :tpisg200.pact}
+| 		selectdo
+| 		selectempty
+| 			tpisg217.user = i.logn
+| 			tpisg217.pcod = i.pcod
+| 			tpisg217.pact = tpisg200.pact
+| 			tpisg217.sele = tcyesno.no
+| 			
+| 			db.insert(ttpisg217,db.skip.dupl,e)
+| 			commit.transaction()
+| 		endselect
+| 	endselect
+
+	select	tpisg232.*
+	from	tpisg232
+	where	tpisg232._index1 = {:i.pcod}
+	selectdo
+		select	tpisg236.*
+		from	tpisg236
+		where	tpisg236._index1 = {:curr.user,:tpisg232.pcod,:tpisg232.iref}
+		selectdo
+		selectempty
+			tpisg236.pcod = tpisg232.pcod
+			tpisg236.iref = tpisg232.iref
+			tpisg236.elem = tpisg232.elem
+			tpisg236.user = curr.user
+			tpisg236.icls = tpisg232.icls
+			
+			db.insert(ttpisg236,db.skip.dupl,e)
+			commit.transaction()
+		endselect
+	endselect
+}
+												|#ISGEC01100.sn
+function long check.activity(domain	tcorno		io.pcod,
+				domain	tccprj		io.cprj,
+				domain	tcmcs.str30	io.pact)
+{
+	domain tcpono	found
+	
+	found = 0
+	
+	select	atpisg220.cact:test.cact
+	from	tpisg220 atpisg220
+	where	atpisg220._index1 = {:io.cprj,:io.pcod,:io.pact}
+	selectdo
+		found = 1
+	selectempty
+		found = 0
+	endselect
+	
+	return(found)
+}
+
+function insert.data.to.239()
+{
+	select	tpisg236.*|, tpisg232.cuni
+	from	tpisg236|, tpisg232
+	where	tpisg236._index1 = {:curr.user, :f.pcod}
+	and	tpisg236.sele = tcyesno.yes
+| 	and	tpisg232._index1 = {tpisg236.pcod, tpisg236.iref}
+| 	and	tpisg232.sele = tcyesno.yes
+	selectdo
+		select	tpisg239.*
+		from	tpisg239
+		where	tpisg239._index1 = {:tpisg236.pcod,:f.cprj,:tpisg236.iref}
+		selectdo
+		selectempty
+			
+			select	tpisg232.cuni, tpisg232.sele,
+				tpisg232.icls				|#Atul.14.11.2018.n
+			from	tpisg232
+			where	tpisg232._index1 = {:tpisg236.pcod, :tpisg236.iref}
+			selectdo
+			endselect
+			
+			tpisg239.pcod = tpisg236.pcod
+			tpisg239.cprj = f.cprj	
+			tpisg239.iref = tpisg236.iref
+			tpisg239.elem = tpisg236.elem
+			tpisg239.sele = tpisg232.sele
+			tpisg239.cuni = tpisg232.cuni
+| 			tpisg239.icls = tpisg236.icls			|#Atul.14.11.2018.o
+			tpisg239.icls = tpisg232.icls			|#Atul.14.11.2018.n
+			
+			db.insert(ttpisg239, db.skip.dupl,e)
+		endselect
+	endselect
+	if not e then 
+		commit.transaction()
+	else
+		abort.transaction()
+	endif
+
+}
+												|#ISGEC01100.en
+| function progress.indicator()
+| {
+| 	select count(*):g.total						|#Anadi.sn	24-07-2018
+| 	from	tpisg200
+| 	where	tpisg200.sub1 = :tpisg236.iref
+| 	selectdo
+| 	endselect								
+| 	
+| 	g.count = g.count + 1
+| 	
+| 	progress.perc = (g.count * 100.0) / (g.total * 1.0)			
+| 		if progress.perc > 100 then
+| 			progress.perc = 100
+| 		endif
+| 	ret = change.progress.indicator (progress.perc)			|#Anadi.en
+
+| }
+
+|************************************* END *****************************************

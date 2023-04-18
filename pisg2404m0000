@@ -1,0 +1,243 @@
+|******************************************************************************
+|* tdisg2404m000  0  VRC B61U a7 isg 
+|* Print Supplier Rating PO wise
+|* Installation user             
+|* 2014-12-24
+|******************************************************************************
+|* Main table tdisg204 Vendor Rating, Form Type 4
+|******************************************************************************
+|* ISGEC01014, Mani sharm, 05-01-2014, vrc B61u a7 isg 
+|* Print Report PO Wise according to PO Rating * Criteria wise Weight * Criteria Weight
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttdisg204 | Vendor Rating
+	table	ttdpur400
+	table	ttdisg202
+	table	ttccom100
+	table  ttdisg203
+	|**************** Form Variables ***************
+	extern	domain	tccom.bpid	suno.f
+	extern	domain	tccom.bpid	suno.t
+	extern	domain	tcdate		odat.f
+	extern	domain	tcdate		odat.t
+	extern	domain	tcperc		perc.f
+	extern	domain	tcperc		perc.t
+	
+	|**************** Script Variables **************
+	extern	domain	tcdate		v.odat.f
+	extern	domain	tcdate		v.odat.t
+	
+	|**************** Report Variables ****************
+	extern domain  tcorno          orno.f,orno.t
+	extern	domain	tccom.bpid	rep.suno
+	extern	domain	tcnama		rep.nama
+	extern	domain	tcorno		rep.orno
+	extern	domain	tcperc		rep.dlpr	|Delivery(Mat.) Rating
+	extern	domain	tcperc		rep.qlpr	|Quality Rating
+	extern	domain	tcperc		rep.dcpr	|Documentation Rating
+	extern	domain	tcperc		rep.aspr	|After Sale Rating
+	extern	domain	tcperc		rep.dspr	|Design Capability
+	extern domain  tcperc          rep.dsmk        |Design Marks
+	extern	domain	tcperc		rep.tper	|Total
+	extern domain  tcpono          rate.temp
+	extern domain  tcperc          temp.wght
+	extern domain  tcperc          tot.wght
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+choice.print.data:
+on.choice:
+	if	rprt_open() then
+		read.main.table()
+		rprt_close()
+	else
+		choice.again()
+	endif
+
+
+|****************************** field section *********************************
+field.suno.f:
+when.field.changes:
+	suno.t = suno.f
+
+field.odat.f:
+when.field.changes:
+	odat.t = odat.f
+
+field.perc.f:
+when.field.changes:
+	perc.t = perc.f
+
+field.orno.f:
+before.zoom:
+	query.extend.where.in.zoom("tdpur400.otbp="&quoted.string(suno.f))
+field.orno.t:
+before.zoom:
+	query.extend.where.in.zoom("tdpur400.otbp="&quoted.string(suno.t))
+|****************************** function section ******************************
+functions:
+
+function read.main.table()
+{
+	get.date.utc(odat.f, 00, 00, 00, v.odat.f)
+	get.date.utc(odat.t, 23, 59, 59, v.odat.t)
+	
+	select	tdisg204.supp, tdisg204.orno
+	from	tdisg204, tdpur400, tccom100
+	where	tdisg204.supp inrange {:suno.f}	and	{:suno.t}
+	and     tdisg204.orno inrange {:orno.f} and    {:orno.t}
+	and	tdisg204.frez = tcyesno.yes
+	and	tdisg204.orno refers to tdpur400
+	and	tdpur400.odat inrange :v.odat.f	and	:v.odat.t
+	group by tdisg204.supp, tdisg204.orno
+	order by tdisg204.supp, tdisg204.orno
+	selectdo
+		Initialize_Variables()
+		rep.suno = tdisg204.supp
+		rep.orno = tdisg204.orno
+		select	tdisg204.type, tdisg204.code, tccom100.nama,tdisg204.rate
+		from	tdisg204, tdpur400, tccom100
+		where	tdisg204._index2 = {:tdisg204.orno}
+		and	tdisg204.supp = :tdisg204.supp
+		and	tdisg204.frez = tcyesno.yes
+		and	tdisg204.orno refers to tdpur400
+		and	tdpur400.odat inrange :v.odat.f	and	:v.odat.t
+		and	tdisg204.supp refers to tccom100 Unref Clear
+		order by tdisg204.code
+		selectdo
+			rep.nama = tccom100.nama
+			select	tdisg202.wght
+			from	tdisg202
+			where	tdisg202._index1 = {:tdisg204.type, :tdisg204.code}
+			selectdo
+			selectempty
+				tdisg202.wght = 0
+			endselect
+			
+			on case trim$(tdisg204.code)
+				case "001":		|Delivery(Mat.) Rating
+|					rep.dlpr = rep.dlpr + tdisg202.wght                   |ISGEC01014.O
+| 					
+					for rate.temp = 1 to 10 step 1
+						if tdisg204.rate = rate.temp then 
+							select tdisg203.wght
+							from   tdisg203
+							where  tdisg203._index1 = :tdisg204.rate
+							selectdo
+								temp.wght = tdisg203.wght/100
+							endselect
+							rep.dlpr =   temp.wght * (tdisg202.wght)
+							tot.wght = tot.wght + tdisg202.wght
+						endif	
+					Endfor
+					break
+				case "002":		|Quality Rating
+| 					rep.qlpr = rep.qlpr + tdisg202.wght			|ISGEC01014.O
+					for rate.temp = 1 to 10 step 1
+						if tdisg204.rate = rate.temp then 
+							select tdisg203.wght
+							from   tdisg203
+							where  tdisg203._index1 = :tdisg204.rate
+							selectdo
+								temp.wght = tdisg203.wght/100
+							endselect
+							rep.qlpr =   temp.wght * (tdisg202.wght)
+							tot.wght = tot.wght + tdisg202.wght
+						endif	
+					Endfor
+					break
+				case "003":		|Documentation Rating
+| 					rep.dcpr = rep.dcpr + tdisg202.wght			ISGEC01014.O	
+					for rate.temp = 1 to 10 step 1
+						if tdisg204.rate = rate.temp then 
+							select tdisg203.wght
+							from   tdisg203
+							where  tdisg203._index1 = :tdisg204.rate
+							selectdo
+								temp.wght = tdisg203.wght/100
+							endselect
+							rep.dcpr =  temp.wght * (tdisg202.wght)
+							tot.wght = tot.wght + tdisg202.wght
+						endif	
+					Endfor
+					break
+				case "004":		|After Sale Rating
+| 					rep.aspr = rep.aspr + tdisg202.wght			ISGEC01014.O
+					for rate.temp = 1 to 10 step 1
+						if tdisg204.rate = rate.temp then 
+							select tdisg203.wght
+							from   tdisg203
+							where  tdisg203._index1 = :tdisg204.rate
+							selectdo
+								temp.wght = tdisg203.wght/100
+							endselect
+							rep.aspr =  temp.wght * (tdisg202.wght)
+							tot.wght = tot.wght + tdisg202.wght
+						endif	
+					Endfor
+					break
+				case "005":		|Design Capability
+					for rate.temp = 1 to 10 step 1
+						if tdisg204.rate = rate.temp then 
+							select tdisg203.wght
+							from   tdisg203
+							where  tdisg203._index1 = :tdisg204.rate
+							selectdo
+								temp.wght = tdisg203.wght/100
+							endselect
+							rep.dspr =  temp.wght  * (tdisg202.wght)
+							tot.wght = tot.wght + tdisg202.wght
+						endif	
+					Endfor
+					break	
+			ENDCASE		
+		endselect
+		
+		rep.tper = rep.dlpr + rep.qlpr + rep.dcpr + rep.aspr + rep.dspr
+		rep.tper = rep.tper / tot.wght
+		rep.tper = rep.tper * 100
+		if	(rep.tper => perc.f)	and
+			(rep.tper <= perc.t)	then	
+			rprt_send()
+		endif	
+		tot.wght = 0
+	endselect
+}
+
+function get.date.utc(
+		domain	tcdate	i.date,
+		long		i.hh,
+		long		i.mn,
+		long		i.ss,
+	ref	domain	tcdate	o.date
+			)
+{
+	long	dd, mm, yy, hh, mn, ss
+	
+	utc.to.date(i.date, yy , mm, dd, hh, mn, ss)
+	o.date = date.to.utc(yy, mm, dd, i.hh, i.mn, i.ss)
+	if	o.date < 0	then
+		o.date = 0
+	endif
+}	
+
+function Initialize_Variables()
+{
+	rep.orno = ""
+	rep.suno = ""
+	rep.nama = ""
+	rep.dlpr = 0
+	rep.dcpr = 0
+	rep.qlpr = 0
+	rep.aspr = 0
+	rep.dspr = 0
+	rep.tper = 0
+	tot.wght = 0
+}

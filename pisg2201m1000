@@ -1,0 +1,171 @@
+|******************************************************************************
+|* tdisg2201m100  0  VRC B61U a7 isg 
+|* Update Rejected Indent Lines
+|* Installation user             
+|* 2014-09-05
+|******************************************************************************
+|* Main table tdpur201 Purchase Requisition Lines, Form Type 4
+|******************************************************************************
+|* ISGECDV001008, IT0205, Arjit Gupta, VRC B61U a7 live
+|* Unlink Child Item for Rejected Indent Lines
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttdpur201 | Purchase Requisition Lines
+	table	ttdpur202
+	table	ttdisg003	|#ISGECDV001008.n
+	table	ttcisg004	|#ISGECDV001008.n
+	table	ttcisg005	|#ISGECDV001008.n
+	table	tdmisg005	|#ISGECDV001008.n
+
+	extern	domain	tccprj		cprj.f
+	extern	domain	tcbool		v.update
+   
+#include <bic_dam>
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+group.1:
+init.group:
+   get.screen.defaults()
+|****************************** Choice section **********************************
+choice.update:
+on.choice:
+	read.main.table()
+
+|****************************** Function section **********************************
+
+functions:
+
+function read.main.table()
+{
+	db.retry.point()
+	select 	tdpur201.*
+	from	tdpur201 for update
+	where	tdpur201._index2 = {:cprj.f}
+	and	tdpur201.rejc = tcyesno.no
+	and	tdpur201.rqno(1;1) <> "R"
+	order by tdpur201.cprj asc
+	selectdo
+		v.update = false
+		select	tdpur202.prno,
+			tdpur202.ppon,
+			tdpur202.qono,
+			tdpur202.qpon,
+			tdpur202.qseq
+		from	tdpur202 
+		where	tdpur202._index1 = {:tdpur201.rqno, :tdpur201.pono}
+		as set with 1 rows
+		selectdo
+			if isspace(tdpur202.prno)	and not isspace(tdpur202.qono) then
+				select	tdpur402.*
+				from	tdpur402
+				where	tdpur402._index6 = {:tdpur202.qono, :tdpur202.qpon}
+				selectdo
+				selectempty
+					v.update = true
+				endselect	
+			endif	
+		selectempty
+			v.update = true
+		endselect
+		
+		if	v.update = true	and	tdpur201.rqno(1;1) <> "R" then
+			Unlink.Child.Item(tdpur201.rqno, tdpur201.pono, tdpur201.item, tdpur201.cprj, tdpur201.cspa)	|#ISGECDV001008.n
+			tdpur201.rejc = tcyesno.yes
+			tdpur201.pric = 0
+			tdpur201.oamt = 0
+			db.update(ttdpur201, db.retry, e)
+			if	not e	then
+				commit.transaction()
+			else
+				abort.transaction()
+			endif	
+		endif
+	endselect		
+}
+|#ISGECDV001008.sn
+function Unlink.Child.Item(
+			domain	tcrqno		in.rqno,
+			domain	tcpono		in.pono,
+			domain	tcitem		in.loti,
+			domain	tccprj		in.cprj,
+			domain	tppdm.cspa	in.cspa	
+			)
+{
+	long	ret
+	
+	select	tdisg003.item
+	from	tdisg003 for update
+	where	tdisg003._index1 = {:in.rqno, :in.pono}
+	selectdo
+		Item_Release_Line(in.rqno, in.pono, in.cprj, in.cspa, in.loti, tdisg003.item)
+		ret = dal.destroy.object("tdisg003")
+	endselect	
+}	
+
+function Item_Release_Line(
+			domain	tcrqno		i.rqno,
+			domain	tcpono		i.pono,
+			domain	tccprj		i.cprj,
+			domain	tppdm.cspa	i.cspa,
+			domain	tcitem		i.loti,
+			domain	tcitem		i.item
+			)
+{
+	select	tcisg004.docn, tcisg004.rvid
+	from	tcisg004 for update
+	where	tcisg004._index1 = {:i.cprj, :i.cspa, :i.loti, :i.item}
+	and	tcisg004.refq = tcyesno.no
+	and	tcisg004.orno = tcyesno.no
+	and	tcisg004.rcpt = tcyesno.no
+	selectdo
+		Unlink.Indent(i.rqno, i.pono, i.cprj, i.cspa, i.loti, i.item)
+		Update.lot.item(tcisg004.docn, tcisg004.rvid, i.cprj, i.cspa, i.loti, i.item)
+		dal.destroy.object("tcisg004")
+	endselect	
+}
+
+function Unlink.Indent(
+			domain	tcrqno		it.rqno,
+			domain	tcpono		it.pono,
+			domain	tccprj		it.cprj,
+			domain	tppdm.cspa	it.cspa,
+			domain	tcitem		it.loti,
+			domain	tcitem		it.item
+			)
+{
+	long	ret
+	
+	select	tcisg005.type
+	from	tcisg005 for update
+	where	tcisg005._index1 = {:it.cprj, :it.cspa, :it.loti, :it.item, tdisg.item.indent ,:it.rqno, :it.pono}
+	selectdo
+		ret = dal.destroy.object("tcisg005")
+	endselect
+}		
+
+function Update.lot.item(
+			domain	dmdoc.docid	il.docn,
+			domain	dmdoc.revv	il.revi,
+			domain	tccprj		il.cprj,
+			domain	tppdm.cspa	il.cspa,
+			domain	tcitem		il.loti,
+			domain	tcitem		il.item
+			)
+{
+	long	e.ret
+	
+	select	dmisg005.stat
+	from	dmisg005 for update
+	where	dmisg005._index1 = {:il.cprj, :il.cspa, :il.docn, :il.revi, :il.item}
+	and	dmisg005.loti = :il.loti
+	selectdo
+		dal.change.object("dmisg005")
+		dal.set.field("dmisg005.stat", dmstat.process)		|Drawing Release
+		e.ret = dal.save.object("dmisg005")
+	endselect	
+}			
+
+|#ISGECDV001008.en

@@ -1,0 +1,643 @@
+|******************************************************************************
+|* tfisg2400m800  0  VRC B61U a7 isg 
+|* Print Remittance Letters(SIS)
+|* Installation user             
+|* 2014-12-16
+|******************************************************************************
+|* Form Type 4
+|******************************************************************************
+|* ID: ISGEC001181, IT0327, Ritu Shrivastava, VRC B61U a7 isg, Dt. 16-12-2014
+|* New report development
+|******************************************************************************
+|* ID: PATC002018, IT0376, Mani sharma , VRC B61U a7 isg , Dt. 24-03-2015
+|* ID:133, Modification
+|* Functional: Bandita Borah
+|****************************** declaration section ***************************
+declaration:
+	
+	table  ttfcmg109
+	table	ttccom100		|Business Partner
+	table	ttcmcs002		|Currencies
+	table	ttcmcs010		|Countries		
+	table	ttfacp200		|Suppliers
+	table	ttfacp202		|Sundry Suppliers
+	table	ttfacp300		|Subcontractors
+	table	ttfacp100		|Received Purchase Invoices
+	table	ttfacp301		|Industrial Assurance Boards
+	table	ttfacr200		|Customers
+	table	ttfacr202		|Sundry Customers
+	table	ttfcmg000		|Parameters CMG		
+	table	ttfcmg001		|Bank Relations
+	table	ttfcmg002		|Reasons for Foreign Payments
+	table	ttfcmg003		|Payment Methods
+	table	ttfcmg006		|Data per Bank/payment Method
+	table	ttfcmg100		|Cheque Master
+	table	ttfcmg101		|Payment Advices
+	table	ttfcmg103		|Composed Payments
+	table	ttfcmg104		|Standing Orders
+	table	ttfcmg105		|Standing Orders (Payment Schedule)
+	table	ttfcmg108		|Sundry Suppliers Standing Orders
+	table	ttfcmg113		|Payment Documents
+	table	ttfgld004		|Financial Company	
+	table	ttipcs020		|Projects 
+	table	ttfcmg011		|Bank Branches
+	table	ttccom130		|Addresses
+	table	ttfisg001		|IR Details
+	table	ttcmcs052		|Projects
+	table	ttfmsl020		|Advance Request
+	table	ttfmsl037		|Cash Flow
+	table	ttccom124
+	table	ttfcmg118
+	table	ttfgld008
+	table  	ttfacp201
+	table	ttccom000
+	table   ttfgld018
+	
+	extern domain tfgld.btno	btno.f
+	
+	extern	domain	tcnama		suppl.name		
+	extern	domain	tfgld.btno    	batch
+	extern	domain	tfgld.date	payment.date
+	extern	domain	tcmcs.str20	suno.key fixed		
+	extern	domain	tcmcs.str215	cash.str,pay_to_bp	
+	extern	domain	tfgld.amnt	amount.hc
+	extern	domain	tfgld.amnt	check.amount
+	
+	extern	domain	tcnama		name1
+	extern	domain	tcnama		name2
+	extern	domain	tcncmp		v.comp
+	extern	domain	tfgld.docn	v.irno,v.docn	
+	extern	domain	tccprj		v.cprj
+	extern	domain	tcorno		v.orno
+	extern	domain	tcmcs.str25	var.refrnce
+	extern	domain	tcmcs.str80	v.ln01,v.ln02,v.ln03,v.ln04
+	extern	domain	tcmcs.str80	v.ln05,v.ln06, adr.ln01, adr.ln02, adr.ln03, adr.ln04, adr.ln05, adr.ln06				
+	extern domain  tfgld.amnt	hold.m, tot.deduct, amnt.paid, alrd.paid, tot.bill.amnt, adv.adj, deb.note.adj	
+	extern	domain	tcnamd		payable.at
+	extern domain  tfacp.bloc	v.bloc
+	extern domain  tfgld.date	curr.date
+	extern domain  tcamnt          vat.amnt
+	extern  domain tfgld.ttyp      prev.tdoc
+	extern domain  tfgld.docn      prev.docn 
+	extern  domain tfgld.amnt      normal.pay
+|********************************************************************************	
+        extern domain  tcmcs.str20m    advance.var
+	extern domain  tcamnt 		advance.tot
+	extern domain  tcdesc		partial.var
+	extern domain  tcamnt 		partial.tot
+	extern domain  tcdsca		debit.var
+	extern domain  tcamnt 		debit.tot
+	extern domain  tcdsca  	already.var
+	extern domain  tcmcs.str30     correct.var
+	extern domain  tcamnt  	correct.tot
+	extern domain  tcpono 		p
+	extern domain  tcamnt 		advance.amnt
+	extern domain  tcamnt  	retention.amnt
+	extern domain  tcdsca 		retention.var,refr.var
+	extern domain  tcpono          temp.var 
+|****************************** program section ********************************
+before.program:
+	v.comp = get.compnr()
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.cont.process:
+on.choice:
+   execute(print.data)
+
+choice.print.data:
+on.choice:
+   if rprt_open() then
+       read.main.table()
+       rprt_close()
+   else
+       choice.again()
+   endif
+
+
+|****************************** field section *********************************
+field.btno:
+before.zoom:
+	query.extend.where.in.zoom("tfcmg109.stpp = 6")
+
+|****************************** function section ******************************
+
+functions:
+
+function read.main.table()
+{
+	get.company.details()
+	select	tfcmg103.*, tccom100.*,tccom124.cadr|, tcmcs010.dsca
+	from	tfcmg103, tccom100,tccom124|, tcmcs010
+	where	tfcmg103._index1 = {:btno.f}
+	and	tfcmg103.paid = tcyesno.yes
+	and	tfcmg103.amnt <> 0				
+	and	tfcmg103.ptbp refers to tccom100
+	and	tfcmg103.ptbp refers to tccom124
+	order by tfcmg103._index1
+	selectdo
+		get.bp.address(tccom124.cadr)
+		if tccom100.sndr = tcyesno.yes then
+			replace.bp.name()
+		endif	
+		
+		print.cheque.details(btno.f)
+		read.details()
+	endselect
+}
+
+function get.bp.address(domain	 tccom.cadr	i.cadr)
+{
+
+	select	tccom130.nama, tccom130.namb, tccom130.namc, tccom130.namd,	
+		tccom130.namf, tccom130.pstc, tccom130.telp, tccom130.tefx,	
+		tccom130.ln01, tccom130.ln02,					
+		tccom130.dsca							
+	from	tccom130
+	where	tccom130._index1 = {:i.cadr}
+	selectdo
+		v.ln01 = trim$(tccom130.nama) & " " & trim$(tccom130.namb)			
+		v.ln02 = trim$(tccom130.namc)
+		v.ln03 = trim$(tccom130.namd)
+		v.ln04 = trim$(tccom130.dsca) & " " & trim$(tccom130.pstc)	
+		v.ln05 = "Ph." & trim$(tccom130.telp)
+		v.ln06 = "Fax." & trim$(tccom130.tefx)
+		pay_to_bp = trim$(v.ln01)
+	selectempty
+		pay_to_bp = ""
+		v.ln01 = ""
+		v.ln02 = ""
+		v.ln03 = ""
+		v.ln04 = ""
+		v.ln05 = ""		
+		v.ln06 = ""
+	endselect	
+}
+
+function replace.bp.name()
+{
+	select	tfcmg108.*
+	from	tfcmg108
+	where	tfcmg108._index1 = {:tfcmg103.btno}
+	selectdo
+		select	tccom130.ln01:v.ln01,tccom130.ln02:v.ln02,tccom130.ln03:v.ln03,tccom130.ln04:v.ln04
+		from	tccom130
+		where	tccom130._index1 = {:tfcmg108.bpad}
+		selectdo
+			pay_to_bp = trim$(v.ln01) & " " & trim$(v.ln02)
+		selectempty			
+		endselect	
+	selectempty
+		select	tfcmg101.ttyp,tfcmg101.ninv
+		from	tfcmg101
+		where	tfcmg101._index1 = {:tfcmg103.btno}
+		and     tfcmg101.ptyp = :tfcmg103.ttyp			
+		and     tfcmg101.pdoc = :tfcmg103.docn			
+		selectdo
+		endselect
+		
+		select	tfacp202.cadr
+		from	tfacp202
+		where	tfacp202._index1 = {:tfcmg101.ttyp,:tfcmg101.ninv}
+		selectdo
+			select	tccom130.ln01:v.ln01,tccom130.ln02:v.ln02,tccom130.ln03:v.ln03,tccom130.ln04:v.ln04
+			from	tccom130
+			where	tccom130._index1 = {:tfacp202.cadr}
+			selectdo
+				pay_to_bp = trim$(v.ln01) & " " & trim$(v.ln02)
+			selectempty			
+			endselect	
+		endselect	
+	endselect	
+}
+
+function read.details()
+{
+	
+	
+	
+	select	tfcmg101.*,					
+		tcmcs002.*					
+	from	tfcmg101,					
+		tcmcs002					
+	where	tfcmg101._index4 = {	:tfcmg103.btno, :tfcmg103.ptbp,
+					:tfcmg103.ccur, :tfcmg103.paym,
+					:tfcmg103.basu, :tfcmg103.plan}
+| 					:tfcmg103.reas }
+	and     tfcmg101.ptyp = :tfcmg103.ttyp 					
+	and     tfcmg101.pdoc = :tfcmg103.docn				
+	and 	tfcmg101.ccur refers to tcmcs002		
+	order by tfcmg101._index4
+	selectdo
+		refr.var = tfcmg101.refr
+		retention.amnt = 0
+		alrd.paid = 0
+		advance.tot = 0
+		debit.tot =  0
+		partial.tot = 0
+		correct.tot = 0
+		vat.amnt = 0
+		p = 0
+		
+		get.lines.details()
+		tfacp200.orno = ""	
+| 		suno.key = tfcmg101.ifbp &
+| 				   edit$(etol(tfcmg101.tadv),"99") &
+| 				   tfcmg101.ttyp & str$(tfcmg101.ninv)
+		suno.key = tfcmg101.ttyp & str$(tfcmg101.ninv)
+				   
+		select	tfacp200.orno,tfacp200.isup,tfacp200.refr
+		from	tfacp200
+		where	tfacp200._index1={:tfcmg101.ttyp,:tfcmg101.ninv} 
+		and	tfacp200._compnr = :tfcmg103.icmp				|PATC002018.n
+		as set with 1 rows
+		selectdo
+		selectempty
+		endselect
+		
+						
+		if	tfcmg101.vata <> 0	then
+			if p = 1 then
+| 				vat.amnt = tfcmg101.vata
+| 				get.amount.paid()
+			endif	
+			tfcmg101.amnt = tfcmg101.amnt + tfcmg101.vata
+		endif	
+						
+		
+		select	tfacp100.ninv 
+		from	tfacp100
+		where	tfacp100.isup = :tfacp200.isup
+		and	tfacp100.refr = :tfacp200.refr
+		and	tfacp100._compnr = :tfcmg103.icmp				|PATC002018.n
+		selectdo
+		endselect
+		
+		if not isspace(v.cprj) then
+			tcmcs052.dsca = ""
+			get.project.description(v.cprj)
+		else
+			tcmcs052.dsca = ""
+			get.project.from.CashFlow(tfcmg103.btno)
+		endif
+		var.refrnce = enum.descr$("tfcmg.tadv",tfcmg101.tadv)
+		if tccom100.sndr = tcyesno.yes then
+			replace.bp.name()
+		endif
+
+		get.amount.calculation(tfcmg101.ttyp,tfcmg101.ninv, tfcmg100.dout)
+		if advance.tot <> 0 then					|PATC002018.sn
+			advance.var = "Advance paid  	 :"
+		endif	
+		if debit.tot <> 0  then
+			debit.var = "Debit Note Adjustment :"
+		endif	
+		
+		if partial.tot <> 0 then
+			partial.var = "Partial Payment made against PTR earlier :"
+		endif
+		
+		if correct.tot <> 0 then
+			correct.var = "Correction Amount :"
+		endif	
+		
+		if retention.amnt <> 0 then
+			retention.var = "Retention Amount :"
+		endif
+		
+		if alrd.paid <> 0 then
+			already.var = "Already Paid :"
+		endif								|PATC002018.en
+		rprt_send()
+		
+		if tfcmg101.whti <> 0 or tfcmg101.scti <> 0 and tfcmg101.scei <> 0 then
+			select 	tfcmg118.vamt,
+				tfcmg118.leac,tfgld008.desc
+			from	tfcmg118,tfgld008
+			where	tfcmg118._index1 = {:tfcmg101.btno,:tfcmg101.ifbp,:tfcmg101.comp,
+						:tfcmg101.tadv,:tfcmg101.ttyp,:tfcmg101.ninv,
+						:tfcmg101.schn,:tfcmg101.srno}
+			and	tfcmg118.leac refers to tfgld008
+			selectdo
+				tfcmg101.amnt = tfcmg118.vamt * (-1)
+				if p = 1 then
+					get.amount.paid()
+				endif	
+				tcmcs052.dsca = strip$(tfcmg118.leac) & " " & strip$(tfgld008.desc)
+				rprt_send()
+			endselect
+		endif
+		
+						
+	endselect
+}
+
+function get.lines.details()
+{
+	extern domain tcmcs.str30 tfacp100.cdf_pono,tfacp100.cdf_cprj 
+	on case	tfcmg101.tadv
+	case 	tfcmg.tadv.purinv:
+	case 	tfcmg.tadv.purcred:
+			select	tfisg001.irno,tfisg001.cprj,tfisg001.invt,tfisg001.pinv,tfisg001.orno
+			from	tfisg001
+			where	tfisg001.invt = :tfcmg101.ttyp
+			and	tfisg001.pinv = :tfcmg101.ninv
+			and	tfisg001.ncmp = :tfcmg103.icmp
+			selectdo
+				v.irno = tfisg001.irno
+				v.docn = tfisg001.pinv
+				v.cprj = tfisg001.cprj
+				v.orno = tfisg001.orno
+			selectempty
+				select	tfacp100.ninv,tfacp100.cdf_cprj,tfacp100.cdf_irdt,tfacp100.cdf_pono,tfacp100.cinv
+				from	tfacp100
+				where	tfacp100.ctyp = :tfcmg101.ttyp
+				and	tfacp100.cinv = :tfcmg101.ninv
+				and	tfacp100._compnr = :tfcmg103.icmp			|PATC002018.n
+				selectdo
+					v.irno = tfacp100.ninv
+					v.docn = tfacp100.cinv
+					v.cprj = tfacp100.cdf_cprj
+					v.orno = tfacp100.cdf_pono
+				selectempty
+					v.irno = 0
+					v.docn = 0
+					v.cprj = ""
+					v.orno = ""
+				endselect 		
+			endselect		
+			break
+			
+	case 	tfcmg.tadv.advance:
+| 			tfcmg101.refr = "Advance"
+			refr.var = "Advance"
+			tfacp100.ninv = 0
+			
+			select	tfmsl020.btno,tfmsl020.paym,tfmsl020.orno,tfmsl020.cprj
+			from	tfmsl020
+			where	tfmsl020.btno = :tfcmg101.btno
+			and	tfmsl020.paym = tfpaym.advice
+			selectdo
+				v.cprj = tfmsl020.cprj
+				v.orno = tfmsl020.orno
+			selectempty
+				v.irno = 0
+				v.docn = 0
+				v.cprj = ""
+				v.orno = ""
+			endselect
+			p = 1						|PATC002018.sn
+			advance.amnt = 0
+			get.amount.paid()				|PATC002018.en
+			break
+			
+	case 	tfcmg.tadv.unallocated:
+| 			tfcmg101.refr = "Unallocated"
+			refr.var = "Unallocated"
+			tfacp100.ninv = 0
+			
+			select	tfmsl020.btno,tfmsl020.paym,tfmsl020.orno,tfmsl020.cprj
+			from	tfmsl020
+			where	tfmsl020.btno = :tfcmg101.btno
+			and	tfmsl020.paym = tfpaym.advice
+			selectdo
+				v.cprj = tfmsl020.cprj
+				v.orno = tfmsl020.orno
+			selectempty
+				v.irno = 0
+				v.docn = 0
+				v.cprj = ""
+				v.orno = ""
+			endselect		
+			break
+			
+	case 	tfcmg.tadv.alone:
+| 			tfcmg101.refr = "Stand-alone"
+			tfacp100.ninv = 0	
+			break
+	endcase	
+}
+
+function get.project.description(domain	tccprj	i.cprj)
+{
+	select	tcmcs052.dsca
+	from	tcmcs052
+	where	tcmcs052._index1 = {:i.cprj}
+	selectdo
+	selectempty
+		tcmcs052.dsca = ""
+	endselect		
+}
+
+function get.project.from.CashFlow(domain	tfgld.btno	i.btno)
+{
+	select	tfmsl037.*
+	from	tfmsl037
+	where	tfmsl037._index1 = {:i.btno}
+	and	tfmsl037.mode = tfmode.advice.paym
+	selectdo
+		v.cprj = tfmsl037.cprj
+		get.project.description(tfmsl037.cprj)
+	endselect	
+}
+
+function print.cheque.details(domain	tfgld.btno	hold.btno)
+{
+	select	tfcmg100.*,tfcmg003.desc, tccom100.nama
+	from	tfcmg100,tfcmg003, tccom100
+	where	tfcmg100._index4 = {:hold.btno}
+	and 	tfcmg100.typo = :tfcmg103.ttyp 
+	and 	tfcmg100.doco = :tfcmg103.docn 
+	and	tfcmg100.paym refers to tfcmg003 UNREF CLEAR
+	and	tfcmg100.ptbp refers to tccom100 UNREF CLEAR
+	order by tfcmg100._index4
+	selectdo
+		
+		hold.m = tfcmg100.amnt		 				
+					|tfcmg100.amth = amnt.hc
+		select	tfcmg001.brch,tfcmg001.desc
+		from	tfcmg001
+		where	tfcmg001._index1 = {:tfcmg103.bank}
+		selectdo
+			select	tfcmg011.bank,tfcmg011.desc,tfcmg011.btyp,tfcmg011.badr,tfcmg011.bnam
+			from	tfcmg011
+			where	tfcmg011._index1 = {:tfcmg001.brch}
+			selectdo
+				select	tccom130.*
+				from	tccom130
+				where	tccom130._index1 = {:tfcmg011.badr}
+				selectdo
+					payable.at = strip$(tccom130.dsca)&"-"&strip$(tccom130.pstc)
+				selectempty
+					payable.at = ""
+				endselect
+			selectempty
+				payable.at = ""
+			endselect
+		selectempty
+			payable.at = ""
+		endselect	
+	endselect
+}
+
+function get.amount.calculation(domain tfgld.ttyp	i.ttyp,
+				 domain tfgld.docn	i.ninv,
+				 domain tfgld.date	i.payd)
+{
+	normal.pay = 0
+	temp.var = 0
+	adv.adj = 0
+	deb.note.adj = 0
+	tot.bill.amnt = 0
+	tot.deduct = 0
+	if p = 0 then
+		amnt.paid = 0
+	endif	
+|	alrd.paid = 0
+| 	advance.tot = 0
+| 	debit.tot =  0
+|	partial.tot = 0
+	
+	select tfacp200.amth,tfacp200.docd
+	from    tfacp200
+	where   tfacp200._index1 = {:i.ttyp,:i.ninv}
+	and     tfacp200.docn = 0
+	and	tfacp200._compnr = :tfcmg103.icmp				|PATCH002018.n
+	selectdo
+		tot.bill.amnt = tot.bill.amnt + tfacp200.amth(1)
+	endselect
+	
+	select tfacp200.amth, tfacp200.tpay, tfacp200.docn,tfacp200.tdoc,tfacp200.ttyp,tfacp200.ninv
+	from   tfacp200
+	where  tfacp200._index1 = {:i.ttyp,:i.ninv}
+	and    tfacp200.docn <> 0 
+	and    tfacp200.tpay in (tfacp.tpay.credit, tfacp.tpay.assignment,tfacp.tpay.correction,tfacp.tpay.normal)
+	and	tfacp200._compnr = :tfcmg103.icmp				|PATCH002018.n
+	selectdo
+		if tfacp200.tpay = tfacp.tpay.assignment then
+			adv.adj =  tfacp200.amth(1)
+			advance.tot =  advance.tot +  adv.adj						|PATC002018.n
+| 		else									|PATC002018.so				
+| 			deb.note.adj = tfacp200.amth(1)					|PATC002018.eo
+		endif
+		if tfacp200.tpay = tfacp.tpay.credit then
+			debit.tot =  debit.tot +  tfacp200.amth(1)
+		endif
+			
+		if tfacp200.tpay = tfacp.tpay.correction  then
+			correct.tot = correct.tot + tfacp200.amth(1)
+		endif	
+		
+		if tfacp200.tpay = tfacp.tpay.normal  then
+			alrd.paid = alrd.paid + tfacp200.amth(1)
+		endif	
+		
+	selecteos
+		if alrd.paid = 0 then
+			go.for.adv.anticipated()
+		endif	
+	endselect
+	
+	
+
+	select tfacp201.amnt,tfacp201.cdf_bloc,tfacp201.paia,tfacp201.bala				|PATC002018.sn
+	from    tfacp201
+	where   tfacp201._index1 = {:i.ttyp,:i.ninv}
+	selectdo
+		get.var(pid,"tfacp201.cdf_bloc",v.bloc)
+		if strip$(v.bloc) <> "" then
+			if tfacp201.paia <> 0 then 
+				retention.amnt =  retention.amnt + (tfacp201.amnt - tfacp201.paia)
+			else	
+				retention.amnt = retention.amnt + ( tfacp201.amnt - tfacp201.bala)
+			endif	
+		endif	
+	endselect	
+	retention.amnt = (-1) * retention.amnt								|PATC002018.en
+| 	select tfacp201.amnt, tfacp201.cdf_bloc, tfacp201.payd						|PATC002018.so
+| 	from 	tfacp201
+| 	where  tfacp201._index1 = {:i.ttyp, :i.ninv}
+| 	selectdo
+| 		tot.bill.amnt = tot.bill.amnt + tfacp201.amnt
+| 		get.var(pid,"tfacp201.cdf_bloc", v.bloc)
+| 		if isspace(v.bloc) 
+| 		and tfacp201.payd < i.payd then
+| 			alrd.paid = alrd.paid + tfacp201.amnt
+| 		endif
+| 	endselect									|PATC002018.eo
+	tot.deduct = advance.tot + debit.tot + alrd.paid + partial.tot	+ correct.tot + retention.amnt		|PATC002018.n
+| 	tot.deduct = adv.adj + deb.note.adj + alrd.paid					|PATC002018.o
+	if p <> 1 then
+		amnt.paid  = tot.bill.amnt - abs(tot.deduct)
+	endif 
+}
+
+function go.for.adv.anticipated()
+{
+	select tfacp200.amth ,tfacp200.lino
+	from    tfacp200
+	where   tfacp200._index1 = {:tfacp200.ttyp,:tfacp200.ninv} 
+| 	and     tfacp200.tdoc = :tfacp200.tdoc
+| 	and     tfacp200.docn = :tfacp200.docn 
+	and     tfacp200.tpay = tfacp.tpay.anticipated
+	and    tfacp200.docn <> 0 
+	and	tfacp200._compnr = :tfcmg103.icmp
+	order by tfacp200.lino desc
+	as set with 1 rows
+	selectdo
+		alrd.paid = alrd.paid + tfacp200.amth(1)
+	selectempty
+		alrd.paid = 0
+	endselect	
+}
+
+function get.company.details()
+{
+	tcmcs.dll0095.read.parm("tccom000")
+	curr.date = date.num()
+	
+	select	tccom130.nama, tccom130.namb, tccom130.namc, tccom130.namd,	
+		tccom130.namf, tccom130.pstc, tccom130.telp, tccom130.tefx,	
+		tccom130.ln01, tccom130.ln02,					
+		tccom130.dsca							
+	from	tccom130
+	where	tccom130._index1 = {:tccom000.cadr}
+	selectdo
+		adr.ln01 = trim$(tccom130.nama) & " " & trim$(tccom130.namb)			
+		adr.ln02 = trim$(tccom130.namc)
+		adr.ln03 = trim$(tccom130.namd)
+		adr.ln04 = trim$(tccom130.dsca) & " " & trim$(tccom130.pstc)	
+		adr.ln05 = "Ph." & trim$(tccom130.telp)
+		adr.ln06 = "Fax." & trim$(tccom130.tefx)
+		
+	selectempty
+		
+		adr.ln01 = ""
+		adr.ln02 = ""
+		adr.ln03 = ""
+		adr.ln04 = ""
+		adr.ln05 = ""		
+		adr.ln06 = ""
+	endselect	
+}
+
+function get.document.date(domain tfgld.ttyp type.var,domain tfgld.docn ninv.var)			|PATC002018.sn
+{
+	select tfgld018.dcdt
+	from    tfgld018
+	where  tfgld018._index1 = {:type.var,:ninv.var}
+	selectdo
+	endselect	
+
+}
+
+function get.amount.paid()					
+{
+	advance.amnt = advance.amnt + tfcmg101.amnt + tfcmg101.vata
+	amnt.paid = advance.amnt
+}													|PATC002018.en

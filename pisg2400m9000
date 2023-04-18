@@ -1,0 +1,1471 @@
+|******************************************************************************
+|* tfisg2400m018  0  VRC B61U a7 isg 
+|* Print Accounting Entry
+|* Installation user             
+|* 2015-01-19
+|******************************************************************************
+|* Main table tfacp200 Open Items (Purchase Invoices &amp; Payments), Form Type 4
+|******************************************************************************
+|*IDENT ISGEC01030, Mani sharma, 22-01-2015 ,Report Development   
+|******************************************************************************
+|*IDENT ISGEC01030.a, Ankit sharma, 30-01-2015 
+|*Change logic for printing podt lines
+|*
+|* ID: ISGEC001157, Ritu Shrivastava, 21-02-2015
+|* Modification to print proper summarise total for GL code.
+|
+|*IDENT ISGEC015023, Ankit sharma, 17-08-2015 
+|*Change logic for report printing
+|
+|* IDENT ISGEC015044, Shilpa Janardanan, 20-08-2015
+|* New logic to print Purchase & Warehouse Integration
+|******************************************************************************
+|* IDENT ISGEC015055, Somak Mondal, Dt. 04-09-2015, VRC B61U a7 isg
+|* New report fields added - Fiscal Yr, Period, Finalization status.
+|* New Logic placed for transactions  related to projects. 
+|
+|*IDENT ISGECFIN007, Ankit sharma, 16-10-2015 
+|*Change logic for report printing
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttfacp200 | Open Items (Purchase Invoices &amp; Payments)
+  table   ttfgld106
+  table   ttfgld102
+  table   ttfgld018
+  table   ttfgld109
+  table   ttfgld008
+  table   ttfacp251
+  table   ttfacp935
+  table   ttfgld482
+  table   twhinr110
+  table   ttfgld107
+  table   ttfisg170			|#ISGEC015044.n
+					|#ISGEC015055.sn
+  table   ttfgld495 | Reconciliation Data			
+  table   ttdpur401 | Purchase Order			
+  table   ttpppc275 | Subcontracting Cost History
+  table   ttpppc215 | Material Cost History
+  table   twhisg312 | Purchase Receipt
+  table   ttfisg275 | Interim Table for Full Accounting Report
+  
+							|#ISGEC015055.en
+   extern  domain  tfgld.docn       docn.f,doc.no.rep
+   extern  domain  tfgld.ttyp       ttyp.f , doc.type.rep  fixed
+   extern domain   tfgld.year       year.f
+   extern domain   tcamnt           credit.rep,debit.rep
+   extern domain    tcmcs.str50m    str.var ,rep.leac.desc,account.stage,doc.type.var,doc.type.str,temp.var
+   extern domain    tfgld.leac      gl.code.rep
+   extern domain    tcpono          p,q,count.var,i,length.var,c,d,no.var
+   extern domain    tcnama          name
+   string	year.str(4)
+   domain	tcmcs.s999	temp.str
+   
+   domain	tcidty	idtc		|#ISGEC015044.n
+   domain	tcbona	bonm
+   
+   extern	domain	tcmcs.str3	var.status		|#ISGEC015055.sn
+   extern	domain	tfgld.prod	var.fprd
+   extern	domain	tfgld.year	var.fyer
+   extern	domain	tcguid		var.guid
+   extern	domain	tcamnt		repo.net,
+					amnt 			|#ISGECFIN007.n
+		long			flag
+		domain	tcmcs.str50	temp.item		|#ISGECFIN007.n
+   
+   #include <bic_dam>
+								|#ISGEC015055.en
+   
+|****************************** program section ********************************
+before.program:
+	no.var = get.compnr()
+	get.name()
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.cont.process:
+on.choice:
+   execute(print.data)
+
+choice.print.data:
+on.choice:
+   if rprt_open() then
+       read.main.table()
+       rprt_close()
+   else
+       choice.again()
+   endif
+
+|****************************** field section *********************************
+
+field.ttyp.f:
+before.zoom:
+query.extend.where.in.zoom("tfgld011.catg = 6")
+
+field.docn.f:
+selection.filter:
+	tfgld018.ttyp	=	ttyp.f
+	year.str	=	str$(year.f)
+| 	str		=	"tfgld018.year = '"&year.str&"'"
+| 	temp.str	=	"select	tfgld018.docn from tfgld018 where tfgld018._index1 = '"&ttyp.f&"' "
+| 	temp.str	=	temp.str &" and tfgld018.year = "&year.str
+	temp.str	=	"tfgld018.year = "&year.str
+before.zoom:
+| query.extend.where.in.zoom("tfgld018.ttyp="&quoted.string(ttyp.f)"and" & tfgld018.year="&qouted.string(year.f)")
+	query.extend.where.in.zoom(temp.str)
+| 	query.extension	=	temp.str	
+| tfgld018.ttyp = ttyp.f
+| tfgld018.year = year.f
+| select tfgld018.docn
+| from      tfgld018
+| where     
+|****************************** function section ******************************
+functions:
+function read.main.table()
+{
+	amnt = 0										|#ISGECFIN007.n
+	select	tfacp200.tpay,tfacp200.ttyp,tfacp200.ninv,tfacp200.year,tfacp200.tapr,tfacp200.dapr,tfacp200.stap,tfacp200.appr,
+		tfacp200.link,tfacp200.vata							|#ISGECFIN007.n	
+	from  	tfacp200
+	where 	tfacp200._index1 ={:ttyp.f,:docn.f}
+	and   	tfacp200.year    = {:year.f}
+	and	tfacp200.docn	= 0								|#ISGEC015023.n
+	selectdo
+		amnt = tfacp200.link + tfacp200.vata						|#ISGECFIN007.n
+		if tfacp200.tpay = tfacp.tpay.invoice and tfacp200.appr = tfacp.inv.purchase  then
+			select	tfgld018.trun,tfgld018.ttyp,tfgld018.docn
+			from   	tfgld018
+			where  	tfgld018._index1 = {:tfacp200.ttyp,:tfacp200.ninv}
+			selectdo
+				if     tfgld018.trun <> 0  then
+					select 	tfgld109.trun,tfgld109.trst
+					from    tfgld109
+					where   tfgld109._index1 = {:tfacp200.year,:tfgld018.trun}
+					and     tfgld109.trst =  tfgld.trst.terminated
+					selectdo
+						select tfgld106.otyp,tfgld106.odoc,tfgld106.leac,tfgld106.amth,tfgld106.dbcr,
+							tfgld106.fprd,tfgld106.fyer			|#ISGEC015055.n
+						from   tfgld106
+						where  tfgld106._index1 = {:tfgld018.ttyp,:tfgld018.docn}
+						selectdo
+							account.stage = "Purchase Invoice"
+							doc.no.rep = tfgld106.odoc
+							doc.type.rep = tfgld106.otyp
+							gl.code.rep = tfgld106.leac
+							doc.type.var = concat$("-",doc.type.rep,doc.no.rep)
+							doc.type.str = "Invoice Booking"
+														|#ISGEC015055.sn
+							var.status = "Yes"					
+							var.fprd = tfgld106.fprd
+							var.fyer = tfgld106.fyer
+														|#ISGEC015055.en			
+							select tfgld008.desc
+							from    tfgld008
+							where    tfgld008._index1 = {:tfgld106.leac}
+							selectdo
+								rep.leac.desc = tfgld008.desc
+							endselect
+							if tfgld106.dbcr = tfgld.dbcr.debit then
+								debit.rep = tfgld106.amth(1)
+							else
+								credit.rep= tfgld106.amth(1)
+							endif
+							p = 0
+							rprt_send()
+							if tfgld106.leac <> ""	then					|#ISGEC01030.a.n
+								p = 1
+								q = 0
+								account.stage = ""
+								doc.type.var  = ""
+								doc.type.str  = ""
+	| 							gl.code.rep    = ""
+								repo.net = abs(debit.rep) - abs(credit.rep)		|#ISGEC015055.n
+								rprt_send()
+								q = 1
+							endif								|#ISGEC01030.a.n	
+							initialise()
+							
+						endselect
+					endselect
+				else
+					select	tfgld102.ttyp,tfgld102.docn,tfgld102.leac,tfgld102.amth,tfgld102.dbcr,
+						tfgld102.wtsc,tfgld102.vamh,tfgld102.cono,
+						tfgld102.lino,tfgld102.serl,
+						tfgld102.fprd,tfgld102.fyer			|#ISGEC015055.n
+					from   	tfgld102
+					where  	tfgld102.ttyp = {:tfgld018.ttyp}
+					and   	tfgld102.docn = {:tfgld018.docn}
+					and    	tfgld102.year = {:tfacp200.year}
+					selectdo
+						account.stage = "Purchase Invoice"
+						doc.no.rep = tfgld102.docn
+						doc.type.rep = tfgld102.ttyp
+						gl.code.rep = tfgld102.leac
+						doc.type.var = concat$("-",doc.type.rep,doc.no.rep)
+						doc.type.str = "Invoice Booking"
+													|#ISGEC015055.sn
+						var.status = "No"					
+						var.fprd = tfgld102.fprd
+						var.fyer = tfgld102.fyer
+													|#ISGEC015055.en
+						
+						select tfgld008.desc
+						from   	tfgld008
+						where  	tfgld008._index1 = {:tfgld102.leac}
+						selectdo
+							rep.leac.desc = tfgld008.desc
+						endselect
+						if tfgld102.dbcr = tfgld.dbcr.debit then
+							debit.rep = tfgld102.amth(1)
+						else
+							credit.rep= tfgld102.amth(1)
+						endif
+						p = 0
+						rprt_send()
+						if tfgld102.leac <> ""	then					|#ISGEC01030.a.n
+							p = 1
+							q= 0
+							account.stage = ""
+							doc.type.var  = ""
+							doc.type.str  = ""
+	| 						gl.code.rep    = ""
+							rprt_send()
+							q = 1
+						endif								|#ISGEC01030.a.n
+						get.tax.record()
+						initialise()
+					endselect
+				endif
+			endselect
+		endif
+		
+|---------------------------------------------------------------------------------------------------------------------------	
+
+		if tfacp200.tpay = tfacp.tpay.invoice and tfacp200.appr = tfacp.inv.purchase and tfacp200.stap = tfacp.stap.approved  then
+			select tfgld018.trun,tfgld018.ttyp,tfgld018.docn
+			from    tfgld018
+			where   tfgld018._index1 = {:tfacp200.tapr,:tfacp200.dapr}
+			selectdo
+				if     tfgld018.trun <> 0  then
+					select	tfgld109.trun,tfgld109.trst
+					from   	tfgld109
+					where  	tfgld109._index1 = {:tfacp200.year,:tfgld018.trun}
+					and    	tfgld109.trst =  tfgld.trst.terminated
+					selectdo
+						select	tfgld106.otyp,tfgld106.odoc,tfgld106.leac,tfgld106.amth,tfgld106.dbcr,
+							tfgld106.fprd,tfgld106.fyer			|#ISGEC015055.n
+						from  	tfgld106
+						where 	tfgld106._index1 = {:tfgld018.ttyp,:tfgld018.docn}
+						selectdo
+							account.stage = "Purchase Invoice"
+							doc.no.rep = tfgld106.odoc
+							doc.type.rep = tfgld106.otyp
+							gl.code.rep = tfgld106.leac
+							doc.type.var = concat$("-",doc.type.rep,doc.no.rep)
+							doc.type.str = "Purchase Approval"
+							
+														|#ISGEC015055.sn
+							var.status = "Yes"					
+							var.fprd = tfgld106.fprd
+							var.fyer = tfgld106.fyer
+														|#ISGEC015055.en
+							
+							select tfgld008.desc
+							from    tfgld008
+							where    tfgld008._index1 = {:tfgld106.leac}
+							selectdo
+								rep.leac.desc = tfgld008.desc
+							endselect
+							if tfgld106.dbcr = tfgld.dbcr.debit then
+								debit.rep = tfgld106.amth(1)
+							else
+								credit.rep= tfgld106.amth(1)
+							endif
+							p = 0
+							rprt_send()
+							if tfgld106.leac <> ""	then					|#ISGEC01030.a.n
+								p = 1
+								q =0
+								account.stage = ""
+								doc.type.var  = ""
+								doc.type.str  = ""
+	| 							gl.code.rep    = ""
+								repo.net = abs(debit.rep) - abs(credit.rep)		|#ISGEC015055.n
+								rprt_send()
+								q = 1
+							endif								|#ISGEC01030.a.n
+							initialise()
+						endselect
+					endselect
+				else
+					select	tfgld102.ttyp,tfgld102.docn,tfgld102.leac,tfgld102.amth,tfgld102.dbcr,
+						tfgld102.fprd,tfgld102.fyer			|#ISGEC015055.n
+					from  	tfgld102
+					where 	tfgld102.ttyp = {:tfgld018.ttyp}
+					and   	tfgld102.docn = {:tfgld018.docn}
+					and   	tfgld102.year = {:tfacp200.year}
+					selectdo
+						account.stage = "Purchase Invoice"
+						doc.no.rep = tfgld102.docn
+						doc.type.rep = tfgld102.ttyp
+						gl.code.rep = tfgld102.leac
+						doc.type.var = concat$("-",doc.type.rep,doc.no.rep)
+						doc.type.str = "Purchase Approval"
+						
+													|#ISGEC015055.sn
+						var.status = "No"					
+						var.fprd = tfgld102.fprd
+						var.fyer = tfgld102.fyer
+													|#ISGEC015055.en
+						
+						select tfgld008.desc
+						from    tfgld008
+						where    tfgld008._index1 = {:tfgld102.leac}
+						selectdo
+							rep.leac.desc = tfgld008.desc
+						endselect
+						if tfgld102.dbcr = tfgld.dbcr.debit then
+							debit.rep = tfgld102.amth(1)
+						else
+							credit.rep= tfgld102.amth(1)
+						endif
+						p = 0
+						rprt_send()
+						if tfgld102.leac <> ""	then					|#ISGEC01030.a.n
+							p = 1
+							q = 0
+							account.stage = ""
+							doc.type.var  = ""
+							doc.type.str  = ""
+	| 						gl.code.rep    = ""
+							repo.net = abs(debit.rep) - abs(credit.rep)		|#ISGEC015055.n
+							rprt_send()
+							q = 1
+						endif								|#ISGEC01030.a.n
+						initialise()
+					endselect
+				endif
+			endselect
+		endif
+		
+		
+|----------------------------------------------------------------------------------------------------------------------------
+		select	tfacp251.orno,tfacp251.pono,tfacp251.sqnb,tfacp251.rcno,tfacp251.rseq,
+			tfacp251.data,tfacp251.ityp,tfacp251.idoc,tfacp251.amth				|#ISGEC015055.n
+		from   	tfacp251
+		where  	tfacp251.ityp = {:tfacp200.ttyp}
+		and    	tfacp251.idoc = {:tfacp200.ninv}
+		selectdo
+| 			select tfacp935.ttyp,tfacp935.docn,tfacp935.year				|#ISGEC01030.a.o
+			select tfacp935.ttyp,tfacp935.docn,tfacp935.year,tfacp935.lino			|#ISGEC01030.a.n
+			from   tfacp935
+			where  tfacp935.orno = {:tfacp251.orno}
+			and    tfacp935.pono = {:tfacp251.pono}
+			and    tfacp935.sqnb = {:tfacp251.sqnb}
+			and    tfacp935.rcno = {:tfacp251.rcno}
+			selectdo
+				if strip$(tfacp935.ttyp) = "" and tfacp935.docn = 0 then
+				account.stage = "Purchase Order Tax Detail"
+				doc.type.str = "Purchase Order Tax Detail"
+				doc.no.rep    = tfacp935.docn
+				doc.type.rep = tfacp935.ttyp
+				debit.rep = 0
+				credit.rep = 0
+				p = 0
+				rprt_send()
+					if strip$(tfacp935.ttyp) <> ""	then					|#ISGEC01030.a.n
+						p = 1
+						q = 0
+						account.stage = ""
+						doc.type.var  = ""
+						doc.type.str  = ""
+	| 					gl.code.rep    = ""
+						repo.net = abs(debit.rep) - abs(credit.rep)		|#ISGEC015055.n
+						rprt_send()
+						q = 1
+					endif								|#ISGEC01030.a.n
+				endif 
+| 				select tfgld106.otyp,tfgld106.odoc,tfgld106.leac,tfgld106.amth,tfgld106.dbcr		|#ISGEC01030.a.so
+| 				from   tfgld106
+| 				where  tfgld106._index1 = {:tfacp935.ttyp,:tfacp935.docn}			
+| 				selectdo
+| 					account.stage = "Purchase Order Tax Detail"
+| 					doc.no.rep    = tfacp935.docn
+| 					doc.type.rep = tfacp935.ttyp
+| 					doc.type.var = concat$("-",doc.type.rep,doc.no.rep)
+| 					doc.type.str = "Purchase Order Tax Detail"
+| 					gl.code.rep = tfgld106.leac
+
+| 					select tfgld008.desc
+| 					from    tfgld008
+| 					where    tfgld008._index1 = {:tfgld106.leac}
+| 					selectdo
+| 						rep.leac.desc = tfgld008.desc
+| 					endselect
+| 					
+| 					if tfgld106.dbcr = tfgld.dbcr.debit then
+| 						debit.rep = tfgld106.amth(1)
+| 					else
+| 						credit.rep= tfgld106.amth(1)
+| 					endif
+| 					p = 0
+| 					rprt_send()
+| 					p = 1
+| 					account.stage = ""
+| 					doc.type.var  = ""
+| 					doc.type.str  = ""
+|| 					gl.code.rep    = ""
+| 					rprt_send()				
+| 					initialise()
+| 				endselect										|#ISGEC01030.a.eo
+				print.podt(tfacp935.ttyp,tfacp935.docn,tfacp935.lino)					|#ISGEC01030.a.sn
+				print.podt(tfacp935.ttyp,tfacp935.docn,tfacp935.lino + 1)				|#ISGEC01030.a.en
+				select tfgld102.ttyp,tfgld102.docn,tfgld102.leac,tfgld102.amth,tfgld102.dbcr,
+					tfgld102.lino,
+					tfgld102.fprd,tfgld102.fyer			|#ISGEC015055.n
+				from    tfgld102
+				where  tfgld102.ttyp = {:tfacp935.ttyp}
+				and    tfgld102.docn = {:tfacp935.docn}
+				and    tfgld102.year = {:tfacp935.year}
+				and	tfgld102.lino = :tfacp935.lino
+				|* should match the line number of tfacp935
+				selectdo
+					account.stage = "Purchase Order Tax Detail"
+					doc.no.rep    = tfacp935.docn
+					doc.type.rep = tfacp935.ttyp
+					doc.type.var = concat$("-",doc.type.rep,doc.no.rep)
+					doc.type.str = "Purchase Order Tax Detail"
+					gl.code.rep = tfgld102.leac
+												|#ISGEC015055.sn
+					var.status = "No"					
+					var.fprd = tfgld102.fprd
+					var.fyer = tfgld102.fyer
+												|#ISGEC015055.en
+					
+					select tfgld008.desc
+					from    tfgld008
+					where    tfgld008._index1 = {:tfgld102.leac}
+					selectdo
+						rep.leac.desc = tfgld008.desc
+					endselect
+					if tfgld102.dbcr = tfgld.dbcr.debit then
+						debit.rep = tfgld102.amth(1)
+					else
+						credit.rep= tfgld102.amth(1)
+					endif
+					p = 0
+					tfgld106.olin = tfgld102.lino
+					rprt_send()
+					if tfgld102.leac <> ""	then					|#ISGEC01030.a.n
+						p = 1
+						q = 0
+						account.stage = ""
+						doc.type.var  = ""
+						doc.type.str  = ""
+	| 					gl.code.rep    = ""
+						repo.net = abs(debit.rep) - abs(credit.rep)		|#ISGEC015055.n
+						rprt_send()
+						q = 1
+					endif								|#ISGEC01030.a.n	
+					initialise()
+					tfgld106.olin = 0		|#ISGEC015044.n
+				endselect
+			endselect
+			
+|-----------------------------------------------------------------------------------------------------------			
+| 			select tfgld482.rbid,tfgld482.obre,tfgld482.ttyp,tfgld482.docn,tfgld482.lino	|#ISGEC015044.so
+| 			from    tfgld482
+| 			where   tfgld482.idtc = "10001074"
+| 			and      tfgld482.rbon = "tdpur040"
+| 			and      tfgld482.rbid  = :tfacp251.orno					|#ISGEC015044.eo
+			select	tfisg170.idtc, tfisg170.bonm						|#ISGEC015044.sn
+			from	tfisg170		
+			where	tfisg170.grit = 1 	|Purchase
+			selectdo
+				idtc = shiftl$(strip$(tfisg170.idtc))
+				bonm = shiftl$(strip$(tfisg170.bonm))
+				
+				select 	tfgld482.rbid,tfgld482.obre,tfgld482.ttyp,tfgld482.docn,tfgld482.lino	
+				from   	tfgld482
+				where  	tfgld482.idtc = :idtc
+				and    	tfgld482.rbid  = :tfacp251.orno
+				and	tfgld482.rbon  = :bonm						|#ISGEC015044.en
+				selectdo
+					count.var = 0
+					temp.var = shiftl$(strip$(tfgld482.obre))
+					length.var = len(tfgld482.obre)
+					for i = 1 to  length.var   step 1
+						if temp.var(i;1) = "/" then
+							count.var = count.var  + 1
+							if count.var = 4 then
+								temp.var = temp.var(1;i-1)
+							endif
+						endif
+					endfor
+					str.var = concat$("/",tfacp251.pono,tfacp251.sqnb,tfacp251.rcno,tfacp251.rseq)
+					if   temp.var = str.var  then
+						select 	tfgld018.trun,tfgld018.ttyp,tfgld018.docn
+						from   	tfgld018
+						where  	tfgld018._index1 = {:tfgld482.ttyp,:tfgld482.docn}
+						selectdo
+							if     tfgld018.trun <> 0  then
+								select tfgld106.otyp,tfgld106.odoc,tfgld106.leac,tfgld106.amth,tfgld106.dbcr,
+									tfgld106.fprd,tfgld106.fyer			|#ISGEC015055.n
+								from   tfgld106
+								where  tfgld106._index1 = {:tfgld482.ttyp,:tfgld482.docn,:tfgld482.lino}
+								selectdo
+									tfgld106.olin  = 0	|#ISGEC015044.n
+									account.stage = "Warehouse Receipt"
+									doc.no.rep    = tfgld482.docn
+									doc.type.rep =  tfgld482.ttyp
+									doc.type.var = concat$("-",doc.type.rep,doc.no.rep)
+									doc.type.str = "Purchase Integration"
+									gl.code.rep = tfgld106.leac
+									
+																|#ISGEC015055.sn
+									var.status = "Yes"					
+									var.fprd = tfgld106.fprd
+									var.fyer = tfgld106.fyer
+																|#ISGEC015055.en
+									
+									select tfgld008.desc
+									from    tfgld008
+									where    tfgld008._index1 = {:tfgld106.leac}
+									selectdo
+										rep.leac.desc = tfgld008.desc
+									endselect
+								
+									if tfgld106.dbcr = tfgld.dbcr.debit then
+										debit.rep = tfgld106.amth(1)
+									else
+										credit.rep= tfgld106.amth(1)
+									endif
+									p = 0
+									rprt_send()
+									if tfgld106.leac <> ""	then				|#ISGEC01030.a.n
+										p = 1
+										q = 0
+										account.stage = ""
+										doc.type.var  = ""
+										doc.type.str  = ""
+		| 								gl.code.rep    = ""
+										repo.net = abs(debit.rep) - abs(credit.rep)		|#ISGEC015055.n
+										rprt_send()
+										q = 1
+									endif							|#ISGEC01030.a.n
+									initialise()
+								selectempty							|#ISGEC01030.a.sn
+									account.stage = "Warehouse Receipt"
+									doc.no.rep    = 0
+									doc.type.rep =  ""
+									doc.type.var = ""
+									doc.type.str = "Purchase Integration"
+									gl.code.rep = ""
+									rep.leac.desc = ""
+									
+									if tfgld106.dbcr = tfgld.dbcr.debit then
+										debit.rep = 0
+									else
+										credit.rep= 0
+									endif
+									p = 0
+									q = 0
+									rprt_send()
+	| 								if tfgld106.leac <> ""	then				
+	| 									p = 1
+	| 									account.stage = ""
+	| 									doc.type.var  = ""
+	| 									doc.type.str  = ""
+	| 	| 								gl.code.rep    = ""
+	| 									rprt_send()
+	| 								endif
+									q = 1
+									initialise()
+																|#ISGEC01030.a.sn
+								endselect							
+							else
+								
+								select tfgld102.ttyp,tfgld102.docn,tfgld102.leac,tfgld102.amth,tfgld102.dbcr,
+									tfgld102.fprd,tfgld102.fyer			|#ISGEC015055.n
+								from    tfgld102
+								where  tfgld102.ttyp = {:tfgld482.ttyp}
+								and    tfgld102.docn = {:tfgld482.docn}
+								and    tfgld102.lino = {:tfgld482.lino}
+								selectdo
+									account.stage = "Warehouse Receipt"
+									doc.no.rep    = tfgld482.docn
+									doc.type.rep =  tfgld482.ttyp
+									doc.type.var = concat$("-",doc.type.rep,doc.no.rep)
+									doc.type.str = "Purchase Integration"
+									gl.code.rep = tfgld102.leac
+									
+																|#ISGEC015055.sn
+									var.status = "No"					
+									var.fprd = tfgld102.fprd
+									var.fyer = tfgld102.fyer
+																|#ISGEC015055.en
+									
+									select tfgld008.desc
+									from    tfgld008
+									where    tfgld008._index1 = {:tfgld102.leac}
+									selectdo
+										rep.leac.desc = tfgld008.desc
+									endselect
+									if tfgld102.dbcr = tfgld.dbcr.debit then
+										debit.rep = tfgld102.amth(1)
+									else
+										credit.rep= tfgld102.amth(1)
+									endif
+									p = 0
+									rprt_send()
+									if tfgld102.leac <> ""	then				|#ISGEC01030.a.n
+										p = 1
+										q = 0
+										account.stage = ""
+										doc.type.var  = ""
+										doc.type.str  = ""
+		| 								gl.code.rep    = ""
+										rprt_send()
+										q = 1
+									endif							|#ISGEC01030.a.n					
+									initialise()
+								selectempty							|#ISGEC01030.a.sn
+									account.stage = "Warehouse Receipt"
+									doc.no.rep    = 0
+									doc.type.rep =  ""
+									doc.type.var = ""
+									doc.type.str = "Purchase Integration"
+									gl.code.rep = ""
+									rep.leac.desc = ""
+									
+									if tfgld106.dbcr = tfgld.dbcr.debit then
+										debit.rep = 0
+									else
+										credit.rep= 0
+									endif
+									p = 0
+									q = 0
+									rprt_send()
+	| 								if tfgld106.leac <> ""					
+	| 								p = 1
+	| 									account.stage = ""
+	| 									doc.type.var  = ""
+	| 									doc.type.str  = ""
+	| 	| 								gl.code.rep    = ""
+	| 									rprt_send()
+	| 								endif	
+									initialise()
+									q =1							|#ISGEC01030.a.sn	
+								endselect
+							endif
+						selectempty							|#ISGEC01030.a.sn
+							account.stage = "Warehouse Receipt"
+							doc.no.rep    = 0
+							doc.type.rep =  ""
+							doc.type.var = ""
+							doc.type.str = "Purchase Integration"
+							gl.code.rep = ""
+							rep.leac.desc = ""
+							
+							if tfgld106.dbcr = tfgld.dbcr.debit then
+								debit.rep = 0
+							else
+								credit.rep= 0
+							endif
+							
+							p = 0
+							rprt_send()
+	| 						if tfgld106.leac <> ""					
+	| 							p = 1
+	| 							account.stage = ""
+	| 							doc.type.var  = ""
+	| 							doc.type.str  = ""
+	| 	| 						gl.code.rep    = ""
+	| 							rprt_send()
+	| 						endif	
+							initialise()
+														|#ISGEC01030.a.sn		
+						endselect
+					endif
+				endselect
+			endselect	
+|--------------------------------------- Project Function Call --------------------------------------------------------------
+| 			get.project.data()									|#ISGEC015055.sn		
+			get.project.guid()
+			
+|----------------------------------------------------------------------------------------------------------------------------
+			select whinr110.itid
+			from   whinr110
+			where  whinr110.orno  = {:tfacp251.orno}
+			and    whinr110.pono = {:tfacp251.pono}
+			and    whinr110.srnb = {:tfacp251.sqnb}
+			and    whinr110.rcno = {:tfacp251.rcno}
+			and    whinr110.rcln = {:tfacp251.rseq}
+			selectdo
+| 				select tfgld482.rbid,tfgld482.obre,tfgld482.ttyp,tfgld482.docn,tfgld482.lino
+| 				from    tfgld482
+| 				where   tfgld482.idtc = "10061074"
+| 				and     tfgld482.rbid = :whinr110.itid
+| 				and     tfgld482.rbon = "whinr110"
+				idtc = ""			|#ISGEC015044.sn
+				bonm = ""
+				select	tfisg170.idtc, tfisg170.bonm
+				from	tfisg170
+| 				where	tfisg170.grit = 2		|Sales					|#ISGEC015055.o
+				where	tfisg170.grit = tctror.wh.receipt		|Warehouse Receipt	|#ISGEC015055.n
+				selectdo
+					idtc = shiftl$(strip$(tfisg170.idtc))
+					bonm = shiftl$(strip$(tfisg170.bonm))
+					select 	tfgld482.rbid,tfgld482.obre,tfgld482.ttyp,tfgld482.docn,tfgld482.lino	|#ISGEC015044.sn
+					from   	tfgld482
+					where  	tfgld482.idtc = :idtc
+					and    	tfgld482.rbid  = :whinr110.itid
+					and	tfgld482.rbon  = :bonm		|#ISGEC015044.en
+					selectdo			|#ISGEC015044.en
+						select	tfgld018.trun,tfgld018.ttyp,tfgld018.docn
+						from   	tfgld018
+						where  	tfgld018._index1 = {:tfgld482.ttyp,:tfgld482.docn}
+						selectdo
+						if     tfgld018.trun <> 0  then
+						
+							select	tfgld106.otyp,tfgld106.odoc,tfgld106.leac,tfgld106.amth,tfgld106.dbcr,
+								tfgld106.fprd,tfgld106.fyer			|#ISGEC015055.n
+							from  	tfgld106
+							where 	tfgld106._index1 = {:tfgld482.ttyp,:tfgld482.docn,:tfgld482.lino}
+							selectdo
+								tfgld106.olin  = 0	|#ISGEC015044.n
+								account.stage = "Warehouse Receipt"
+								doc.no.rep    = tfgld482.docn
+								doc.type.rep =  tfgld482.ttyp
+								doc.type.var = concat$("-",doc.type.rep,doc.no.rep)
+								doc.type.str = "Warehouse Integration"
+								gl.code.rep = tfgld106.leac
+															|#ISGEC015055.sn
+								var.status = "Yes"					
+								var.fprd = tfgld106.fprd
+								var.fyer = tfgld106.fyer
+															|#ISGEC015055.en
+								
+								select tfgld008.desc
+								from    tfgld008
+								where    tfgld008._index1 = {:tfgld106.leac}
+								selectdo
+									rep.leac.desc = tfgld008.desc
+								endselect
+							
+								if tfgld106.dbcr = tfgld.dbcr.debit then
+									debit.rep = tfgld106.amth(1)
+								else
+									credit.rep= tfgld106.amth(1)
+								endif
+								p = 0
+								rprt_send()
+								if tfgld106.leac <> ""	then				|#ISGEC01030.a.n
+									p = 1
+									q = 0
+									account.stage = ""
+									doc.type.var  = ""
+									doc.type.str  = ""
+		| 							gl.code.rep    = ""
+									repo.net = abs(debit.rep) - abs(credit.rep)		|#ISGEC015055.n
+									rprt_send()
+									q = 1
+								endif							|#ISGEC01030.a.n
+								initialise()
+							selectempty							|#ISGEC01030.a.sn
+								account.stage = "Warehouse Receipt"
+								doc.no.rep    = 0
+								doc.type.rep =  ""
+								doc.type.var = ""
+								doc.type.str = "Warehouse Integration"
+								gl.code.rep = ""
+								rep.leac.desc = ""
+								
+								if tfgld106.dbcr = tfgld.dbcr.debit then
+									debit.rep = 0
+								else
+									credit.rep= 0
+								endif
+								p = 0
+								rprt_send()
+	| 							if tfgld106.leac <> ""					
+	| 								p = 1
+	| 								account.stage = ""
+	| 								doc.type.var  = ""
+	| 								doc.type.str  = ""
+	| 	| 								gl.code.rep    = ""
+	| 								rprt_send()
+	| 								initialise()
+	| 							endif								|#ISGEC01030.a.sn	
+							endselect
+						else
+							
+							select	tfgld102.ttyp,tfgld102.docn,tfgld102.leac,tfgld102.amth,tfgld102.dbcr,
+								tfgld102.fprd,tfgld102.fyer			|#ISGEC015055.n
+							from   	tfgld102
+							where 	tfgld102.ttyp = {:tfgld482.ttyp}
+							and   	tfgld102.docn = {:tfgld482.docn}
+							and   	tfgld102.lino = {:tfgld482.lino}
+							selectdo
+								account.stage = "Warehouse Receipt"
+								doc.no.rep    = tfgld482.docn
+								doc.type.rep =  tfgld482.ttyp
+								doc.type.var = concat$("-",doc.type.rep,doc.no.rep)
+								doc.type.str = "Warehouse Integration"
+								gl.code.rep = tfgld102.leac
+															|#ISGEC015055.sn
+								var.status = "No"					
+								var.fprd = tfgld102.fprd
+								var.fyer = tfgld102.fyer
+															|#ISGEC015055.en
+								
+								select tfgld008.desc
+								from    tfgld008
+								where    tfgld008._index1 = {:tfgld102.leac}
+								selectdo
+									rep.leac.desc = tfgld008.desc
+								endselect
+								if tfgld102.dbcr = tfgld.dbcr.debit then
+									debit.rep = tfgld102.amth(1)
+								else
+									credit.rep= tfgld102.amth(1)
+								endif
+								p = 0
+								rprt_send()
+								if tfgld102.leac <> "" then					|#ISGEC01030.a.n
+									p = 1
+									q = 0
+									account.stage = ""
+									doc.type.var  = ""
+									doc.type.str  = ""
+		| 							gl.code.rep    = ""
+									rprt_send()
+									q = 1
+								endif							|#ISGEC01030.a.n
+								initialise()
+							selectempty							|#ISGEC01030.a.sn
+								account.stage = "Warehouse Receipt"
+								doc.no.rep    = 0
+								doc.type.rep =  ""
+								doc.type.var = ""
+								doc.type.str = "Warehouse Integration"
+								gl.code.rep = ""
+								rep.leac.desc = ""
+								
+								if tfgld106.dbcr = tfgld.dbcr.debit then
+									debit.rep = 0
+								else
+									credit.rep= 0
+								endif
+								p = 0
+								rprt_send()
+	| 							p = 1
+	| 							account.stage = ""
+	| 							doc.type.var  = ""
+	| 							doc.type.str  = ""
+	| 								gl.code.rep    = ""
+	| 							rprt_send()
+								initialise()
+																|#ISGEC01030.a.sn	
+							endselect
+						endif
+					selectempty							|#ISGEC01030.a.sn
+						account.stage = "Warehouse Receipt"
+						doc.no.rep    = 0
+						doc.type.rep =  ""
+						doc.type.var = ""
+						doc.type.str = "Warehouse Integration"
+						gl.code.rep = ""
+						rep.leac.desc = ""
+						
+						if tfgld106.dbcr = tfgld.dbcr.debit then
+							debit.rep = 0
+						else
+							credit.rep = 0
+						endif
+						p = 0
+						rprt_send()
+	| 					p = 1
+	| 					account.stage = ""
+	| 					doc.type.var  = ""
+	| 					doc.type.str  = ""
+									gl.code.rep    = ""
+	| 					rprt_send()
+						initialise()
+													|#ISGEC01030.a.sn	
+					endselect
+				endselect								
+				endselect
+			endselect
+		endselect
+	endselect
+	
+}
+function initialise()
+{
+	debit.rep = 0
+	credit.rep = 0
+	rep.leac.desc = ""
+	gl.code.rep = ""
+	account.stage = ""
+	doc.no.rep    = 0
+	doc.type.rep =  ""
+	doc.type.var = ""
+	doc.type.str = ""
+						|#ISGEC015055.sn
+	var.status = ""	
+	var.fprd = 0
+	var.fyer = 0
+	repo.net = 0
+						|#ISGEC015055.en
+}
+
+function get.name()
+{
+	select tccom000.nama:name
+	from   tccom000
+	where  tccom000.ncmp = {:no.var}
+	selectdo
+	endselect
+	
+
+}
+
+function 	print.podt	(domain	tfgld.ttyp	ttyp,						|#ISGEC01030.a.sn
+				 domain		tfgld.docn	docn,
+				 domain		tfgld.lino	lino)
+{
+	select 	tfgld106.otyp,tfgld106.odoc,tfgld106.leac,tfgld106.amth,tfgld106.dbcr,
+		tfgld106.olin,		|#ISGEC015044.n
+		tfgld106.fprd,tfgld106.fyer			|#ISGEC015055.n
+	from  	tfgld106
+	where  	tfgld106._index1 = {:ttyp,:docn,:lino}			
+	selectdo
+		if tfgld106.amth(1) <> 0 then
+			account.stage = "Purchase Order Tax Detail"
+			doc.no.rep    = tfacp935.docn
+			doc.type.rep = tfacp935.ttyp
+			doc.type.var = concat$("-",doc.type.rep,doc.no.rep)
+			doc.type.str = "Purchase Order Tax Detail"
+			gl.code.rep = tfgld106.leac
+			
+										|#ISGEC015055.sn
+			var.status = "Yes"					
+			var.fprd = tfgld106.fprd
+			var.fyer = tfgld106.fyer
+										|#ISGEC015055.en
+
+			select tfgld008.desc
+			from    tfgld008
+			where    tfgld008._index1 = {:tfgld106.leac}
+			selectdo
+				rep.leac.desc = tfgld008.desc
+			endselect
+			
+			if tfgld106.dbcr = tfgld.dbcr.debit then
+				debit.rep = tfgld106.amth(1)
+			else
+				credit.rep= tfgld106.amth(1)
+			endif
+			p = 0
+			rprt_send()
+			if tfgld106.leac <> "" then
+				p = 1
+				q = 0
+				account.stage = ""
+				doc.type.var  = ""
+				doc.type.str  = ""
+			| 	gl.code.rep    = ""
+				repo.net = abs(debit.rep) - abs(credit.rep)		|#ISGEC015055.n
+				rprt_send()
+				q = 1
+			endif	
+			initialise()
+		endif	
+	endselect
+}														|#ISGEC01030.a.en
+
+function get.tax.record()
+{
+
+	if tfgld102.wtsc = tcyesno.yes  or tfgld102.vamh(1) <> 0 then
+			select 	tfgld107.*
+			from	tfgld107
+			where	tfgld107._index1 = {:tfgld102.cono,:tfgld102.ttyp,:tfgld102.docn,
+							:tfgld102.lino,:tfgld102.serl}
+			selectdo
+				credit.rep = 0
+				debit.rep = 0
+				
+| 				get.ledger.description(tfgld107.vlac)
+				
+				on case tfgld107.ktax
+| 					case	tcktax.social.cont.exp:
+					case	tcktax.vat:	
+					case	tcktax.stamp.tax:	
+| 					case	tcktax.income.tax:	
+					case	tcktax.social.contrib:	
+					case	tcktax.excl.of.withhld:	
+					case	tcktax.tax.settlement:	
+					case	tcktax.not.applicable:	
+						
+						if tfgld102.dbcr = tfgld.dbcr.credit then
+							gl.code.rep = tfgld107.vlac
+							credit.rep = tfgld107.vamh(1)
+						else
+							gl.code.rep = tfgld107.vlac
+							debit.rep  = tfgld107.vamh(1)
+						endif
+						
+						break
+				case	tcktax.income.tax:
+					if tfgld102.dbcr = tfgld.dbcr.credit then
+							gl.code.rep = tfgld107.vlac
+							credit.rep = tfgld107.vamh(1)
+						else
+							gl.code.rep = tfgld107.vlac
+							debit.rep  = tfgld107.vamh(1)
+					endif
+				case	tcktax.social.cont.exp:
+						if tfgld102.dbcr = tfgld.dbcr.credit then
+							gl.code.rep = tfgld107.vlac
+							debit.rep  = tfgld107.vamh(1)
+						else
+							gl.code.rep = tfgld107.vlac
+							credit.rep = tfgld107.vamh(1)
+						endif
+					break
+				endcase
+								|#ISGEC001091.sn		|#ISGEC01044.so
+				if	debit.rep < 0	then
+					credit.rep = abs(debit.rep)
+					debit.rep = 0
+| 					leac.cr = leac.dr
+| 					leac.dr = ""
+				endif					|#ISGEC01044.eo
+				select	tfgld008.desc
+				from   	tfgld008
+				where  	tfgld008._index1 = {:gl.code.rep}
+				selectdo
+					rep.leac.desc = tfgld008.desc
+				endselect
+				account.stage = "Purchase Invoice"
+				doc.no.rep = tfgld102.docn
+				doc.type.rep = tfgld102.ttyp
+| 				gl.code.rep = tfgld102.leac
+				doc.type.var = concat$("-",doc.type.rep,doc.no.rep)
+				doc.type.str = "Invoice Booking"
+| 				rep.leac.desc = 
+				p=0
+				rprt_send()
+				if gl.code.rep <> "" then
+					p = 1
+					q = 0
+					account.stage = ""
+					doc.type.var  = ""
+					doc.type.str  = ""
+			| 	gl.code.rep    = ""
+					rprt_send()
+					q = 1
+				endif	
+				initialise()
+			endselect
+			
+			
+		endif
+}
+|------------------------------------ Project Data -----------------------------------------------------
+													|#ISGEC015055.sn
+function get.project.data()
+{
+| 	get.project.guid()
+	if not isspace(var.guid) then		
+		select	tfisg170.idtc, tfisg170.bonm
+		from	tfisg170
+		where	tfisg170.grit = tctror.proj.cost.comm		|Project Cost & Commitments
+		selectdo
+			idtc = shiftl$(strip$(tfisg170.idtc))
+			bonm = shiftl$(strip$(tfisg170.bonm))
+			
+			select 	tfgld482.rbid,tfgld482.obre,tfgld482.ttyp,
+				tfgld482.docn,tfgld482.lino,tfgld482.guid	
+			from   	tfgld482
+			where  	tfgld482.idtc = :idtc
+			and	tfgld482.buid = :var.guid
+			and	tfgld482.rbon = :bonm						
+			selectdo
+				select 	tfgld018.trun,tfgld018.ttyp,tfgld018.docn
+				from   	tfgld018
+				where  	tfgld018._index1 = {:tfgld482.ttyp,:tfgld482.docn}
+				selectdo
+					if     tfgld018.trun <> 0  then
+						select	tfgld106.otyp,tfgld106.odoc,tfgld106.leac,tfgld106.amth,tfgld106.dbcr,
+							tfgld106.fprd,tfgld106.fyer,tfgld106.olin			
+						from  	tfgld106
+						where 	tfgld106._index1 = {:tfgld482.ttyp,:tfgld482.docn,:tfgld482.lino}
+						selectdo
+							tfgld106.olin  = 0	
+							account.stage = "Project Cost & Commitments"
+							doc.no.rep    = tfgld482.docn
+							doc.type.rep =  tfgld482.ttyp
+							doc.type.var = concat$("-",doc.type.rep,doc.no.rep)
+							doc.type.str = "Project Integration"
+							gl.code.rep = tfgld106.leac
+							
+														
+							var.status = "Yes"					
+							var.fprd = tfgld106.fprd
+							var.fyer = tfgld106.fyer
+														
+							
+							select	tfgld008.desc
+							from   	tfgld008
+							where  	tfgld008._index1 = {:tfgld106.leac}
+							selectdo
+								rep.leac.desc = tfgld008.desc
+							endselect
+						
+							if tfgld106.dbcr = tfgld.dbcr.debit then
+								debit.rep = tfgld106.amth(1)
+							else
+								credit.rep= tfgld106.amth(1)
+							endif
+							p = 0
+							rprt_send()
+							if tfgld106.leac <> ""	then				
+								p = 1
+								q = 0
+								account.stage = ""
+								doc.type.var  = ""
+								doc.type.str  = ""
+								repo.net = abs(debit.rep) - abs(credit.rep)		
+								rprt_send()
+								q = 1
+							endif							
+							initialise()
+						selectempty							
+							account.stage = "Project Cost & Commitments"
+							doc.no.rep    = 0
+							doc.type.rep =  ""
+							doc.type.var = ""
+							doc.type.str = "Project Integration"
+							gl.code.rep = ""
+							rep.leac.desc = ""
+							
+							if tfgld106.dbcr = tfgld.dbcr.debit then
+								debit.rep = 0
+							else
+								credit.rep= 0
+							endif
+							p = 0
+							q = 0
+							rprt_send()
+							q = 1
+							initialise()
+														
+						endselect							
+					else
+						
+						select	tfgld102.ttyp,tfgld102.docn,tfgld102.leac,tfgld102.amth,tfgld102.dbcr,
+							tfgld102.fprd,tfgld102.fyer			
+						from   	tfgld102
+						where 	tfgld102.ttyp = {:tfgld482.ttyp}
+						and   	tfgld102.docn = {:tfgld482.docn}
+						and   	tfgld102.lino = {:tfgld482.lino}
+						selectdo
+							account.stage = "Project Cost & Commitments"
+							doc.no.rep    = tfgld482.docn
+							doc.type.rep =  tfgld482.ttyp
+							doc.type.var = concat$("-",doc.type.rep,doc.no.rep)
+							doc.type.str = "Project Integration"
+							gl.code.rep = tfgld102.leac
+							
+														
+							var.status = "No"					
+							var.fprd = tfgld102.fprd
+							var.fyer = tfgld102.fyer
+														
+							
+							select	tfgld008.desc
+							from   	tfgld008
+							where 	tfgld008._index1 = {:tfgld102.leac}
+							selectdo
+								rep.leac.desc = tfgld008.desc
+							endselect
+							if tfgld102.dbcr = tfgld.dbcr.debit then
+								debit.rep = tfgld102.amth(1)
+							else
+								credit.rep= tfgld102.amth(1)
+							endif
+							p = 0
+							rprt_send()
+							if tfgld102.leac <> ""	then				
+								p = 1
+								q = 0
+								account.stage = ""
+								doc.type.var  = ""
+								doc.type.str  = ""
+								rprt_send()
+								q = 1
+							endif												
+							initialise()
+						selectempty							
+							account.stage = "Project Cost & Commitments"
+							doc.no.rep    = 0
+							doc.type.rep =  ""
+							doc.type.var = ""
+							doc.type.str = "Project Integration"
+							gl.code.rep = ""
+							rep.leac.desc = ""
+							
+							if tfgld106.dbcr = tfgld.dbcr.debit then
+								debit.rep = 0
+							else
+								credit.rep= 0
+							endif
+							p = 0
+							q = 0
+							rprt_send()
+							initialise()
+							q =1							
+						endselect
+					endif
+				selectempty							
+					account.stage = "Project Cost & Commitments"
+					doc.no.rep    = 0
+					doc.type.rep =  ""
+					doc.type.var = ""
+					doc.type.str = "Project Integration"
+					gl.code.rep = ""
+					rep.leac.desc = ""
+					
+					if tfgld106.dbcr = tfgld.dbcr.debit then
+						debit.rep = 0
+					else
+						credit.rep= 0
+					endif
+					
+					p = 0
+					rprt_send()
+					initialise()
+													
+				endselect
+			endselect		
+		endselect	
+	endif	
+	
+}
+
+function  get.project.guid()
+{
+| 	domain	tcmcs.str50	temp.item		|#ISGECFIN007.o
+	domain	tppdm.aalc	amth
+	
+	var.guid = ""
+	flag = 0
+	temp.item = ""
+	amth = tfacp251.amth(1)
+	
+	select	whisg312.cprj,whisg312.cspa,whisg312.orno,whisg312.line,
+		whisg312.amnt,whisg312.ardt
+	from	whisg312
+	where	whisg312._index1 = {:tfacp251.rcno,:tfacp251.rseq}
+	and	whisg312.orno = :tfacp251.orno
+	and	whisg312.line = :tfacp251.pono
+	and	whisg312.seqn = :tfacp251.sqnb
+	selectdo
+		select	tpppc275.guid,tpppc275.tetg,tpppc275.cprj,tpppc275.cspa,
+			tpppc275.csub,tpppc275.sern
+		from	tpppc275
+		where	tpppc275._index1 = {:whisg312.cprj,:whisg312.cspa}
+		and	tpppc275.orno = :whisg312.orno
+		and	tpppc275.pono = :whisg312.line
+		and	tpppc275.rdat = :whisg312.ardt
+| 		and	tpppc275.amoc = :whisg312.amnt		|#ISGECFIN007.o	
+		and	tpppc275.amoc = :amth			|#ISGECFIN007.n
+		and	tpppc275.tetg = tpppc.tetg.expect.hard
+		selectdo
+			temp.item = trim$(tpppc275.csub)
+			select.from.tfisg275(tpppc275.cprj,tpppc275.cspa,temp.item,tpppc275.sern)
+		selectempty
+			select	tpppc215.guid,tpppc215.tetd,tpppc215.cprj,tpppc215.cspa,
+				tpppc215.item,tpppc215.sern				
+			from	tpppc215
+			where	tpppc215._index1 = {:whisg312.cprj,:whisg312.cspa}
+			and	tpppc215.orno = :whisg312.orno
+			and	tpppc215.pono = :whisg312.line
+			and	tpppc215.rdat = :whisg312.ardt
+| 			and	tpppc215.amoc = :whisg312.amnt	|#ISGECFIN007.o
+			and	tpppc215.amoc = :amth		|#ISGECFIN007.n
+			and	tpppc215.tetd = tpppc.tetd.expect.hard.tp	
+			selectdo
+				temp.item = trim$(tpppc215.item)
+| 				select.from.tfisg275(tpppc215.cprj,tpppc215.cspa,temp.item,tpppc215.sern) |#ISGECFIN007.o
+				var.guid = tpppc215.guid		|#ISGECFIN007.sn			
+				get.project.data()			|#ISGECFIN007.en
+			selectempty
+				var.guid = ""
+				get.project.guid2()			|#ISGECFIN007.n
+			endselect			
+		endselect
+		
+| 	selecteos							|#ISGECFIN007.so
+| 		get.project.guid2()					|#ISGECFIN007.eo
+	selectempty
+	endselect
+	
+}
+function  get.project.guid2()
+{
+	domain	tcdate	temp.data,temp.data2,temp.data3
+	temp.data = convert.date(tfacp251.data)
+
+	var.guid = ""		
+	select	whisg312.cprj,whisg312.cspa,whisg312.orno,whisg312.line,
+		whisg312.amnt,whisg312.ardt
+	from	whisg312
+	where	whisg312._index1 = {:tfacp251.rcno,:tfacp251.rseq}
+	and	whisg312.orno = :tfacp251.orno
+	and	whisg312.line = :tfacp251.pono
+	and	whisg312.seqn = :tfacp251.sqnb
+	selectdo
+		select	tpppc275.guid,tpppc275.tetg,tpppc275.ltdt
+		from	tpppc275
+		where	tpppc275._index1 = {:whisg312.cprj,:whisg312.cspa}
+		and	tpppc275.orno = :whisg312.orno
+		and	tpppc275.pono = :whisg312.line
+		and	tpppc275.tetg = 7
+		selectdo
+			temp.data2 = convert.date(tpppc275.ltdt)
+			if temp.data = temp.data2 then
+				var.guid = tpppc275.guid
+				get.project.data()							|#ISGECFIN007.n
+			endif
+		selectempty
+			select	tpppc215.guid,tpppc215.tetd,tpppc215.ltdt
+			from	tpppc215
+			where	tpppc215._index1 = {:whisg312.cprj,:whisg312.cspa}
+			and	tpppc215.orno = :whisg312.orno
+			and	tpppc215.pono = :whisg312.line
+			and	tpppc215.tetd = 9
+			selectdo
+				temp.data3 = convert.date(tpppc215.ltdt)
+				if temp.data = temp.data3 then
+					var.guid = tpppc215.guid
+					get.project.data()							|#ISGECFIN007.n
+				endif
+			selectempty
+| 				var.guid = ""									|#ISGECFIN007.o
+				select	whisg312.cprj,whisg312.cspa,whisg312.orno,whisg312.line,		|#ISGECFIN007.sn
+					whisg312.amnt,whisg312.ardt
+				from	whisg312
+				where	whisg312._index1 = {:tfacp251.rcno,:tfacp251.rseq}
+				and	whisg312.orno = :tfacp251.orno
+				and	whisg312.line = :tfacp251.pono
+				and	whisg312.seqn = :tfacp251.sqnb
+				selectdo
+					select	tpppc275.guid,tpppc275.tetg,tpppc275.cprj,tpppc275.cspa,
+						tpppc275.csub,tpppc275.sern
+					from	tpppc275
+					where	tpppc275._index1 = {:whisg312.cprj,:whisg312.cspa}
+					and	tpppc275.orno = :whisg312.orno
+					and	tpppc275.pono = :whisg312.line
+					and	tpppc275.rdat = :whisg312.ardt
+					and	tpppc275.amoc = :amnt
+					and	tpppc275.tetg = tpppc.tetg.expect.hard
+					selectdo
+						temp.item = trim$(tpppc275.csub)
+						select.from.tfisg275(tpppc275.cprj,tpppc275.cspa,temp.item,tpppc275.sern)
+					selectempty
+						select	tpppc215.guid,tpppc215.tetd,tpppc215.cprj,tpppc215.cspa,
+							tpppc215.item,tpppc215.sern				
+						from	tpppc215
+						where	tpppc215._index1 = {:whisg312.cprj,:whisg312.cspa}
+						and	tpppc215.orno = :whisg312.orno
+						and	tpppc215.pono = :whisg312.line
+						and	tpppc215.rdat = :whisg312.ardt
+						and	tpppc215.amoc = :amnt	
+						and	tpppc215.tetd = tpppc.tetd.expect.hard.tp	
+						selectdo
+							temp.item = trim$(tpppc215.item)
+							var.guid = tpppc215.guid
+							get.project.data()		
+						selectempty
+							var.guid = ""
+						endselect			
+					endselect
+				selectempty
+				endselect								|#ISGECFIN007.en
+			endselect			
+		endselect		
+	selectempty
+	endselect
+| 	get.project.data()										|#ISGECFIN007.o
+}
+function long convert.date(
+				domain	tcdate	i.date
+			    )
+{	
+	long	year
+	long	month
+	long	day
+	long	hours
+	long	mints
+	long	secs
+	long	date.utc	
+	
+	utc.to.date(i.date,year,month,day,hours,mints,secs)
+	secs = 00
+	date.utc = date.to.utc(year,month,day,hours,mints,secs)
+	return(date.utc)
+}
+function select.from.tfisg275(
+				domain	tccprj		i.cprj,		|Project         
+				domain	tppdm.cspa	i.cspa,    	|Element        
+				domain	tppdm.csub	i.csub,    	|Subcontracting/Item
+				domain	tcsern		i.sern      	|Sequence        
+				)                               
+{
+	long	retval
+	
+	select	tfisg275.*
+	from	tfisg275
+	where	tfisg275._index1 = {:i.cprj,:i.cspa,:i.csub,:i.sern}
+	and	tfisg275.sern = :i.sern
+	selectdo
+		if tfisg275.ityp = tfacp251.ityp 
+		and tfisg275.idoc = tfacp251.idoc
+		and flag < 1		then
+			var.guid = tpppc275.guid
+			get.project.data() 
+			flag = flag + 1
+		endif	
+	selectempty
+		retval = dal.new.object("tfisg275")
+		if not retval  and flag < 1 then
+			dal.set.field("tfisg275.cprj",i.cprj)		|Project                  
+			dal.set.field("tfisg275.cspa",i.cspa)		|Element        
+			dal.set.field("tfisg275.csub",i.csub)		|Subcontracting
+			dal.set.field("tfisg275.sern",i.sern)		|Sequence 
+			dal.set.field("tfisg275.ityp",tfacp251.ityp)	|Transaction Type
+			dal.set.field("tfisg275.idoc",tfacp251.idoc)	|Document Number			
+			
+			retval = dal.save.object("tfisg275")
+			if not retval then
+				commit.transaction()
+				var.guid = tpppc275.guid
+				get.project.data()
+				flag = flag + 1
+			else
+				abort.transaction()
+			endif			
+		endif		
+	endselect	
+}
+													|#ISGEC015055.en

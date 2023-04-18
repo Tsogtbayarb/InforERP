@@ -1,0 +1,563 @@
+|******************************************************************************
+|* tpisg2221m200  0  VRC B61U a7 isg 
+|* Import Project Wise Activity Relationship
+|* merino1                       
+|* 2018-05-17
+|******************************************************************************
+|* Main table tpisg221 Project Wise Activity Relationship, Form Type 4
+|******************************************************************************
+|* ID:ISGEC01117,Sahil Sharma,VRC B61U a7 isg,24-10-2018
+|* New Developement 
+|*
+|* ID: ISGEC01144, Prasanna Bhuyan, VRC B61U a7 isg, 17-12-2018
+|* Modifications
+|* ID: ISGEC016016, Sahil Sharma, VRC B61U a7 isg, 24-01-2019
+|* Update tpisg245
+
+|****************************** declaration section ***************************
+declaration:
+	
+	#pragma used dll ottdllbw
+	
+	table	ttpisg220 | Project Wise Activity Relationship
+	table	ttpisg221 
+	table	ttppdm600
+	table	ttcmcs052
+	table 	ttpisg222
+	table	ttpisg245
+	
+	|--------------------- Form Variables ----------------------------------
+	
+	extern	domain	tcorno		f.cprd		fixed
+	extern	domain	tcdsca		cprd.desc	fixed
+	extern	domain	tcmcs.str100m	file.path
+	
+	|--------------------- File Upload Variables --------------------------
+	
+	string	upload.file(100), err.log(100), line(1000), file.format(200),result(20)
+	string	file.name(200), line1(1000), msg.errs(100)
+	long	ret_val,ret_val1,file_pntr,file_pntr1,tot.record,err.flag, ActivityCount,var.i,leng,check.date
+	
+	|---------------------- Script Variables -------------------------------
+	
+	domain	tcmcs.long	id_data
+	domain	tcmcs.str100m	name_data
+	domain	tcmcs.str256m	pred_data
+	domain	tcmcs.long	lead_data
+	domain	tcmcs.str30	cact_data
+	domain	tcmcs.str30	rltp_data
+	domain	tfgld.sess	im.sess
+	domain	tcorno		im.cprd
+	domain	tcmcs.long	o.actp,i.lent,
+				name_actp
+	domain	tcmcs.str30	stat_data, OutlookStart, OutlookFinish
+| 	domain	tcdate		stat_data
+	domain	tcmcs.str30	fins_data
+	domain	tcmcs.str30	sucs_data
+	domain	tcmcs.str30	outl_data	
+	domain	tcmcs.str30	pact_data							|#ISGECMOD027.sn
+	domain	tcmcs.str30	slck_string, dura_string							
+	domain	tcorno		dept_data
+	domain	tcorno		acty_data
+	domain	tcmcs.double	slck_data
+	domain	tcqiv1		dura_data
+	domain	tpmcs.str200	var.pred_data
+	domain	tpmcs.str200	var.succ_data
+	
+	extern	domain	tccprj          proj.f,
+					cprj_data				|#ISGEC01144.n
+	extern	domain	tcdsca		dsca
+	extern	domain	tcmcs.str100m	file.path
+	long	dd,mm,yy,flag,var.first
+
+	long utc  
+	long yearno  
+	long monthno  
+	long month_dayno  
+	long hours  
+	long minutes  
+	long seconds 
+
+
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** field section **********************************
+field.proj.f:
+check.input:
+	
+	if not check.project() then
+		set.input.error("@Enter Correct Porject",e)
+	endif
+	
+	
+	
+when.field.changes:
+	select	tcmcs052.dsca:dsca
+	from	tcmcs052
+	where	tcmcs052._index1 = {:proj.f}
+	selectdo
+	selectempty
+		dsca = ""
+	endselect
+|****************************** choice section ********************************
+choice.browse:
+on.choice:
+	mess("tigenstring", 0, "Select The File . . .")
+	if seq.open.dialog.local(false,
+				"",
+				"",
+				"Text Files(*.csv)|*.csv|All File(*.*)|*.*",
+				file.path) > 0 then
+		mess("tigenstring", 0, "Success . . .")
+	else
+		mess("tigenstring", 0, "Cancelled . . .")
+	endif
+	if isspace(file.path) then
+		mess("tigenstring", 1, "Please Specify a File")
+		choice.again()
+	else
+		display("file.path")
+	endif
+choice.upload:
+before.choice:
+	check.all.input()
+	
+	if isspace(file.path)	then
+		mess("tigenstring", 1, "Please Specify a File")
+		choice.again()
+	endif
+	
+on.choice:
+	var.first = 0
+	upload.project.wise.activity.relationship()
+	
+
+|****************************** function section ******************************
+functions:
+
+function boolean check.project()
+{
+
+	select	tppdm600.*
+	from	tppdm600
+	where	tppdm600._index1 = {:proj.f}
+	selectdo
+		return(true)
+	endselect
+
+	return(false)
+}	
+
+function upload.project.wise.activity.relationship()
+{
+	err.flag = 0
+	
+	upload.file = bse.dir$()&"/"& strip$(str$(utc.num()))&".csv"
+	
+	ret_val = client2server(file.path,upload.file,true)
+	
+	if not ret_val then
+		file_pntr  = seq.open(upload.file,"r")
+		if file_pntr >= 1 then
+			
+			err.log = bse.dir$()  &"/" &
+				strip$(str$(utc.num())) & ".txt"
+			file.name = "c:\temp\" & str$(utc.num()) & ".txt"
+			file_pntr1 = seq.open(err.log, "w+")
+			
+			seq.puts("Errors on the Records while uploading...",
+				file_pntr1)
+			seq.puts(" ", file_pntr1)
+			
+			if file_pntr1 >= 1 then
+				read.file.data()
+				seq.close(file_pntr)
+			endif
+			
+			seq.close(file_pntr1)
+			if err.flag = 1	then
+				ret_val1 = server2client(err.log,file.name,1)
+				ret_val1 = app_start(file.name,"c:","","","")
+				file.rm(err.log)
+			endif
+		endif
+	endif
+}
+
+
+function read.file.data()
+{
+	tot.record = 0
+	var.i = 0 
+	
+	while (not seq.eof(file_pntr))										|#ISGEC01144.sn
+		ret_val1 = seq.gets(line,1500,file_pntr)
+		if ret_val1 = 0 then
+			
+			if var.i>0 then
+	| 			initialize()		      |1 |2 |3 |4 |5 |6 |7 |8 |9 
+				ret_val1 = string.scan(line,"%d,%s,%s,%s,%s,%s,%s,%s,%s",
+							name_actp,	|1
+							cact_data,	|2
+							name_data,	|3
+							var.pred_data,	|4
+| 							dura_data,	|5
+							dura_string,	|5
+							stat_data,	|6
+							fins_data,	|7
+							slck_string,	|8
+							cprj_data	|9			
+							)	
+				if ret_val1 > 0 then
+					if	proj.f	<>	trim$(cprj_data)	then				
+						message("Input project and project in the file do not match.")
+						choice.again()
+					endif										
+				endif	
+			endif
+			var.i = 1
+		endif
+	endwhile													|#ISGEC01144.en
+
+	seq.rewind(file_pntr)
+	
+	while (not seq.eof(file_pntr))
+		ret_val1 = seq.gets(line,1500,file_pntr)
+		if ret_val1 = 0 then
+			
+			if var.i>0 then
+	| 			initialize()		      |1 |2 |3 |4 |5 |6 |7 |8 |9 
+				ret_val1 = string.scan(line,"%d,%s,%s,%s,%s,%s,%s,%s,%s",
+							name_actp,	|1
+							cact_data,	|2
+							name_data,	|3
+							var.pred_data,	|4
+| 							dura_data,	|5
+							dura_string,	|5
+							stat_data,	|6
+							fins_data,	|7
+							slck_string,	|8
+							cprj_data	|9			|#ISGEC01144.n
+							)	
+				if ret_val1 > 0 then
+					if not check.all.record() then
+						if not update.data.tpisg222() then					|#ISGEAC01062.n 30-07-2018
+							if  not update.date() then
+								tot.record = tot.record + 1
+								commit.transaction()
+		| 						initialize()
+							else
+								message("Error in ID %d Product type ", id_data)
+								abort.transaction()
+							endif								|#ISGEAC01062.n 30-07-2018
+						endif
+					else
+						print.err.log()
+					endif
+				endif	
+			endif
+			var.i = 1
+		endif
+	endwhile
+	update.tpisg245()							|#ISGEC016016.n
+
+	message("%d Records Processed....", tot.record)
+}
+
+function long check.all.record()
+{
+	select	tpisg220.*
+	from	tpisg220
+	where	tpisg220._index1 = {:proj.f}
+	and	tpisg220.cact = :cact_data
+	selectdo
+	selectempty
+		msg.errs = sprintf$("Activity %s Not Found against Product %s",
+					cact_data,proj.f)
+		return(1)
+	endselect
+	
+	return(0)
+}
+
+
+
+function long update.date()
+{
+	domain	tcmcs.str10		str.day, str.dura
+	domain	tcpono			pos.day, pos.dura
+	
+	str.day = ""
+	pos.day = 0
+	
+	select	tpisg220.*
+	from	tpisg220 for update
+	where	tpisg220._index1 = {:proj.f}
+	and	tpisg220.cact = :cact_data
+	selectdo
+		if (tpisg220.cpgv > 0) and (tpisg220.cpgv < 99.99) then
+			tpisg220.otsd = 0					|#veena.16-01-2019
+			get.date(fins_data,tpisg220.oted)
+		else
+			if (tpisg220.cpgv = 0) then
+				get.date(stat_data,tpisg220.otsd)
+				get.date(fins_data,tpisg220.oted)
+			else
+				if (tpisg220.cpgv > 99.99) then
+					tpisg220.otsd = 0					|#veena.16-01-2019
+					tpisg220.oted = 0					|#veena.16-01-2019
+					|*do nothing in case of 100% 
+				endif
+			endif
+		endif
+			
+		pos.dura = pos(dura_string," day")
+		str.dura = dura_string(1;pos.dura-1)
+		
+		dura_data = val(str.dura)
+		tpisg220.odur = dura_data
+		
+		
+		pos.day = pos(slck_string," day")
+		str.day = slck_string(1;pos.day-1)
+		
+		slck_data = val(str.day)
+		tpisg220.atsk = slck_data
+		
+		if tpisg220.atsk <= 0 then
+			tpisg220.cric = tcyesno.yes
+		else
+			tpisg220.cric = tcyesno.no
+		endif
+
+		tpisg220.limp = date.num()
+
+		db.update(ttpisg220,db.retry,e)
+		
+	endselect
+	
+	
+	return(e)
+	
+}
+
+
+function get.date(
+		domain	tcmcs.str30	v.date,
+	ref	domain	tfgld.date	r.date
+	)
+{
+	long test
+	dd= lval(v.date(1;2))
+        mm= lval(v.date(4;2))
+	yy= lval(v.date(7;4))
+	
+	r.date = date.to.num(yy,mm,dd)
+
+	
+	result = sprintf$("%D(Date: %02d/%02m/%04Y)", r.date) 
+
+}
+
+
+function print.err.log()
+{
+	line1 = concat$(",",
+	sprintf$("%d", name_actp),		
+	sprintf$("%s", name_data),		
+	sprintf$("%s", dura_data),		
+	sprintf$("%s", stat_data),		
+	sprintf$("%s", fins_data),		
+		
+	sprintf$("%s", msg.errs))	
+
+	
+	line1 = strip$(shiftl$(line1))
+	seq.puts(line1, file_pntr1)
+	
+	err.flag = 1
+}
+
+
+function long update.data.tpisg222()										|#ISGEAC01062.sn 30-07-2018
+{
+	
+	
+	select	tpisg220.*
+	from	tpisg220 
+	where	tpisg220._index1 = {:proj.f}
+	and	tpisg220.cact = :cact_data
+	selectdo
+			
+	endselect
+		if var.first = 0 then
+			tpisg222.rvno = get.last.revision()
+		endif
+		
+	select	tpisg222.*
+	from	tpisg222
+	where	tpisg222._index1 = {:tpisg220.cprj,:tpisg220.pcod,:tpisg222.rvno,:tpisg220.cact}
+	selectdo
+	selectempty
+		
+		tpisg222.cprj = tpisg220.cprj
+		tpisg222.pcod = tpisg220.pcod
+		tpisg222.cact = tpisg220.cact
+		
+		tpisg222.actp = tpisg220.actp
+		tpisg222.pact = tpisg220.pact
+		tpisg222.bcod = tpisg220.bcod
+		tpisg222.odur = dura_data
+		tpisg222.ddur = tpisg220.ddur
+		get.date(stat_data,tpisg222.otsd)
+		get.date(fins_data,tpisg222.oted)
+		tpisg222.acsd = tpisg220.acsd
+		tpisg222.acfn = tpisg220.acfn
+		tpisg222.bohd = tpisg220.bohd
+		tpisg222.pred = var.pred_data
+		tpisg222.succ = tpisg220.succ
+		tpisg222.desc = tpisg220.desc
+		tpisg222.acty = tpisg220.acty
+		tpisg222.dept = tpisg220.dept
+		tpisg222.vali = tpisg220.vali
+		tpisg222.outl = tpisg220.outl
+		tpisg222.sub1 = tpisg220.sub1
+		tpisg222.sub2 = tpisg220.sub2
+		tpisg222.sub3 = tpisg220.sub3
+		tpisg222.sub4 = tpisg220.sub4
+		tpisg222.amod = tpisg220.amod
+		tpisg222.pcbs = tpisg220.pcbs
+		tpisg222.exdo = tpisg220.exdo
+		tpisg222.cpgv = tpisg220.cpgv
+		tpisg222.otsd = tpisg220.otsd
+		tpisg222.oted = tpisg220.oted
+		tpisg222.rmks = tpisg220.rmks
+		tpisg222.gps1 = tpisg220.gps1
+		tpisg222.gps2 = tpisg220.gps2
+		tpisg222.gps3 = tpisg220.gps3
+		tpisg222.gps4 = tpisg220.gps4
+		tpisg222.pper = tpisg220.pper
+		tpisg222.valu = tpisg220.valu
+		tpisg222.schd = tpisg220.schd
+		tpisg222.rvsd = date.num()
+		tpisg222.sitm = tpisg220.sitm
+		tpisg222.ddur = tpisg220.ddur
+		tpisg222.pprc = tpisg220.pprc
+		tpisg222.elap = tpisg220.elap
+		tpisg222.elad = tpisg220.elad
+		tpisg222.emsp = tpisg220.emsp
+		tpisg222.pmsp = tpisg220.pmsp
+		tpisg222.slck = tpisg220.slck
+		tpisg222.dela = tpisg220.dela
+		tpisg222.atsk = tpisg220.atsk
+		
+		db.insert(ttpisg222,db.skip.dupl,e)
+		
+		if e= 0 then
+			commit.transaction()
+		else
+			abort.transaction()
+		endif
+		
+		var.first = 1
+		
+	endselect
+| 	endselect
+	init.field()
+	return(e)
+}
+
+function domain tcmcs.long get.last.revision()
+{
+	long max.revision
+	
+	select	tpisg222.rvno
+	from	tpisg222
+	where	tpisg222._index1 = {:tpisg220.cprj}
+	order by tpisg222.rvno desc
+	as set with 1 rows
+	selectdo
+		flag = 1
+		max.revision = tpisg222.rvno + 1 
+	selectempty
+		max.revision = 0
+	endselect
+	
+	
+	
+	
+	
+	return(max.revision)
+
+}															|#ISGEAC01062.en 30-07-2018
+
+
+function init.field()
+{
+	tpisg222.cprj = ""
+	tpisg222.pcod = ""
+	tpisg222.cact = ""
+	
+	tpisg222.actp = 0
+	tpisg222.pact = ""
+	tpisg222.bcod = ""
+	tpisg222.dura = 0
+	tpisg222.sdst = 0
+	tpisg222.sdfn = 0
+	tpisg222.acsd = 0
+	tpisg222.acfn = 0
+	tpisg222.bohd = ""
+	tpisg222.pred = ""
+	tpisg222.succ = ""
+	tpisg222.desc = ""
+	tpisg222.acty = ""
+	tpisg222.dept = ""
+	tpisg222.vali = empty
+	tpisg222.outl = 0
+	tpisg222.sub1 = ""
+	tpisg222.sub2 = ""
+	tpisg222.sub3 = ""
+	tpisg222.sub4 = ""
+	tpisg222.amod = ""
+	tpisg222.pcbs = ""
+	tpisg222.exdo = empty
+	tpisg222.cpgv = 0.00
+	tpisg222.otsd = 0
+	tpisg222.oted = 0
+	tpisg222.rmks = ""
+	tpisg222.gps1 = ""
+	tpisg222.gps2 = ""
+	tpisg222.gps3 = ""
+	tpisg222.gps4 = ""
+	tpisg222.pper = 0.00
+	tpisg222.valu = 0.00
+	tpisg222.schd = empty
+
+}
+
+function update.tpisg245()								|#ISGEC016016.sn
+{
+	
+	select	tpisg245.ecdt, tpisg245.ccac
+	from	tpisg245 for update
+	where	tpisg245._index1 = {:proj.f}
+	selectdo
+		select	tpisg220.oted , tpisg220.cprj
+		from	tpisg220
+		where	tpisg220._index1 = {:proj.f}
+		and	tpisg220.cact = :tpisg245.ccac
+		selectdo
+			tpisg245.ecdt = tpisg220.oted
+			db.update(ttpisg245, db.retry, e)
+		endselect
+		commit.transaction()
+	endselect
+	
+}											|#ISGEC016016.en

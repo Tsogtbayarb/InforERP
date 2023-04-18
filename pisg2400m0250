@@ -1,0 +1,998 @@
+|******************************************************************************
+|* tfisg2400m025  0  VRC B61U a7 live
+|* Print Service Tax on Transporter Bill
+|* Installation user             
+|* 2014-12-02
+|******************************************************************************
+|* Main table tfacp200 Open Items (Purchase Invoices &amp; Payments), Form Type 4
+|******************************************************************************
+|* ID ISGEC01113, Ritu Shrivastava, VRC B61U a7 isg, Dt. 24-06-2015
+|* Modification to add additional fields.
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttfacp200 | Open Items (Purchase Invoices &amp; Payments)
+  table   ttfacp100 
+  table   ttfacr200 
+  table   ttfgld011
+  table   ttfgld018
+  table   ttfgld110
+  table   ttfgld107
+  table   ttfgld106
+  table   ttfgld102
+  table   ttfgld100
+  table   ttccom000
+  table   ttccom100
+  table   ttccom120
+  table   ttccom130
+  table   ttfacp200
+  table   ttcmcs036
+  table   ttcmcs035
+  table   ttcmcs052
+  table   ttctax039
+  table   ttfisg001
+  table   ttfisg002
+  table   ttfisg003
+  table   ttppdm600
+  table   ttppdm740
+  table   ttcemm170
+										|#ISGEC01113.sn
+  table	   ttfacp251
+  table	   ttdpur401
+  table	   ttdisg831
+  table	   ttdisg832
+  table	   ttdisg842
+  
+  table		ttcmcs032
+  table		ttfgld100
+  table		ttdisg845
+										|#ISGEC01113.en
+  
+|****************** Form Variables ************************
+   extern  domain  tfgld.ttyp       ttyp.f    fixed
+   extern  domain  tfgld.ttyp       ttyp.t    fixed
+   extern  domain  tfgld.docn       docn.f
+   extern  domain  tfgld.docn       docn.t
+   extern  domain  tfgld.date 	     docd.f
+   extern  domain  tfgld.date 	     docd.t
+   extern  domain  tccprj           cprj.f
+   extern  domain  tccprj           cprj.t
+   extern  domain  tccom.bpid	     bpid.f
+   extern  domain  tccom.bpid	     bpid.t
+   extern  domain  tcyesno          pay.done
+   extern	domain	tcncmp		cono.f
+   
+|***************** File Handling Variables ******************
+   string 	c.file(500), err.file(500), line(1500), line1(1500), line2(1500)
+   long        fp, stat.fp, ret
+   
+|***************** Script Variables *************************
+  domain tcdsca		o.city.dsca
+  domain tcncmp		i.ncmp
+  domain tcmcs.str20 	old.docn
+  domain tccprj		v.cprj
+  domain tdisg.type	i.cprj.type
+  domain tfgld.docn	i.shpm				|#ISGEC01113.n
+   
+|***************** Report Variables *************************
+   
+   domain tccom.bpid		rep.bpid
+   domain tcdsca		rep.nama
+   domain tcmcs.str256m		rep.addr
+   domain tccprj		rep.cprj
+   domain tcmcs.str20		rep.cprj.type
+   domain tcdsca		rep.cprj.name
+   domain tcmcs.str20		rep.pgn
+   domain tfgld.date		rep.pgn.date
+   domain tcdsca		rep.bill
+   domain tfgld.date		rep.bill.date
+   domain tcamnt		rep.bill.amnt
+   domain tfacp.isup		rep.grno
+   domain tfgld.date		rep.gr.date
+   domain tcdate		rep.delv.date
+   domain tcdsca		rep.fplc
+   domain tcdsca               rep.tplc
+   domain tcmcs.str20		rep.pdoc
+   domain tfgld.date		rep.docd
+   domain tcamnt		rep.samt
+   domain tcamnt		rep.edu.cess
+   domain tcamnt		rep.hedu.cess
+   domain tcamnt		rep.tot.amnt
+										|#ISGEC01113.sn
+   domain tcorno		rep.cinv					
+   domain tfgld.date		rep.cind
+   domain tcorno		rep.sbno
+   domain tfgld.date		rep.shdt
+   domain tfgld.date		rep.exdt					
+										|#ISGEC01113.en
+										
+										
+	domain	tfgld.amnt		ser.amnt
+	domain	tfgld.amnt		cess.amnt
+	domain	tfgld.amnt		hcess.amnt
+	domain	tcpvat			tax.rate
+	
+|************************************************************
+
+#pragma used dll ottdllbw
+
+|****************************** program section ********************************
+before.program:
+	i.ncmp = get.compnr()
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.cont.generate:
+on.choice:
+	select 	tfgld001.ncmp
+	from	tfgld001
+	where	tfgld001._index1 = {:cono.f}
+	as set with 1 rows
+	selectdo
+	selectempty
+		message("Enter Valid Financial Company")
+		choice.again()
+	endselect
+	
+	generate.file()
+
+
+|****************************** field section *********************************
+
+field.ttyp.f:
+when.field.changes:
+   ttyp.t = ttyp.f
+
+field.docn.f:
+when.field.changes:
+   docn.t = docn.f
+   
+before.zoom:
+	query.extend.where.in.zoom("tfacp200.ttyp = " & quoted.string(ttyp.f))
+	
+field.docn.t:
+before.zoom:
+	query.extend.where.in.zoom("tfacp200.ttyp = " & quoted.string(ttyp.t))
+
+field.docd.f:
+when.field.changes:
+	docd.t = docd.f
+	
+field.bpid.f:
+when.field.changes:
+	bpid.t = bpid.f
+	
+field.cprj.f:
+when.field.changes:
+	cprj.t = cprj.f
+|****************************** function section ******************************
+
+functions:
+
+function generate.file()
+{
+	err.file = bse.tmp.dir$() & "Service tax on Transporter Bill" & str$(utc.num()) & ".xls"
+	
+	c.file = "C:\temp\" & "Service tax on Transporter Bill" & str$(utc.num()) & ".xls"
+	
+	stat.fp = seq.open(err.file, "w+")
+	if fp > 0 then
+		seq.seek(0, 0, stat.fp)
+	endif
+	
+	process.file()
+	
+	seq.close(stat.fp)
+	ret = server2client(err.file, c.file, 1)
+	ret = app_start(c.file,"c:","","","")
+}
+
+function process.file()
+{
+	generate.header()
+| 	read.main.table1()
+	read.main.table2()
+}
+
+function generate.header()
+{
+	line = concat$("	",
+		sprintf$(""),
+		sprintf$(""),
+		sprintf$(""),
+		sprintf$(""),
+		sprintf$(""),
+		sprintf$(""),
+		sprintf$(""),
+		sprintf$("Service Tax on Transporter Bill"))
+	line = strip$(shiftl$(line))		
+	seq.puts(line, stat.fp)
+	
+	line1 = concat$("	",
+		sprintf$("Supplier Code"),					|1
+		sprintf$("Name"),						|2
+		sprintf$("Address Of Transporter"),				|3
+		sprintf$("Project"),						|4
+		sprintf$("Project Type"),					|5
+		sprintf$("Project Name"),					|6
+		sprintf$("PGN/PTR No"),					|7
+		sprintf$("PGN/PTR Batch Date"),				|8
+		sprintf$("Transporter Bill No"),				|9
+		sprintf$("Transporter Bill Date"),				|10
+		sprintf$("Transporter Bill Amount"),				|11
+		sprintf$("GR No"),						|12
+		sprintf$("GR Date"),						|13
+		sprintf$("Delivery Date"),					|14
+		sprintf$("From Place"),					|15
+		sprintf$("To Place"),						|16
+		sprintf$("Payment Document No"),				|17
+		sprintf$("Date of Payment"),					|18
+													|#ISGEC01113.sn
+		sprintf$("Commercial Invoice No"),
+		sprintf$("Commercial Invoice Date"),
+		sprintf$("Shipping Bill No"),
+		sprintf$("Shipping Bill Date"),
+		sprintf$("LET Export Date"),
+													|#ISGEC01113.en
+		sprintf$("Service Tax"),					|19
+		sprintf$("EDU Cess"),						|20
+		sprintf$("H.EDU Cess"),					|21
+		sprintf$("Total"))						|22
+	line1 = strip$(shiftl$(line1))
+	seq.puts(line1, stat.fp)
+}
+
+
+function read.main.table2()
+{
+	domain	tcncmp		curr.comp
+	
+	curr.comp = get.compnr()
+		
+		
+	select 	tfgld110.cono,
+		tfgld110.ttyp,
+		tfgld110.docn,
+		tfgld110.lino
+	from	tfgld110
+	where	tfgld110._index1 inrange {:cono.f,:ttyp.f,:docn.f} and {:cono.f,:ttyp.t,:docn.t}	
+	and	tfgld110.dcdt inrange :docd.f and :docd.t
+	and	tfgld110.bpid inrange :bpid.f and :bpid.t
+	group by tfgld110.cono,tfgld110.ttyp,tfgld110.docn,tfgld110.lino
+	selectdo
+		
+		ser.amnt = 0
+		cess.amnt = 0
+		hcess.amnt = 0
+	
+		select 	tfgld110.*,
+			tfgld110.ccty,
+			tfgld110.cvat,
+			tfgld110.vamh,
+			tcmcs036.indt.l,
+			tcmcs036.smpl,
+			tfgld011.catg
+		from	tfgld110,tcmcs036,tfgld011
+		where	tfgld110._index1 = {:tfgld110.cono,:tfgld110.ttyp,:tfgld110.docn,:tfgld110.lino}
+		and	tfgld110.c001 refers to tcmcs036.cmba
+		and	tfgld110.ttyp refers to tfgld011
+		selectdo
+			if tcmcs036.smpl = tcyesno.no then
+				select tcmcs035.indt.l
+				from	tcmcs035
+				where	tcmcs035._index1 = {:tfgld110.ccty,:tfgld110.cvat,:tfgld110.sern}
+				as set with 1 rows 
+				selectdo
+					tcmcs036.indt.l = tcmcs035.indt.l
+					
+					tax.rate = get.tax.rate(tfgld110.ccty,tfgld110.cvat)
+					calculate.tax.amount(tfgld110.cvat,tcmcs036.indt.l,tax.rate,tfgld110.vamh(1))
+					
+				endselect
+			else
+				calculate.tax.amount(tfgld110.cvat,tcmcs036.indt.l,tax.rate,tfgld110.vamh(1))
+			endif	
+		endselect
+		if ser.amnt <> 0 then
+		
+			write.data1()
+		endif
+		
+	endselect
+}
+
+
+function domain tcpvat get.tax.rate
+			(
+				domain	tcccty		i.ccty,
+				domain	tccvat		i.cvat
+			)
+{
+	select	tcmcs032.pvat
+	from	tcmcs032
+	where	tcmcs032._index1 = {:i.ccty,:i.cvat}
+	as set with 1 rows
+	selectdo
+	selectempty
+		tcmcs032.pvat = 0
+	endselect
+	
+	return(tcmcs032.pvat)
+}
+
+
+function calculate.tax.amount
+			(
+				domain	tccvat		i.cvat,
+				domain	tctax.indt.l 	i.indt.l,
+				domain	tcpvat 		i.tax.rate,
+				domain	tfgld.amnt	i.amnt
+			)
+{
+
+	
+	
+	on case	i.indt.l
+	case	tctax.indt.l.bed:		|Basic Excise Duty
+		break
+	case	tctax.indt.l.e.cess.excise:	|Educational Cess on Excise
+		break
+	case	tctax.indt.l.hse.cess.excise:	|Secondary And Higher Ecess on Excise
+		break
+	case	tctax.indt.l.bcd:		|Basic Custom Duty
+		break
+	case	tctax.indt.l.e.cess.customs:	|Educational Cess on Customs
+		break
+	case	tctax.indt.l.hse.cess.custom:	|Secondary and Higher Ecess On Customs
+		break
+	case	tctax.indt.l.cvd:		|Countervailing Duty
+		break
+	case	tctax.indt.l.adc:		|Additional Duty of Customs
+		break
+	case	tctax.indt.l.service:		|Service Tax
+		ser.amnt = ser.amnt + i.amnt
+		break
+	case	tctax.indt.l.e.cess.service:	|Educational Cess on Service
+		cess.amnt = cess.amnt + i.amnt
+		break
+	case	tctax.indt.l.hse.cess.servic:	|Secondary and Higher Ecess on Service
+		hcess.amnt = hcess.amnt + i.amnt
+		break
+
+	case	tctax.indt.l.cst:		|Central Sales Tax
+		break
+	case	tctax.indt.l.vat:		|VAT
+	case	tctax.indt.l.lst:		|Local Sales Tax
+	case	tctax.indt.l.n.a:		|Not Applicalbe
+		
+		break
+	endcase
+	
+}
+
+
+function write.data1()
+	{
+		
+		
+		
+		domain	tfgld.docn		ir.number
+		
+		rep.pgn = ""
+		rep.pdoc = ""
+		
+		select 	tccom100.nama,
+			tccom100.cadr,
+			tccom130.*
+		from	tccom100,tccom130
+		where	tccom100._index1 = {:tfgld110.bpid}
+		and	tccom100.cadr refers to tccom130
+		as set with 1 rows
+		selectdo
+		selectempty
+			tccom100.nama = ""
+		endselect
+		
+		rep.addr = tccom130.cadr & "," & strip$(tccom130.nama) & " " & strip$(tccom130.namb) & " " & strip$(tccom130.namc) & " " & strip$(tccom130.namd)
+			& " " & strip$(tccom130.namf) & " " & strip$(tccom130.pstc) & " " & strip$(tccom130.telp) & " " & strip$(tccom130.tefx)|
+		
+		tfacp200.amth(1) = 0 
+		
+		rep.pdoc = tfgld110.ttyp &"/" &  str$(tfgld110.docn) & "/" & str$(tfgld110.lino)
+		
+		on case tfgld011.catg
+		case	tfgld.catg.cash:
+			
+			rep.pdoc = tfgld110.ttyp &"/" &  str$(tfgld110.docn) & "/" & str$(tfgld110.lino)
+			select 	tfacp200.isup,
+				tfacp200.docd,
+				tfacp200.amth
+			from	tfacp200
+			where	tfacp200._index1 = {:tfgld110.ttyp,:tfgld110.docn,:tfgld110.lino}
+			and	tfacp200.docn = 0
+			and	tfacp200.tpay in (1,4)
+			as set with 1 rows
+			selectdo
+			selectempty
+				tfacp200.isup = ""
+				tfacp200.docd = 0
+			endselect
+			break
+		default:
+			
+			rep.pgn = tfgld110.ttyp &"/" &  str$(tfgld110.docn)& "/" & str$(tfgld110.lino)
+			
+			select 	tfacp200.isup,
+				tfacp200.docd,
+				tfacp200.amth
+			from	tfacp200
+			where	tfacp200._index1 = {:tfgld110.ttyp,:tfgld110.docn}
+			and	tfacp200.docn = 0
+			and	tfacp200.tpay in (1,4)
+			as set with 1 rows
+			selectdo
+			selectempty
+				tfacp200.isup = ""
+				tfacp200.docd = 0
+			endselect
+			
+		endcase
+		
+		
+		select 	tfgld018.btno,
+			tfgld018.dcdt,
+			tfgld100.tedt
+		from	tfgld018,tfgld100
+		where	tfgld018._index1 = {:tfgld110.ttyp,:tfgld110.docn}
+		and	tfgld100._index1 = {tfgld018.year,tfgld018.btno}
+		as set with 1 rows
+		selectdo
+		selectempty
+		endselect
+		
+		
+		
+		tfisg002.grno = ""
+		tfisg002.grdt = 0
+		tfisg003.plcf= ""
+		tfisg003.plct = ""
+		
+		tdisg845.cinv = ""
+		tdisg845.cadt = 0
+		tdisg845.erdn = ""
+		tdisg831.cind = 0
+		tdisg832.cinv = ""
+		
+		select 	tfacp251.shpm,
+			tfacp251.rcno,
+			tfacp251.rseq
+		from	tfacp251
+		where	tfacp251._index1 = {:tfgld110.cono,:tfgld110.ttyp,:tfgld110.docn,200}
+		as set with 1 rows
+		selectdo
+			ir.number = lval(tfacp251.shpm)
+			select 	tfisg002.*,
+				tfisg003.*
+			from	tfisg002,tfisg003
+			where	tfisg002._index1 = {:ir.number}
+			and	tfisg002.cmbb refers to tfisg003
+			as set with 1 rows
+			selectdo
+			selectempty
+				tfisg002.grno = ""
+				tfisg002.grdt = 0
+				tfisg003.plcf= ""
+				tfisg003.plct = ""
+			endselect
+			
+			
+			select 	tdisg832.cinv,
+				tdisg831.cind,
+				tdisg831.invn
+			from	tdisg832,tdisg831
+			where	tdisg832._index4 = {:tfacp251.rcno,:tfacp251.rseq}
+			and	tdisg832.edrn refers to tdisg831
+			and	tdisg831.stat = tdisg.stat.process
+			and	tdisg831.type = tdisg.type.export
+			as set with 1 rows
+			selectdo
+				select 	tdisg845.erdn,
+					tdisg845.cadt
+				from	tdisg845
+				where	tdisg845.cinv = :tdisg831.invn
+				as set with 1 rows
+				selectdo
+				selectempty
+					tdisg845.cinv = ""
+					tdisg845.cadt = 0
+				endselect
+					
+			selectempty
+				tdisg832.cinv = ""
+				tdisg831.cind = 0
+				
+			endselect
+			
+				
+			
+		endselect
+		
+| 		
+		line2 =	concat$("	",
+			sprintf$("%s",tfgld110.bpid),				|1
+			sprintf$("%s",tccom100.nama),				|2
+			sprintf$("%s",rep.addr),				|3
+			sprintf$("%s",rep.cprj),				|4
+			sprintf$("%s",rep.cprj.type),				|5
+			sprintf$("%s",rep.cprj.name),				|6
+| 			sprintf$("%s",rep.pgn),				|7
+			sprintf$("%s",rep.pdoc),				|7
+			sprintf$("%2D(%02d-%02m-%04Y)",tfgld018.dcdt),		|8
+			sprintf$("%s",tfacp200.isup),				|9
+			sprintf$("%2D(%02d-%02m-%04Y)",tfacp200.docd),		|10
+			sprintf$("%f",tfacp200.amth(1)),				|11
+			sprintf$("%s",tfisg002.grno),				|12
+			sprintf$("%2D(%02d-%02m-%04Y)",tfisg002.grdt),		|13
+			sprintf$("%2D(%02d-%02m-%04Y)",tfisg002.grdt),		|14			|HAve to ask
+			sprintf$("%s",tfisg003.plcf),				|15
+			sprintf$("%s",tfisg003.plct),				|16
+| 			sprintf$("%s",rep.pdoc),				|17
+			sprintf$("%s",rep.pdoc),				|17
+			sprintf$("%2D(%02d-%02m-%04Y)",0),		|18
+													|#ISGEC01113.sn
+			sprintf$("%s",tdisg832.cinv),
+			sprintf$("%2D(%02d-%02m-%04Y)",tdisg831.cind),
+			sprintf$("%s",tdisg845.erdn),
+			sprintf$("%2D(%02d-%02m-%04Y)",tdisg845.cadt),
+			sprintf$("%2D(%02d-%02m-%04Y)",rep.exdt),
+													|#ISGEC01113.en
+			sprintf$("%f",ser.amnt),				|19
+			sprintf$("%f",cess.amnt),				|20
+			sprintf$("%f",hcess.amnt),				|21
+			sprintf$("%f",(ser.amnt +cess.amnt + hcess.amnt)))				|22
+				
+		line2 = strip$(shiftl$(line2))
+			seq.puts(line2, stat.fp)
+	}
+
+
+
+	| function read.main.table1()
+	| {
+	| 	select tfacp200.*,tccom100.nama, tccom120.cadr, tccom130.*
+	| 	from   tfacp200,tccom100, tccom120, tccom130
+	| 	where  tfacp200._index1 inrange {:ttyp.f,:docn.f} and {:ttyp.t,:docn.t}
+	| 	and    tfacp200.cdf_cprj inrange :cprj.f and :cprj.t
+	| 	and    tfacp200.docd inrange :docd.f and :docd.t
+	| 	and    tfacp200.ifbp inrange :bpid.f and :bpid.t
+	| 	and    tfacp200.ifbp refers to tccom100
+	| 	and    tfacp200.ifbp refers to tccom120
+	| 	and    tccom120.cadr refers to tccom130
+	| 	| 	and    tfacp200.tpay in (tfacp.tpay.normal,tfacp.tpay.anticipated)
+	| 	| 	as set with 1 rows
+	| 	selectdo
+	| 		initialize.variables()
+	| 		select tfgld110.*
+	| 		from   tfgld110
+	| 		where  tfgld110._index1 = {:i.ncmp,:tfacp200.ttyp,:tfacp200.ninv}
+	| 		selectdo
+	| 			get.pgn.ptr.records(tccom130.ccty,tfgld110.cvat,tfgld110.sern,tfgld110.vamt,tfgld110.ttyp,tfgld110.docn)
+	| 		endselect
+	| 		
+	| 		select tfgld107.*
+	| 		from   tfgld107
+	| 		where  tfgld107._index1 = {:i.ncmp,:tfacp200.ttyp,:tfacp200.ninv} 
+	| 		selectdo
+	| 			get.pgn.ptr.records(tccom130.ccty,tfgld107.cvat,tfgld107.sern,tfgld107.vamt,tfgld107.ttyp,tfgld107.docn)
+	| 		endselect
+	| 		
+	| 		rep.bpid = tfacp200.ifbp
+	| 		rep.nama = tccom100.nama
+	| 		rep.addr = tccom130.cadr & "," & strip$(tccom130.nama) & " " & strip$(tccom130.namb) & " " & strip$(tccom130.namc) & " " & strip$(tccom130.namd)
+	| 				& " " & strip$(tccom130.namf) & " " & strip$(tccom130.pstc) & " " & strip$(tccom130.telp) & " " & strip$(tccom130.tefx)
+	| 		
+	| 		get.var(pid, "tfacp200.cdf_cprj",v.cprj)
+	| 												|#ISGEC01113.sn
+	| 		if isspace(v.cprj) then
+	| 			select tfacp100.cdf_cprj
+	| 			from   tfacp100
+	| 			where  tfacp100._index4 = {:tfacp200.ttyp,:tfacp200.ninv}
+	| 			selectdo
+	| 				get.var(pid, "tfacp200.cdf_cprj",v.cprj)
+	| 				if isspace(v.cprj) then 
+	| 					select tfacp251.orno, tfacp251.pono, tfacp251.shpm
+	| 					from 	tfacp251
+	| 					where 	tfacp251.ityp = :tfacp200.ttyp
+	| 					and	tfacp251.idoc = :tfacp200.ninv
+	| 					selectdo
+	| 						select tdpur401.cprj:v.cprj
+	| 						from   tdpur401
+	| 						where 	tdpur401._index1 = {:tfacp251.orno,:tfacp251.pono}
+	| 						selectdo
+	| 						endselect
+	| 						i.shpm = lval(tfacp251.shpm)				|#ISGEC01113.n
+	| 						get.gr.details(i.shpm)					|#ISGEC01113.n
+	| 					endselect
+	| 				endif
+	| 			endselect
+	| 		endif										
+	| 		
+	| 		get.commercial.details()
+	| 												|#ISGEC01113.en
+	| 		
+	| 		select tcmcs052.cprj, tcmcs052.dsca
+	| 		from   tcmcs052
+	| 		where  tcmcs052._index1 = {:v.cprj}
+	| 		selectdo
+	| 			rep.cprj = tcmcs052.cprj
+	| 			rep.cprj.name = tcmcs052.dsca
+	| 			i.cprj.type = determine.project.type(tcmcs052.cprj)
+	| 			rep.cprj.type = enum.descr$("tdisg.type",i.cprj.type)
+	| 		selectempty
+	| 			rep.cprj = ""
+	| 			rep.cprj.name = ""
+	| 			rep.cprj.type = ""
+	| 		endselect
+	| 		
+	| 		select tfgld100.tedt:rep.pgn.date
+	| 		from   tfgld100
+	| 		where  tfgld100._index1 = {:tfacp200.year,:tfacp200.btno}
+	| 		selectdo
+	| 		endselect
+	| 			
+	| 		rep.bill = tfacp200.isup
+	| 		rep.bill.date = tfacp200.docd
+	| 		rep.bill.amnt = tfacp200.amth(1)
+	| 		
+	| 		select tfacp100.ninv
+	| 		from   tfacp100
+	| 		where  tfacp100._index4 = {:tfacp200.ttyp,:tfacp200.ninv}
+	| 		selectdo
+	| 	| 			get.gr.details()							|#ISGEC01113.o
+	| 			get.gr.details(tfacp100.ninv)						|#ISGEC01113.n
+	| 		endselect
+	| 			
+	| 		if pay.done = tcyesno.yes then
+	| 			if tfacp200.tdoc <> ""
+	| 			or tfacp200.docn <> 0 then
+	| 				if  tfacp200.tpay = tfacp.tpay.normal
+	| 				or  tfacp200.tpay = tfacp.tpay.advance.ant then
+	| 					rep.pdoc = tfacp200.tdoc & "/" & str$(tfacp200.docn)
+	| 					rep.docd = tfacp200.docd
+	| 					if rep.samt <> 0 
+	| 					and old.docn <> rep.pgn then
+	| 						write.data()
+	| 						old.docn = rep.pgn
+	| 					endif
+	| 				else if tfacp200.tpay = tfacp.tpay.assignment then
+	| 					get.payment.doc(tfacp200.tdoc,tfacp200.docn)
+	| 					if rep.samt <> 0 
+	| 					and old.docn <> rep.pgn then
+	| 						write.data()
+	| 						old.docn = rep.pgn
+	| 					endif 
+	| 					
+	| 				endif
+	| 				endif
+	| 			endif
+	| 		else
+	| 			if tfacp200.tdoc = ""
+	| 			or tfacp200.docn = 0 then
+	| 				rep.pdoc = ""
+	| 				rep.docd = 0
+	| 				if tfacp200.amth(1) = tfacp200.balh(1) then
+	| 					if rep.samt <> 0 then
+	| 						write.data()
+	| 					endif
+	| 				endif
+	| 			endif
+	| 		endif
+	| 			
+	| 	endselect
+	| }
+
+	| function get.tax.data(domain tcccty	    i.ccty,
+	| 		       domain tccvat	    i.cvat,
+	| 		       domain tcsern	    v.sern,
+	| 		       domain tfgld.amnt   v.vamt,
+	| 		       domain tfgld.ttyp   v.ttyp,
+	| 		       domain tfgld.docn   v.docn)
+	| {
+	| 	select tcmcs035.sern
+	| 	from   tcmcs035
+	| 	where  tcmcs035._index1 = {:i.ccty,:i.cvat}
+	| 	and    tcmcs035.sern = :v.sern
+	| 	and    tcmcs035.indt.l in (	tctax.indt.l.service,
+	| 					tctax.indt.l.e.cess.service,
+	| 					tctax.indt.l.hse.cess.servic,
+	| 					tctax.indt.l.ser.tax.on.tran, 
+	| 					tctax.indt.l.e.c.tr.ser, 
+	| 					tctax.indt.l.she.tr.ser)    
+	| 	selectdo
+	| 		rep.pgn = v.ttyp & "/" & str$(v.docn)
+	| 		
+	| 		if tcmcs035.sern = 1 then
+	| 			rep.samt = v.vamt
+	| 		else if tcmcs035.sern = 2 then
+	| 			rep.edu.cess = v.vamt
+	| 		else if tcmcs035.sern = 3 then
+	| 			rep.hedu.cess = v.vamt
+	| 		endif
+	| 		endif
+	| 		endif
+	| 	endselect
+	| }
+
+		| 	function get.gr.details()								|#ISGEC01113.o
+	| function get.gr.details(domain tfgld.docn	i.irno)					|#ISGEC01113.n
+	| {
+	| 	select	tfisg002.grno,tfisg002.grbp,tfisg002.grdt,
+	| 		tfisg003.plcf,tfisg003.plct,tfisg003.cctf,tfisg003.citf,tfisg003.cctt,tfisg003.citt,tfisg003.chal,tfisg003.chdt,tfisg003.otbp,
+	| 		tfisg003.bpnm, 
+	| 		tfisg001.bpid
+	| 	from	tfisg002,tfisg003,tfisg001
+	| 	| 	where	tfisg001._index1 = {:tfacp100.ninv}
+	| 	where	tfisg001._index1 = {:i.irno}
+	| 	and     tfisg001.irno refers to tfisg002 Unref Clear
+	| 	and	tfisg002.cmbb refers to tfisg003 Unref Clear
+	| 	selectdo
+	| 		iciisg2400.get.city.name(i.ncmp,tfisg003.cctf,tfisg003.plcf,tfisg003.citf,o.city.dsca)
+	| 		rep.fplc = strip$(o.city.dsca) & " " & strip$(tfisg003.plcf)
+	| 		iciisg2400.get.city.name(i.ncmp,tfisg003.cctt,tfisg003.plct,tfisg003.citt,o.city.dsca)
+	| 		rep.tplc = strip$(o.city.dsca) & " " & strip$(tfisg003.plct) 
+	| 		
+	| 		rep.grno = strip$(shiftl$(tfisg002.grno)) |& tfisg002.grbp & sprintf$("%D(%02d%02m%04Y)",tfisg002.grdt)
+	| 		rep.gr.date = tfisg002.grdt
+	| 		
+	| 	endselect
+	| }
+
+	| function iciisg2400.get.city.name
+	| 				(
+	| 					domain	tcncmp		i.ncmp,		|Company
+	| 					domain	tcccty		i.ccty,		|Country
+	| 					domain	tcmcs.cste	i.cste,		|State
+	| 					domain	tccity		i.city,		|City
+	| 				ref 	domain	tcdsca		o.dsca		|Description
+	| 				)
+	| {
+	| 	select 	tccom139.dsca:o.dsca
+	| 	from	tccom139
+	| 	where	tccom139._index1 = {:i.ccty,:i.cste,:i.city}
+	| 	and	tccom139._compnr = :i.ncmp
+	| 	as set with 1 rows
+	| 	selectdo
+	| 	selectempty
+	| 		o.dsca = ""
+	| 	endselect
+	| 	
+	| }	
+
+	| function domain tdisg.type determine.project.type
+	| 			(
+	| 				domain	tccprj		i.cprj
+	| 			)
+	| {
+	| 	select 	tppdm740.ofbp,
+	| 		tppdm740.ccur,
+	| 		tccom130.ccty,
+	| 		tppdm600.ncmp	
+	| 	from	tppdm740,tccom100,tppdm600,tccom130
+	| 	where	tppdm740._index1 = {:i.cprj}
+	| 	and	tppdm740.ofbp refers to tccom100
+	| 	and	tppdm740.cprj refers to tppdm600
+	| 	and	tccom100.cadr refers to tccom130
+	| 	as set with 1 rows
+	| 	selectdo
+	| 	endselect
+	| 	
+	| 	select	tcemm170.lcur
+	| 	from	tcemm170
+	| 	where	tcemm170._index1 = {:tppdm600.ncmp}
+	| 	and	tcemm170.lcur = :tppdm740.ccur
+	| 	as set with 1 rows
+	| 	selectdo
+	| 		select	tccom000.ccty
+	| 		from	tccom000
+	| 		where	tccom000._index1 = {0,:tppdm600.ncmp}
+	| 		selectdo
+	| 			if tccom000.ccty <> tccom130.ccty then
+	| 				return(tdisg.type.export)
+	| 			else	
+	| 				return(tdisg.type.domestic)
+	| 			endif	
+	| 		endselect
+	| 	selectempty
+	| 		return(tdisg.type.export)
+	| 	endselect
+	| 	
+	| 	return(tdisg.type.domestic)
+	| }
+
+	| function get.pgn.ptr.records(domain tcccty	   i.ccty,
+	| 			      domain tccvat 	   i.cvat,
+	| 			      domain tcsern	   i.sern,
+	| 			      domain tfgld.amnt	   i.vamt,
+	| 			      domain tfgld.ttyp   i.ttyp,
+	| 			      domain tfgld.docn   i.docn)
+	| {
+	| 	select tcmcs036.*
+	| 	from   tcmcs036
+	| 	where  tcmcs036._index1 = {:i.ccty,:i.cvat}
+	| 	selectdo
+	| 		if tcmcs036.smpl = tcyesno.no then
+	| 			get.tax.data(tccom130.ccty,i.cvat,i.sern,i.vamt,i.ttyp,i.docn)
+	| 		else
+	| 			if tcmcs036.gtax = tcyesno.yes then
+	| 				select tctax039.*
+	| 				from   tctax039
+	| 				where  tctax039._index1 = {:tccom130.ccty,:tcmcs036.cvat}
+	| 				selectdo
+	| 					get.tax.data(tccom130.ccty,tctax039.cvat,i.sern,i.vamt,i.ttyp,i.docn)
+	| 				endselect
+	| 			endif
+	| 		endif
+	| 	endselect
+
+	| 	rep.tot.amnt = rep.samt + rep.edu.cess + rep.hedu.cess
+	| 	
+	| }
+
+	| function get.payment.doc(domain tfgld.ttyp	i.ttyp,
+	| 			  domain tfgld.docn	i.docn)
+	| {
+	| 	select tfgld102.ctyp, tfgld102.cdoc
+	| 	from   tfgld102
+	| 	where  tfgld102.ttyp = :i.ttyp
+	| 	and    tfgld102.docn = :i.docn
+	| 	and    tfgld102.tcsh = tfcmg.tcsh.ssgn
+	| 	selectdo
+	| 		rep.pdoc = tfgld102.ctyp & "/" & str$(tfgld102.cdoc)
+	| 		get.payment.date(tfgld102.ctyp,tfgld102.cdoc)
+	| 	endselect
+	| 	
+	| 	select tfgld106.ctyp, tfgld106.cinv
+	| 	from   tfgld106
+	| 	where  tfgld106._index1 = {:i.ttyp,:i.docn}
+	| 	selectdo
+	| 		rep.pdoc = tfgld106.ctyp & "/" & str$(tfgld106.cinv)
+	| 		get.payment.date(tfgld106.ctyp,tfgld106.cinv)
+	| 	endselect
+	| }
+
+	| function get.payment.date(domain tfgld.ttyp 	i.ctyp,
+	| 			   domain tfgld.docn 	i.cdoc)
+	| {
+	| 	select	tfgld018.dcdt
+	| 	from    tfgld018
+	| 	where   tfgld018._index1 = {:i.ctyp,:i.cdoc}
+	| 	selectdo
+	| 		rep.docd = tfgld018.dcdt
+	| 	endselect
+	| }
+
+
+
+
+| 	function write.data()
+| 	{
+| 		
+| 		line2 =	concat$("	",
+| 			sprintf$("%s",rep.bpid),				|1
+| 			sprintf$("%s",rep.nama),				|2
+| 			sprintf$("%s",rep.addr),				|3
+| 			sprintf$("%s",rep.cprj),				|4
+| 			sprintf$("%s",rep.cprj.type),				|5
+| 			sprintf$("%s",rep.cprj.name),				|6
+| 			sprintf$("%s",rep.pgn),				|7
+| 			sprintf$("%2D(%02d-%02m-%04Y)",rep.pgn.date),		|8
+| 			sprintf$("%s",rep.bill),				|9
+| 			sprintf$("%2D(%02d-%02m-%04Y)",rep.bill.date),		|10
+| 			sprintf$("%f",rep.bill.amnt),				|11
+| 			sprintf$("%s",rep.grno),				|12
+| 			sprintf$("%2D(%02d-%02m-%04Y)",rep.gr.date),		|13
+| 			sprintf$("%2D(%02d-%02m-%04Y)",rep.delv.date),		|14
+| 			sprintf$("%s",rep.fplc),				|15
+| 			sprintf$("%s",rep.tplc),				|16
+| 			sprintf$("%s",rep.pdoc),				|17
+| 			sprintf$("%2D(%02d-%02m-%04Y)",rep.docd),		|18
+| 													|#ISGEC01113.sn
+| 			sprintf$("%s",rep.cinv),
+| 			sprintf$("%2D(%02d-%02m-%04Y)",rep.cind),
+| 			sprintf$("%s",rep.sbno),
+| 			sprintf$("%2D(%02d-%02m-%04Y)",rep.shdt),
+| 			sprintf$("%2D(%02d-%02m-%04Y)",rep.exdt),
+| 													|#ISGEC01113.en
+| 			sprintf$("%f",rep.samt),				|19
+| 			sprintf$("%f",rep.edu.cess),				|20
+| 			sprintf$("%f",rep.hedu.cess),				|21
+| 			sprintf$("%f",rep.tot.amnt))				|22
+| 				
+| 		line2 = strip$(shiftl$(line2))
+| 			seq.puts(line2, stat.fp)
+| 	}
+
+	| function initialize.variables()
+	| {
+	| 	rep.bpid = ""
+	| 	rep.nama = ""
+	| 	rep.addr = ""
+	| 	rep.cprj = ""
+	| 	rep.cprj.type = ""
+	| 	rep.cprj.name = ""
+	| 	rep.pgn = ""
+	| 	rep.pgn.date = 0
+	| 	rep.bill = ""
+	| 	rep.bill.date = 0
+	| 	rep.bill.amnt = 0
+	| 	rep.grno = ""
+	| 	rep.gr.date = 0
+	| 	rep.delv.date = 0
+	| 	rep.fplc = ""
+	| 	rep.tplc = ""
+	| 	rep.pdoc = ""
+	| 	rep.docd = 0
+	| 	rep.samt = 0
+	| 	rep.edu.cess = 0
+	| 	rep.hedu.cess = 0
+	| 	rep.tot.amnt = 0
+	| 										|#ISGEC01113.sn
+	| 	rep.cinv = ""
+	| 	rep.cind = 0
+	| 	rep.sbno = ""
+	| 	rep.shdt = 0
+	| 	rep.exdt = 0
+	| 										|#ISGEC01113.en
+	| }
+
+	| 										|#ISGEC01113.sn
+	| function get.commercial.details()
+	| {
+	| 	select tfacp251.rcno, tfacp251.rseq
+	| 	from   tfacp251
+	| 	where  tfacp251.ityp = :tfacp200.ttyp
+	| 	and    tfacp251.idoc = :tfacp200.ninv
+	| 	selectdo
+	| 		select tdisg832.edrn,
+	| 			tdisg831.cinv, tdisg831.cind, tdisg831.sbno, tdisg831.shdt
+	| 		from   tdisg832,tdisg831
+	| 		where  tdisg832._index4 = {:tfacp251.rcno,:tfacp251.rseq}
+	| 		and    tdisg832.edrn refers to tdisg831
+	| 		selectdo
+	| 			rep.cinv = tdisg831.cinv 
+	| 			rep.cind = tdisg831.cind
+	| 			rep.sbno = tdisg831.sbno
+	| 			rep.shdt = tdisg831.shdt
+	| 			
+	| 			select tdisg842.ledt
+	| 			from 	tdisg842
+	| 			where	tdisg842._index1 = {:tdisg831.sbno}
+	| 			selectdo
+	| 				rep.exdt = tdisg842.ledt
+	| 			selectempty
+	| 				rep.exdt = 0
+	| 			endselect
+	| 		selectempty
+	| 			rep.cinv = "" 
+	| 			rep.cind = 0
+	| 			rep.sbno = ""
+	| 			rep.shdt = 0
+	| 			rep.exdt = 0
+	| 		endselect
+	| 	selectempty
+	| 		rep.cinv = "" 
+	| 		rep.cind = 0
+	| 		rep.sbno = ""
+	| 		rep.shdt = 0
+	| 		rep.exdt = 0
+	| 	endselect
+	| }
+	| 										|#ISGEC01113.en
+
+

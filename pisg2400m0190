@@ -1,0 +1,205 @@
+|******************************************************************************
+|* tfisg2400m019  0  VRC B61U a7 live
+|* Print Customer Balances(Customized)
+|* Installation user             
+|* 2014-10-28
+|******************************************************************************
+|* Main table tfacp200 Open Items (Purchase Invoices &amp; Payments), Form Type 4
+|******************************************************************************
+|* ID ESSP Incident : 5430,	Sujeet Kumar,		2014-12-20
+|* ID PATCH001004,	Incident : 154,		2015-03-11
+|* A New Report will be generated based on ledger wise.
+|*
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttfacp200 | Open Items (Purchase Invoices &amp; Payments)
+  table   ttfgld005
+  table   ttfgld106
+  table   ttfgld223
+  table   ttfacr005
+  table   ttfacr015
+  table   ttccom112
+  table   ttccom100
+
+   extern  domain  tfacp.fisu       cfsg.f
+   extern  domain  tfacp.fisu	     cfsg.t
+   extern  domain  tccom.bpid	     bpid.f
+   extern  domain  tccom.bpid	     bpid.t
+   extern  domain  tfacp.base	     based.on
+   extern  domain  tfgld.year	     year.f
+   extern  domain  tfgld.prod       fprd
+   extern  domain  tfgld.date       docd
+   extern  domain  tfgld.amnt	     balamt
+   domain  tfgld.amnt	    opbalamt
+   domain  tfgld.amnt	currbalamt
+   
+   extern domain	tcyesno		chek		|#5430.n
+   
+   extern	domain	tfgld.leac	i.leac	fixed
+   
+   long brp_id1,brp_id2					|#PATCH001004.n
+   
+#define LEDGER "2510311"   
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+				|#PATCH001004.so
+| choice.cont.process:
+| on.choice:
+|    execute(print.data)
+
+| choice.print.data:
+| on.choice:
+|    if rprt_open() then
+|        read.main.table()
+|        rprt_close()
+|    else
+|        choice.again()
+|    endif
+
+				|#PATCH001004.eo
+				|#PATCH001004.sn
+choice.cont.print:
+on.choice:
+	brp_id1 = brp.open("rtfisg240001019",spool.device,1)
+	brp_id2 = brp.open("rtfisg240019001",spool.device,0)
+	read.main.table()
+	brp.close(brp_id1)
+	brp.close(brp_id2)
+				|#PATCH001004.en
+|****************************** field section *********************************
+
+field.cfsg.f:
+when.field.changes:
+   cfsg.t = cfsg.f
+
+field.bpid.f:
+when.field.changes:
+   bpid.t = bpid.f
+before.zoom:
+	if not isspace(cfsg.f) then
+		query.extend.where.in.zoom("tccom112.cfcg = " & quoted.string(cfsg.f))
+	endif
+	
+
+field.bpid.t:
+when.field.changes:
+	if not isspace(cfsg.t) then
+		query.extend.where.in.zoom("tccom112.cfcg = " & quoted.string(cfsg.f))
+	endif
+	
+field.fprd:
+before.zoom:
+	tfgld005.year = year.f
+|****************************** function section ******************************
+
+functions:
+
+function read.main.table()
+{
+
+	long found 
+	domain	tcamnt		dr.amnt,cr.amnt
+	
+	domain tfgld.amnt	dbtot.m
+	domain tfgld.amnt	crtot.m
+	domain tcmcs.str215 	ledgerstr.m
+	domain tcmcs.int	cnt.f
+
+	
+	select tccom112.itbp, tccom112.cfcg
+	from   tccom112
+	where  tccom112._index1 inrange {:bpid.f} and {:bpid.t}
+	and    tccom112.cfcg inrange {:cfsg.f} and {:cfsg.t}
+	order by tccom112.itbp
+	selectdo
+		balamt = 0
+		opbalamt = 0
+		currbalamt = 0
+		opbalamt = 0.00
+		dbtot.m = 0.00
+		crtot.m = 0.00
+		
+		select tccom100.bpid, tccom100.nama
+		from   tccom100
+		where  tccom100._index1 = {:tccom112.itbp}
+		selectdo
+		endselect
+		
+		dr.amnt = 0
+		cr.amnt = 0
+		balamt = 0
+		select 	tfgld106.*,
+			tfgld106.otyp,
+			tfgld106.odoc,
+			tfgld106.olin,
+			tfgld106.leac,
+			tfgld106.dbcr,
+			tfgld106.amth,
+			tfgld008.desc
+		from	tfgld106,tfgld008
+		where	tfgld106._index6 = {:tccom112.itbp}
+		and	tfgld106.fyer <= :year.f
+		and	tfgld106.leac refers to tfgld008
+		selectdo
+			
+			
+			if strip$(tfgld106.leac) = LEDGER and chek = tcyesno.no then
+				continue
+			endif
+			
+			if tfgld106.fyer = year.f and tfgld106.fprd > fprd then
+				continue
+			endif
+			
+			
+			found = false
+			
+			select tfacr015.leac
+			from   tfacr015
+			where  tfacr015._index1 = {:tccom112.cfcg}
+			and	tfacr015.leac = :tfgld106.leac
+			as set with 1 rows
+			selectdo
+				found = true
+			endselect
+			
+			if not found then
+				select 	tfacr005.leac
+				from	tfacr005
+				where	tfacr005._index1 = {:tccom112.cfcg}
+				and	tfacr005.tran in (tfacr.tran.anticipated,tfacr.tran.unall.receipt,tfacr.tran.advance)
+				and	tfacr005.leac =:tfgld106.leac
+				as set with 1 rows
+				selectdo
+					found = true
+				endselect
+			endif
+			
+			
+			
+			if not found then
+				continue
+			endif
+			if tfgld106.dbcr = tfgld.dbcr.debit then
+				dr.amnt = dr.amnt + tfgld106.amth(1)
+			else
+				cr.amnt = cr.amnt + tfgld106.amth(1)
+			endif
+			
+			brp.ready(brp_id2)			|#PATCH001004.n
+			
+		endselect
+		balamt = (dr.amnt - cr.amnt)
+		brp.ready(brp_id1)				|#PATCH001004.n
+		
+	endselect
+}

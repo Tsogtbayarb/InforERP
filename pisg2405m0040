@@ -1,0 +1,507 @@
+|******************************************************************************
+|* ciisg2405m000  0  VRC B61U a7 live
+|* Reprint Invoice
+|* Installation user             
+|* 2014-07-23
+|******************************************************************************
+|* Main table cisli205 Invoice-Source Relations, Form Type 1
+|******************************************************************************
+|* IDENT ISG001033	Somak Mondal	19-07-2014	VRC B61U a7	live
+|* New Development
+|****************************** declaration section ***************************
+declaration:
+  
+  table   tcisli205 | Invoice-Source Relations
+  table   tcisli206 | Invoice Tax Amounts by Tax Code 
+  table   tcisli235 | Project Sales Invoice Details
+  table   ttcmcs052 | Projects
+  table   ttfgld018 | Documents
+  table   ttccom130 | Addresses
+  table   ttccom100 | Business Partners
+  table   ttpisg039 | Installment Wise Receipt
+  table   ttdisg832 | Billing Advice Lines
+  table   ttpisg030 | Reimbursement
+  table   ttcibd001 | Items - General
+  table   ttpptc100 | Elements
+  table   ttcmcs036 | Tax Codes by Country
+  table   ttppin020 | Installments
+  table   ttctax400 | Registration Numbers by Business Partners
+  table   ttttxt010 | Texts
+  table   ttppdm740 | Project Business Partners
+  table   ttfisg001 | IR Details
+  table   ttfisg002 | Maintain IR Wise	GR Details
+  table   ttfisg003 | GR Details
+  table   ttcmcs143 | State/Provinces
+  table   twhinh310 | Maintain Receipt Headers
+  table   tciisg000 | Imbursment Parameter
+  table   ttfacr200 | Open Items (Sales Invoices & Receipts)
+
+extern	domain	tctran		tran.f,i.ityp
+extern	domain	tfgld.docn	docn.f,i.idoc
+
+extern	domain	tcncmp		v.sfcp,curr.comp
+extern	domain	tcmcs.str12	v.invn
+extern	domain	tcmcs.str40	item.desc,v.ln01,v.ln02,v.ln03,v.ln04,v.ln05,v.rtyp,v.rtyp1
+extern	domain	tcdsca		v.txid.desc1,v.txid.desc2,v.txid.desc3,v.txid.desc4
+extern	domain	tcnama		v.itbp
+extern	domain	tcamnt		v.txah1,v.txah2,v.txah3,v.txah4,total,gross.invoice,hold.rval,v.rval
+		long		i,flag,rpt.no,rpt.no1,j,k,rpt.no2,flag1
+extern	domain	tcoqan		v.nins,p,v.nins1	
+extern	domain	tcyesno		v.remb,v.remb1
+extern	domain	tctax.txnb	var.cst,var.lst
+extern	domain	tcmcs.str215	var.text,var.text1
+extern	domain	tcorno		v.rcno,v.rcno1
+extern	domain	tcpono		v.rcln,v.rcln1		
+extern	domain	tcdsca		v.plcf,v.plct
+extern	domain	tcmcs.str30	hold.rtyp(10)		
+extern	domain	tcamnt		hold.rval1(10)	
+extern	domain	tfgld.amnt	var.advn,var.retn	
+extern	domain	tppdm.aalc	var.ed.tax,var.cst.tax,a,ed.tax,edu.cess,she.cess	
+extern	domain	tcmcs.str30	new.einv.l,old.einv.l	
+extern	domain	tfacp.isup	new.grno,old.grno
+extern	domain	tcmcs.str16	progname
+
+|****************************** program section ********************************
+before.program:
+	v.sfcp = get.compnr()
+	switch.to.company(601)
+	tcmcs.dll0095.read.parm("ciisg000")
+	switch.to.company(v.sfcp)
+|****************************** field section *********************************
+field.docn.f:
+before.zoom:	
+	query.extend.where.in.zoom("cisli205.ityp = "&quoted.string(tran.f))
+
+|****************************** group section **********************************
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+choice.cont.process:
+on.choice:
+   execute(print.data)
+
+choice.print.data:
+on.choice:
+   if rprt_open() then
+	read.main.table()
+       rprt_close()
+   else
+       choice.again()
+   endif
+	
+|****************************** function section ******************************
+functions:
+function read.main.table()								|Sale Invoice 
+{
+	curr.comp = get.compnr()
+	select	cisli205.*
+	from	cisli205
+	where	cisli205._index1 = {:v.sfcp,:tran.f,:docn.f} 
+	and	cisli205._compnr = :1
+	wherebind(1, get.compnr())
+	selectdo
+		init.variables()
+		v.invn = cisli205.ityp&" "&str$(cisli205.idoc)
+		for k = 1 to 10 
+			hold.rval1(k) = 0.0
+			hold.rtyp(1,k)= ""
+		endfor	
+		get.bp.name.desc(cisli205.ofbp)
+		get.invoice.to.bp.desc(cisli205.itbp)
+		get.invoice.to.address(cisli205.itoa)
+		get.fiscal.tax.year()
+		get.bp.address(cisli205.ofad)
+		get.LST.CST.details()
+		get.tax()
+		
+		get.advance(cisli205.ityp,cisli205.idoc)
+		get.retention(cisli205.ityp,cisli205.idoc)
+	
+		select	cisli235.*
+		from	cisli235
+		where	cisli235._index2 = {:cisli205.sfcp,:cisli205.ityp,:cisli205.idoc}
+		and	cisli235.invt = tcinvt.installment
+		selectdo			
+			get.lines()
+		endselect
+	endselect	
+}
+function get.project.desc(domain  tccprj	i.cprj)					|Project Description
+{
+	select	tcmcs052.dsca
+	from	tcmcs052
+	where	tcmcs052._index1 = {:i.cprj}
+	selectdo	
+	selectempty
+		tcmcs052.dsca = ""
+	endselect	
+}
+function get.fiscal.tax.year()								|Fiscal Year, Tax Year
+{
+	select	tfgld018.year,tfgld018.vyer
+	from	tfgld018
+	where	tfgld018._index1 = {:cisli205.ityp,:cisli205.idoc}
+	selectdo
+	endselect	
+}
+function get.bp.address(domain  tccom.cadr	i.ofad)					|BP Addresses
+{
+	select	tccom130.ln01,tccom130.ln02,tccom130.ln03,tccom130.ln04,tccom130.ln05
+	from	tccom130
+	where	tccom130._index1 = {:i.ofad}
+	selectdo
+	selectempty
+		tccom130.ln01 = ""
+		tccom130.ln02 = ""
+		tccom130.ln03 = ""
+		tccom130.ln04 = ""
+		tccom130.ln05 = ""
+	endselect
+}
+function get.invoice.to.address(domain tccom.cadr	i.itoa)				|Consignee Address
+{
+	select	tccom130.ln01:v.ln01,tccom130.ln02:v.ln02,tccom130.ln03:v.ln03,
+		tccom130.ln04:v.ln04,tccom130.ln05:v.ln05
+	from	tccom130
+	where	tccom130._index1 = {:i.itoa}
+	selectdo
+	selectempty
+		v.ln01 = ""
+		v.ln02 = ""
+		v.ln03 = ""
+		v.ln04 = ""
+		v.ln05 = ""
+	endselect
+}
+function get.bp.name.desc(domain tccom.bpid	i.ofbp)					|Business Partner Name
+{
+	select	tccom100.nama
+	from	tccom100
+	where	tccom100._index1 = {:i.ofbp}
+	selectdo
+	selectempty
+		tccom100.nama = ""
+	endselect	
+}
+function get.invoice.to.bp.desc(domain tccom.bpid	i.itbp)				|Consignee BP
+{
+	select	tccom100.nama:v.itbp
+	from	tccom100
+	where	tccom100._index1 = {:i.itbp}
+	selectdo
+	selectempty
+		v.itbp = ""
+	endselect
+}
+function get.lines()
+{
+	switch.to.company(cisli235.slcp)  
+	long ret
+	select	tpptc100.desc						
+	from	tpptc100
+	where	tpptc100._index1 = {:cisli235.cprj,:cisli235.cspa}
+	selectdo
+	selectempty
+		tpptc100.desc = ""	
+	endselect
+	
+	select	tcmcs052.*
+	from	tcmcs052
+	where	tcmcs052._index1 = {:cisli235.cprj}
+	selectdo
+	endselect
+
+	select	tpisg039.edrn,tpisg039.rcno,tpisg039.rcln,tpisg039.rval,tpisg039.nins
+	from	tpisg039
+	where	tpisg039._index1 = {:cisli235.cprj,:cisli235.ofbp,:cisli235.nins}
+	and	tpisg039.ityp = :cisli235.ityp
+	and	tpisg039.idoc = :cisli235.idoc
+	and	tpisg039.remb = tcyesno.no
+	selectdo	
+		select	tdisg832.item
+		from 	tdisg832
+		where	tdisg832._index2 = {:tpisg039.edrn,:tpisg039.rcno,:tpisg039.rcln}
+		selectdo
+			select tcibd001.dsca:item.desc
+			from	tcibd001
+			where	tcibd001._index1 = {:tdisg832.item}
+			selectdo
+			selectempty
+				item.desc = ""
+			endselect
+		selectempty
+			tdisg832.item = ""
+			item.desc = ""
+		endselect
+		total = total + tpisg039.rval
+| 		gross.invoice = total + v.txah1 + v.txah2 + v.txah3 + v.txah4			|Moved to Report Script
+		p = 0
+		rprt_send()
+| 	selectempty
+| 		check.reimbursement.status.for.tax(cisli235.cprj,cisli235.ofbp,cisli235.nins)
+	selecteos
+		print.reimbursement.line()
+		p = 1
+		rprt_send()
+	endselect
+	switch.to.company(curr.comp)
+}
+function get.tax()
+{	
+	i = 0
+	select	cisli206.txid,cisli206.txah,cisli206.txct
+	from	cisli206
+	where	cisli206._index1 = {:cisli205.sfcp,:cisli205.ityp,:cisli205.idoc,:cisli205.txct}
+	selectdo
+		i = i + 1
+		on case i
+			case 1:
+				v.txah1 = cisli206.txah(1) 
+				v.txid.desc1 = get.tax.desc(cisli206.txid,cisli206.txct)
+				break
+			case 2:
+				v.txah2 = cisli206.txah(1)
+				v.txid.desc2 = get.tax.desc(cisli206.txid,cisli206.txct)
+				break
+			case 3:
+				v.txah3 = cisli206.txah(1)
+				v.txid.desc3 = get.tax.desc(cisli206.txid,cisli206.txct)
+				break
+			case 4:
+				v.txah4 = cisli206.txah(1)
+				v.txid.desc4 = get.tax.desc(cisli206.txid,cisli206.txct)		
+				break
+		endcase		
+	endselect	
+}
+function string get.tax.desc( domain tccvat	i.cvat,						|Tax Description
+			        domain tcccty	i.txct)
+{
+	select	tcmcs036.dsca
+	from	tcmcs036
+	where	tcmcs036._index1 = {:i.txct,:i.cvat}
+	selectdo
+	selectempty
+		tcmcs036.dsca = ""
+	endselect	
+	return(tcmcs036.dsca)	
+}
+function check.reimbursement.status.for.tax(	domain tccprj		i.cprj,			|Reimbursement value
+						domain tccom.bpid	i.ofbp,
+						domain tppdm.nins	i.nins	)
+{
+	select	tppin020.cdf_remb:v.remb1,tppin020.cdf_rtyp:v.rtyp1,
+		tppin020.cdf_nins:v.nins1,tppin020.insa
+	from	tppin020
+	where	tppin020._index1 = {:i.cprj,:i.ofbp,:i.nins}
+	and	tppin020.cdf_remb = tcyesno.yes
+| 	and	tppin020._compnr = :1
+| 	wherebind(1, get.compnr())
+	selectdo
+		|----------------- CST VAT EXCISE EDU_CESS Calculation ----------------------
+		v.rtyp1 = trim$(v.rtyp1)
+	| 	if v.rtyp1 = ciisg000.exii or v.rtyp1 = ciisg000.srvi then	|EXCISE + SERVICE
+		if v.rtyp1 = ciisg000.exii then				|only EXCISE 
+			var.ed.tax = var.ed.tax + tppin020.insa
+		endif
+		
+		if v.rtyp1 = ciisg000.csti or v.rtyp1 = ciisg000.vati then
+			var.cst.tax = var.cst.tax + tppin020.insa
+		endif	
+		|--------------------Reimbursement Calculation-------------------------------
+| 		hold.rval1(j) = tppin020.insa
+| 		get.reimbursement.reason(v.rtyp1)
+| 		hold.rtyp(1,j) = tpisg030.dsca
+| 		j = j + 1
+		
+	selectempty	
+		v.rtyp = ""
+	endselect
+}
+function get.reimbursement.reason(domain	tcmcs.str5 	i.rtyp)			|Reimbursement Reason
+{
+	select	tpisg030.dsca
+	from	tpisg030
+	where	tpisg030._index1 = {:i.rtyp}
+	selectdo
+	selectempty
+		tpisg030.dsca = ""
+	endselect	
+}
+function get.advance(domain	tfgld.ttyp	i.ttyp,					|Advance Value
+		      domain	tfgld.docn	i.docn)
+{
+	select	tfacr200.trec,tfacr200.amth,tfacr200.docn
+	from	tfacr200
+	where	tfacr200._index1 = {:i.ttyp,:i.docn}
+	and	tfacr200.trec = tfacr.trec.assignment
+	and	tfacr200.docn <> 0
+	selectdo
+		var.advn = var.advn + abs(tfacr200.amth(1))
+	endselect	
+}
+function get.retention(domain	tfgld.ttyp	i.ttyp,					|Retention Value
+		        domain	tfgld.docn	i.docn)
+{
+	select	tfacr200.trec,tfacr200.amth,tfacr200.docn
+	from	tfacr200
+	where	tfacr200._index1 = {:i.ttyp,:i.docn}
+	and	tfacr200.trec = tfacr.trec.credit
+	and	tfacr200.docn <> 0
+	selectdo
+		var.retn = var.retn + abs(tfacr200.amth(1))
+	endselect	
+}
+function get.LST.CST.details()								|LST - CST Details
+{
+	select	tctax400.fovn,tctax400.catg.l
+	from	tctax400
+	where	tctax400._index1 = {:cisli205.ofbp,:cisli205.txct}
+	selectdo
+		on case tctax400.catg.l
+			case tctax.catg.l.vat:
+			case tctax.catg.l.lst:
+				var.lst = tctax400.fovn
+				break
+			case tctax.catg.l.cst:
+				var.cst = tctax400.fovn
+				break
+		endcase		
+	endselect	
+}
+function get.project.text()
+{
+	select	tcmcs052.txta
+	from	tcmcs052
+	where	tcmcs052._index1 = {:cisli235.cprj}
+	selectdo
+		select	tttxt010.text
+		from	tttxt010
+		where	tttxt010._index1 = {:tcmcs052.txta,"2"}
+		selectdo
+			var.text1 = strip$(var.text1)&" "&tttxt010.text
+		selectempty
+			var.text1 = ""
+		endselect
+	selectempty
+		var.text1 = ""
+	endselect	
+}
+function get.project.bp.text()
+{
+	select	tppdm740.txta
+	from	tppdm740
+	where	tppdm740._index1 = {:cisli235.cprj,:cisli235.ofbp}
+	and	tppdm740.txta <> 0
+	selectdo
+		select	tttxt010.text
+		from	tttxt010
+		where	tttxt010._index1 = {:tppdm740.txta,"2"}
+		selectdo
+			var.text = strip$(var.text)&" "&tttxt010.text
+		selectempty
+			var.text = ""
+		endselect
+	selectempty
+		var.text = ""
+	endselect	
+}
+function get.receipt.no(domain tccprj		i.cprj,					|Receipt No, Line, Reimbursement Data
+			 domain tccom.bpid	i.ofbp,
+			 domain tppdm.nins	i.nins)
+{
+	select	tpisg039.rcno:v.rcno,tpisg039.rcln:v.rcln,tpisg039.remb:v.remb,tpisg039.remb:v.nins
+	from	tpisg039
+	where	tpisg039._index1 = {:cisli235.cprj,:cisli235.ofbp,:cisli235.nins}
+	selectdo
+	selectempty
+	endselect	
+}
+function print.reimbursement.line()
+{
+	select	sum(tpisg039.rval):v.rval,tpisg039.rtyp,tpisg039.ityp,tpisg039.idoc
+	from	tpisg039
+	where	tpisg039._index1 = {:cisli235.cprj,:cisli235.ofbp}
+	and	tpisg039.ityp = :cisli235.ityp
+	and	tpisg039.idoc = :cisli235.idoc
+	and	tpisg039.remb = tcyesno.yes
+	group	by tpisg039.rtyp,tpisg039.ityp,tpisg039.idoc
+	selectdo
+		v.rtyp1 = trim$(tpisg039.rtyp)
+		on case v.rtyp1
+			case	ciisg000.exii:
+			case	ciisg000.hcex:
+			case	ciisg000.scex:
+				hold.rval1(1) = hold.rval1(1) + v.rval	
+				get.reimbursement.reason(v.rtyp1)
+				hold.rtyp(1,1) = "Excise Reimbursement"
+				break
+			case	ciisg000.srvi:	
+			case	ciisg000.hcsv:	
+			case	ciisg000.scsv:
+				hold.rval1(2) = hold.rval1(2) + v.rval	
+				get.reimbursement.reason(v.rtyp1)
+				hold.rtyp(1,2) = "Service Reimbursement"
+				break
+			case	ciisg000.csti:
+				hold.rval1(3) = hold.rval1(3) + v.rval	
+				get.reimbursement.reason(v.rtyp1)
+				hold.rtyp(1,3) = "CST Reimbursement"
+				break
+			case	ciisg000.vati:
+				hold.rval1(4) = hold.rval1(4) + v.rval	
+				get.reimbursement.reason(v.rtyp1)
+				hold.rtyp(1,4) = "VAT Reimbursement"
+				break
+			case	ciisg000.frgt:
+				hold.rval1(5) = hold.rval1(5) + v.rval	
+				get.reimbursement.reason(v.rtyp1)
+				hold.rtyp(1,5) = "Freight"
+				break	
+		endcase
+			var.cst.tax = hold.rval1(3)	
+		on case v.rtyp1
+			case	ciisg000.exii:
+			case	ciisg000.srvi:
+				ed.tax = ed.tax + v.rval
+				break
+			case 	ciisg000.hcex:
+			case 	ciisg000.hcsv:
+				edu.cess = edu.cess + v.rval
+				break
+			case 	ciisg000.scex:
+			case 	ciisg000.scsv:
+				she.cess = she.cess + v.rval
+				break
+			endcase
+		var.ed.tax = ed.tax + edu.cess + she.cess		
+	endselect			
+}
+|-------------------  Initialization ------------------------|
+function init.variables()										|Initialization 
+{
+	v.txid.desc1 = ""
+	v.txid.desc2 = ""
+	v.txid.desc3 = ""
+	v.txid.desc4 = ""
+	v.txah1 = 0.0
+	v.txah2 = 0.0
+	v.txah3 = 0.0
+	v.txah4 = 0.0
+	total = 0.0
+	gross.invoice = 0.0
+	j = 1
+	var.ed.tax = 0.0
+	var.cst.tax= 0.0
+	var.advn = 0.0
+	var.retn = 0.0
+	old.einv.l = ""
+	new.einv.l = ""
+	new.grno = ""
+	old.grno = ""
+	ed.tax = 0.0
+	edu.cess = 0.0
+	she.cess = 0.0
+}

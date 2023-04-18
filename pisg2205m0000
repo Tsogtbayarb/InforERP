@@ -1,0 +1,108 @@
+|******************************************************************************
+|* tdisg2205m000  0  VRC B61U a7 live
+|* Update Business Partner wise Rating
+|* Installation user             
+|* 2014-08-20
+|******************************************************************************
+|* Main table tdisg205 Rating Against Purchase Order, Form Type 4
+|******************************************************************************
+|* ISGEC001132, IT0205, Arjit Gupta, VRC B61U a7 isg, Dt. 25-11-2014
+|* Modify Script
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttdisg205 | Rating Against Purchase Order
+	table	ttdisg206 | Business Partner wise Rating	
+
+	extern	domain	tccom.bpid	bpid.f    fixed
+	extern	domain	tccom.bpid	bpid.t    fixed
+	
+	extern	domain	tcmcs.str16	progname
+	extern	domain	tccom.bpid	im.bpid
+
+#include <bic_dam>
+|****************************** program section ********************************
+before.program:
+	import("prog.name$", progname)
+	on case trim$(progname)
+		case "tdisg2505m000":
+		case "tdisg2506m000":				|#ISGEC001132.n
+			import("tdisg205.bpid", im.bpid)
+| 			bpid.f = im.bpid		|#ISGEC001132.o
+| 			bpid.t = im.bpid		|#ISGEC001132.o
+								|#ISGEC001132.sn
+			set.fmin(bpid.f)
+			set.fmax(bpid.t)
+			read.main.table()
+			message("Updated...!!!")
+			execute(end.program)
+								|#ISGEC001132.en
+			break
+	ENDCASE
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|***************************** Choice Section ************************************
+choice.update:
+on.choice:
+	read.main.table()
+	message("Updated...!!!")
+|***************************** Field Section ************************************
+field.bpid.f:
+when.field.changes:
+	bpid.t = bpid.f
+	
+|***************************** Function Section *********************************
+Functions:
+
+function read.main.table()
+{
+	long	ret, rec.cnt
+	domain	tcamnt	tot.rate
+	
+	ret = 0
+	rec.cnt = 0
+	tot.rate = 0
+	select	tdisg205.bpid, count(tdisg205.orno):rec.cnt, sum(tdisg205.rate):tot.rate
+	from	tdisg205
+| 	where	tdisg205._index1 inrange {:bpid.f}	and	{:bpid.t}		|#ISGEC001132.o
+	where	tdisg205._index2 inrange {:bpid.f}	and	{:bpid.t}		|#ISGEC001132.n
+	group by tdisg205.bpid
+	order by tdisg205.bpid
+	selectdo
+		select	tdisg206.*
+		from	tdisg206 for update
+		where	tdisg206._index1 = {:tdisg205.bpid}
+		selectdo
+			dal.change.object("tdisg206")
+			if	rec.cnt <> 0	then
+				dal.set.field("tdisg206.rate", tot.rate/rec.cnt)
+			else
+				dal.set.field("tdisg206.rate", tot.rate/1)
+			endif
+			dal.set.field("tdisg206.date", utc.num())
+		selectempty	
+			dal.new.object("tdisg206")
+			dal.set.field("tdisg206.bpid", tdisg205.bpid)
+			if	rec.cnt <> 0	then
+				dal.set.field("tdisg206.rate", tot.rate/rec.cnt)
+			else
+				dal.set.field("tdisg206.rate", tot.rate/1)
+			endif
+			dal.set.field("tdisg206.date", utc.num())
+		endselect
+		ret = dal.save.object("tdisg206")
+		if	ret = 0	then
+			commit.transaction()
+		else
+			abort.transaction()
+		endif
+		rec.cnt = 0
+		tot.rate = 0
+	endselect
+			
+}

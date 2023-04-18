@@ -1,0 +1,188 @@
+|******************************************************************************
+|* tdisg2200m100  0  VRC B61U a7 live
+|* Reject Indent
+|* Installation user             
+|* 2014-10-30
+|******************************************************************************
+|* Main table tdpur200 Purchase Requisitions, Form Type 4
+|******************************************************************************
+|* ISGECDV001142, IT0205, Arjit Gupta, VRC B61U a7 live, Dt. 05-11-2014
+|* Ask question before Reject.
+|*
+|* ISGECDV001149, IT0205, Arjit Gupta, VRC B61U a7 live, Dt. 10-11-2014
+|* Session will be run independently 
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttdpur200 | Purchase Requisitions
+	table	ttdpur201
+	table	ttdpur202
+	table	ttdpur402
+
+	extern	domain	tcrqno		v.rqno    fixed
+	extern	domain	tdpur.rqst	v.rqst
+	extern	domain	tcsess		im.session		|#ISGECDV001149.n
+
+	|******************* Include *************
+	#include<bic_dam>
+|****************************** program section ********************************
+before.program:
+						|#ISGECDV001149.sn
+	import("prog.name$", im.session)
+
+	on case	trim$(im.session)
+		case "tdpur2600m000":
+						|#ISGECDV001149.en
+			import("tdpur200.rqno", v.rqno)
+			import("tdpur200.rqst", v.rqst)
+			
+			if	v.rqst <> tdpur.rqst.approved	then
+				message("Indent must be Approved")
+			else
+				if	Indent_Line_Converted()	then
+					message("Indent Line Already Converted")
+				else
+					if	ask.enum("tdisg02030003", tcyesno.no) = tcyesno.yes	then		|#ISGECDV001142.n
+						|Do you want to Reject Indent?					|#ISGECDV001142.n
+						Reject_Indent()
+					endif								|#ISGECDV001142.n
+				endif
+			endif	
+			execute(end.program)
+									|#ISGECDV001149.sn
+			break
+		default:
+	ENDCASE		
+									|#ISGECDV001149.en
+|****************************** group section **********************************
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section **********************************
+					|#ISGECDV001149.sn
+choice.reject.indent:
+before.choice:
+	if	isspace(v.rqno)	then
+		message("Please Input Requisition Number")
+		choice.again()
+	endif
+
+on.choice:
+	if	v.rqst <> tdpur.rqst.approved	then
+		message("Indent must be Approved")
+		choice.again()
+	else
+		if	Indent_Line_Converted()	then
+			message("Indent Line Already Converted")
+			choice.again()
+		else
+			if	ask.enum("tdisg02030003", tcyesno.no) = tcyesno.yes	then		
+				|Do you want to Reject Indent?					
+				Reject_Indent()
+			endif								
+		endif
+	endif	
+	execute(end.program)
+
+|****************************** field section **********************************
+field.v.rqno:
+when.field.changes:
+	select	st_tdpur200.rqst:v.rqst
+	from	tdpur200 st_tdpur200
+	where	st_tdpur200._index1 = {:v.rqno}
+	selectdo
+	selectempty
+		v.rqst = empty
+	endselect
+	
+					|#ISGECDV001149.en
+
+|****************************** Function section **********************************
+Functions:
+
+function boolean Indent_Line_Converted()
+{
+	select	tdpur202.pono
+	from	tdpur202
+	where	tdpur202._index1 = {:v.rqno}
+	as set with 1 rows
+	selectdo
+		return(true)
+	endselect
+	
+	select	tdpur402.orno
+	from	tdpur402
+	where	tdpur402._index9 = {:v.rqno}
+	as set with 1 rows
+	selectdo
+		return(true)
+	endselect
+		
+	return(false)
+}
+
+function Reject_Indent()
+{
+	long	ret
+	string	error(200)
+	
+	ret = 0
+	error = ""
+	db.retry.point()
+	select	tdpur200.rqst, tdpur200.spap, tdpur200.cnty
+	from	tdpur200 for update
+	where	tdpur200._index1 = {:v.rqno}
+	selectdo
+		
+		ret = dal.change.object("tdpur200")
+		dal.set.field("tdpur200.rqst", tdpur.rqst.rejected)
+		dal.set.field("tdpur200.spap", tcyesno.no)
+		dal.set.field("tdpur200.cnty", tdpur.cnty.none)
+		ret = dal.save.object("tdpur200")
+		if	ret <> 0	then
+			dal.get.error.message(error)
+		endif
+		
+		select	tdpur201.cnty
+		from	tdpur201 for update
+		where	tdpur201._index1 = {:v.rqno}
+		selectdo
+			ret = dal.change.object("tdpur201")
+			dal.set.field("tdpur201.cnty", tdpur.cnty.none)
+			ret = dal.save.object("tdpur201")
+			if	ret <> 0	then
+				dal.get.error.message(error)
+			endif
+		endselect
+		
+		Reject_Main_Indent()
+		if	ret = 0	then
+			commit.transaction()
+			message("Indent Rejected")
+		else
+			dal.get.error.message(error)
+			message("%s", error)
+			abort.transaction()
+		endif
+	endselect
+
+}
+
+function Reject_Main_Indent()
+{
+	long	e.ret
+	string	e.error(200)
+	
+	select	tdpur200.rqst
+	from	tdpur200 for update
+	where	tdpur200._index1 = {:v.rqno}
+	selectdo
+		e.ret = dal.change.object("tdpur200")
+		dal.set.field("tdpur200.rqst", tdpur.rqst.rejected)
+		e.ret = dal.save.object("tdpur200")
+		if	e.ret <> 0	then
+			dal.get.error.message(e.error)
+		endif
+	endselect	
+}

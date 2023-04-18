@@ -1,0 +1,624 @@
+|******************************************************************************
+|* tfisg2400m950  0  VRC B61U a7 isg 
+|* Cenvat Register
+|* Installation User             
+|* 2015-07-10
+|******************************************************************************
+|* Main table tfacp935 Order Tax Details, Form Type 4
+|******************************************************************************
+|* ID ISGEC01121, IT0327, Ritu Shrivastava, VRC B61U a7 isg, Dt. 10-07-2015
+|* New Report
+|* 
+|* ID ISGEC01122, IT0327, Ritu Shrivastava, VRC B61U a7 isg, Dt. 15-07-2015
+|* Modification to remove reprinted document for ledger when printed for receipt.
+|*
+|* ID ISGEC01073, IT0327, Ritu Shrivastava, VRC B61U a7 isg, Dt. 21-07-2015
+|* Modification to print cheque details based on ledger.
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttfacp935 | Order Tax Details
+  table   ttfgld005
+  table   ttdpur401
+  table   ttdpur406
+  table   ttfacp200
+  table   ttcmcs036
+  table   ttctax400
+  table   ttccom100
+  table   ttfgld110
+  table   ttfgld011
+  table   ttfgld106
+  table	   ttfisg160				|#ISGEC01122.n
+  table	   ttppdm090				|#ISGEC01122.n
+  table	   ttfcmg110				|#ISGEC01073.n
+  table	   ttfcmg112				|#ISGEC01073.n
+  
+  
+|************** Form Variables *********************
+	extern domain tccom.bpid		bpid.f
+	extern domain tccom.bpid		bpid.t
+	extern domain tfgld.year		year.f
+	extern domain tfgld.year		year.t
+	extern domain tfgld.prod		prod.f
+	extern domain tfgld.prod		prod.t
+   
+|*************** File Handling Variables ***********
+	long				file_pointer		|File Pointer
+	domain tcmcs.str100m		temp.file		|Server File Name
+	domain tcmcs.str100m		error			|Error
+   
+|**************** Report Variables *****************
+	extern domain whinh.shpm	rep.rcno		|Receipt No.
+	extern domain whinh.sern	rep.rseq		|Receipt Line
+	extern domain tccprj		rep.cprj		|Project
+	extern domain tccom.bpid	rep.bpid		|Supplier Code
+	extern domain tcnama		rep.bpid.dsca		|Supplier Name
+	extern domain tctax.txnb	rep.tax.no		|Service Tax No.
+	extern domain tppdm.cspa	rep.cspa		|Description
+	extern domain tppdm.dscl	rep.cspa.dsca		|Element Description		|#ISGEC01122.n
+	extern domain tfacp.isup	rep.isup		|Invoice No.
+	extern domain tcdate		rep.rcdt		|Receipt Date
+	extern domain tcamnt		rep.vals		|Value of Service
+	extern domain tcamnt		rep.ser.amnt		|Service Tax Amount
+	extern domain tcamnt		rep.sces.amnt		|E.Cess Tax Amount
+	extern domain tcamnt		rep.shss.amnt		|SHE.Cess Tax Amount
+	extern domain tcamnt		rep.tot.amnt		|Total Tax Amount
+	extern domain tfgld.date	rep.docd		|Document Date
+	extern domain tcmcs.str15	rep.doc.no		|Document No.
+	extern domain tcamnt		rep.ledg.serv		|S.Tax Ledger
+	extern domain tcamnt		rep.ledg.sces		|E.Cess.Tax Ledger
+	extern domain tcamnt		rep.ledg.shss		|SHE.Cess.Tax Ledger
+	extern domain tcmcs.str100	rep.cheq		|Cheque Number
+	
+|****************** Script Variables *****************************
+	domain whinh.shpm	old.rcno
+	domain whinh.sern	old.rseq
+	domain tcmcs.str15	old.docn
+	domain tccom.bpid	old.bpid
+
+#define	SERVICE_TAX_LEDGER 
+^ (tfgld106.leac = "1550226     " or tfgld106.leac = "1550227     " or tfgld106.leac = "1550228     ")
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+choice.cont.generate:
+before.choice:
+	delete.temp.table()					|#ISGEC01122.n
+	if not tfisgdll9999.create.file(file_pointer,temp.file,error) then
+		message("%s",error)
+		choice.again()
+	endif
+	
+on.choice:
+	generate.file()
+	tfisgdll9999.close.file(file_pointer,temp.file)
+
+
+|****************************** field section *********************************
+field.bpid.f:
+when.field.changes:
+	bpid.t = bpid.f
+	
+field.year.f:
+when.field.changes:
+	year.t = year.f
+	
+field.prod.f:
+when.field.changes:
+	prod.t = prod.f
+	
+before.zoom:
+	tfgld005.year = year.f
+	
+field.prod.t:
+before.zoom:
+	tfgld005.year = year.t
+
+
+|****************************** function section ******************************
+
+functions:
+
+function generate.file()
+{
+	generate.header()
+	read.main.table()
+	print.ledger.details()
+}
+
+function generate.header()
+{
+
+	tfisgdll9999.create.file.header(file_pointer,asc("	"),
+				"	",
+				"	",
+				"	",
+				"	",
+				"	",
+				"	",
+				"ISGEC HEAVY ENGINEERING LTD")
+				
+				
+	tfisgdll9999.create.file.header(file_pointer,asc("	"),		
+				"Cenvat Register")
+	
+	tfisgdll9999.create.file.header(file_pointer,asc("	"),		
+				"Business Partner" & "	" & sprintf$("%s",bpid.f),
+							    sprintf$("%s",bpid.t))
+							  
+	tfisgdll9999.create.file.header(file_pointer,asc("	"),		
+				"Fiscal Year" & "	" & sprintf$("%d",year.f),
+							    sprintf$("%d",year.t))
+							  
+	tfisgdll9999.create.file.header(file_pointer,asc("	"),		
+				"Period" & "	" & sprintf$("%d",prod.f),
+						    sprintf$("%d",prod.t))
+						  
+	tfisgdll9999.create.file.header(file_pointer,asc("	"),
+				" ",
+				" ",
+				" ",
+				" ",
+				" ",
+				" ",
+				" ",
+				"Detail of Bill",
+				" ",
+				" ",
+				" ",
+				" ",
+				" ",
+				" ",
+				" ",
+				" ",
+				"As per Ledger")
+			
+	tfisgdll9999.create.file.header(file_pointer,asc("	"), 
+			"Receipt",			|1
+			"Receipt Line",			|2	
+			"Project",			|3
+			"Supplier Code", 		|4
+			"Supplier Name",		|5
+			"S. Tax No.",			|6
+			"Description",			|7
+			"Invoice No",			|8
+			"Receipt Date",			|9
+			"Value Of Service",		|10
+			"Service Tax",			|11
+			"Service E.Cess",		|12
+			"Service SHE Cess",		|13
+			"Total Amount",			|14
+			"Document Date",		|15
+			"Document No.",			|16
+			"S.Tax",			|17
+			"E.Cess",			|18
+			"SHE.Cess",			|19
+			"Cheque No")			|20
+			
+}
+
+function read.main.table()
+{
+   domain tcdate	v.rcdt.f, v.rcdt.t,temp.date
+   
+	get.date.range(year.f,prod.f,v.rcdt.f,temp.date)
+	get.date.range(year.t,prod.t,temp.date,v.rcdt.t)
+	
+	select tfacp935.rcno, tfacp935.rseq, tfacp935.rcdt, tfacp935.ifbp
+	from   tfacp935
+	where	tfacp935.ifbp inrange :bpid.f and :bpid.t
+	and    	tfacp935.rcdt inrange :v.rcdt.f and :v.rcdt.t
+	group by tfacp935.rcno, tfacp935.rseq, tfacp935.rcdt, tfacp935.ifbp
+	selectdo
+		initialize.variables()
+		select	tfacp935.*, tccom100.nama
+		from	tfacp935, tccom100
+		where	tfacp935.rcno = :tfacp935.rcno
+		and	tfacp935.rseq = :tfacp935.rseq
+		and	tfacp935.ifbp refers to tccom100 Unref Clear
+		order by tfacp935.rcdt
+		selectdo
+			rep.rcno = tfacp935.rcno
+			rep.rseq = tfacp935.rseq
+			rep.rcdt = tfacp935.rcdt
+			rep.bpid = tfacp935.ifbp
+			rep.doc.no = tfacp935.ityp & "/" & str$(tfacp935.idoc)
+			rep.bpid.dsca = tccom100.nama
+			rep.tax.no = get.service.tax.no(rep.bpid)
+			
+			select tdpur401.cspa, tdpur401.cprj
+			from	tdpur401
+			where	tdpur401._index1 = {:tfacp935.orno,:tfacp935.pono,:tfacp935.sqnb}
+			selectdo
+| 				rep.cspa = tdpur401.cspa				|#ISGEC01122.o
+				rep.cprj = tdpur401.cprj
+				
+				select tppdm090.desc					|#ISGEC01122.sn
+				from	tppdm090
+				where	tppdm090._index1 = {:tdpur401.cspa}
+				selectdo
+					rep.cspa.dsca = tppdm090.desc
+				selectempty
+					rep.cspa.dsca = ""
+				endselect						|#ISGEC01122.en
+					
+			selectempty
+				rep.cspa = ""
+				rep.cprj = ""
+				rep.cspa.dsca = ""					|#ISGEC01122.n
+			endselect
+			
+			select tdpur406.damt
+			from	tdpur406
+			where	tdpur406._index2 = {:tfacp935.rcno,:tfacp935.rseq}
+			selectdo
+				rep.vals = tdpur406.damt
+			selectempty
+				rep.vals = 0
+			endselect
+			
+			get.tax.amount(tfacp935.ccty,tfacp935.cvat,tfacp935.vamt)
+			
+			rep.tot.amnt = rep.vals + rep.ser.amnt + rep.sces.amnt + rep.shss.amnt
+			
+		endselect
+		get.document.details(tfacp935.ityp,tfacp935.idoc)
+
+		get.ledger.tax(tfacp935.ityp,tfacp935.idoc)
+ 		
+		if rep.ser.amnt <> 0 then
+			insert.temp.records(tfacp935.ityp,tfacp935.idoc)			|#ISGEC01122.n
+			write.data()
+		endif
+	endselect
+}
+
+function get.date.range(domain tfgld.year	i.year,
+			 domain tfgld.prod	i.prod,
+		     ref domain tcdate		o.date.f,
+		     ref domain tcdate		o.date.t)
+{ 
+	select tfgld005.stdt
+	from   tfgld005
+	where  tfgld005._index1 = {tfgld.ptyp.financial,:i.year,:i.prod}
+	and    tfgld005.corr = tcyesno.no
+	as set with 1 rows
+	selectdo
+		Get_Start_End_Month_Date(tfgld005.stdt,o.date.f,o.date.t)
+	endselect
+}
+
+function Get_Start_End_Month_Date(domain tfgld.date	i.date,
+				ref domain tcdate	start.date,
+				ref domain tcdate      end.date)
+{
+ long dd, mm, yy, e.dd, e.mm,e.yy
+ domain tfgld.date e.date
+
+   num.to.date(i.date, yy, mm, dd)
+   start.date = date.to.utc(yy, mm, dd, 00, 00, 00)
+ 
+   e.date = date.to.num(mm<12?yy:yy+1, mm<12?mm + 1:1, 1) - 1
+   
+   num.to.date(e.date, e.yy, e.mm, e.dd)
+   
+   end.date = date.to.utc(e.yy, e.mm, e.dd, 23, 59, 59)
+}
+
+function domain tctax.txnb get.service.tax.no(domain tccom.bpid i.bpid)
+{
+	select 	tctax400.fovn
+	from	tctax400
+	where 	tctax400._index1 = {:i.bpid}
+	and 	tctax400.catg.l = tctax.catg.l.service
+	as set with 1 rows
+	selectdo
+	selectempty
+		tctax400.fovn = ""
+	endselect
+
+	return(tctax400.fovn)
+}
+
+function get.tax.amount(domain tcccty		i.ccty,
+			 domain tccvat		i.cvat,
+			 domain tfgld.amnt	i.vamt
+			)
+{
+	select tcmcs036.*
+	from 	tcmcs036
+	where	tcmcs036._index1 = {:i.ccty,:i.cvat}
+	and	tcmcs036.extx = tcyesno.no
+	and	tcmcs036.indt.l in (tctax.indt.l.service, tctax.indt.l.e.cess.service, tctax.indt.l.hse.cess.servic)
+	selectdo
+		on case tcmcs036.indt.l
+			case tctax.indt.l.service:
+				rep.ser.amnt = rep.ser.amnt + i.vamt
+				break
+				
+			case tctax.indt.l.e.cess.service:
+				rep.sces.amnt = rep.sces.amnt + i.vamt
+				break
+				
+			case tctax.indt.l.hse.cess.servic:
+				rep.shss.amnt = rep.shss.amnt + i.vamt
+				break
+				
+		endcase
+		
+	endselect
+	
+	
+}
+
+function get.document.details(domain tfgld.ttyp	i.ttyp,
+			       domain tfgld.docn	i.docn)
+{
+long i,k
+	select tfacp200.*
+	from	tfacp200
+	where	tfacp200._index1 = {:i.ttyp,:i.docn}
+	selectdo
+		if tfacp200.docn = 0 then
+			rep.docd = tfacp200.docd
+			rep.isup = tfacp200.isup
+		else
+			i = i + 1
+			for k = 1 to i step 1
+				rep.cheq = strip$(rep.cheq) & "," & tfacp200.pdoc
+				break
+			endfor
+		endif
+	selectempty
+		rep.doc.no = ""
+		rep.docd = 0
+		rep.isup = ""
+		rep.cheq = ""
+	endselect
+}
+
+function get.ledger.tax(domain tfgld.ttyp	i.ttyp,
+			 domain tfgld.docn	i.docn)
+{
+domain tcncmp	i.comp
+
+	i.comp = get.compnr()
+	
+	select tfgld106.otyp, tfgld106.odoc, tfgld106.leac, tfgld106.amth, tfgld106.dbcr
+	from 	tfgld106
+	where	tfgld106._index1 = {:i.ttyp,:i.docn}
+	and 	SERVICE_TAX_LEDGER 
+	selectdo
+		on case strip$(shiftl$(tfgld106.leac)) 
+		case	"1550226":
+			if tfgld106.dbcr = tfgld.dbcr.debit then
+				rep.ledg.serv = rep.ledg.serv + tfgld106.amth(1)
+			else
+				rep.ledg.serv = rep.ledg.serv - tfgld106.amth(1)
+			endif
+			break
+			
+		case	"1550227":
+			if tfgld106.dbcr = tfgld.dbcr.debit then
+				rep.ledg.sces = rep.ledg.sces + tfgld106.amth(1)
+			else
+				rep.ledg.sces = rep.ledg.sces - tfgld106.amth(1)
+			endif
+			break
+			
+		case	"1550228":
+			if tfgld106.dbcr = tfgld.dbcr.debit then
+				rep.ledg.shss = rep.ledg.shss + tfgld106.amth(1)
+			else
+				rep.ledg.shss = rep.ledg.shss - tfgld106.amth(1)
+			endif
+			break
+		endcase
+	endselect
+}
+
+function print.ledger.details()
+{
+	select tfgld106.otyp, tfgld106.odoc, tfgld106.dcdt, tfgld106.olin,tfgld106.bpid
+	from 	tfgld106
+	where	tfgld106._index6 inrange {:bpid.f} and {:bpid.t}
+	and     tfgld106.fyer inrange :year.f and :year.t
+	and     tfgld106.fprd inrange :prod.f and :prod.t
+	and 	SERVICE_TAX_LEDGER
+	group by tfgld106.otyp, tfgld106.odoc, tfgld106.dcdt, tfgld106.olin, tfgld106.bpid
+	selectdo
+		select tfisg160.*
+		from	tfisg160
+		where	tfisg160._index1 = {:tfgld106.otyp, :tfgld106.odoc}
+		selectdo
+		selectempty
+			initialize.variables()
+							
+			select tfgld106.otyp, tfgld106.odoc, tfgld106.leac, tfgld106.amth, tfgld106.dbcr, 
+				tfgld106.dim1, tfgld106.bpid, tccom100.nama
+			from 	tfgld106, tccom100
+| 			where	tfgld106._index1 = {:tfgld106.otyp,:tfgld106.odoc,:tfgld106.olin}
+			where	tfgld106._index1 = {:tfgld106.otyp,:tfgld106.odoc}
+			and	tfgld106.bpid = :tfgld106.bpid
+			and 	SERVICE_TAX_LEDGER
+			and 	tfgld106.bpid refers to tccom100 Unref Clear
+			selectdo
+				rep.cprj = strip$(tfgld106.dim1)
+				rep.bpid = tfgld106.bpid
+				rep.bpid.dsca = tccom100.nama
+				
+				on case strip$(shiftl$(tfgld106.leac)) 
+				case	"1550226":
+					if tfgld106.dbcr = tfgld.dbcr.debit then
+						rep.ledg.serv = rep.ledg.serv + tfgld106.amth(1)
+					else
+						rep.ledg.serv = rep.ledg.serv - tfgld106.amth(1)
+					endif
+					break
+					
+				case	"1550227":
+					if tfgld106.dbcr = tfgld.dbcr.debit then
+						rep.ledg.sces = rep.ledg.sces + tfgld106.amth(1)
+					else
+						rep.ledg.sces = rep.ledg.sces - tfgld106.amth(1)
+					endif
+					break
+					
+				case	"1550228":
+					if tfgld106.dbcr = tfgld.dbcr.debit then
+						rep.ledg.shss = rep.ledg.shss + tfgld106.amth(1)
+					else
+						rep.ledg.shss = rep.ledg.shss - tfgld106.amth(1)
+					endif
+					break
+				endcase
+			endselect
+			
+			get.document.details(tfgld106.otyp,tfgld106.odoc)
+			get.cheque.details(tfgld106.otyp, tfgld106.odoc, tfgld106.olin)			|#ISGEC01073.n
+			rep.rcno = ""
+			rep.rseq = 0
+			rep.tax.no = ""
+			rep.cspa = ""
+			rep.cspa.dsca = ""				|#ISGEC01122.n
+			rep.rcdt = 0
+			rep.vals = 0
+			rep.ser.amnt = 0
+			rep.sces.amnt = 0
+			rep.shss.amnt = 0
+			rep.tot.amnt = 0
+			rep.docd = tfgld106.dcdt
+			rep.doc.no = tfgld106.otyp & "/" & str$(tfgld106.odoc)
+			if  strip$(old.docn) <> strip$(rep.doc.no)
+			or old.bpid <> rep.bpid then
+				write.data()
+				old.docn = strip$(rep.doc.no)
+				old.bpid = rep.bpid
+			endif
+		endselect
+	endselect
+}
+
+function initialize.variables()
+{
+	rep.rcno = ""
+	rep.rseq = 0
+	rep.cprj = ""
+	rep.bpid = ""
+	rep.bpid.dsca = ""
+	rep.tax.no = ""
+	rep.cspa = ""
+	rep.cspa.dsca = ""					|#ISGEC01122.n
+	rep.isup = ""
+	rep.rcdt = 0
+	rep.vals = 0
+	rep.ser.amnt = 0
+	rep.sces.amnt = 0
+	rep.shss.amnt = 0
+	rep.tot.amnt = 0
+	rep.docd = 0
+	rep.doc.no = ""
+	rep.ledg.serv = 0
+	rep.ledg.sces = 0
+	rep.ledg.shss = 0
+	rep.cheq = ""
+}
+
+
+function write.data()
+{
+	tfisgdll9999.create.detail.line(file_pointer,asc("	"),
+					rep.rcno,							|1
+					rep.rseq,							|2
+					rep.cprj,							|3
+					rep.bpid,							|4
+					rep.bpid.dsca,							|5
+					rep.tax.no,							|6			
+| 					rep.cspa,							|7			|#ISGEC01122.o
+					rep.cspa.dsca,							|7			|#ISGEC01122.n
+					rep.isup,							|8
+					sprintf$("%u(%02d/%02m/%04Y)",rep.rcdt),			|9
+					rep.vals,							|10
+					rep.ser.amnt,							|11
+					rep.sces.amnt,							|12
+					rep.shss.amnt,							|13
+					rep.tot.amnt,							|14
+					sprintf$("%2D(%02d/%02m/%04Y)",rep.docd),			|15
+					rep.doc.no,							|16
+					rep.ledg.serv,							|17
+					rep.ledg.sces,							|18
+					rep.ledg.shss,							|19
+					rep.cheq							|20
+					)
+}
+			
+									|#ISGEC01122.sn
+function insert.temp.records(domain tfgld.ttyp		i.ttyp,
+			      domain tfgld.docn		i.docn)
+{
+	select tfisg160.*
+	from 	tfisg160
+	where	tfisg160._index1 = {:i.ttyp,:i.docn}
+	selectdo
+	selectempty
+		tfisg160.ttyp = i.ttyp
+		tfisg160.docn = i.docn
+		db.insert(ttfisg160,db.retry,db.skip.dupl)
+		commit.transaction()
+	endselect
+}
+
+function delete.temp.table()
+{
+	select tfisg160.*
+	from	tfisg160 for update
+	selectdo
+		db.delete(ttfisg160,db.retry,e)
+		commit.transaction()
+	endselect
+}
+									|#ISGEC01122.en
+									
+									|#ISGEC01073.sn
+function get.cheque.details(domain tfgld.ttyp		i.ttyp,
+			     domain tfgld.docn		i.docn,
+			     domain tfgld.lino		i.line)
+{
+long i, k
+	
+	i = 0
+	k = 0
+	select tfcmg110.cheq, tfcmg110.tdoc, tfcmg110.pdoc
+	from	tfcmg110
+	where	tfcmg110.tdoc = :i.ttyp
+	and	tfcmg110.pdoc = :i.docn
+	selectdo
+		i = i + 1
+		for k = 1 to i step 1
+			rep.cheq = strip$(rep.cheq) & "," & tfcmg110.cheq
+		endfor
+	selectempty
+		select tfcmg112.bank, tfcmg112.tdoc,tfcmg112.pdoc, tfcmg112.ctyp, tfcmg112.cdoc, tfcmg112.clin
+		from	tfcmg112
+		where	tfcmg112._index2 = {:i.ttyp,:i.docn,:i.line}
+		selectdo
+			select tfcmg110.cheq, tfcmg110.tdoc, tfcmg110.pdoc
+			from	tfcmg110
+			where	tfcmg110._index1 = {:tfcmg112.bank,:tfcmg112.tdoc,:tfcmg112.pdoc}
+			selectdo
+				i = i + 1
+				for k = 1 to i step 1
+					rep.cheq = strip$(rep.cheq) & "," & tfcmg110.cheq
+				endfor
+			endselect
+		endselect
+	endselect
+}
+											|#ISGEC01073.en

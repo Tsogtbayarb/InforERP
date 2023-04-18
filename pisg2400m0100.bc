@@ -1,0 +1,556 @@
+|******************************************************************************
+|* tfisg2400m010  0  VRC B61U a7 live
+|* Print Payment Advice (Advance)
+|* Installation user             
+|* 2014-07-29
+|******************************************************************************
+|* Main table tfmsl020 Advance Request, Form Type 4
+|******************************************************************************
+|* ID ISGECGST005, IT0386, Saurabh Dubey, 09 June 2017, VRC B61U a7 isg
+|* GST Related Modifications
+|* Isgec Onsite Deployment
+|*
+|* ID ISGEC01057, Priya Jindal, 30-5-2018, VRC B61U a7 isg
+|* Changes for approver_name
+|******************************************************************************
+|* ID:ISGEC016017, Manav Singh, 24-01-2019, VRC B61U a7 isg
+|* Modifications as per new field over report layout.
+|****************************** declaration section ***************************
+declaration:
+
+table	ttfmsl020	| Advance Request
+table	ttccom100	| Business Partner
+table	ttcmcs052	| General Project
+table	ttccom001	| Employee
+table	ttfcmg006	| Payment Method
+table	ttdpur400	| Purchase Order
+table	ttdpur401	| Purchase Order Lines
+table	ttdmsl400
+table	ttccom000
+table	ttccom130
+table	ttfacp200	|#ISGEC016017.n	
+table	ttfcmg112	|#ISGEC016017.n	
+table	ttfacp203	|#ISGEC016017.n	
+table	ttcmcs065	|#ISGEC016017.n	
+table	ttfacp250	|#ISGEC016017.n	
+
+extern 	domain	tcorno		orno    	fixed
+extern	domain	tcmcs.str215	cash.str
+extern	domain	tcorno		i.adrq
+extern	domain	tcmcs.str50	company.name
+extern	domain	tcrefb		o.tdpur400.refb
+extern	domain	tctax.txnb	gstn.c.no	|#ISGECGST005.n
+extern	domain	tcfovn		gstn.b.no	|#ISGECGST005.n
+extern	domain	tcpono		bind.pono	|#ISGECGST005.n
+	domain	tcncmp		curr.comp
+	domain	tcnama		g.nama, g.namb
+extern domain	tcnama		appr_name
+extern	domain	tcamnt		tax.val,i.cltx.l,i.extx.l	|#ISGEC016017.sn
+extern	domain	tfgld.amnt	bas.val,adas.w,adua.w,tot.value,
+				add.value,deduct.value,total,total.payment
+extern	domain	tcncmp		curr_comp
+extern	domain	tfgld.amnt	old.pymt,dnas.w,dnus.w,balance_advance,deduction.val,bal.payable		
+extern	domain	tfgld.amnt	adv.un.assign,un.adv.balance,total.advance,inam.w
+	domain	tcncmp		fin_comp
+extern	domain	tfacp.isup	isup.w	
+extern	domain	tcmcs.str30	purc.invo
+extern	domain	tcamnt		a.damt,b.oamt
+extern	domain	tcorno		i.orno
+extern	domain	tfgld.amnt	uaas.w,uaua.w,adas.w,adua.w,tot.amnt.paid,bal.paid 	|#ISGEC016017.en
+extern	domain	tcmcs.str30	curr.date 
+extern	domain	tcmcs.str100	 note.val				|#ISGEC016017.n 
+
+|****************************** program section ********************************
+before.program:
+	import("tfmsl020.adrq", i.adrq)
+	curr_comp = get.compnr()
+	curr.date = sprintf$("%u(%02d/%02m/%04Y) %U(%02h%x%02m%x%02s %a)", utc.num(), utc.num())
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.cont.process:
+on.choice:
+   execute(print.data)
+
+choice.print.data:
+on.choice:
+   if rprt_open() then
+       read.main.table()
+       rprt_close()
+   else
+       choice.again()
+   endif
+
+
+|****************************** field section *********************************
+
+field.orno:
+before.field:
+	orno = i.adrq
+
+|****************************** function section ******************************
+
+functions:
+
+function read.main.table()
+{
+	
+	fin_comp = 0
+	bas.val = 0
+	select	tccom000.cadr,
+		tccom130.nama:g.nama,
+		tccom130.namb:g.namb
+	from	tccom000, tccom130
+	where	tccom000._index2 = {:curr_comp}
+	and	tccom000.cadr <> ""
+	and	tccom000.cadr refers to tccom130 UNREF CLEAR
+	selectdo
+		company.name = trim$(g.nama) & " " & trim$(g.namb)
+	selectempty
+		company.name = ""
+	endselect
+	
+	company.name = toupper$(company.name)
+	
+	select 	tfmsl020.*,
+		tccom100.nama,
+		tcmcs052.dsca,
+		tccom001.nama,
+		tfcmg003.desc,
+		tdpur400.refb,
+		tdpur400.ccur,
+		tdpur400.cdf_refb:o.tdpur400.refb
+	from 	tfmsl020,tccom100,tcmcs052,tccom001,tfcmg003,tdpur400
+	where	tfmsl020._index1 = {:orno}
+| 	and	tfmsl020.optn = tfoption.advance
+	and	tfmsl020.bpid refers to tccom100
+	and	tfmsl020.cprj refers to tcmcs052
+	and	tfmsl020.rqpr refers to tccom001
+	and	tfmsl020.meth refers to tfcmg003
+	and	tfmsl020.orno refers to tdpur400
+	as set with 1 rows
+	selectdo
+		appr_name = ""					|ISGEC01057.n
+		if not isspace(tfmsl020.appr) then		|ISGEC01057.n	
+			select	tccom001.nama:appr_name
+			from	tccom001
+			where	tccom001._index4 = {:tfmsl020.appr}
+			selectdo
+			selectempty
+				appr_name = ""
+			endselect
+		endif
+		tfgld.dll9999.1.in.words(tfmsl020.aamt,cash.str)
+| 		select 	tccom100.nama
+| 		from	tccom100
+| 		where	tccom100._index1 = {:tfmsl020.bpid}
+| 		selectdo
+| 		selectempty
+| 			tccom100.nama = ""
+| 		endselect
+
+| 		select 	tcmcs052.dsca
+| 		from	tcmcs052
+| 		where	tcmcs052._index1 = {:tfmsl020.cprj}
+| 		selectdo
+| 		selectempty
+| 			tcmcs052.dsca = ""
+| 		endselect
+		tdmsl400.apdt = 0
+		select	tdmsl400.vrsn, tdmsl400.apdt
+		from	tdmsl400
+		where	tdmsl400._index1 = {:tfmsl020.orno}
+		and	tdmsl400.stat = tcyesno.yes
+		and	tdmsl400.work = tdmsl.work.completed
+		order by tdmsl400.vrsn desc
+		as set with 1 rows
+		selectdo
+		endselect
+				|#ISGECGST005.sn
+		select	tdpur401.rnso.l, tdpur401.rnsb.l,
+			tdpur401.pono:bind.pono
+		from	tdpur401
+		where	tdpur401._index1 = {:tfmsl020.orno}
+		order by tdpur401.pono desc
+		as set with 1 rows
+		selectdo
+		selectempty
+			tdpur401.rnso.l = 0
+			tdpur401.rnsb.l = 0
+		endselect
+		
+		select	tdpur401.cltx.l:i.cltx.l,					|#ISGEC016017.sn
+			tdpur401.extx.l:i.extx.l
+		from	tdpur401
+		where	tdpur401._index1 = {:tfmsl020.orno}	
+		selectdo
+			tax.val = i.cltx.l + i.extx.l
+		selectempty
+			tax.val = 0	
+		endselect								|#ISGEC016017.en
+		
+		select	tdpur400.oamt:b.oamt
+		from	tdpur400
+		where	tdpur400._index1 = {:tfmsl020.orno}
+		selectdo
+		selectempty
+			b.oamt = 0	
+		endselect
+		
+		bas.val = b.oamt	
+
+		tctax.dll4100.get.bp.reg.number.based.on.seq.l(tdpur401.rnsb.l, gstn.b.no)	|* Supplier GSTIN
+		tctax.dll9140.get.own.reg.number.based.on.seq(tdpur401.rnso.l, gstn.c.no)	|* Company(Isgec) GSTIN
+				|#ISGECGST005.en
+		Total_Payment_against_PO()		
+		tot.amnt.paid = total.advance + total.payment + dnas.w   			|#ISGEC016017.n          
+		bal.paid      =   (( bas.val + tax.val ) - tot.amnt.paid)   					|#ISGEC016017.n 
+		if tfmsl020.aamt > bal.paid then								|#ISGEC016017.sn
+			note.val = "Note : Insufficient Balance in PO for payment of this Payment Advice"
+		endif												|#ISGEC016017.en	
+		rprt_send()
+	endselect
+}
+
+function get.data.from.tfmsl020(							|#ISGEC016017.sn
+		domain	tcorno	i.orno)								
+										
+{
+
+	domain	tfgld.ttyp	get.ttyp
+	domain	tfgld.docn	get.docn
+	domain	tcorno		v.prno
+	domain	tccprj		m.cprj
+	domain	tcorno		m.orno
+	
+	domain	tfgld.ttyp	in.ttyp
+	domain	tfgld.docn	in.ninv
+	domain	tfgld.lino	in.line
+	
+| 	domain	tcncmp		o.target.financial.company,i.comp				
+| 	domain	tfgld.ttyp	o.related.transaction.type
+| 	domain	tfgld.docn	o.related.document
+| 	domain	tcmcs.s200m	o.error.message							
+	
+	adas.w = 0
+	adua.w = 0
+	adua.w = 0
+	uaua.w = 0
+	uaas.w = 0
+	
+	
+	select	tfacp200.ttyp, tfacp200.ninv,tfacp200.line, tfacp200.amth, tfacp200.amti, tfacp200.balh, tfacp200.balc, tfacp200.ifbp,
+		tfacp200.isup, tfacp200.tpay, tfacp200.tdoc, tfacp200.docn, tfacp200.lino,
+		tfacp200.cdf_prno:v.prno,tfacp200.amnt, tfacp200.bahc, tfacp200.bala, tfacp200.whti,		
+		tfacp200.pcom,
+		tfacp200.payt,
+		tfacp200.payd,
+		tfacp200.payl									
+	from	tfacp200
+	where	tfacp200.cdf_prno = :i.orno
+	and	tfacp200._compnr =  :fin_comp		
+	selectdo
+| 		l.tfacp200.amti = tfacp200.amti
+| 		if curr_comp <> tfacp200.pcom and tfacp200.payd <> 0 then
+| 			in.ttyp = tfacp200.payt
+| 			in.ninv = tfacp200.payd
+| 			in.line = tfacp200.payl
+| 		else
+| 			in.ttyp = tfacp200.ttyp
+| 			in.ninv = tfacp200.ninv
+| 			in.line = tfacp200.line
+| 		endif
+									
+		on case tfacp200.tpay
+			case tfacp.tpay.advance:	|ltoe(9)
+			case tfacp.tpay.advance.ant:	|ltoe(11)
+| 				if  tfisg.dll1402.intercompany.document.present(			
+| 									curr_comp,
+| 									in.ttyp,
+| 									in.ninv,
+| 									o.target.financial.company,
+| 									o.related.transaction.type,
+| 									o.related.document,
+| 									o.error.message) then
+| 					in.ttyp =  o.related.transaction.type
+| 					in.ninv	=  o.related.document
+| 					i.comp  =  o.target.financial.company
+| 				else
+| 					i.comp = curr_comp
+| 				endif										
+				select 	tfcmg112.cdoc,
+					tfcmg112.stat			
+				from	tfcmg112		
+				where	tfcmg112.tdoc = :in.ttyp
+				and	tfcmg112.pdoc = :in.ninv
+				and	tfcmg112._compnr = :curr_comp						
+				as set with 1 rows
+				selectdo
+					if tfcmg112.cdoc = 0 and tfcmg112.stat <> tfcmg.stap.rejected then  		
+						select tfmsl020.adrq
+						from	tfmsl020
+						where	tfmsl020._index4 = {:tfacp200.ttyp,:tfacp200.ninv,:tfacp200.line}
+						and	(tfmsl020.optn = tfoption.account or tfmsl020.optn = tfoption.exchange)
+						and	tfmsl020.fcom = :curr_comp	
+						selectdo
+| 							if tfacp200.tpay = tfacp.tpay.advance.ant then        
+| 								if tfacp200.balc <> 0 or tfacp200.bala <> 0 then
+| 									adv.un.assign = adv.un.assign + abs(tfacp200.amti)
+| 									un.adv.balance = un.adv.balance +  abs(tfacp200.balc) + abs(tfacp200.bala)
+| 								endif
+| 							else                                                   																
+| 								adv.un.assign = adv.un.assign + abs(tfacp200.amti)
+| 								un.adv.balance = un.adv.balance +  abs(tfacp200.balc) + abs(tfacp200.bala)
+| 							endif
+						selectempty
+							if tfacp200.tpay = tfacp.tpay.advance.ant then                   
+								if tfacp200.balc <> 0 or tfacp200.bala <> 0 then
+									adua.w = adua.w + abs(tfacp200.balc) + abs(tfacp200.bala)	|Advance Unassign
+									adas.w = adas.w + abs(tfacp200.amti) - (abs(tfacp200.balc) + abs(tfacp200.bala))
+								endif
+							else								
+								adua.w = adua.w + abs(tfacp200.balc) + abs(tfacp200.bala)	|Advance Unassign
+								adas.w = adas.w + abs(tfacp200.amti) - (abs(tfacp200.balc) + abs(tfacp200.bala))
+							endif	                                                       				
+						endselect
+						if tfacp200.whti = tcyesno.yes   then
+							select 	tfacp203.amti
+							from	tfacp203
+							where	tfacp203._index1 = {:tfacp200.ttyp,:tfacp200.ninv,:tfacp200.line}
+							and	tfacp203.txtp = tctax.txtp.income.tax		
+							and	tfacp203._compnr = :curr_comp		
+							selectdo
+| 								l.tfacp200.amti = tfacp203.amti * (-1)
+								select tfmsl020.adrq
+								from	tfmsl020
+								where	tfmsl020._index4 = {:tfacp200.ttyp,:tfacp200.ninv,:tfacp200.line}	
+								and	(tfmsl020.optn = tfoption.account or tfmsl020.optn = tfoption.exchange)
+								selectdo
+| 									adv.un.assign = adv.un.assign + abs(tfacp203.amti)
+| 									if tfacp200.balc <> 0 or tfacp200.bala <> 0 then
+| 										un.adv.balance = un.adv.balance +  abs(tfacp203.amti)
+| 									endif
+								selectempty
+									
+									if tfacp200.balc <> 0 or tfacp200.bala <> 0 then        	  
+										adua.w = adua.w + tfacp203.amti
+										adas.w = adas.w + tfacp203.amti
+									endif									
+								endselect
+							selectempty
+							endselect
+						endif
+					endif
+						
+				selectempty	
+					select tfmsl020.adrq
+					from	tfmsl020
+					where	tfmsl020._index4 = {:tfacp200.ttyp,:tfacp200.ninv,:tfacp200.line}	
+					and	(tfmsl020.optn = tfoption.account or tfmsl020.optn = tfoption.exchange)
+					and	tfmsl020.fcom = :curr_comp		
+					selectdo
+| 						if tfacp200.tpay = tfacp.tpay.advance.ant then                   
+| 							if tfacp200.balc <> 0 or tfacp200.bala <> 0 then
+| 								adv.un.assign = adv.un.assign + abs(tfacp200.amti)
+| 								un.adv.balance = un.adv.balance +  abs(tfacp200.balc) + abs(tfacp200.bala)
+| 							endif
+| 						else								 								
+| 							adv.un.assign = adv.un.assign + abs(tfacp200.amti)
+| 							un.adv.balance = un.adv.balance +  abs(tfacp200.balc) + abs(tfacp200.bala)
+| 						endif                                                             
+					selectempty
+						if tfacp200.tpay = tfacp.tpay.advance.ant then                  
+							if tfacp200.balc <> 0 or tfacp200.bala <> 0 then
+								adua.w = adua.w + abs(tfacp200.balc) + abs(tfacp200.bala)	|Advance Unassign
+								adas.w = adas.w + abs(tfacp200.amti) - (abs(tfacp200.balc) + abs(tfacp200.bala))	
+							endif
+						else								
+							adua.w = adua.w + abs(tfacp200.balc) + abs(tfacp200.bala)	|Advance Unassign
+							adas.w = adas.w + abs(tfacp200.amti) - (abs(tfacp200.balc) + abs(tfacp200.bala))
+						endif								
+					endselect
+						
+					if tfacp200.whti = tcyesno.yes  then
+						select 	tfacp203.amti
+						from	tfacp203
+						where	tfacp203._index1 = {:tfacp200.ttyp,:tfacp200.ninv,:tfacp200.line}
+						and	tfacp203.txtp = tctax.txtp.income.tax		
+						and	tfacp203._compnr = :curr_comp		
+						selectdo
+							select tfmsl020.adrq
+							from	tfmsl020
+							where	tfmsl020._index4 = {:tfacp200.ttyp,:tfacp200.ninv,:tfacp200.line}	
+							and	(tfmsl020.optn = tfoption.account or tfmsl020.optn = tfoption.exchange)
+							selectdo
+| 								adv.un.assign = adv.un.assign + abs(tfacp203.amti)
+| 								if tfacp200.balc <> 0 or tfacp200.bala <> 0then
+| 									un.adv.balance = un.adv.balance +  abs(tfacp203.amti)
+| 								endif
+							selectempty	
+							endselect
+							if tfacp200.balc <> 0 or tfacp200.bala <> 0 then	
+								adua.w = adua.w + tfacp203.amti
+								adas.w = adas.w + tfacp203.amti
+							endif								
+						selectempty
+						endselect
+					endif
+				endselect
+					
+				break
+				case tfacp.tpay.unallocated:	|ltoe(10)
+				case tfacp.tpay.unallocated.ant:	|ltoe(12)
+					
+| 					if  tfisg.dll1402.intercompany.document.present(				
+| 										curr_comp,
+| 										in.ttyp,
+| 										in.ninv,
+| 										o.target.financial.company,
+| 										o.related.transaction.type,
+| 										o.related.document,
+| 										o.error.message) then
+| 										
+| 						in.ttyp =  o.related.transaction.type
+| 						in.ninv	=  o.related.document
+| 						i.comp  =  o.target.financial.company
+| 					else
+| 						i.comp = curr_comp
+| 					endif										
+					
+					select 	tfcmg112.cdoc,
+						tfcmg112.stat								
+					from	tfcmg112
+					where	tfcmg112.tdoc = :in.ttyp
+					and	tfcmg112.pdoc = :in.ninv
+					and     tfcmg112._compnr = :curr_comp						
+													
+					as set with 1 rows
+					selectdo
+						if tfcmg112.cdoc = 0 and  tfcmg112.stat <> tfcmg.stap.rejected then	
+							if tfacp200.tpay = tfacp.tpay.unallocated.ant then             
+								if tfacp200.balc <> 0 or tfacp200.bala <> 0 then
+									uaua.w = uaua.w + abs(tfacp200.balc) + abs(tfacp200.bala)	|Unallocated Unassign	
+									uaas.w = uaas.w + abs(tfacp200.amti) - ( abs(tfacp200.balc) + abs(tfacp200.bala))
+								endif
+							else								
+								uaua.w = uaua.w + abs(tfacp200.balc) + abs(tfacp200.bala)	|Unallocated Unassign	
+								uaas.w = uaas.w + abs(tfacp200.amti) - ( abs(tfacp200.balc) + abs(tfacp200.bala))	|Unallocated Assign	
+							endif                                                          
+						endif
+					selectempty
+						if tfacp200.tpay = tfacp.tpay.unallocated.ant then            
+							if tfacp200.balc <> 0 or tfacp200.bala <> 0 then
+								uaua.w = uaua.w + abs(tfacp200.balc) + abs(tfacp200.bala)	|Unallocated Unassign	
+								uaas.w = uaas.w + abs(tfacp200.amti) - (abs(tfacp200.balc) + abs(tfacp200.bala))
+							endif
+						else								
+							uaua.w = uaua.w + abs(tfacp200.balc) + abs(tfacp200.bala)	|Unallocated Unassign	
+							uaas.w = uaas.w + abs(tfacp200.amti) - (abs(tfacp200.balc) + abs(tfacp200.bala))	|Unallocated Assign	
+						endif                 						                                        
+					endselect	
+					
+					break
+			ENDCASE		
+				
+		selectempty
+		endselect
+}												|#ISGEC016017.en											
+
+function Total_Payment_against_PO()								|#ISGEC016017.sn							
+{
+	tot.value = 0
+	uaas.w = 0
+	adas.w = 0
+	adua.w = 0
+	adua.w = 0
+	uaua.w = 0
+	add.value = 0
+	deduct.value = 0
+	total = 0
+	total.payment = 0
+	total.advance = 0
+	Balance_advance = 0
+	select tfmsl020.orno:i.orno
+	from	tfmsl020
+	where	tfmsl020._index1 = {:orno}
+	selectdo
+| 		get.data.from.tfmsl020(i.orno)
+		get.data.credit.note(tfmsl020.orno,curr_comp)
+		
+| 		total.advance = adas.w + adua.w
+| 		Balance_advance = adua.w + uaua.w
+		
+		select	tdpur400.cofc,tcmcs065.comp:fin_comp	
+		from	tdpur400,tcmcs065
+		where	tdpur400._index1 = {:tfmsl020.orno}
+		and	tdpur400.cofc refers to tcmcs065
+		selectdo
+		endselect
+		get.data.from.tfmsl020(i.orno)
+		
+		total.advance = adas.w + adua.w
+		Balance_advance = adua.w + uaua.w
+		
+		deduct.value = 0
+		tot.value = 0
+| 		switch.to.company(fin_comp)
+		select tfacp250.ityp,tfacp250.idoc
+		from	tfacp250
+		where 	tfacp250._index1 = {:fin_comp}
+		and	tfacp250.orno 	 = :i.orno
+		and	tfacp250._compnr = :fin_comp
+		group by tfacp250.ityp, tfacp250.idoc
+		selectdo
+			select	tfacp200.bahc,tfacp200.bala,tfacp200.balc,tfacp200.amth,tfacp200.amti
+			from	tfacp200
+			where	tfacp200._index1 = {:tfacp250.ityp,:tfacp250.idoc}
+			and	tfacp200.line = 0
+			and	tfacp200.docn = 0
+			and	tfacp200.lino = 0
+			and	tfacp200._compnr = :fin_comp
+			selectdo
+				deduct.value = tfacp200.amti - (tfacp200.bala + tfacp200.balc)
+				tot.value = tot.value + deduct.value
+			selectempty
+				add.value = 0
+				deduct.value = 0
+				tot.value = 0
+				total = 0
+			endselect
+		selectempty
+		endselect
+		total.payment = tot.value + (uaua.w) - (adas.w)			
+		
+	endselect		
+}									|#ISGEC016017.en
+
+function get.data.credit.note(							|#ISGEC016017.sn
+| 											
+			domain	tcorno		i.orno,					
+			domain  tcncmp		curr_comp					
+				)
+{
+
+	isup.w = ""
+	inam.w = 0
+	purc.invo = ""
+	dnas.w = 0
+	select	tfacp200.amnt, tfacp200.balh,tfacp200.balc, tfacp200.isup, tfacp200.amth,tfacp200.amti,tfacp200.bala,	
+		tfacp200.docn, tfacp200.tpay, tfacp200.cdf_prno, tfacp200.cdf_cprj		
+	from	tfacp200
+	where	tfacp200.cdf_prno = :i.orno
+	and	tfacp200.tpay = tfacp.tpay.credit
+	and	tfacp200.docn = 0
+	and     tfacp200._compnr = :curr_comp              					
+	selectdo
+		dnas.w = dnas.w + abs(tfacp200.amnt)
+	endselect	
+}										|#ISGEC016017.en
+
+

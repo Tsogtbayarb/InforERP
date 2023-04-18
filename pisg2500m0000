@@ -1,0 +1,150 @@
+|******************************************************************************
+|* tcisg2500m000  0  VRC B61U a7 live
+|* Delete Landed Cost
+|* Installation user             
+|* 2014-09-12
+|******************************************************************************
+|* Main table tclct200 Landed Cost Lines, Form Type 1
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttclct200 | Landed Cost Lines
+	
+	extern	domain	tcitem		var.item
+	extern	domain	tcdsca		var.dsca
+		domain	tcborf		t.borf
+		long	l.borf
+
+	string		boty.desc(30)
+|****************************** program section ********************************
+before.program:
+	query.extend.where("tclct200._index1 = {tclct.bo.type.tdpur401, tclct.boor.not.appl}")
+
+before.display.object:
+	set.enable.disable.commands()
+|****************************** group section **********************************
+|****************************** choice section **********************************
+choice.delete:
+before.choice:
+	if	number.of.marks <> 1	then
+		message("Please Select 1 record")
+		choice.again()
+	endif
+
+	select	tclct200.boty, tclct200.borf:t.borf
+	from	tclct200		
+	where	tclct200._index1 <> {tclct.bo.type.tdpur401, tclct.boor.not.appl}
+	and	tclct200.bobj = :tclct200.bobj
+	and	tclct200.lcos = :tclct200.lcos
+	selectdo
+		l.borf = len(trim$(tclct200.borf))
+		if	trim$(t.borf(1;l.borf)) = trim$(tclct200.borf)	then
+			boty.desc = ""
+			boty.desc = enum.descr$("tclct.bo.type", tclct200.boty)
+			message("Landed cost already Added %s", boty.desc)
+			choice.again()
+		endif	
+	endselect	
+on.choice:
+	if	ask.enum("tcisg02030002", tcyesno.no) = tcyesno.yes	then
+		delete.record()
+		|Do you want Delete? Think Twice. Are you sure...?
+	else
+		choice.again()
+	endif
+	
+choice.mark.delete:
+before.choice:
+	message("Delete through Specific")
+	choice.again()
+	
+|****************************** Field section **********************************
+field.var.item:
+before.display:
+	if	not isspace(tclct200.bobj)	and	not isspace(tclct200.borf)	then
+		var.item = Get.Item(tclct200.bobj, tclct200.borf)
+	else
+		var.item = ""
+	endif
+	
+	
+field.var.dsca:
+before.display:
+	if	not isspace(var.item)	then
+		var.dsca = Get.Item.desc(var.item)
+	else
+		var.dsca = ""
+	endif
+	
+|****************************** Function section **********************************
+Functions:
+
+function set.enable.disable.commands()
+{
+	if	number.of.marks = 1	then
+		enable.commands("delete", mark.delete)
+	else
+		disable.commands("delete", mark.delete)
+	endif
+}
+	
+function domain tcitem Get.Item(domain	tcorno	i.orno,
+				domain		tcborf	i.borf)
+{
+	domain	tcitem	tmp.item
+	long	posn
+	
+	tmp.item = ""
+	posn = pos(i.borf, "/")
+	
+	select	p_tdpur401.item:tmp.item
+	from	tdpur401 p_tdpur401
+	where	p_tdpur401._index1 = {:i.orno, :1}
+	as set with 1 rows
+	wherebind(1, lval(i.borf(1;posn-1)))
+	selectdo
+	selectempty
+		tmp.item = ""
+	endselect
+	
+	return(tmp.item)
+}
+
+function domain tcdsca	Get.Item.desc(
+				domain	tcitem	i.item)
+{
+	domain	tcdsca	tmp.dsca
+	
+	tmp.dsca = ""
+	
+	select	i_tcibd001.dsca:tmp.dsca
+	from	tcibd001 i_tcibd001
+	where	i_tcibd001._index1 = {:i.item}
+	selectdo
+	selectempty
+		tmp.dsca = ""
+	endselect
+	
+	return(tmp.dsca)
+}
+
+function delete.record()
+{
+	db.retry.point()
+	select	tclct200.boty
+	from	tclct200 for update
+	where	tclct200._index1 = {tclct.bo.type.tdpur401, tclct.boor.not.appl, :tclct200.bobj, :tclct200.borf, :tclct200.lcln}
+	selectdo
+		db.delete(ttclct200, db.retry, e)
+		if	not e	then
+			commit.transaction()
+			message("Deleted...!!!")
+		else
+			abort.transaction()
+			message("%d", e)
+		endif
+	endselect
+		
+}

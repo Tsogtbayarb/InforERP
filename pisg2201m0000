@@ -1,0 +1,220 @@
+|******************************************************************************
+|* tdisg2201m000  0  VRC B61U a7 live
+|* Requistion Lines
+|* Installation user             
+|* 2014-07-29
+|******************************************************************************
+|* Main table tdisg201 Criteria Wise User Role, Form Type 4
+|******************************************************************************
+ |* IDENT ISGEC001049, Gaurav Tyagi, IT0265, 20-09-2014 , VRC B61U a7 live
+|* Add Item check before generate Req. Lines
+|* 
+|* ID ISGEC001104,	Sujeet Kumar,		2014-10-15
+|* Cost Component defaulting, from tcibd001.cpcp
+|* Functional: Mr. Vikas Yadav
+|*
+|* 
+|* ID ISGEC015065,Ankit Sharma,25-09-2015
+|* Added filter for item field
+|*
+|* IDENT ISGEC015068, Shilpa Janardanan , 30-09-2015
+|* Correction in item zoom
+|****************************** declaration section ***************************
+declaration:
+
+  table		ttdpur201
+  table		ttpptc120
+  table		ttpptc100
+  table		ttppss200
+  table		ttdipu001
+  table		ttppdm600
+  table		ttcibd001		|#ISGEC001104.n
+  table		ttcisg003		|#ISGEC001104.n
+    
+
+extern	domain	tcrqno		rqno.f
+extern	domain	tccprj		cprj.f
+extern	domain	tcitem		item.f
+extern	domain	tppdm.cspa	cspa.f
+extern	domain	tppdm.cact	cact.f
+extern	domain	tcqsl1		qoor.f
+extern	domain	tcpric		pric.f
+extern	domain	tccpcp		ccco.f
+extern	domain	tccuni		cuqp.f
+extern	domain	tccwar		cwar.f
+extern	domain	tcqsl1		weight.f,tot.weight
+
+|**** Import Variables
+
+extern	domain	tcrqno		import.rqno
+extern	domain	tcitem		zoom.item
+	string qry.string(50)	, calling.program(50) 		|#ISGEC015065.n	
+#include <bic_dam>
+
+|***
+long ret_val
+|****************************** program section ********************************
+
+before.program:
+	import("tdpur201.rqno",import.rqno)
+	tdpur201.rqno = import.rqno
+	export("tdpur201.rqno",tdpur201.rqno)
+before.display.object:
+	disable.fields("item.f.segment.1")
+|****************************** choice section **********************************
+choice.cont.generate:
+before.choice:
+	if qoor.f = 0 or pric.f = 0 then
+		message("Kindly Enter Quantity and Price !!")
+		choice.again()
+	endif
+	
+	select	tcibd001.kitm
+	from	tcibd001
+	where	tcibd001._index1 = {:item.f}
+	and	tcibd001.kitm in (1,2)
+	selectdo
+		select	tcisg003.stat
+		from	tcisg003
+		where	tcisg003._index1 = {:cprj.f,:cspa.f,:item.f}
+		and	tcisg003.stat = tcisg.status.launched
+		as set with 1 rows
+		selectdo
+		selectempty
+			message("Cann't Generate Requistion Lines as status is not Launched")
+			choice.again()
+		endselect
+	endselect
+	
+on.choice:
+	dal.new.object("tdpur201")
+	db.set.to.default(ttdpur201)
+	dal.set.field("tdpur201.rqno",rqno.f)
+	dal.set.field("tdpur201.item",item.f)
+	dal.set.field("tdpur201.qoor",qoor.f)
+	dal.set.field("tdpur201.pric",pric.f)
+	dal.set.field("tdpur201.cwar",cwar.f)
+	dal.set.field("tdpur201.cprj",cprj.f)
+	dal.set.field("tdpur201.cspa",cspa.f)
+	dal.set.field("tdpur201.cact",cact.f)
+	dal.set.field("tdpur201.ccco",ccco.f)
+	ret_val = dal.save.object("tdpur201")
+	if ret_val <> 0 then
+		show.dal.messages(MSG.ALL)
+		abort.transaction()
+		end()
+	else
+		commit.transaction()
+		end()
+	endif
+	
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** Field section **********************************
+
+field.rqno.f:
+before.field:
+	rqno.f = import.rqno
+
+field.item.f:
+when.field.changes:
+	select 	tpptc120.cspa,
+		tpptc120.cact,
+		tpptc120.ccco
+	from	tpptc120
+	where	tpptc120._index2 = {:cprj.f,:item.f}
+	as set with 1 rows
+	selectdo
+	selectempty
+		tpptc120.cspa = ""
+		tpptc120.cact = ""
+		tpptc120.ccco = ""
+	endselect
+	if isspace(cspa.f) then		|#ISGEC015068.n
+		cspa.f = tpptc120.cspa
+	endif					|#ISGEC015068.n
+	cact.f = tpptc120.cact
+	ccco.f = tpptc120.ccco
+	
+						|#ISGEC001104.sn
+	if isspace(ccco.f) then
+		select 	tcibd001.cpcp
+		from	tcibd001
+		where	tcibd001._index1 = {:item.f}
+		as set with 1 rows
+		selectdo
+		selectempty
+			tcibd001.cpcp = ""
+		endselect
+		
+		ccco.f = tcibd001.cpcp
+	endif
+						|#ISGEC001104.en
+			
+	
+	select 	sum(tcisg004.wght):tot.weight
+	from	tcisg004
+	where	tcisg004._index1 = {:cprj.f,:cspa.f,:item.f}
+	and	tcisg004.stat = dmstat.released
+	and	tcisg004.indt = tcyesno.no
+	selectdo
+	selectempty
+		tot.weight = 0
+	endselect
+	
+	weight.f = tot.weight
+	
+	select 	tdipu001.cuqp
+	from	tdipu001
+	where	tdipu001._index1 = {:item.f}
+	as set with 1 rows
+	selectdo
+	endselect
+	
+	cuqp.f = tdipu001.cuqp
+	
+	display("cspa.f")
+	display("cact.f")
+	display("ccco.f")
+	display("weight.f")
+	display("cuqp.f")
+after.field:
+	
+	
+	
+	
+	
+field.item.f.segment.2:
+before.zoom:									|#ISGEC015065.sn			|#ISGEC015068.so
+| 		qry.string = "tcisg003._index1 = {" &quoted.string(cprj.f)&","&quoted.string(cspa.f)&"}" 
+| 		query.extend.where.in.zoom(qry.string)				|#ISGEC015065.en			|#ISGEC015068.eo
+	
+after.zoom:
+	item.f = strip$(zoom.item)
+
+field.cspa.f:
+before.zoom:
+	tpptc100.cprj = cprj.f
+
+field.cact.f:
+before.zoom:
+| 	select 	tpptc120.cpla
+| 	from	tpptc120
+| 	where	tpptc120._index2 = {:cprj.f,:item.f}
+| 	as set with 1 rows
+| 	selectdo
+| 	endselect
+
+	select 	tppdm600.cpla
+	from	tppdm600
+	where	tppdm600._index1 = {:cprj.f}
+	as set with 1 rows
+	selectdo
+	endselect
+	
+	
+	query.extend.where.in.zoom("tppss200.cprj = " & quoted.string(cprj.f) & " and tppss200.cpla = " & quoted.string(tppdm600.cpla))

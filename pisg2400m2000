@@ -1,0 +1,381 @@
+|******************************************************************************
+|* tfisg2400m200  0  VRC B61U a7 live
+|* Tax Report
+|* Installation user             
+|* 2014-11-15
+|******************************************************************************
+|* Form Type 4
+|******************************************************************************
+|*IDENT ISGEC015034 Ankit Sharma   VRC B61U a7 live
+|* Added company logic for project code
+
+|* IDENT ISGEC015035, Shilpa Janardanan, VRC B61U a7 live
+|* Logic correction
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttfgld102
+	table	ttfgld107
+	table	ttfacp200
+	table	ttfacp251
+	table	ttdpur401
+	table	ttfgld106
+	table	ttcisg100
+	
+	extern	domain	tcncmp		ncmp.f,o.lcomp
+	extern	domain	tfgld.year	year.f
+	extern	domain	tfgld.prod	prod.f,prod.t
+	extern	domain	tfgld.leac	leac.f
+	extern	domain	tfgld.date	docd.f,docd.t
+	extern domain	tcncmp		rep.comp		|#ISGEC015035.n
+
+|*********  FILE HANDLING *********************
+long				file_pointer
+domain	tcmcs.str100m		temp.file
+domain	tcmcs.str100m		error
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.cont.generate:
+on.choice:
+	read.main.table()
+
+
+
+|****************************** field section *********************************
+
+
+|****************************** function section ******************************
+
+functions:
+
+function read.main.table()
+{
+	if tfisgdll9999.create.file(file_pointer,temp.file,error) then
+	else
+		message("%s",error)
+		choice.again()
+	endif
+	tfisgdll9999.create.file.header(file_pointer,asc("|"),
+				"Document No.",
+				"Document Date",
+				"Business Partner",
+				"Purchase Order",
+				"Project No.",
+				"Receipt No.",
+				"Bill No.",
+				"Amount",
+				"Debit/Credit",
+				"Document Type",
+				"Transaction Status",
+				"Year",
+				"Period")
+	read.non.finalized.transaction()
+	read.finalized.transaction()
+	
+	tfisgdll9999.close.file(file_pointer,temp.file)
+}
+
+
+
+
+function read.non.finalized.transaction()
+{
+	select 	tfgld102.cono,
+		tfgld102.ttyp,
+		tfgld102.docn,
+		tfgld102.lino,
+		tfgld102.serl,
+		tfgld102.leac,
+		tfgld102.wtsc,
+		tfgld102.vamh,
+		tfgld102.amth,
+		tfgld102.dbcr,
+		tfgld102.vtyp,
+		tfgld102.dcdt,
+		tfgld102.fyer,
+		tfgld102.fprd
+	from	tfgld102
+| 	where	tfgld102._index1 = {:ncmp.f,:year.f}
+	where	tfgld102.dcdt inrange :docd.f and :docd.t
+| 	and	tfgld102.fprd inrange :prod.f and :prod.t
+| 	and	tfgld102.leac = :leac.f
+| 	and	tfgld102._compnr = :ncmp.f
+| 	and	tfgld102.ttyp = "PTR"
+| 	and	tfgld102.docn = 35026188
+	selectdo
+		
+		rep.comp = tfgld102.cono		|test.n
+		if tfgld102.wtsc = tcyesno.yes or tfgld102.vamh(1) <> 0 then
+			interim.tax.table(tfgld102.cono,tfgld102.dcdt,tfgld102.ttyp,tfgld102.docn,
+					tfgld102.lino,tfgld102.serl,leac.f,tfgld102.dbcr,
+					tfgld102.vtyp,"Non-Finalized",tfgld102.fyer,tfgld102.fprd)
+		endif
+		
+		if tfgld102.leac = leac.f then
+			|Write Record
+			invoice.releated.to.purchase.order(tfgld102.cono,tfgld102.dcdt,tfgld102.ttyp,
+						tfgld102.docn,tfgld102.amth(1),tfgld102.dbcr,
+						tfgld102.vtyp,"Non-Finalized",tfgld102.fyer,tfgld102.fprd)
+		else
+			continue
+		endif		
+				
+	endselect
+}
+
+function interim.tax.table
+			(
+				domain	tcncmp		i.cono,		|Company
+				domain	tcdate		i.dcdt,		|Date
+				domain	tfgld.ttyp	i.ttyp,		|Transactin Type
+				domain	tfgld.docn	i.docn,		|Document
+				domain	tfgld.lino	i.lino,		|Line
+				domain	tfgld.serl	i.serl,		|Sequence No.
+				domain	tfgld.leac	i.leac,		|Ledger Account
+				domain	tfgld.dbcr	i.dbcr,		|Debit/Credit
+				domain	tfgld.vtyp	i.vtyp,		|Tax Origin
+				domain	tcmcs.str15	i.type,		|Document Type
+				domain	tfgld.year	i.fyer,		|Year
+				domain	tfgld.prod	i.prod		|Period
+				
+			)
+{
+	select 	tfgld107.cono,
+		tfgld107.tcom,
+		tfgld107.year,
+		tfgld107.btno,
+		tfgld107.year,
+		tfgld107.ttyp,
+		tfgld107.docn,
+		tfgld107.vamh
+	from	tfgld107
+	where	tfgld107._index1 = {:i.cono,:i.ttyp,:i.docn,:i.lino,:i.serl}
+	and	tfgld107.vlac = :i.leac
+	selectdo
+		|Write Record
+		invoice.releated.to.purchase.order(tfgld107.cono,i.dcdt,tfgld107.ttyp,
+					tfgld107.docn,tfgld107.vamh(1),
+					i.dbcr,i.vtyp,i.type,i.fyer,i.prod)	
+	endselect
+	
+}
+
+function invoice.releated.to.purchase.order
+				(
+					domain	tcncmp		i.icom,
+					domain	tfgld.date	i.dcdt,
+					domain	tfgld.ttyp	i.ityp,
+					domain	tfgld.docn	i.idoc,
+					domain	tfgld.amnt	i.amnt,		|Amount
+					domain	tfgld.dbcr	i.dbcr,		|Debit/Credit
+					domain	tfgld.vtyp	i.vtyp,		|Tax Origin
+					domain	tcmcs.str15	i.type,		|Document Type
+					domain	tfgld.year	i.fyer,
+					domain	tfgld.prod	i.prod
+				)
+{
+	domain	tcmcs.str15	document_no
+	domain	tcorno		o.orno
+	domain	whinh.shpm	o.rcno
+	domain	tccprj		o.cprj
+	domain	tcpono		o.rcln
+	domain	tccom.bpid	o.ofbp
+	domain	tcpono		o.pono
+	domain	tcpono		o.sqnb
+	domain	tfacp.isup	o.isup
+	
+	document_no = i.ityp & "\" &  str$(i.idoc)
+	
+	o.orno = ""
+	o.rcno = ""
+	o.cprj = ""
+	o.isup = ""
+	
+	on case	i.vtyp
+	case	tfgld.vtyp.out:
+		select 	tpisg039.cprj:o.cprj,
+			tpisg039.rcno:o.rcno,
+			tpisg039.rcln:o.rcln
+| 			tpisg039.ofbp:o.ofbp
+		from	tpisg039
+		where	tpisg039._index3 = {:i.ityp,:i.idoc}
+		and	tpisg039._compnr = 200			|#ISGEC015035.n
+		as set with 1 rows
+		selectdo
+			select 	whisg312.orno:o.orno
+			from	whisg312
+			where	whisg312._index1 = {:o.rcno,:o.rcln}
+			and	whisg312._compnr = 200
+			as set with 1 rows
+			selectdo
+			selectempty
+				o.orno = ""
+			endselect
+			
+		selectempty
+			o.rcno = ""
+			o.rcln = 0
+			o.orno = ""
+| 			o.ofbp = ""
+		endselect
+		
+		select 	tfacr200.itbp:o.ofbp
+		from	tfacr200
+		where	tfacr200._index1 = {:i.ityp,:i.idoc}
+		and	tfacr200.docn  = 0
+		and	tfacr200._compnr = :rep.comp		|#ISGEC015035.n
+		as set with 1 rows
+		selectdo
+		selectempty
+			o.ofbp = ""
+		endselect
+		
+		
+		break
+	case	tfgld.vtyp.in:
+		
+		select 	tfacp200.isup:o.isup,
+			tfacp200.ifbp:o.ofbp, 
+			tfacp200.cdf_cprj:o.cprj		|#ISGEC015035..n
+		from	tfacp200
+		where	tfacp200._index1 = {:i.ityp,:i.idoc}
+		and	tfacp200.docn = 0
+		and	tfacp200._compnr = :rep.comp	|#ISGEC015035.n
+		as set with 1 rows
+		selectdo
+		selectempty
+			o.isup = ""
+		endselect
+		break
+	default:
+		o.orno = ""
+		o.rcno = ""
+		o.cprj = ""
+	endcase
+	
+	
+	
+	
+	
+	select 	tfacp251.orno:o.orno,
+		tfacp251.pono:o.pono,
+		tfacp251.sqnb:o.sqnb,
+		tfacp251.rcno:o.rcno,
+		tfacp251.rseq:o.rcln,
+		tfacp251.loco:o.lcomp
+	from	tfacp251
+	where	tfacp251._index1 = {:i.icom,:i.ityp,:i.idoc}
+	and	tfacp251.otyp = tfacp.otyp.purchase
+	and	tfacp251._compnr = :rep.comp	|#ISGEC015035..n
+	as set with 1 rows
+	selectdo
+		
+		select	tdpur401.cprj:o.cprj,
+			tdpur401.otbp:o.ofbp
+		from	tdpur401
+		where	tdpur401._index1 = {:o.orno,:o.pono,:o.sqnb}
+		and	tdpur401._compnr = :o.lcomp						|#ISGEC015034.n
+		as set with 1 rows
+		selectdo
+		selectempty
+			o.cprj = ""
+			o.ofbp = ""
+		endselect
+		
+		tfisgdll9999.create.detail.line(file_pointer,asc("|"),
+						document_no,	|Document No.
+						sprintf$("%D(%02d-%02m-%04Y)",i.dcdt),
+						o.ofbp,		|Supplier Code
+						o.orno,		|Purchase Order
+						o.cprj,		|Project No.
+						o.rcno,		|Receipt No.
+						o.isup,		|Bill No.
+						i.amnt,		|Amount
+						enum.descr$("tfgld.dbcr",i.dbcr),
+						enum.descr$("tfgld.vtyp",i.vtyp),
+						i.type,
+						i.fyer,
+						i.prod)
+		|Write Data
+	selectempty
+| 		o.cprj = ""
+| 		o.ofbp = ""
+| 		o.pono = 0
+| 		o.rcno = ""
+| 		o.rcln = 0
+		
+		|Write Data
+		
+		tfisgdll9999.create.detail.line(file_pointer,asc("|"),
+						document_no,	|Document No.
+						sprintf$("%D(%02d-%02m-%04Y)",i.dcdt),
+						o.ofbp,		|Supplier Code
+						o.orno,		|Purchase Order
+						o.cprj,		|Project No.
+						o.rcno,		|Receipt No.
+						o.isup,		|Bill No.
+						i.amnt,		|Amount
+						enum.descr$("tfgld.dbcr",i.dbcr),	|Debit/Credit
+						enum.descr$("tfgld.vtyp",i.vtyp),	|Document Origin
+						i.type,					|Document Type
+						i.fyer,
+						i.prod)
+	endselect
+	
+}
+
+
+function read.finalized.transaction()
+{
+	
+	select	tcisg100.fcmp		|#ISGEC015035.sn
+	from	tcisg100
+	where	tcisg100._index1 = 200
+	selectdo			|#ISGEC015035.en
+		select	tfgld106.otyp,
+			tfgld106.odoc,
+			tfgld106.olin,
+			tfgld106.ocmp,
+			tfgld106.vtyp,
+			tfgld106.dbcr,
+			tfgld106.osrl,
+			tfgld106.amth,
+			tfgld106.dcdt,
+			tfgld106.fyer,
+			tfgld106.fprd
+		from	tfgld106
+	| 	where	tfgld106._index2 = {:year.f}
+	| 	and	tfgld106.fprd inrange :prod.f and :prod.t
+		where	tfgld106._index3 = {:leac.f}
+		and	tfgld106.dcdt inrange :docd.f and :docd.t
+| 		and	tfgld106.otyp = "PTR"
+| 		and	tfgld106.odoc = 35026188
+		and	tfgld106._compnr = :tcisg100.fcmp
+		selectdo
+			rep.comp = tfgld106.ocmp		|ISGEC015035.n
+			if tfgld106.vtyp = empty then
+				select	tfgld106.vtyp
+				from	tfgld106
+				where	tfgld106._index1 = {:tfgld106.otyp,:tfgld106.odoc,:tfgld106.olin,:tfgld106.osrl,0}
+				as set with 1 rows
+				selectdo
+				endselect
+			endif
+			
+			invoice.releated.to.purchase.order(tfgld106.ocmp,tfgld106.dcdt,tfgld106.otyp,
+							tfgld106.odoc,tfgld106.amth(1),tfgld106.dbcr,
+							tfgld106.vtyp,"Finalized",tfgld106.fyer,tfgld106.fprd)
+		endselect
+	endselect			|#ISGEC015035.n				
+}	
+
+
