@@ -1,0 +1,342 @@
+|******************************************************************************
+|* dmisg0401m001  0  VRC B61U a7 isg 
+|* Print Element wise Report
+|* Installation user             
+|* 2015-01-12
+|******************************************************************************
+|* Main table dmisg001 Incoming Document Master, Form Type 4
+|******************************************************************************
+|* ISGEC01020 ,IT0376, Mani Sharma,Dated- 14-01-2015
+|* New Report development Element wise                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+  table   tdmisg001 | Incoming Document Master
+  table   tdmisg002
+  table   ttcmcs052
+  table   ttppdm090
+   extern  domain  tccprj  	      cprj.f	
+   extern  domain  dmdoc.docid      docn.f    fixed
+   extern  domain  dmdoc.docid      docn.t    , doc.var,new.doc.no
+   extern  domain  tppdm.cspa	     cspa.f,cspa.t,new.elem,prev.elem
+   extern domain   tcqsl1            o.qnty1,o.qnty2,o.qnty3,o.qnty4,o.qnty5,o.qnty6,o.qnty7
+   extern domain   tcwght            o.wght1,o.wght2,o.wght3,o.wght4,o.wght5,o.wght6,o.wght7
+   extern domain   tcorno            str.var ,len.var 
+   extern domain   tcitem            prev.item.var,new.item.var,prev.rev,new.rev,prev.rev.no,new.rev.no,max.rev,status1
+   extern domain   tcqsl1            p.qnty1,p.qnty2,p.qnty3,p.qnty4,p.qnty5,p.qnty6,p.qnty7
+   extern domain   tcwght            p.wght1,p.wght2,p.wght3,p.wght4,p.wght5,p.wght6,p.wght7
+   extern domain   tcqsl1            n.qnty1,n.qnty2,n.qnty3,n.qnty4,n.qnty5,n.qnty6,n.qnty7
+   extern domain   tcwght            n.wght1,n.wght2,n.wght3,n.wght4,n.wght5,n.wght6,n.wght7
+   extern domain tcpono             temp,length,length1
+   extern domain   tcmcs.str50m     str.temp,str.temp1
+   extern domain   dmdoc.docid       new.docn,prev.docn
+ #pragma used dll ottdllbw 
+
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.cont.process:
+on.choice:
+   execute(print.data)
+
+choice.print.data:
+on.choice:
+	if rprt_open() then
+		read.main.table()
+		rprt_close()
+	else
+		choice.again()
+	endif
+
+	
+
+|****************************** field section *********************************
+
+field.docn.f:
+when.field.changes:
+   docn.t = docn.f
+before.zoom:
+	dmisg001.docn(1;length)= str.temp
+	
+field.docn.t:
+before.zoom:
+	dmisg001.docn(1;length1)= str.temp1
+	
+	
+field.cspa.f:
+when.field.changes:
+   cspa.t = cspa.f
+   
+after.input:
+	str.temp = concat$("-",cprj.f,cspa.f)
+	length = len(str.temp)
+
+before.zoom:
+	query.extend.where.in.zoom("tpptc100.cprj="&quoted.string(cprj.f))
+	
+field.cspa.t:
+before.zoom:
+	query.extend.where.in.zoom("tpptc100.cprj="&quoted.string(cprj.f))
+
+after.input:
+	str.temp1 = concat$("-",cprj.f,cspa.t)
+	length1 = len(str.temp1)
+
+|****************************** function section ******************************
+
+functions:
+
+
+
+function read.main.table()
+{
+	
+	select dmisg001.cprj,dmisg001.docn,dmisg001.revn,dmisg001.stat,tcmcs052.dsca
+	from    dmisg001,tcmcs052
+	where  dmisg001.cprj = {:cprj.f}
+	and    dmisg001.cprj refers to tcmcs052
+	and    dmisg001.stat <> dmstat.submitted
+	and    dmisg001._index1 inrange {:docn.f} and {:docn.t}
+	order by dmisg001.cprj,dmisg001.docn,dmisg001.revn
+	selectdo
+		
+		new.doc.no = shiftl$(strip$(dmisg001.docn))
+		new.rev.no = shiftl$(strip$(dmisg001.revn))
+		if new.doc.no = prev.docn and new.rev.no <> prev.rev.no then
+			continue
+		endif
+		initialise.var()
+		select dmisg002.item,dmisg002.docn,dmisg002.elem
+		from    dmisg002
+		where   dmisg002._index1 = {:dmisg001.docn}
+		and     dmisg002.elem inrange {:cspa.f} and {:cspa.t}
+		group  by dmisg002.item,dmisg002.elem,dmisg002.docn
+		order by dmisg002.elem,dmisg002.docn,dmisg002.item
+		selectdo			
+			new.item.var   = shiftl$(strip$(dmisg002.item))
+			new.docn       = shiftl$(strip$(dmisg002.docn))
+			new.elem       = shiftl$(strip$(dmisg002.elem))
+			if  new.item.var = prev.item.var and new.docn = prev.docn and new.elem = prev.elem  then
+				continue
+			else
+				select dmisg002.wght,dmisg002.qnty,dmisg002.revn,tppdm090.desc
+				from   dmisg002,tppdm090
+				where  dmisg002._index1 = {:dmisg001.docn}
+				and    dmisg002.elem = {:dmisg002.elem}
+				and    dmisg002.item = {:dmisg002.item}
+				and    dmisg002.elem refers to tppdm090
+				selectdo						
+					select dmisg001.stat
+					from    dmisg001
+					where   dmisg001._index1 = {:dmisg002.docn,:dmisg002.revn}
+					selectdo
+					endselect
+					new.rev = trim$(dmisg002.revn)
+						str.var = trim$(dmisg002.revn)
+						if str.var = "0" and  dmisg001.stat <> dmstat.submitted then
+							n.qnty1 = dmisg002.qnty
+							n.wght1 = dmisg002.wght
+							o.qnty1 = dmisg002.qnty
+							o.wght1 = dmisg002.wght
+							select dmisg002.dsca
+							from   dmisg002
+							where  dmisg002._index1 = {:dmisg002.docn}
+							and    dmisg002.elem    = {:dmisg002.elem}
+							and    dmisg002.item    = {:dmisg002.item}
+							and    dmisg002.revn    = {:str.var}
+							selectdo
+							endselect
+							max.rev = shiftl$(strip$(dmisg002.revn))
+							
+						else  if str.var = "1" and dmisg001.stat <> dmstat.submitted then
+							n.qnty2 = dmisg002.qnty
+							n.wght2 = dmisg002.wght
+							o.qnty2 = dmisg002.qnty
+							o.wght2 = dmisg002.wght
+							select dmisg002.dsca
+							from   dmisg002
+							where  dmisg002._index1 = {:dmisg002.docn}
+							and    dmisg002.elem    = {:dmisg002.elem}
+							and    dmisg002.item    = {:dmisg002.item}
+							and    dmisg002.revn    = {:str.var}
+							selectdo
+							endselect
+							max.rev = shiftl$(strip$(dmisg002.revn))
+						endif
+						endif
+						
+						if str.var = "2" and  dmisg001.stat <> dmstat.submitted then
+							n.qnty3 = dmisg002.qnty
+							n.wght3 = dmisg002.wght
+							o.qnty3 = dmisg002.qnty
+							o.wght3 = dmisg002.wght
+							select dmisg002.dsca
+							from   dmisg002
+							where  dmisg002._index1 = {:dmisg002.docn}
+							and    dmisg002.elem    = {:dmisg002.elem}
+							and    dmisg002.item    = {:dmisg002.item}
+							and    dmisg002.revn    = {:str.var}
+							selectdo
+							endselect
+							max.rev = shiftl$(strip$(dmisg002.revn))
+						else  if str.var = "3" and dmisg001.stat <> dmstat.submitted then
+							n.qnty4 = dmisg002.qnty
+							n.wght4 = dmisg002.wght
+							o.qnty4 = dmisg002.qnty
+							o.wght4 = dmisg002.wght
+							select dmisg002.dsca
+							from   dmisg002
+							where  dmisg002._index1 = {:dmisg002.docn}
+							and    dmisg002.elem    = {:dmisg002.elem}
+							and    dmisg002.item    = {:dmisg002.item}
+							and    dmisg002.revn    = {:str.var}
+							selectdo
+							endselect
+							max.rev = shiftl$(strip$(dmisg002.revn))
+						endif
+						endif
+						
+						if str.var = "4" and  dmisg001.stat <> dmstat.submitted then
+							n.qnty5 = dmisg002.qnty
+							n.wght5 = dmisg002.wght
+							o.qnty5 = dmisg002.qnty
+							o.wght5 = dmisg002.wght
+							select dmisg002.dsca
+							from   dmisg002
+							where  dmisg002._index1 = {:dmisg002.docn}
+							and    dmisg002.elem    = {:dmisg002.elem}
+							and    dmisg002.item    = {:dmisg002.item}
+							and    dmisg002.revn    = {:str.var}
+							selectdo
+							endselect
+							max.rev = shiftl$(strip$(dmisg002.revn))
+						else  if str.var = "5"and  dmisg001.stat <> dmstat.submitted then
+							n.qnty6 = dmisg002.qnty
+							n.wght6 = dmisg002.wght
+							o.qnty6 = dmisg002.qnty
+							o.wght6 = dmisg002.wght
+							select dmisg002.dsca
+							from   dmisg002
+							where  dmisg002._index1 = {:dmisg002.docn}
+							and    dmisg002.elem    = {:dmisg002.elem}
+							and    dmisg002.item    = {:dmisg002.item}
+							and    dmisg002.revn    = {:str.var}
+							selectdo
+							endselect
+							max.rev = shiftl$(strip$(dmisg002.revn))
+						endif
+						endif
+						
+						if   str.var = "6" and  dmisg001.stat <> dmstat.submitted then
+							n.qnty7 = dmisg002.qnty
+							n.wght7 = dmisg002.wght
+							o.qnty7 = dmisg002.qnty
+							o.wght7 = dmisg002.wght
+							select dmisg002.dsca
+							from   dmisg002
+							where  dmisg002._index1 = {:dmisg002.docn}
+							and    dmisg002.elem    = {:dmisg002.elem}
+							and    dmisg002.item    = {:dmisg002.item}
+							and    dmisg002.revn    = {:str.var}
+							selectdo
+							endselect
+							max.rev = shiftl$(strip$(dmisg002.revn))
+						endif
+				endselect
+			endif	
+			
+			if max.rev = "1" then
+				if o.qnty2 = o.qnty1 and o.wght2 = o.wght2 then
+					continue
+				endif	
+			endif
+			
+			if max.rev = "2" then
+				if o.qnty3 = o.qnty2 and o.wght3 = o.wght2 and o.qnty2 = o.qnty1 and o.wght2 = o.wght1 then
+					continue
+				endif	
+			endif
+			
+			if max.rev = "3" then
+				if o.qnty4 = o.qnty3 and o.wght4 = o.wght3 and o.qnty3 = o.qnty2 and o.wght3 = o.wght2  then
+					if o.qnty2 = o.qnty1 and o.wght2 = o.wght1   then
+						continue
+					endif
+				endif	
+			endif
+			
+			if max.rev = "4" then
+				if o.qnty5 = o.qnty4 and o.wght5 = o.wght4 and o.qnty4 = o.qnty3 and o.wght4 = o.wght3  then
+					if o.qnty3 = o.qnty2 and o.wght3 = o.wght2 and  o.qnty2 = o.qnty1 and o.wght2 = o.wght1  then
+						continue
+					endif
+				endif	
+			endif
+			
+			if max.rev = "5" then
+				if o.qnty6 = o.qnty5 and o.wght6 = o.wght5 and o.qnty5 = o.qnty4 and o.wght5 = o.wght4  then
+					if o.qnty4 = o.qnty3 and o.wght4 = o.wght3 and  o.qnty3 = o.qnty2 and o.wght3 = o.wght2  then
+						if o.qnty2 = o.qnty1 and o.wght2 = o.wght1 then
+						continue
+						endif
+					endif
+				endif	
+			endif
+			
+			if max.rev = "6" then
+				if  o.qnty7 = o.qnty6 and o.wght7 = o.wght6 and o.qnty6 = o.qnty5 and o.wght6 = o.wght5 and o.qnty5 = o.qnty4 and o.wght5 = o.wght4  then
+					if o.qnty4 = o.qnty3 and o.wght4 = o.wght3 and  o.qnty3 = o.qnty2 and o.wght3 = o.wght2  then
+						if o.qnty2 = o.qnty1 and o.wght2 = o.wght1 then
+						continue
+						endif
+					endif
+				endif	
+			endif
+			rprt_send()
+			prev.item.var   = shiftl$(strip$(dmisg002.item))
+			prev.docn       = shiftl$(strip$(dmisg002.docn))
+			prev.elem       = shiftl$(strip$(dmisg002.elem))
+			prev.rev = new.rev
+			prev.rev.no = new.rev.no
+			initialise.var()
+			
+		endselect
+		select dmisg001.dttl
+		from   dmisg001
+		where  dmisg001.cprj = {:dmisg001.cprj}
+		and    dmisg001.stat <> dmstat.submitted
+		and    dmisg001._index1 = {:dmisg001.docn}
+		and    dmisg001.revn = {:str.var}
+		selectdo
+		endselect
+		
+	endselect
+}
+
+
+function initialise.var()
+{
+	o.qnty1 = 0
+	o.qnty2 = 0
+	o.qnty3 = 0
+	o.qnty4 = 0
+	o.qnty5 = 0
+	o.qnty6 = 0
+	o.qnty7 = 0
+	o.wght1 = 0
+	o.wght2 = 0
+	o.wght3 = 0
+	o.wght4 = 0
+	o.wght5 = 0
+	o.wght6 = 0
+	o.wght7 = 0
+
+}

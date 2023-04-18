@@ -1,0 +1,223 @@
+|******************************************************************************
+|* tdisg0101  0  VRC B61U a7 live
+|* Maintain Document Required for PO
+|* Sanjay S                      
+|* 2014-02-24
+|******************************************************************************
+|* Main table tdisg001 Maintain Document Required for PO, Form Type 1
+|******************************************************************************
+|* IDENT ISG001001, Ankit Sharma, 2014-02-25,B61U a7 live   
+|******************************************************************************
+|* IDENT ISG001021, Somak Mondal, 2014-02-25,	B61U a7 live                                                                                
+|*
+|* ID ISGEC001015, Kuldeep Sharma, 2014.09.05
+|*    Bypass Payment Link Check
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttdisg001 | Maintain Document Required for PO
+	table	ttdpur400
+	table	ttcisg001 | Maintain payment terms for PO
+	table	ttpisg005
+	table	ttpisg006
+	table 	ttccom100
+		domain	tcyesno 	vadoc
+	extern	domain	tcmcs.str15m	vcatg
+	extern	domain	tcisg.catg	v.catg
+	extern	domain 	tcsern		v.vrsn
+	extern	domain  tcpono		max.pono, old.pmtl
+	extern	domain	tcorno	im.orno
+	extern	domain	tcsern	im.vrsn
+	string calling.session(13)	
+
+
+|****************************** program section ********************************
+before.program:
+	import("prog.name$",calling.session)
+	if calling.session = "tdpur4100m900" then
+		import("tdpur400.orno",im.orno)
+		im.vrsn = 0
+		select tdmsl400.vrsn:im.vrsn from tdmsl400
+		where tdmsl400._index1 = {:im.orno}
+		order by tdmsl400.vrsn desc
+		as set with 1 rows
+		selectdo
+		endselect
+	else
+		import("tdmsl500.orno",im.orno)
+		import("tdmsl500.vrsn",im.vrsn)
+	endif
+before.display.object:	
+	select tdpur400.hdst from tdpur400
+	where tdpur400._index1 = {:tdisg001.orno}
+	and	tdpur400.hdst not in (5,35)
+	as set with 1 rows
+	selectdo
+		disable.commands(add.set,modify.set,mark.delete,global.copy,global.delete)
+	selectempty
+		enable.commands(add.set,modify.set,mark.delete,global.copy,global.delete)
+	endselect
+		
+| Get supplier name						|ISG001021.so
+| 	select	tccom100.nama 
+| 	from	tccom100,tdpur400
+| 	where	tccom100.bpid = :tdpur400.otbp and
+| 		tdpur400.orno = :tdisg001.orno
+| 	selectdo
+| 	endselect
+| 	display("tccom100.nama")				|ISG001021.eo
+|****************************** choice section **********************************
+choice.add.set:						|ISG001021.sn
+before.choice:
+	select	tdisg001.pono:max.pono
+	from	tdisg001
+	where	tdisg001._index1 = {:tdisg001.orno,:tdisg001.vrsn}
+	order by tdisg001.pono desc
+	as set with 1 rows
+	selectdo
+	selectempty
+		max.pono = 0
+	endselect						|ISG001021.en
+|****************************** form section **********************************
+group.1:
+init.group:
+	tdisg001.orno = im.orno
+	tdisg001.vrsn = im.vrsn
+	select tdpur400.hdst from tdpur400
+	where tdpur400._index1 = {:tdisg001.orno}
+	and	tdpur400.hdst not in (5,35)
+	as set with 1 rows
+	selectdo
+		disable.commands(add.set,modify.set,mark.delete,global.copy,global.delete)
+	selectempty
+		enable.commands(add.set,modify.set,mark.delete,global.copy,global.delete)
+	endselect
+| 	import("tdpur400.cpay",tdpur400.cpay)			|ISG001021.so
+| 	import("tdpur400.orno",tdisg001.orno)
+|Get supplier name
+| 	select	tccom100.nama 
+| 	from	tccom100,tdpur400
+| 	where	tccom100.bpid = :tdpur400.otbp and
+| 		tdpur400.orno = :tdisg001.orno
+| 	selectdo
+| 	endselect
+| 	display("tccom100.nama")				|ISG001021.eo
+|****************************** main.io section ********************************
+main.table.io:
+before.rewrite:
+	on.old.occ(get.old.pmtl)		|ISG001021.n
+after.write:
+	tcisg001.update()
+after.rewrite:	
+	tcisg001.update()
+	update.tcisg001.adoc()			|ISG001021.n
+after.delete:
+	tcisg001.update()
+	
+|****************************** field section **********************************
+field.tdisg001.pono:					|ISG001021.sn
+before.display:
+	if update.status = add.set and tdisg001.pono = 0 then
+		max.pono = max.pono + 1	
+		tdisg001.pono = max.pono
+	endif						|ISG001021.sn
+	
+field.tdisg001.orno:
+| after.field:
+	
+	|Get supplier name
+| 	select	tccom100.nama 
+| 	from	tccom100,tdpur400
+| 	where	tccom100.bpid = tdpur400.otbp and
+| 		tdpur400.orno = :tdisg001.orno
+| 	selectdo
+| 	endselect
+| 	display("tccom100.nama")
+	
+	
+field.tpisg005.desc:
+before.display:
+	select	tpisg005.desc 
+	from	tpisg005
+	where	tpisg005.docn = :tdisg001.docn
+	selectdo
+	endselect
+
+field.tdisg001.pmtl:
+before.zoom:
+	tcisg001.orno	= tdisg001.orno
+	tcisg001.vrsn	= tdisg001.vrsn
+
+check.input:
+	select	tcisg001.srno 
+	from	tcisg001 
+	where	tcisg001._index1 = {:tdisg001.orno,:tdisg001.vrsn,:tdisg001.pmtl}
+	selectdo
+	selectempty
+		if tdisg001.pmtl<> 0 then			|#ISGEC001015.n
+			message("Payment line not found in terms of payment by Purchase Order(tcisg001)")
+			set.input.error("")
+		endif						|#ISGEC001015.n
+	endselect
+field.vcatg:
+before.display:					|ISG001021.sn
+| 	vcatg = " "
+	select	tcisg001.catg 
+	from	tcisg001
+	where	tcisg001._index1 = {:tdisg001.orno,:tdisg001.vrsn,:tdisg001.pmtl}
+	selectdo
+		vcatg = enum.descr$("tcisg.catg",tcisg001.catg)
+	selectempty
+		vcatg = ""
+	endselect					|ISG001021.en
+
+|*******************************functions*****************************************
+functions:
+function void tcisg001.update()
+{	
+	vadoc = tcyesno.no
+	
+	select	tdisg001.* 
+	from	tdisg001
+	where	tdisg001.orno = :tdisg001.orno and
+		tdisg001.pmtl = :tdisg001.pmtl
+	selectdo
+		
+		if strip$(tdisg001.docn) <> "" then
+			vadoc = tcyesno.yes
+		endif
+		
+		select	tcisg001.* 
+		from	tcisg001 for update
+		where	tcisg001.orno = :tdisg001.orno and
+			tcisg001.srno = :tdisg001.pmtl 
+		selectdo			
+			tcisg001.adoc = vadoc
+			db.update(ttcisg001,db.retry)
+		endselect
+	endselect
+}
+
+function get.old.pmtl()				|ISG001021.sn
+{
+	old.pmtl = tdisg001.pmtl
+}
+function update.tcisg001.adoc()		|Remove Attach Document Status
+{
+	select	tdisg001.pmtl
+	from	tdisg001
+	where	tdisg001._index1 = {:tdisg001.orno}
+	and	tdisg001.pmtl = :old.pmtl
+	selectdo
+	selectempty
+		select	tcisg001.* 
+		from	tcisg001 for update
+		where	tcisg001.orno = :tdisg001.orno and
+			tcisg001.srno = :old.pmtl
+		selectdo			
+			tcisg001.adoc = tcyesno.no
+			db.update(ttcisg001,db.retry)
+		endselect	
+	endselect
+}
+								|ISG001021.en

@@ -1,0 +1,306 @@
+ |******************************************************************************
+|* tpisg0479m000  0  VRC B61U a7 isg 
+|* MIS for QFR
+|* user07                        
+|* 2015-02-23
+|******************************************************************************
+|* Main table tpisg079 QFR Information, Form Type 4
+|******************************************************************************
+|*
+|* PATCH001038, Dharmendra, 18-03-2015
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttpisg079 | QFR Information
+  table   ttcmcs052
+  table		ttccom001			|# PATCH001038.n
+  table		ttpisg077
+
+   
+   extern  domain  tfgld.date	     cdat.f, cdat.t
+   extern  domain  tcpono	     srno
+   string err.file(100), file.name(100), line1(5000), text1(240, 100)
+
+   long 	stat.fp, ret1, ret2
+#include<bic_desktop>
+#include<bic_text>
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.cont.process:
+on.choice:
+   execute(print.data)
+
+choice.print.data:
+on.choice:
+   if rprt_open() then
+       read.main.table()
+       rprt_close()
+   else
+       choice.again()
+   endif
+
+
+choice.process:
+on.choice:
+   generate.file()
+
+
+
+|****************************** field section *********************************
+
+field.cdat.f:
+when.field.changes:
+   cdat.t = cdat.f
+   
+
+|****************************** function section ******************************
+
+functions:
+
+function read.main.table()
+{
+	srno = 0
+	select	tpisg079.*
+	from	tpisg079
+	where	tpisg079.cdat inrange :cdat.f and :cdat.t
+	selectdo
+		srno = srno +1		
+		select 	tcmcs052.dsca
+		from	tcmcs052
+		where	tcmcs052._index1 = {:tpisg079.cprj}
+		selectdo
+		selectempty
+			tcmcs052.dsca = ""
+		endselect
+		
+		select	tpisg077.desc
+		from	tpisg077
+		where	tpisg077._index1 = {:tpisg079.ptyp}
+		selectdo
+		selectempty
+			tpisg077.desc = ""
+		endselect
+		
+		select	tccom001.nama
+		from	tccom001
+		where	tccom001._index1 = {:tpisg079.actb}
+		selectdo
+		selectempty
+			tccom001.nama = ""
+		endselect
+	
+		rprt_send()
+	endselect
+}
+
+
+function generate.file()
+{
+	open.file()
+	generate.header()
+	
+	srno = 0
+	select 	tpisg079.*
+	from 	tpisg079
+	where  	tpisg079.cdat inrange {:cdat.f} and {:cdat.t}
+	selectdo
+		srno = srno +1
+		select 	tcmcs052.dsca
+		from	tcmcs052
+		where	tcmcs052._index1 = {:tpisg079.cprj}
+		selectdo
+		selectempty
+			tcmcs052.dsca = ""
+		endselect
+		
+		print.detail()
+	endselect
+	close.file()
+}
+
+function open.file()
+{
+	err.file = bse.tmp.dir$() & str$(utc.num()) & ".xls"
+	
+	file.name = "c:\temp\" & str$(utc.num())  & ".xls"
+	
+	stat.fp = seq.open(err.file, "w+")
+	if stat.fp >0 then
+ 		seq.seek(0, 0, stat.fp)
+	endif
+}
+
+function	generate.header()
+{
+	line1 =	concat$("	",
+		sprintf$("S No."),					|1		
+		sprintf$("Report No."),				|2	
+		sprintf$("Date of QFR"),				|3	
+		sprintf$("Project Code"),				|4
+		sprintf$("Project Name"),				|5
+		sprintf$("Product Code"),				|6
+		sprintf$("Poduct Description"),			|7
+		sprintf$("Complain Category"),				|8
+		sprintf$("Element No."),				|9
+		sprintf$("Item Description"),				|10	
+		sprintf$("Nature of Complaint"),			|11	
+		sprintf$("Root Cause of Failure"),			|12
+		sprintf$("Correction"),			  	|13
+		sprintf$("Corrective Steps for future"),		|14
+		sprintf$("Remarks"),					|15
+		sprintf$("Action By"),					|16
+		sprintf$("QFR Attributed to"),				|17
+		sprintf$("Cost to company"))				|18
+		
+	line1 = strip$(shiftl$(line1))		
+	seq.puts(line1, stat.fp)	
+}
+
+function	print.detail()
+{	
+	long i, line.no
+	
+	ret1 = 0
+	line.no = 0
+	i = 0
+	line1 = ""
+	
+	line1 = str$(srno)
+	line1 = strip$(line1) & "	" & str$(tpisg079.sarn)
+	line1 = strip$(line1) & "	" & sprintf$("%D(%02m/%02d/%04Y)", tpisg079.cdat)
+	line1 = strip$(line1) & "	" & tpisg079.cprj
+	line1 = strip$(line1) & "	" & tcmcs052.dsca
+	
+	select	tpisg077.desc
+	from	tpisg077
+	where	tpisg077._index1 = {:tpisg079.ptyp}
+	selectdo
+	selectempty
+		tpisg077.desc = ""
+	endselect
+	
+	line1 = strip$(line1) & "	" & tpisg079.ptyp
+	line1 = strip$(line1) & "	" & tpisg077.desc
+	line1 = strip$(line1) & "	" & tpisg079.ccat
+	line1 = strip$(line1) & "	" & tpisg079.cspa
+	line1 = strip$(line1) & "	" & tpisg079.item
+	
+	
+	ret1 = text.to.buf("tpisg079.nocm", "2", 100, text1)
+	if ret1 then
+		for i = 1 to ret1
+			line.no = line.no + 1
+			if line.no = 1 then
+				line1 = strip$(line1) & "	" & text1(1, i)
+			else
+				line1 = strip$(line1) & " " & text1(1, i)
+			endif
+		endfor
+	else 
+		line1 = strip$(line1) & "	" & ""	
+	endif
+	
+	ret1 = 0
+	line.no = 0
+	i = 0
+	
+	ret1 = text.to.buf("tpisg079.caus.r", "2", 100, text1)
+	if ret1 then
+		for i = 1 to ret1
+			line.no = line.no + 1
+			if line.no = 1 then
+				line1 = strip$(line1) & "	" & text1(1, i)
+			else
+				line1 = strip$(line1) & " " & text1(1, i)
+			endif
+		endfor
+	else 
+		line1 = strip$(line1) & "	" & ""
+	endif
+
+	ret1 = 0
+	line.no = 0
+	i = 0
+	
+	ret1 = text.to.buf("tpisg079.corr", "2", 100, text1)
+	if ret1 then
+		for i = 1 to ret1
+			line.no = line.no + 1
+			if line.no = 1 then
+				line1 = strip$(line1) & "	" & text1(1, i)
+			else
+				line1 = strip$(line1) & " " & text1(1, i)
+			endif
+		endfor
+	else 
+		line1 = strip$(line1) & "	" & ""
+	endif
+	
+	ret1 = 0
+	line.no = 0
+	i = 0
+	
+	ret1 = text.to.buf("tpisg079.acti", "2", 100, text1)
+	if ret1 then
+		for i = 1 to ret1
+			line.no = line.no + 1
+			if line.no = 1 then
+				line1 = strip$(line1) & "	" & text1(1, i)
+			else
+				line1 = strip$(line1) & " " & text1(1, i)
+			endif
+		endfor
+	else 
+		line1 = strip$(line1) & "	" & ""
+	endif
+
+	ret1 = 0
+	line.no = 0
+	i = 0
+	
+	ret1 = text.to.buf("tpisg079.remr", "2", 100, text1)
+	if ret1 then
+		for i = 1 to ret1
+			line.no = line.no + 1
+			if line.no = 1 then
+				line1 = strip$(line1) & "	" & text1(1, i)
+			else
+				line1 = strip$(line1) & " " & text1(1, i)
+			endif
+		endfor
+	else 
+		line1 = strip$(line1) & "	" & ""
+	endif
+						|# tccom001.nama.sn
+	select	tccom001.nama
+	from	tccom001
+	where	tccom001._index1 = {:tpisg079.actb}
+	selectdo
+	selectempty
+		tccom001.nama = ""
+	endselect
+						|# tccom001.nama.en
+	line1 = strip$(line1) & "	" & tccom001.nama
+	line1 = strip$(line1) & "	" & tpisg079.attr	
+	line1 = strip$(line1) & "	" & str$(tpisg079.cost.q)
+	
+	
+	line1 = strip$(shiftl$(line1))
+	seq.puts(line1, stat.fp)
+}	
+
+function close.file()
+{
+	seq.close(stat.fp)
+	ret2 = server2client(err.file,file.name,1)
+	ret2 = app_start(file.name,"c:","","","")
+}

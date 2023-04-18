@@ -1,0 +1,484 @@
+|******************************************************************************
+|* dmisg0501m000  0  VRC B61U a7 live
+|* Document Master
+|* Tools                         
+|* 2014-05-03
+|******************************************************************************
+|* Main table dmisg001 Incoming Document Master, Form Type 1
+|******************************************************************************
+|* ISGECDV001012, IT0205, Arjit Gupta, Dt. 11-09-2014, VRC B61U a7 live 
+|* To Improvise Previous Revision Check
+|*
+|* ISGECDV001057, IT0205, Arjit Gupta, Dt. 24-09-2014, VRC B61U a7 live
+|* Drawing Release Date and Drawing Release by captured when Drawing Released
+|*
+|* |* ISGEC004003, IT0047, Dharmendra, 15-01-2015, B61U a7 isg
+|*
+|* IDENT ISGEC001175, Ritu Sharma, 2015-05-14
+|* Created this dll to update the size for man hours.
+|****************************** declaration section ***************************
+declaration:
+
+	table	tdmisg001 | Incoming Document Master
+	table	tdmisg002
+	table	tdmisg003
+	table	tdmisg005
+	table	ttpmsl000
+	table	ttcibd001
+	table	ttpptc100
+	table	ttpisg063
+	table	tdmisg007				|#ISGEC004003.sn
+	table	tdmisg000
+
+	extern	long	count.item
+		domain tcpono	get.stnd.error		|#ISGEC004003.sn
+	extern	domain	tcmcs.str50	reason		
+	extern	domain	tcmcs.str215 error.msg		
+		domain	tclogn	v.logname
+	extern	long	ret_val, block			|#ISGEC004003.en	
+	
+	#include <bic_dam>
+|****************************** program section ********************************
+before.program:
+	v.logname = logname$
+	query.extend.where("dmisg001.crtp = tcyesno.no")		|SM-17082014.n
+	
+before.display.object:
+	set.enum.values.for.field("dmisg001.stat", dmstat.submitted, dmstat.released, dmstat.process)
+	
+	if dmisg001.stat = ltoe(1) then
+		enable.commands("Get_Standard_Item_Updated")
+	else
+		disable.commands("Get_Standard_Item_Updated")
+	endif
+	
+|****************************** Choice section **********************************
+
+choice.process.cont:
+before.choice:
+	|*  If Item is Repeated, Process is not Continue
+	
+	if	not Check_Project_Exist(dmisg001.cprj)	then
+		message("Project is not Active")
+		choice.again()
+	endif	
+	if	not Check_Element_Level(dmisg001.cprj, dmisg001.cspa)	then
+		message("Element must be Equal or Greater than Level 4")
+		choice.again()
+	else	
+		if	not Check_Element_Status(dmisg001.cprj, dmisg001.cspa)	then
+			message("Work Authorization Status of Element is not Released")
+			choice.again()
+		endif	
+	endif	
+	Check_Duplicate_Item_Exists()
+	Check_Item_Length()
+	if	not Check_Previous_Rev_Expire(dmisg001.docn, dmisg001.revn)	then
+		message("Previous Revision of Document %s is not Expire", dmisg001.docn)
+		choice.again()
+	endif	
+							|#ISGEC004003.sn
+	get.stnd.error = Get_Standard_Item_Updated()
+	if get.stnd.error = 1 then
+		choice.again()
+	endif	
+
+	if not Check_Engineering_Element_status(dmisg001.cprj, dmisg001.cspa) then
+		choice.again()
+	endif	
+							|#ISGEC004003.en
+	
+on.choice:
+	if	dmisg001.stat = dmstat.submitted	then
+		InsertRecord_dmisg005()
+		dmisg.dll0910.update.size.man.haours(dmisg001.docn,dmisg001.revn,dmisg001.size)	|#ISGEC001175.n
+		commit.transaction()							|#ISGEC001175.n
+		message("Drawing Released")
+	else
+		message("Already Released")
+		choice.again()
+	endif
+
+
+choice.mark.delete:
+before.choice:
+| after.choice:
+| 	on.main.table(delete.all.related.records)
+	
+|************************************** Function Section *************
+functions:
+function InsertRecord_dmisg005()
+{
+	domain	tcitem		o.loti
+	domain	dmdoc.revv	o.revn
+	
+	select 	dmisg002.*
+	from	dmisg002
+	where	dmisg002._index1 = {:dmisg001.docn,:dmisg001.revn}
+	selectdo
+		|* If Record Exists for Same Drawing
+		|* Lot Item is Defaulted
+		select 	dmisg005.loti:o.loti,
+			dmisg005.revn:o.revn
+		from	dmisg005
+		where	dmisg005._index1 = {:dmisg001.cprj,:dmisg001.cspa,:dmisg002.docn}
+		and	dmisg005.item = :dmisg002.item
+		and	dmisg005.loti <> ""
+		order by dmisg005.revn desc
+		as set with 1 rows
+		selectdo
+		selectempty
+			o.loti = ""
+		endselect
+		
+		dmisg005.cprj = dmisg001.cprj
+		dmisg005.cspa = dmisg001.cspa
+		dmisg005.docn = dmisg002.docn
+		dmisg005.revn = dmisg002.revn
+		dmisg005.srno = dmisg002.srno
+		dmisg005.item = dmisg002.item
+		dmisg005.dsca = dmisg002.dsca
+		dmisg005.qnty = dmisg002.qnty
+		dmisg005.wght = dmisg002.wght
+		dmisg005.loti = o.loti
+		dmisg005.stat = dmstat.process
+		dmisg005.cuni = dmisg002.cuni
+		db.insert(tdmisg005,db.skip.dupl,e)
+	selecteos
+| 		select 	dmisg001.stat			|#ISGECDV001057.o
+		select 	dmisg001.stat, dmisg001.drdt, dmisg001.drur, dmisg001.wfst	|#ISGECDV001057.n
+		from	dmisg001 for update
+		where	dmisg001._index1 = {:dmisg001.docn,:dmisg001.revn}
+		as set with 1 rows
+		selectdo
+			dmisg001.stat = dmstat.process
+			dmisg001.drdt = utc.num()						|#ISGECDV001057.n	
+			dmisg001.drur = logname$						|#ISGECDV001057.n
+			dmisg001.wfst = dmisg.wfst.released					|#ISGEC004003.n	
+			db.update(tdmisg001,db.retry,e)
+		endselect	
+	selectempty
+| 		select 	dmisg001.stat			|#ISGECDV001057.o
+		select 	dmisg001.stat, dmisg001.drdt, dmisg001.drur, dmisg001.wfst		|#ISGECDV001057.n
+		from	dmisg001 for update
+		where	dmisg001._index1 = {:dmisg001.docn,:dmisg001.revn}
+		as set with 1 rows
+		selectdo
+			dmisg001.stat = dmstat.process
+			dmisg001.drdt = utc.num()						|#ISGECDV001057.n	
+			dmisg001.drur = logname$						|#ISGECDV001057.n
+			dmisg001.wfst = dmisg.wfst.released					|#ISGEC004003.n
+			db.update(tdmisg001,db.retry,e)
+		endselect
+	endselect
+	
+	commit.transaction()
+}
+
+
+function Check_Duplicate_Item_Exists()
+{
+	select 	count(dmisg002.item):count.item,
+		dmisg002.item
+	from	dmisg002
+	where	dmisg002._index1 = {:dmisg001.docn,:dmisg001.revn}
+	group by dmisg002.item
+	selectdo
+		if count.item > 1 then
+			message("Duplicate Item Found %s",dmisg002.item)
+			choice.again()
+		endif
+	endselect
+}
+
+function Check_Item_Length()
+{
+	long	ret.val
+	select	dmisg002.item
+	from	dmisg002
+	where	dmisg002._index1 = {:dmisg001.docn,:dmisg001.revn}
+	group by dmisg002.item
+	selectdo
+		if	(len(trim$(dmisg002.item)) < 6) then
+			message("Length of Item %s must be greater than 6",dmisg002.item)
+			choice.again()
+		endif
+	endselect
+}
+
+function boolean Check_Previous_Rev_Expire(domain dmdoc.docid	i.docn,
+					domain	dmdoc.revv	i.revi)
+{
+	domain	dmstat		tmp.stat
+	domain	dmdoc.revv	tmp.revi
+	
+	select	a_dmisg001.stat:tmp.stat, a_dmisg001.revn:tmp.revi
+	from	dmisg001 a_dmisg001
+	where	a_dmisg001._index1 = {:i.docn}
+	and	a_dmisg001.revn < :i.revi
+	order by a_dmisg001.revn desc
+	as set with 1 rows
+	selectdo
+		if	tmp.stat = dmstat.expire	then
+			return(true)
+		endif
+	selectempty
+		return(true)
+	endselect
+	
+	return(false)	
+}					
+
+					|#ISGECDV001012.sn
+function boolean Check_Previous_Rev_Expire_N(domain dmdoc.docid	i.docn,
+					domain	dmdoc.revv	i.revi)
+{
+	domain	dmstat		tmp.stat
+	domain	dmdoc.revv	tmp.revi
+	
+	select	a_dmisg001.stat:tmp.stat, a_dmisg001.revn:tmp.revi
+	from	dmisg001 a_dmisg001
+	where	a_dmisg001._index1 = {:i.docn}
+	and	a_dmisg001.revn < :i.revi
+	order by a_dmisg001.revn desc
+	as set with 1 rows
+	selectdo
+		if	(tmp.stat = dmstat.expire)	and	(tmp.revi <> i.revi)	then
+			return(true)
+		endif
+	selectempty
+		return(true)
+	endselect
+	
+	return(false)	
+}					
+					|#ISGECDV001012.en
+
+function boolean Check_Project_Exist(domain	tccprj	i.cprj)
+{
+	select	tppdm600.psts
+	from	tppdm600
+	where	tppdm600._index1 = {:i.cprj}
+	and	tppdm600.psts in (tppdm.psts.construction, tppdm.psts.finished)
+	selectdo
+	selectempty
+		return(false)
+	endselect
+	
+	return(true)
+}
+
+function boolean Check_Element_Level(domain	tccprj	i.cprj,
+				domain	tppdm.cspa	i.cspa)
+{
+	long	level
+	domain	tppdm.cspa	o.elem
+	
+	tcmcs.dll0095.read.parm("tpmsl000")
+	level = tpmsl000.levl + 1
+		
+	select 	tpest120.sele:o.elem
+	from	tpest120
+	where	tpest120._index1 = {:i.cprj}
+	and	tpest120.sele = :i.cspa
+	and	tpest120.levl > :level
+	as set with 1 rows
+	selectdo
+		return(true)
+	endselect
+	return(false)
+	
+}				
+
+function boolean Check_Element_Status(domain	tccprj	i.cprj,
+				domain	tppdm.cspa	i.cspa)
+{
+	domain	tppdm.cspa	o.elem
+		
+	select 	tpptc100.cspa:o.elem
+	from	tpptc100
+	where	tpptc100._index1 = {:i.cprj, :i.cspa}
+| 	and	tpptc100.wast in (tppdm.wast.released, tppdm.wast.finished)
+	and	tpptc100.wast = tppdm.wast.released
+	selectdo
+		return(true)
+	endselect
+	
+	return(false)
+}
+
+function extern domain tcpono Get_Standard_Item_Updated()
+{
+	long	ret
+	domain	tcpono	found
+	
+	found = 0
+	
+	block = brp.open("rdmisg040101031", "D", 0)
+	
+	select	dmisg002.*
+	from	dmisg002 for update
+	where	dmisg002._index1 = {:dmisg001.docn, :dmisg001.revn}
+	and	dmisg002.itmt = "S"
+	selectdo	
+		select	tcibd001.dsca, tcibd001.citg, tcibd001.cuni, tcibd001.wght, tcibd001.csig
+		from	tcibd001
+| 		where	tcibd001._index1 = {:dmisg002.item}		|SM-17082014.o
+		where	tcibd001._index1 = {:dmisg002.oitm}		|SM-17082014.n
+		selectdo
+			select	tcmcs018.blcp				|#ISGEC004003.sn
+			from	tcmcs018
+			where	tcmcs018._index1 = {:tcibd001.csig}
+			and	tcmcs018.blcp = tcblst.blocked
+			selectdo
+				reason = "Item is Block for Purchase."
+				brp.ready(block)
+				found = 1
+			endselect
+									|#ISGEC004003.sn
+			dal.change.object("dmisg002")
+			dal.set.field("dmisg002.dsca", tcibd001.dsca)
+			dal.set.field("dmisg002.citg", tcibd001.citg)
+			dal.set.field("dmisg002.cuni", tcibd001.cuni)
+			dal.set.field("dmisg002.wght", dmisg002.qnty * tcibd001.wght)
+			ret = dal.save.object("dmisg002")
+			if	ret = 0	then
+				commit.transaction()
+			else
+				abort.transaction()
+			endif
+		selectempty
+			reason = "Item not available in Standard Item"
+			brp.ready(block)
+			found = 1
+		endselect
+								|#ISGEC004003.sn
+		select	dmisg007.item, dmisg007.docn, dmisg007.revn, dmisg007.dsca,
+			dmisg007.pdfn
+		from	dmisg007
+		where	dmisg007._index1 = {:dmisg002.oitm}
+		selectdo
+			select	dmisg003.*
+			from	dmisg003
+			where	dmisg003._index1 = {:dmisg001.docn, :dmisg001.revn, :dmisg007.item}
+			selectdo
+			selectempty
+				dmisg003.docn = dmisg001.docn
+				dmisg003.revn = dmisg001.revn
+				dmisg003.drgt = dmisg007.docn
+				dmisg003.drev = dmisg007.revn
+				dmisg003.drgn = dmisg007.docn
+				dmisg003.dcfn = dmisg007.dsca
+				dmisg003.pdff = dmisg007.pdfn
+				dmisg003.type = dmcatg.reference
+				db.insert(tdmisg003, db.skip.dupl, e)
+			endselect
+		endselect
+		if	ret = 0	then
+			commit.transaction()
+		else
+			abort.transaction()
+		endif
+								|#ISGEC004003.en
+	endselect
+
+	brp.close(block)
+	
+	return(found)
+}
+
+function boolean Check_Engineering_Element_status(domain tccprj i.cprj,
+						domain tppdm.cspa i.cspa)
+{
+	select 	tpisg063.*
+	from	tpisg063
+	where	tpisg063._index1 = {:i.cprj, :i.cspa}
+	selectdo
+		if tpisg063.appl = tcyesno.yes and tpisg063.engs = tpengs.partial then
+			select	tpptc100.wast
+			from	tpptc100
+			where	tpptc100._index1 = {:i.cprj, :i.cspa}
+			selectdo
+				if tpptc100.wast = tppdm.wast.released then
+					
+				else
+					message("Applicable Status: %s and Engineering Status %s Work Authorization status %s", tpisg063.appl, tpisg063.engs, tpptc100.wast)
+					return(false)
+				endif
+			selectempty
+				message("Work Authorization status not maintained in Maintain Element Master.")
+				return(false)
+			endselect
+		else
+			message("Applicable Status: %s and Engineering Status %s", tpisg063.appl, tpisg063.engs)
+			return(false)
+		endif
+	selectempty
+		message("Engineering Status not maintained for this Project & Element")
+		return(false)
+	endselect
+	
+	return(true)
+}
+
+
+function delete.all.related.records()
+{
+| 	if dmisg001.stat = dmstat.submitted then			|# ISGEC004003.o
+	if dmisg001.stat = dmstat.submitted and dmisg001.wfst = dmisg.wfst.underdesign then	|# ISGEC004003.n
+		select	dmisg000.*				|#ISGEC004003.sn
+		from 	dmisg000
+		where 	dmisg000._index1 = {:v.logname}
+		as set with 1 rows
+		selectdo					|#ISGEC004003.en
+			select 	dmisg002.docn
+			from	dmisg002 for update
+			where	dmisg002._index1 = {:dmisg001.docn,:dmisg001.revn}
+			selectdo
+				db.delete(tdmisg002,db.retry,e)
+			endselect
+			
+			select	dmisg003.docn
+			from	dmisg003 for update
+			where	dmisg003._index1 = {:dmisg001.docn,:dmisg001.revn}
+			selectdo
+				db.delete(tdmisg003,db.retry,e)
+			endselect
+								|#ISGEC004003.sn
+			if not isspace(dmisg001.drwd) then						
+				ret_val = dmisgdll0001.delete.document(dmisg000.draw,
+									dmisg001.drwd,
+									error.msg)
+				if ret_val then
+					if not isspace(dmisg001.pdfd) then
+						ret_val = dmisgdll0001.delete.document(dmisg000.type,
+											dmisg001.pdfd,
+											error.msg)
+						if ret_val then
+							commit.transaction()
+						else
+							message("%s", error.msg)
+							choice.again()
+						endif
+					else
+						commit.transaction()		
+					endif	
+				else
+					message("%s", error.msg)
+					choice.again()	
+				endif	
+			else
+				commit.transaction()
+			endif
+								|#ISGEC004003.en
+		selectempty
+			message("Path Not Maintained for this User")
+			choice.again()
+		endselect
+	else
+		message("Can't Delete!!!")
+		choice.again()
+	endif	
+	
+}
+

@@ -1,0 +1,241 @@
+|******************************************************************************
+|* tfisg0401m011  0  VRC B61U a7 live
+|* Print IRN Based Report of Vendor Accounts VS IJTISGEC Accoun
+|* tools1
+|* 14-05-17 [15:47]
+|******************************************************************************
+|* Script Type: 4
+|******************************************************************************
+|* ID ISG001029, Manish Manchanda, 17/5/2014, B61U a7 live
+|*
+|****************************** DECLARATION SECTION ***************************
+declaration:
+
+#ident "@(#) ISG001029, Manish Manchanda, 17/5/2014, B61U a7 live"
+
+	table	ttfisg001
+	table	ttdpur400
+	table	ttfacp200
+	table	ttfacp935
+	table	ttfcmg100
+	table	ttfcmg110
+	table	ttfmsl020
+	table	ttccom100
+	table	ttppdm600
+
+	extern	domain	tccom.bpid	supp.f, supp.t
+	extern	domain	tccprj		prjt.f, prjt.t
+	extern	domain	tcorno		orno.f, orno.t
+	extern	domain	tcamnt		oamt.w, gros.w, extx.l, cltx.l, adas.w, adua.w, uaas.w, uaua.w, inam.w, pamt.w, grna.w, amnt.w
+	extern	domain	tfacp.isup	isup.w
+	extern	domain	tfcmg.cheq	cheq.w
+	extern	domain	tcnama		nama.w
+	extern	domain	tcmcs.str12	purc.invo, paym.docn
+	extern	domain	tcmcs.str12	temp.paym.docn
+	extern	domain	tfgld.ttyp	tdoc.w
+	extern	domain	tfgld.docn	docn.w
+	string	str(300)
+|****************************** PROGRAM     SECTION ***************************
+|****************************** ZOOM FROM   SECTION ***************************
+|****************************** FORM	     SECTION ***************************
+|****************************** CHOICE      SECTION ***************************
+choice.cont.process:
+on.choice:
+	execute(print.data)
+choice.print.data:
+on.choice:
+	if	rprt_open() then
+		read.main.table()
+		rprt_close()
+	else
+		choice.again()
+	endif
+|****************************** FIELD       SECTION ***************************
+field.supp.f:
+when.field.changes:
+supp.t = supp.f
+
+field.prjt.f:
+when.field.changes:
+prjt.t = prjt.f
+before.zoom:
+	str = ""
+	str = "tppdm600.cprj in ("
+	str = str &"select tfisg001.cprj from tfisg001 where tfisg001.cust inrange '"& supp.f &"'and'"& supp.t &"')"
+	query.extend.where.in.zoom(str)
+
+field.prjt.t:
+before.zoom:
+	str = ""
+	str = "tppdm600.cprj in ("
+	str = str &"select tfisg001.cprj from tfisg001 where tfisg001.cust inrange '"& supp.f &"'and'"& supp.t &"')"
+	query.extend.where.in.zoom(str)
+
+field.orno.f:
+when.field.changes:
+orno.t = orno.f
+before.zoom:
+	str = ""
+	str = "tdpur400.orno in ("
+	str = str & "select tfisg001.orno from tfisg001 where tfisg001.cust inrange '"& supp.f &"'and'"& supp.t &"'"
+	str = str & "and tfisg001.cprj inrange '"& prjt.f &"'and'"& prjt.t&"')"
+	query.extend.where.in.zoom(str)
+	
+field.orno.t:
+before.zoom:
+	str = ""
+	str = "tdpur400.orno in ("
+	str = str & "select tfisg001.orno from tfisg001 where tfisg001.cust inrange '"& supp.f &"'and'"& supp.t &"'"
+	str = str & "and tfisg001.cprj inrange '"& prjt.f &"'and'"& prjt.t&"')"
+	query.extend.where.in.zoom(str)
+	
+	
+	
+|****************************** MAIN TABLE  SECTION ***************************
+|****************************** FUNCTION    SECTION ***************************
+
+functions:
+
+function read.main.table()
+{
+	domain	tcncmp	comp
+	comp = get.compnr()
+	
+	select	tfisg001.*	from	tfisg001
+| 	where	tfisg001.cust	inrange	{:supp.f} and {:supp.t}				|14072014.o
+	where	tfisg001.bpid	inrange	{:supp.f} and {:supp.t}			|14072014.n	
+	and	tfisg001.cprj	inrange	{:prjt.f} and {:prjt.t}
+	and	tfisg001.orno	inrange	{:orno.f} and {:orno.t}
+	selectdo
+		oamt.w = 0
+		gros.w = 0 
+		select	tccom100.nama:nama.w	from	tccom100
+| 		where	tccom100._index1 = {:tfisg001.cust}				|14072014.o
+		where	tccom100._index1 = {:tfisg001.bpid}				|14072014.n
+		selectdo
+		endselect
+		select	tdpur400.odat, tdpur400.oamt, tdpur400.oamt	from	tdpur400
+		where	tdpur400._index1 = {:tfisg001.orno}
+		selectdo
+			select	sum(tdpur401.extx.l):extx.l, sum(tdpur401.cltx.l):cltx.l	from	tdpur401
+			where	tdpur401._index1 = {:tfisg001.orno}
+			selectdo
+			endselect
+			oamt.w = oamt.w + tdpur400.oamt							|Basic Value
+			gros.w = gros.w + tdpur400.oamt + extx.l + cltx.l				|Gross Value
+		endselect
+		select	tfacp935.tbam, tfacp935.vamt	from	tfacp935
+		where	tfacp935._index1 = {:comp,1,:tfisg001.orno}
+		and	tfacp935.rcno	 = {:tfisg001.rcno}
+		and	tfacp935.rseq	 = {:tfisg001.rcln}
+		selectdo
+			grna.w = tfacp935.tbam + tfacp935.vamt				|GRN Amount
+		selectempty
+			grna.w = 0
+		endselect
+		select	tfacp200.ttyp, tfacp200.ninv, tfacp200.amth, tfacp200.balh, tfacp200.ifbp,
+			tfacp200.isup, tfacp200.tpay, tfacp200.tdoc, tfacp200.docn, tfacp200.lino
+		from	tfacp200
+		where	tfacp200._index1 = {:tfisg001.invt,:tfisg001.pinv}
+| 		and	tfacp200.ifbp = {:tfisg001.cust}			|14072014.o
+		and	tfacp200.ifbp = {:tfisg001.bpid}			|14072014.n	
+		selectdo
+			if	tfacp200.docn = 0 then
+				paym.docn = ""
+				temp.paym.docn = ""
+			endif
+			if	tfacp200.lino = 1 then
+				continue
+			endif
+			select	tfcmg100.typo, tfcmg100.doco	from	tfcmg100
+			where	tfcmg100._index3 = {:tfacp200.ttyp,:tfacp200.ninv}
+			selectdo
+				select	tfmsl020.ttyp, tfmsl020.docn, tfmsl020.orno	from	tfmsl020
+				where	tfmsl020._index1 = {:tfisg001.orno}
+				and	tfmsl020.ttyp	 = {:tfacp200.ttyp}
+				and	tfmsl020.docn	 = {:tfacp200.ninv}
+				selectdo
+					if	tfacp200.tpay = ltoe(9) then
+						adas.w = abs(tfacp200.amth(1)-tfacp200.balh(1))|Advance Assign
+						adua.w = abs(tfacp200.balh(1))			|Advance Unassign
+					endif
+					if	tfacp200.tpay = ltoe(10) then
+						uaas.w = abs(tfacp200.amth(1)-tfacp200.balh(1))|Unallocated Assign
+						uaua.w = abs(tfacp200.balh(1))			|Unallocated Unassign
+					endif
+				selectempty
+					adas.w = 0
+					adua.w = 0
+					uaas.w = 0
+					uaua.w = 0
+				endselect
+			endselect
+			if	tfacp200.docn = 0 then
+				if	tfacp200.tpay = ltoe(1) or tfacp200.tpay = ltoe(4) then
+					isup.w = tfacp200.isup 
+					purc.invo = tfacp200.ttyp & "-" & str$(tfacp200.ninv)	|Purchase Invoice
+					inam.w = abs(tfacp200.amth(1))				|Invoice Amount
+				endif
+			endif
+			if	isspace(paym.docn) then
+				select	tfacp200.tdoc, tfacp200.docn, tfacp200.tpay, tfacp200.amth, 
+					tfacp200.ttyp, tfacp200.ninv
+				from	tfacp200
+				where	tfacp200._index1 = {:tfacp200.ttyp,:tfacp200.ninv}
+				and	tfacp200.tpay in (2,8)
+				and	tfacp200.docn <> 0 
+				as set with 1 rows
+				selectdo
+					paym.docn = tfacp200.tdoc & "-" & str$(tfacp200.docn)	|Payment Document
+					pamt.w = abs(tfacp200.amth(1))					|Paid Amount
+					if	tfacp200.tpay = ltoe(2) then 	
+						anticipated.payments.receipts.1()
+					endif
+					if	tfacp200.tpay = ltoe(8) then
+						anticipated.payments.receipts()
+					endif
+				endselect
+			else
+				if	tfacp200.tpay = ltoe(2) then 	
+					temp.paym.docn = tfacp200.tdoc & "-" & str$(tfacp200.docn)	|Payment Document
+					pamt.w = abs(tfacp200.amth(1))					|Paid Amount
+					anticipated.payments.receipts.1()
+				endif
+				if	tfacp200.tpay = ltoe(8) then
+					temp.paym.docn = tfacp200.tdoc & "-" & str$(tfacp200.docn)	|Payment Document
+					pamt.w = abs(tfacp200.amth(1))					|Paid Amount
+					anticipated.payments.receipts()
+				endif
+			endif
+		rprt_send()	
+		selectempty
+			isup.w = ""
+			inam.w = 0
+			purc.invo = ""
+			paym.docn = ""
+			temp.paym.docn = ""
+			pamt.w = 0
+		endselect
+	endselect		
+}
+
+function anticipated.payments.receipts()
+{
+	domain tfcmg.bank bank.f, bank.t
+	bank.f = ""
+	bank.t = "ZZZ"
+	select	tfcmg110.cheq:cheq.w	from	tfcmg110				|Check Number 
+	where	tfcmg110._index1 inrange {:bank.f} and {:bank.t}
+	and	tfcmg110.tdoc = {:tfacp200.tdoc} 
+	and	tfcmg110.pdoc = {:tfacp200.docn}
+	selectdo
+	endselect
+}
+
+function anticipated.payments.receipts.1()
+{
+	select	tfcmg110.cheq:cheq.w	from	tfcmg110				|Check Number 
+	where	tfcmg110._index6 = {:tfacp200.ttyp,:tfacp200.ninv}
+	selectdo
+	endselect
+}

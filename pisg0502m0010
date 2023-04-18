@@ -1,0 +1,102 @@
+|******************************************************************************
+|* dmisg0502m001  0  VRC B61U a7 live
+|* Item Details 2
+|* Installation user             
+|* 2014-08-17
+|******************************************************************************
+|* Main table dmisg002 Incoming Document Child, Form Type 1
+|******************************************************************************
+|* ISGECDV001023, IT0205, Arjit Gupta, Dt. 16/09/2014, VRC B61U a7 live
+|* Add total line for weight  
+|*
+|* ISGECDV001178, IT0205, Arjit Gupta, VRC B61U a7 live, Dt. 25-11-2014
+|* Disable Project Part of Item and Original Item
+|****************************** declaration section ***************************
+declaration:
+
+  table   tdmisg002 | Incoming Document Child
+  table   tdmisg001 
+
+	long	ret_val
+	
+	domain	tcqiv1		tot.wght		|#ISGECDV001023.n
+	
+#include <bic_dam>
+|****************************** program section ********************************
+before.program:
+	dal.start.business.method("dmisg002","set.global.variable",ret_val,1)
+	fattr.total.line = true		|#ISGECDV001023.n
+	inputfield.invisible("dmisg002.item.segment.1", "dmisg002.oitm.segment.1")				|#ISGECDV001178.n
+	
+after.form.read:
+	enable.save.on.occ.change()
+	
+					|#ISGECDV001023.sn
+on.display.total.line:
+	get.total()
+	display.total.fields("dmisg002.wght", tot.wght)
+	
+					|#ISGECDV001023.en	
+|****************************** field section **********************************
+field.dmisg002.elem:
+before.zoom:
+	select	dmisg001.cprj
+	from	dmisg001
+	where	dmisg001._index1 = {:dmisg002.docn,:dmisg002.revn}
+	selectdo
+	endselect
+	query.extend.where.in.zoom("tpptc100.cprj = "&quoted.string(dmisg001.cprj))
+
+field.dmisg002.srno:
+before.input:
+	if	update.status = add.set	then
+		dmisg002.srno = Get_Serial_Number(dmisg002.docn, dmisg002.revn)
+	endif
+
+field.dmisg002.item:
+check.input:
+	if	isspace(dmisg002.item)	then
+		message("Item cannot be blank")
+		set.input.error("", e)
+	endif	
+
+field.all:
+before.input:
+	attr.dorp = 1
+
+
+|**************************** Function Section *********************
+functions:
+
+function domain tcpono	Get_Serial_Number(
+			domain	dmdoc.docid	i.docn,
+			domain	dmdoc.revv	i.revi
+					)
+{
+	domain	tcpono	tmp.srno
+	
+	select	max(dmisg002.srno):tmp.srno
+	from	dmisg002
+	where	dmisg002._index1 = {:i.docn, :i.revi}
+	selectdo
+	selectempty
+		tmp.srno = 0
+	endselect
+	tmp.srno = tmp.srno + 1
+	
+	return(tmp.srno)
+	
+}
+					
+								|#ISGECDV001023.sn
+function get.total()
+{
+	tot.wght = 0
+	select	sum(d_dmisg002.wght):tot.wght
+	from	dmisg002 d_dmisg002
+	where	d_dmisg002._index1 = {:dmisg002.docn, :dmisg002.revn}
+	selectdo
+	endselect
+}
+								|#ISGECDV001023.en
+					

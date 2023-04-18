@@ -1,0 +1,206 @@
+|******************************************************************************
+|* tpisg0403m000  0  VRC B61U a7 isg 
+|* Print Element wise weight Details
+|* Installation user             
+|* 2014-10-29
+|******************************************************************************
+|* Main table tcisg003 Item Release header, Form Type 4
+|******************************************************************************
+|* ID: ISGEC001180, IT0327, Ritu Shrivastava, VRC B61U a7 isg, Dt. 12-12-2014
+|* Added function to calculate weight
+|*
+|*
+|* IDENT: ISGEC01051, IT0169, Saikat Ghosh, VRC B61U a7 isg, Dt. 06-02-2015
+|* Incident: 32881 - Weight mismatch for Element in two different reports i.e. tpisg0403m000 and tcisg0404m000
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttcisg003 | Item Release header
+  table   ttppdm600 | Projects
+  table   ttpptc100 | Elements
+  table   ttcmcs052
+  table   ttcisg004			|#ISGEC001180.n
+  table   tdmisg002			|#ISGEC001180.n
+  
+   extern  domain  tppdm.cspa       cspa.f    fixed
+   extern  domain  tppdm.cspa       cspa.t    fixed
+   extern  domain  tccprj           cprj.f    fixed
+   extern  domain  tcwght           wght.m
+  extern  domain  tppdm.desc        pdes.m
+  extern  domain  tppdm.long        srno.m
+  extern  domain  tppdm.wast        erst.f
+  extern  domain  tppdm.wast        erst.t
+  extern  domain  tppdm.long        opt.m	     
+
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.cont.process:
+on.choice:
+   execute(print.data)
+
+choice.print.data:
+on.choice:
+   if rprt_open() then
+       read.main.table()
+       rprt_close()
+   else
+       choice.again()
+   endif
+
+
+|****************************** field section *********************************
+
+field.cprj.f:
+before.zoom:
+  tppdm600.cprj = cprj.f
+
+field.cspa.f:
+when.field.changes:
+  cspa.t = cspa.f
+
+before.zoom:
+  tpptc100.cprj = cprj.f
+
+field.cspa.t:
+before.zoom:
+  tpptc100.cprj = cprj.f
+  
+field.opt.m:
+check.input:
+  if opt.m <> 1 and opt.m <> 2 then
+    message("Allowed values are 1,2 only.")
+    set.input.error("")
+  endif
+
+field.erst.f:
+when.field.changes:
+  erst.t = erst.f
+|****************************** function section ******************************
+
+functions:
+
+function read.main.table()
+{
+    domain tppdm.cspa LCspa.m
+    tpptc100.cspa = " "
+    tpptc100.desc = " "
+    srno.m = 0
+    wght.m = 0
+    LCspa.m = ""
+    
+	select tppdm600.cprj
+	from   tppdm600 
+	where  tppdm600._index1 = :cprj.f 
+	selectdo
+		select tcmcs052.dsca:pdes.m
+		from   tcmcs052
+		where  tcmcs052._index1 = :tppdm600.cprj
+		selectdo
+		endselect
+	endselect
+	
+	select tcisg003.* 
+	from   tcisg003
+	where  tcisg003._index1 = :cprj.f
+        and    tcisg003.elmt between :cspa.f and :cspa.t
+        order by tcisg003.elmt
+	selectdo
+		if LCspa.m = "" then
+			LCspa.m = tcisg003.elmt
+		endif
+		
+		if LCspa.m <> tcisg003.elmt then
+			if opt.m = 2 and wght.m > 0 then
+				select tpptc100.wast,tpptc100.desc,tpptc100.cspa 
+				from   tpptc100 
+				where  tpptc100.cprj=:cprj.f 
+				and    tpptc100.cspa=:LCspa.m 
+				selectdo 
+				endselect
+			
+				if tpptc100.wast >= erst.f and tpptc100.wast <= erst.t then
+					srno.m = srno.m + 1
+					rprt_send()
+				endif
+			endif
+			
+			if opt.m = 1 then
+				select tpptc100.wast,tpptc100.desc,tpptc100.cspa 
+				from   tpptc100 
+				where tpptc100.cprj=:cprj.f 
+				and tpptc100.cspa=:LCspa.m 
+				selectdo 
+				endselect
+				
+				if tpptc100.wast >= erst.f and tpptc100.wast <= erst.t then
+					srno.m = srno.m + 1
+					rprt_send()
+				endif
+			endif
+		
+			wght.m = 0
+			LCspa.m = tcisg003.elmt
+		endif
+    
+| 		wght.m = wght.m + (tcisg003.rqty * tcisg003.wght)				|#ISGEC001180.o
+		get.element.weight(tcisg003.proj, tcisg003.elmt, tcisg003.item)			|#ISGEC001180.n
+	selecteos
+		if opt.m = 2 and wght.m > 0 then
+			select tpptc100.wast,tpptc100.desc,tpptc100.cspa 
+			from   tpptc100 
+			where  tpptc100.cprj = :cprj.f 
+			and    tpptc100.cspa = :LCspa.m
+			selectdo 
+			endselect
+			
+			if tpptc100.wast >= erst.f and tpptc100.wast <= erst.t then
+				srno.m = srno.m + 1
+				rprt_send()
+			endif
+		endif
+		
+		if opt.m = 1 then
+			select tpptc100.wast,tpptc100.desc,tpptc100.cspa 
+			from   tpptc100 
+			where  tpptc100.cprj = :cprj.f
+			and    tpptc100.cspa = :LCspa.m 
+			selectdo 
+			endselect
+      
+			if tpptc100.wast >= erst.f and tpptc100.wast <= erst.t then
+				srno.m = srno.m + 1
+				rprt_send()
+			endif
+		endif
+	endselect
+}
+
+function get.element.weight(domain tccprj	i.cprj,				|#ISGEC001180.sn
+			     domain tccspa	i.cspa,
+			     domain tcitem	i.item)
+{
+	select tcisg004.docn, tcisg004.rvid, tcisg004.stat, tcisg004.item
+	from   tcisg004
+	where  tcisg004._index1 = {:i.cprj,:i.cspa,:i.item}
+	and    tcisg004.stat <> dmstat.expire
+	selectdo
+		select dmisg002.qnty, dmisg002.wght
+		from   dmisg002
+		where  dmisg002._index1 = {:tcisg004.docn, :tcisg004.rvid}
+		and    dmisg002.item = :tcisg004.item
+		selectdo
+| 			wght.m = wght.m +(dmisg002.qnty * dmisg002.wght)	|#32881 ISGEC01051.o
+			wght.m = wght.m + dmisg002.wght				|#32881 ISGEC01051.n
+		endselect
+	endselect
+}
+										|#ISGEC001180.en

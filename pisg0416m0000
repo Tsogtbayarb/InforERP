@@ -1,0 +1,236 @@
+|******************************************************************************
+|* tdisg0416m000  0  VRC B61U a7 isg 
+|* Print WayBill Report
+|* Installation User             
+|* 2015-04-27
+|******************************************************************************
+|* Main table tdisg016 Waybill Table, Form Type 4
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttdisg016 | Waybill Table
+  table   ttcmcs143
+  table   ttccom100
+  
+  
+  
+   extern  domain  tcmcs.str30      wayb.f    fixed
+   extern  domain  tcmcs.str30      wayb.t    fixed
+   extern  domain  tccprj 		cprj.f,cprj.t
+   extern  domain  tccom.bpid		bpid.f, bpid.t
+   extern  domain  tdwaybill           stat
+   extern  domain  tcdsca  		Waybill.issue.state  , supplier
+   extern  domain  tcdsca 		movement.from,movement.to,customer,status
+   string err.file(100),file.name(100),line(1500)
+   long   stat.fp,ret2
+  
+   #pragma used dll ottdllbw 
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.cont.process:
+on.choice:
+   execute(print.data)
+
+| choice.print.data:
+| on.choice:
+|    if rprt_open() then
+|        read.main.table()
+|        rprt_close()
+|    else
+|        choice.again()
+|    endif
+choice.generate:
+on.choice:
+	generate.file()
+
+|****************************** field section *********************************
+field.cprj.f:
+when.field.changes:
+	cprj.t = cprj.f
+check.input:
+	select tppdm600.cprj
+	from tppdm600
+	where tppdm600._index1 ={:cprj.f}
+	selectdo
+	selectempty
+		message("Project Not Valid")
+		set.input.error("",e)
+	endselect	
+
+field.cprj.t:
+	check.input:
+	select tppdm600.cprj
+	from tppdm600
+	where tppdm600._index1 = {:cprj.t}
+	selectdo
+	selectempty
+		message("Project Not Valid")
+		set.input.error("",e)
+	endselect
+	
+field.bpid.f:
+when.field.changes:
+	bpid.t = bpid.f
+
+
+|****************************** function section ******************************
+
+functions:
+
+function generate.file()
+{
+	err.file = bse.dir$() & str$(utc.num()) & ".xls"
+	
+	file.name = "c:\temp\" & str$(utc.num())  & ".xls"
+	
+	stat.fp = seq.open(err.file, "w+")
+	
+	process.file()
+	
+	message("Please refer to file %s in C:", file.name)
+	
+	seq.close(stat.fp)
+	ret2 = server2client(err.file,file.name,1)
+	ret2 = app_start(file.name,"c:","","","")
+}
+
+function process.file()
+{
+	generate.header()
+	read.main.table()
+	
+}
+
+function generate.header()
+{
+	if stat.fp >0 then
+		
+		line =concat$("	", 
+			sprintf$("WayBill No"),		|1
+			sprintf$("Project"),			|2	
+			sprintf$("Customer"),			|3
+			sprintf$("WayBill Issue State"), 	|4
+			sprintf$("WayBill Issue Date"),	|5
+			sprintf$("Expiry Date"),		|6
+			sprintf$("Purchase Order"),		|7
+			sprintf$("Supplier"),			|8
+			sprintf$("Issue Date"),		|9
+			sprintf$("Movement From"),		|10
+			sprintf$("Movement To"),		|11
+			sprintf$("Status"),			|12
+			sprintf$("GR No"))			|13
+
+		line = strip$(shiftl$(line))
+		seq.puts(line, stat.fp)
+	endif
+}
+
+function read.main.table()
+{
+	if etol(stat) = 0 then
+		
+		select tdisg016.*
+		from    tdisg016
+		where   tdisg016.cprj inrange {:cprj.f} and {:cprj.t}
+		and     tdisg016.otbp  inrange  {:bpid.f} and {:bpid.t}
+| 		and     tdisg016.stat = {:stat}
+		selectdo
+			get.partner.name(tdisg016.otbp,supplier)
+			get.partner.name(tdisg016.ofbp,customer)
+			get.state.description(tdisg016.wist,Waybill.issue.state)
+			get.state.description(tdisg016.stsf,movement.from)
+			get.state.description(tdisg016.stsf,movement.to)
+			status = enum.descr$("tdwaybill",tdisg016.stat,"2")
+			print.detail()
+			initialise.var()
+		endselect	
+	else
+		select tdisg016.*
+		from    tdisg016
+		where   tdisg016.cprj inrange {:cprj.f} and {:cprj.t}
+		and     tdisg016.otbp  inrange  {:bpid.f} and {:bpid.t}
+		and     tdisg016.stat = {:stat}
+		selectdo
+			get.partner.name(tdisg016.otbp,supplier)
+			get.partner.name(tdisg016.ofbp,customer)
+			get.state.description(tdisg016.wist,Waybill.issue.state)
+			get.state.description(tdisg016.stsf,movement.from)
+			get.state.description(tdisg016.stsf,movement.to)
+			status = enum.descr$("tdwaybill",tdisg016.stat,"2")
+			print.detail()
+			initialise.var()
+		endselect
+	endif	
+}
+
+function print.detail()
+{
+	line = concat$("	",
+		sprintf$("%s",tdisg016.wayb),			|1			
+		sprintf$("%s",tdisg016.cprj),  		|2
+		sprintf$("%s",customer),  		|3
+		sprintf$("%s",Waybill.issue.state),		|4
+		sprintf$("%D(%02d/%02m/%04Y)",tdisg016.widt),	|5
+		sprintf$("%D(%02d/%02m/%04Y)",tdisg016.expd),	|6
+		sprintf$("%s",tdisg016.orno),			|7
+		sprintf$("%s",supplier),			|8	
+		sprintf$("%D(%02d/%02m/%04Y)",tdisg016.isdt),			|9	
+		sprintf$("%s",movement.from),			|10	
+		sprintf$("%s",movement.to),			|11	
+		sprintf$("%s",status),				|12
+		sprintf$("%s",tdisg016.grno))			|13
+
+		line = strip$(shiftl$(line))
+		seq.puts(line, stat.fp)
+
+}
+
+function get.state.description(domain tcmcs.cste in.state,ref domain tcdsca state.var)
+{
+	
+	select tcmcs143.dsca:state.var
+	from    tcmcs143
+	where   tcmcs143._index1 = {"IN",:in.state}
+	selectdo
+	endselect	
+
+}
+
+function get.partner.name(domain tccom.bpid in.bpid,ref domain tcdsca bp.name)
+{	
+	
+	select tccom100.nama:bp.name
+	from    tccom100
+	where tccom100._index1 = {:in.bpid}
+	selectdo
+	endselect
+
+}
+
+function initialise.var()
+{
+	tdisg016.wayb = ""
+	tdisg016.cprj = ""
+	customer = ""
+	Waybill.issue.state = ""
+	tdisg016.widt = 0
+	tdisg016.expd = 0
+	tdisg016.orno = ""
+	supplier = ""
+	tdisg016.isdt = 0
+	movement.from = ""
+	movement.to = ""
+	status = ""
+	tdisg016.grno = ""
+}

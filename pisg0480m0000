@@ -1,0 +1,472 @@
+|******************************************************************************
+|* tdisg0480m000  0  VRC B61U a7 live
+|* Print Audit Purchase Order Register
+|* Installation user             
+|* 2014-09-17
+|******************************************************************************
+|* Main table tdisg080 PO Register for Audit, Form Type 4
+|******************************************************************************
+|* ISGECDV001160, IT0205, Arjit Gupta, VRC B61U a7 live, Dt. 15-11-2014
+|* Filter Lock Date & Locked from PO Approval, Add column Reason Remarks, Reason
+|* Allocation, Division
+|*
+|* ISGEC001192, IT0205, Arjit Gupta, VRC B61U a7 isg, Dt. 23-12-2014
+|* Case ID : 245 Only for Lock PO Revision 
+|******************************************************************************
+|* ISGEC01067, Mani SHARMA , Dt- 25-02-2015
+|* Add rejection remark field
+|****************************************************************************
+|* ISGEC01082, Mani sharma , Dt- 11-03-2015
+|* Add 1 more field rejection approval remarks & Modification 
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttdisg080 | PO Register for Audit
+	table	ttdmsl400
+	table	ttdpur400
+	table	ttdpur401
+	table	ttccom100
+	table	ttcmcs052
+	table	ttdisg081			|#ISGECDV001160.n
+	table   ttdisg086
+	table   ttdisg085
+	table   ttdisg087
+	|***************** Form Variable ******************
+	extern	domain	tcorno		srno.f
+	extern	domain	tcorno		srno.t
+	extern	domain	tccom.bpid	bpid.f
+	extern	domain	tccom.bpid	bpid.t
+	extern	domain	tcorno		orno.f
+	extern	domain	tcorno		orno.t
+	extern	domain	tcdate		odat.f
+	extern	domain	tcdate		odat.t
+	extern	domain	tcdate		audt.f
+	extern	domain	tcdate		audt.t
+	extern	domain	tcemno		ausr.f
+	extern	domain	tcemno		ausr.t
+	|*************** File Handling Variables *******************
+	string		err.file(100), file.name(100), line3(2000), line4(2000)
+	long		ret2, stat.fp
+	
+	|************** Script Variables ******************
+		domain	tcdate		v.odat.f
+		domain	tcdate		v.odat.t
+		domain	tcdate		v.audt.f
+		domain	tcdate		v.audt.t
+	
+	|************* File Utilization Variables *********************
+	extern	domain	tcorno		rep.srno
+	extern	domain	tcdate		rep.etdt			
+	extern	domain	tcorno		rep.orno				
+	extern	domain	tcdate		rep.odat
+	extern	domain	tcsern		rep.revi
+	extern	domain	tcdate		rep.rvdt
+	extern	domain	tccom.bpid	rep.otbp
+	extern	domain	tcnama		rep.nama	
+	extern	domain	tcdsca		rep.pref
+	extern	domain	tcamnt		rep.bval
+	extern	domain	tcamnt		rep.bdmt
+	extern	domain	tccprj		rep.cprj
+	extern	domain	tcdsca		rep.pjdc 
+	extern	domain	tcnama		rep.lkby
+	extern	domain	tcmcs.str20	rep.prty
+	extern	domain	tcamnt		rep.hbmt
+	extern	domain	tcorno		rep.rord
+	extern	domain	tcemno		rep.etby
+	extern	domain	tcdsca		rep.apby
+	extern	domain	tcmcs.str132m	rep.reas
+	extern	domain	tcmcs.str132m	rep.remk
+	extern	domain	tcdsca		rep.dvdc		|#ISGECDV001160.n
+	extern	domain	tcmcs.str15	rep.real		|#ISGECDV001160.n
+	extern	domain	tcmcs.str50m	rep.rerm		|#ISGECDV001160.n
+	extern domain  tcmcs.str256m   rej.rem,rej.var,new.var,app.rem,app.var,new.app
+	extern domain  tcpono          rej.len , app.len				|ISGEC01082.n
+	extern domain  tcdsca          po.stat
+|*************** Include **************
+#include<bic_desktop>	
+
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+	get.screen.defaults()
+
+|****************************** choice section ********************************
+choice.cont.process:
+on.choice:
+	generate.file()
+
+|****************************** field section *********************************
+field.srno.f:
+when.field.changes:
+	srno.t = srno.f
+
+field.bpid.f:
+when.field.changes:
+	bpid.t = bpid.f
+	
+field.odat.f:
+when.field.changes:
+	odat.t = odat.f
+	
+field.audt.f:
+when.field.changes:
+	audt.t = audt.f
+	
+field.ausr.f:
+when.field.changes:
+	ausr.t = ausr.f
+	
+field.orno.f:
+when.field.changes:
+	orno.t = orno.f
+	
+|****************************** function section ******************************
+
+functions:
+
+function generate.file()
+{
+	open.file()
+	generate.header()
+	read.main.table()
+	close.file()
+}
+
+function read.main.table()
+{
+	get.date.utc(odat.f, 00, 00, 00, v.odat.f)
+	get.date.utc(odat.t, 23, 59, 59, v.odat.t)
+	get.date.utc(audt.f, 00, 00, 00, v.audt.f)
+	get.date.utc(audt.t, 23, 59, 59, v.audt.t)
+	
+	select	tdisg080.*, tdpur400.*, tccom100.nama,
+		tdmsl400.apdt, tdmsl400.apby,tdmsl400.stat,tdmsl400.work					|#ISGECDV001160.n
+	from	tdisg080, tdpur400, tccom100, tdmsl400
+	where	tdisg080._index1 inrange {:srno.f}	and	{:srno.t}
+| 	and	tdisg080.etdt inrange :v.audt.f	and	:v.audt.t		|#ISGECDV001160.o
+| 	and	tdisg080.etby inrange :ausr.f	and	:ausr.t			|#ISGECDV001160.o
+	and	tdisg080.orno refers to tdpur400
+	and	tdpur400._index1 inrange {:orno.f}	and	{:orno.t}
+	and	tdpur400._index2 inrange {:bpid.f}	and	{:bpid.t}
+	and	tdpur400.odat inrange	:v.odat.f	and	:v.odat.t
+	and	tdpur400.otbp refers to tccom100	Unref Clear	
+										|#ISGECDV001160.sn
+	and	tdmsl400.orno = tdisg080.orno
+	and	tdmsl400.vrsn = tdisg080.revi
+	and	tdmsl400.apby inrange :ausr.f	and	:ausr.t
+	and	tdmsl400.apdt inrange :v.audt.f	and	:v.audt.t
+										|#ISGECDV001160.en
+| 	and	tdmsl400.work = tdmsl.work.completed			|ISGEC01082.o
+	and	tdmsl400.work in (1,3)			|ISGEC01082.n
+| 	and	tdmsl400.stat = tcyesno.yes				|ISGEC01082.o
+	selectdo
+		Initialize_Variables()
+		select	tdpur401.cprj, tcmcs052.dsca
+		from	tdpur401, tcmcs052
+		where	tdpur401._index1 = {:tdpur400.orno}
+		and	tdpur401.cprj refers to tcmcs052 Unref Clear
+		as set with 1 rows
+		selectdo
+		endselect
+		
+		if tdmsl400.stat = tcyesno.yes and tdmsl400.work = tdmsl.work.yes then
+			po.stat = "Rejected"
+		endif
+				
+		if tdmsl400.stat = tcyesno.yes and tdmsl400.work = tdmsl.work.completed then
+			po.stat = "Approved"
+		endif
+		
+		po.stat = strip$(shiftl$(po.stat))
+		
+		select tdisg086.revi,tdisg086.orno,tdisg086.date				|ISGEC01067.sn
+		from    tdisg086
+		where   tdisg086._index1 = {:tdpur400.orno}
+		order by tdisg086.revi desc,tdisg086.date desc
+		as set with 1 rows
+		selectdo
+			select tdisg087.reas,tdisg085.desc,tdisg087.rema
+			from   tdisg087,tdisg085
+			where  tdisg087._index1 = {:tdisg086.orno,:tdisg086.revi}
+			and    tdisg087.reas refers to tdisg085
+			selectdo
+				new.var = shiftl$(strip$(tdisg085.desc))		|ISGEC01082.sn
+				new.app = shiftl$(strip$(tdisg087.rema))
+				
+				rej.var = (new.var)&","&(rej.rem)
+				app.var = (app.rem)&","&(new.app)
+				
+				rej.rem = shiftl$(strip$(tdisg085.desc))
+				app.rem = shiftl$(strip$(tdisg087.rema))
+				
+				if new.var = "" and rej.rem = "" then
+					rej.var = ""
+				endif
+
+				if app.rem = "" and new.app = "" then
+					app.var = ""
+				endif						|ISGEC01082.en
+
+				
+			selectempty
+				new.var = ""
+				new.app = ""
+				rej.var = ""
+				app.var = ""
+				rej.rem = ""
+				app.rem = ""
+			endselect
+		endselect
+									|ISGEC01067.en
+		rej.len = len(rej.var)
+		app.len = len(app.var)
+	if rej.len > 0 then 						|ISGEC01082.sn
+		if rej.var(1;1) = ","   then 
+			rej.var = rej.var(2;rej.len)
+		endif
+		
+		if rej.var(rej.len-1;rej.len) = ","  then
+			rej.var = rej.var(1;rej.len-1)
+		endif
+	endif
+	if app.len > 0 then
+		if app.var(1;1) = ","   then 
+			app.var = app.var(2;app.len)
+		endif	
+		
+		if app.var(app.len-1;app.len) = ","  then
+			app.var = app.var(1;app.len-1)
+		endif
+	endif	
+		new.var = ""
+		new.app = ""
+		rej.rem = ""						|ISGEC01082.en
+		app.rem = ""									|#ISGECDV001160.so
+| 		select	tdmsl400.apdt, tdmsl400.apby
+| 		from	tdmsl400
+| 		where	tdmsl400._index1 = {:tdisg080.orno, :tdisg080.revi}
+| 		selectdo
+| 		selectempty
+| 			tdmsl400.apdt = 0
+| 		endselect	
+								|#ISGECDV001160.eo
+			
+		rep.srno = tdisg080.srno					|1
+		rep.etdt = tdisg080.etdt					|2				
+		rep.orno = tdpur400.orno					|3				
+		rep.odat = tdpur400.odat					|4
+		rep.dvdc = Get_Division_Desc(tdisg080.divn)			|5		|#ISGECDV001160.n
+		rep.revi = tdisg080.revi					|6
+		rep.rvdt = tdmsl400.apdt					|7
+		rep.otbp = tdpur400.otbp					|8
+		rep.nama = tccom100.nama					|9	
+		rep.pref = tdisg080.pref					|10
+		rep.bval = tdisg080.bval					|11
+		rep.bdmt = tdisg080.bdmt					|12
+		rep.cprj = tdpur401.cprj					|13
+		rep.pjdc = tcmcs052.dsca					|14
+		rep.prty = enum.descr$("tdparty", tdisg080.prty)		|15
+		rep.real = enum.descr$("tdreas.alloc", tdisg080.real)		|16		|#ISGECDV001160.n
+		rep.rerm = Get_Reason_Remarks(tdisg080.rerm)			|17		|#ISGECDV001160.n
+		rep.hbmt = tdisg080.hbrs					|18		
+		rep.rord = tdisg080.rfpo					|19
+		rep.lkby = Get_Employee_Name(tdmsl400.apby)			|20		|#ISGECDV001160.n
+		rep.apby = tdisg080.apby					|21
+		rep.reas = tdisg080.reas					|22
+		rep.remk = tdisg080.remk					|23
+		rep.etby = tdisg080.etby					|24
+		print.details()
+	endselect	
+}
+
+function	generate.header()
+{
+	line4 =	concat$("	",
+		sprintf$("Serial Number"),				|1		
+		sprintf$("Entry Date"),				|2		
+		sprintf$("PO Number"),					|3		
+		sprintf$("PO Date"),					|4
+		sprintf$("Division"),					|5		|#ISGECDV001160.n
+		sprintf$("Revision No"),				|6
+		sprintf$("Revision/Locking Date"),			|7
+		sprintf$("Supplier Code"),		  		|8
+		sprintf$("Supplier Name"),				|9
+		sprintf$("PO Reference"),			  	|10
+		sprintf$("Total PO Value"),				|11
+		sprintf$("Budget as per Indent"),		        |12
+		sprintf$("Project Code"),				|13
+		sprintf$("Project Name"),				|14
+		sprintf$("Party Type"),				|15		
+		sprintf$("Reason Allocation"),				|16		|#ISGECDV001160.n	
+		sprintf$("Reason Remarks"),				|17		|#ISGECDV001160.n		
+		sprintf$("Higher by Amount"),				|18
+		sprintf$("Reference Order"),				|19
+		sprintf$("Locked by"),					|20		|#ISGECDV001160.n
+		sprintf$("Approved by"),				|21
+		sprintf$("Reason"),					|22
+		sprintf$("Remarks"),					|23											
+		sprintf$("Entry by"),					|24											
+		sprintf$("Rejection/Approval Reason"),			|25		|ISGEC01067.n	
+		sprintf$("Rejection/Approval Remarks"),		|26		|ISGEC01082.n
+		sprintf$("PO Status"))					|27		|ISGEC01082.n
+	line4 = strip$(shiftl$(line4))		
+	seq.puts(line4, stat.fp)	
+}
+
+function print.details()
+{
+	line3 =	concat$("	",
+		sprintf$("%s", rep.srno),				|1
+		sprintf$("%u(%02d/%02m/%04Y)", rep.etdt),		|2				
+		sprintf$("%s", rep.orno),				|3				
+		sprintf$("%u(%02d/%02m/%04Y)", rep.odat),		|4
+		sprintf$("%s", rep.dvdc),				|5		|#ISGECDV001160.n
+		sprintf$("%d", rep.revi),				|6
+		sprintf$("%u(%02d/%02m/%04Y)", rep.rvdt),		|7
+		sprintf$("%s", rep.otbp),				|8
+		sprintf$("%s", rep.nama),				|9	
+		sprintf$("%s", rep.pref),				|10
+		sprintf$("%f", rep.bval),				|11
+		sprintf$("%f", rep.bdmt),				|12
+		sprintf$("%s", rep.cprj),				|13
+		sprintf$("%s", rep.pjdc),				|14
+		sprintf$("%s", rep.prty),				|15
+		sprintf$("%s", rep.real),				|16		|#ISGECDV001160.n
+		sprintf$("%s", rep.rerm),				|17		|#ISGECDV001160.n
+		sprintf$("%f", rep.hbmt),				|18
+		sprintf$("%s", rep.rord),				|19
+		sprintf$("%s", rep.lkby),				|20		|#ISGECDV001160.n
+		sprintf$("%s", rep.apby),				|21
+		sprintf$("%s", rep.reas),				|22
+		sprintf$("%s", rep.remk),				|23
+		sprintf$("%s", rep.etby),				|24
+		sprintf$("%s", rej.var ),				|25		|ISGEC01067.n
+		sprintf$("%s", app.var),				|26		|ISGEC01082.n
+		sprintf$("%s", po.stat))				|27		|ISGEC01082.n
+		line3 = strip$(shiftl$(line3))
+		seq.puts(line3, stat.fp)
+}
+
+function Initialize_Variables()
+{
+	rep.srno = ""				|1
+	rep.etdt = 0				|2				
+	rep.orno = ""				|3				
+	rep.odat = 0				|4
+	rep.dvdc = ""				|5			|#ISGECDV001160.n
+	rep.revi = 0				|6
+	rep.rvdt = 0				|7
+	rep.otbp = ""				|8
+	rep.nama = ""				|9	
+	rep.pref = ""				|10
+	rep.bval = 0				|11
+	rep.bdmt = 0				|12
+	rep.cprj = ""				|13
+	rep.pjdc = ""				|14
+	rep.prty = ""				|15
+	rep.real = ""				|16			|#ISGECDV001160.n
+	rep.rerm = ""				|17			|#ISGECDV001160.n
+	rep.hbmt = 0				|18
+	rep.rord = ""				|19
+	rep.lkby = ""				|20			|#ISGECDV001160.n
+	rep.apby = ""				|21
+	rep.reas = ""				|22
+	rep.remk = ""				|23
+	rep.etby = ""				|24
+	rej.rem  = ""    			|25			|ISGEC01067.n
+	app.var  = ""				|26			|ISGEC01082.n
+	po.stat  = ""
+}
+
+						|#ISGECDV001160.sn
+function domain tcdsca Get_Division_Desc
+			(
+			domain	tccwoc	i.divn
+			)
+{
+	domain	tcdsca	tmp.dvdc
+	
+	tmp.dvdc = ""
+	select	dv_tcmcs065.dsca:tmp.dvdc
+	from	tcmcs065 dv_tcmcs065
+	where	dv_tcmcs065._index1 = {:i.divn}
+	selectdo
+	endselect
+	
+	return(tmp.dvdc)
+}
+
+function domain tcmcs.str50m Get_Reason_Remarks
+			(
+			domain	tccwoc	i.rerm
+			)
+{
+	domain tcmcs.str50m	tmp.rerm
+	
+	tmp.rerm = ""
+	select	rm_tdisg081.desc:tmp.rerm
+	from	tdisg081 rm_tdisg081
+	where	rm_tdisg081._index1 = {:i.rerm}
+	selectdo
+	endselect
+	
+	return(tmp.rerm)
+}
+
+function domain tcnama	Get_Employee_Name
+			(
+			domain	tccom.bpid	tmp.bpid
+			)
+{
+	domain	tcnama	tmp.nama
+	
+	tmp.nama = ""
+	select	bp_tccom001.nama:tmp.nama
+	from	tccom001 bp_tccom001
+	where	bp_tccom001._index1 = {:tmp.bpid}
+	selectdo
+	endselect
+	
+	return(tmp.nama)
+}
+						|#ISGECDV001160.en
+
+function get.date.utc(
+		domain	tcdate	i.date,
+		long		i.hh,
+		long		i.mn,
+		long		i.ss,
+	ref	domain	tcdate	o.date
+			)
+{
+	long	dd, mm, yy, hh, mn, ss
+	
+	utc.to.date(i.date, yy , mm, dd, hh, mn, ss)
+	o.date = date.to.utc(yy, mm, dd, i.hh, i.mn, i.ss)
+	if	o.date < 0	then
+		o.date = 0
+	endif
+}
+
+function open.file()
+{
+	err.file = bse.tmp.dir$() & str$(utc.num()) & ".xls"
+	
+	file.name = "c:\temp\" & str$(utc.num())  & ".xls"
+	
+	stat.fp = seq.open(err.file, "w+")
+	if stat.fp >0 then
+ 		seq.seek(0, 0, stat.fp)
+	endif
+}
+
+function close.file()
+{
+	seq.close(stat.fp)
+	ret2 = server2client(err.file,file.name,1)
+	ret2 = app_start(file.name,"c:","","","")
+}

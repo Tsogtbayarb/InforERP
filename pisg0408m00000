@@ -1,0 +1,371 @@
+|******************************************************************************
+|* tdisg0408m0000  0  VRC B61U a7 isg 
+|* Print Pre Order Report
+|* Installation user             
+|* 2015-01-15
+|******************************************************************************
+|* Main table tdisg008 PR Lines Table, Form Type 4
+|******************************************************************************
+|* IDENT ISGEC01022,Mani sharma,15-01-2015
+|* New Report Development 
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttdisg008 | PR Lines Table
+  table    ttdpur200
+  table    ttdpur201
+  table    ttcmcs052
+  table    ttdisg100
+  table    ttdpur203
+  table    ttdpur450
+  table    ttdmsl400
+  table    ttdpur202
+  table    ttccom001
+  table    ttccom100
+  table    ttdpur401
+  
+   extern  domain  tccom.bpid	     otbp.f
+   extern  domain  tccom.bpid       otbp.t
+   extern  domain  tcrqno           rqno.f    fixed
+   extern  domain  tcrqno           rqno.t    fixed
+   long 	stat.fp,ret2,cnt.rec,var
+   string	line(2000), err.file(100), file.name(100)
+   extern domain  tcdsca   p.code,p.name,buyer.code
+   extern domain  tcmcs.str50m pr.no,pr.priority.status,item.desc,po.no,supplier.code,supplier.name,buyer.name
+   extern domain  tcpono       pr.line.no,po.line.no
+   extern domain  tcdate       pr.approval.date,Request.order.date,po.send.approval.date,po.approval.date,planned.receipt.date
+   extern domain  tcamnt       po.line.amnt
+   extern domain  tcorno       buyr.f,buyr.t
+   extern domain  tccprj       cprj.f,cprj.t
+    #pragma used dll ottdllbw 
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+| choice.cont.process:
+| on.choice:
+|    execute(print.data)
+
+| choice.print.data:
+| on.choice:
+|    generate.file()
+
+choice.print:
+on.choice:
+	 generate.file()
+
+|****************************** field section *********************************
+
+field.rqno.f:
+when.field.changes:
+   rqno.t = rqno.f
+
+field.otbp.f:
+when.field.changes:
+   otbp.t = otbp.f
+  
+field.buyr.f:
+when.field.changes:
+   buyr.t = buyr.f  
+
+field.cprj.f:
+when.field.changes:
+   cprj.t = cprj.f
+|****************************** function section ******************************
+
+functions:
+
+function  generate.file()
+{
+	err.file = bse.dir$() & str$(utc.num()) & ".xls"
+	
+	file.name = "c:\temp\" & str$(utc.num())  & ".xls"
+	
+	stat.fp = seq.open(err.file, "w+")
+	
+	process.file()
+	
+	message("Please refer to file %s in C:", file.name)
+	seq.close(stat.fp)
+	ret2 = server2client(err.file,file.name,1)
+	ret2 = app_start(file.name,"c:","","","")
+
+}
+
+function process.file()
+{
+	generate.header()
+	read.main.table()
+}
+
+
+function generate.header()
+{
+	if stat.fp >0 then
+		
+		line =concat$("	", 
+			sprintf$("Project Code"),			|1
+			sprintf$("Project Name"),			|2
+			sprintf$("PR No."),				|3
+			sprintf$("PR Line No."), 			|4
+			sprintf$("PR Priority Status"),		|5
+			sprintf$("PR Creation Date"),
+			sprintf$("PR Approval Date"),			|6
+			sprintf$("PR Amount"),
+			sprintf$("Specs Release Date"),		|7
+			sprintf$("Requested Order Date"),		|8
+			sprintf$("Material/Service Required Date"),	|9
+			sprintf$("Item Description"),			|10
+			sprintf$("Enquiry Sent Date1"),		|11
+			sprintf$("Enquiry sent Date2"),		|12
+			sprintf$("Quote recd Supplier1"),		|13
+			sprintf$("Quote recd Supplier2"),		|14
+			sprintf$("Quote recd Supplier3"),		|15
+			sprintf$("Ist Comments Date Supplier1 "),	|16
+			sprintf$("Ist Comments Date Supplier2"),	|17
+			sprintf$("Ist Comments Date Supplier3"),	|18
+			sprintf$("Reply Date to Supplier1"),		|19
+			sprintf$("Reply Date to Supplier2"),		|20
+			sprintf$("Reply Date to Supplier3"),		|21
+			sprintf$("2nd Comments Date Supplier1"),	|22
+			sprintf$("2nd Comments Date Supplier2"),	|23
+			sprintf$("2nd Comments Date Supplier3"),	|24
+			sprintf$("2nd Reply Date To Supplier1"),	|25
+			sprintf$("2nd Reply Date To Supplier2"),	|26
+			sprintf$("2nd Reply Date To Supplier3"),	|27
+			sprintf$("Technical Clearance Date To Supplier1"),		|28
+			sprintf$("Technical Clearance Date To Supplier2"),		|29
+			sprintf$("Technical Clearance Date To Supplier3"),		|30
+			sprintf$("LOI Date"),				|31
+			sprintf$("PO No."),				|32
+			sprintf$("PO Line No."),			|33
+			sprintf$("PO Creation Date"),			|34
+			sprintf$("PO Send for Approval Date"),		|35
+			sprintf$("PO Approval Date"),			|36
+			sprintf$("PO Sent To Supplier Date"),		|37
+			sprintf$("Supplier code"), 			|38
+			sprintf$("Supplier Name"),			|39
+			sprintf$("Buyer Code"),			|40
+			sprintf$("Buyer Name"),			|41
+			sprintf$("PO Line value(Rs.)"),		|42
+			sprintf$("Planned Receipt Date"),		|43
+			sprintf$("Reason for Delay noted by Buyer"),   |44
+			sprintf$("Remarks"))				|45
+			
+			line = strip$(shiftl$(line))
+			seq.puts(line, stat.fp)
+		endif
+	
+}
+
+function read.main.table()
+{
+	select tdpur200.rqno,tdpur200.ccon,tccom001.nama,tdpur200.rdat
+	from   tdpur200,tccom001
+	where  tdpur200._index1 inrange {:rqno.f} and {:rqno.t}
+	and     tdpur200.ccon    inrange {:buyr.f} and {:buyr.t}
+	and     tdpur200.ccon refers to tccom001
+	selectdo
+| 		buyer.code = tdpur200.ccon
+| 		buyer.name = tccom001.nama
+		
+		select tdpur201.cprj,tcmcs052.dsca,tdpur201.rqno,tdpur201.pono,tdpur201.cdf_rodt:Request.order.date,tdpur201.dldt,tdpur201.nids,tdpur201.otbp,tdpur201.oamt,
+			tccom100.nama
+		from	tdpur201,tcmcs052,tccom100
+		where   tdpur201._index1 = {:tdpur200.rqno}
+		and     tdpur201.otbp inrange {:otbp.f} and {:otbp.t}
+		and     tdpur201.cprj inrange {:cprj.f} and {:cprj.t}
+		and     tdpur201.cprj refers to tcmcs052
+		and	tdpur201.otbp refers to tccom100
+		selectdo
+			buyer.code = tdpur200.ccon
+			buyer.name = tccom001.nama
+			supplier.code = tdpur201.otbp
+			if strip$(supplier.code) <> "" then
+				supplier.name = tccom100.nama
+			else 
+				supplier.name = ""
+			endif
+			var = put.var(pid,"tdpur201.cdf_rodt",Request.order.date)
+			p.code = tdpur201.cprj
+			p.name = tcmcs052.dsca
+			pr.no =  tdpur201.rqno
+			pr.line.no = tdpur201.pono
+			item.desc = tdpur201.nids
+			select tdisg100.prio
+			from   tdisg100
+			where  tdisg100._index1 = {:tdpur201.rqno}
+			selectdo
+				pr.priority.status = enum.descr$("tdisg.in.type",tdisg100.prio)
+			endselect
+			
+			select tdpur203.trdt,tdpur203.rqst
+			from   tdpur203
+			where  tdpur203._index1 = {:tdpur201.rqno} 
+			and     tdpur203.rqst = tdpur.rqst.approved
+			selectdo
+					pr.approval.date = tdpur203.trdt
+			endselect
+			
+			select tdisg008.*
+			from    tdisg008
+			where  tdisg008._index1 = {:tdpur201.rqno,:tdpur201.pono}
+			selectdo
+			endselect
+			
+			select tdpur202.prno,tdpur202.ppon
+			from   tdpur202
+			where  tdpur202._index1 = {:tdpur201.rqno,:tdpur201.pono}
+			selectdo
+				po.no = tdpur202.prno
+				po.line.no = tdpur202.ppon
+				
+				select tdpur401.odat,tdpur401.oamt,tdpur401.ddta
+				from   tdpur401
+				where  tdpur401._index1 = {:tdpur202.prno,:tdpur202.ppon}
+				as set with 1 rows
+				selectdo
+					po.line.amnt = tdpur401.oamt
+					planned.receipt.date = tdpur401.ddta
+				endselect
+				
+				select tdpur450.trdt,tdpur450.hdst
+				from   tdpur450
+				where  tdpur450._index1 = {:tdpur202.prno}
+				as set with 1 rows
+				selectdo
+					if tdpur450.hdst = tdpur.hdst.approved then
+						po.send.approval.date = tdpur450.trdt
+					endif
+				endselect
+				
+				select tdmsl400.apdt,tdmsl400.stat
+				from    tdmsl400
+				where   tdmsl400._index1 = {:tdpur202.prno} 
+				and 	tdmsl400.stat = tcyesno.yes
+				as set with 1 rows
+				selectdo
+					po.approval.date = tdmsl400.apdt
+				endselect
+			
+			endselect		
+			print.detail()
+			initialise()
+		endselect
+	endselect
+	
+}
+
+function	print.detail()
+{	
+	line =	concat$("	",
+		sprintf$("%s",p.code ),				|1
+		sprintf$("%s", p.name),				|2				
+		sprintf$("%s", pr.no),					|3				
+		sprintf$("%d", pr.line.no),				|4				
+		sprintf$("%s", pr.priority.status),			|5	
+		sprintf$("%u(%02d/%02m/%04Y)",tdpur200.rdat),
+		sprintf$("%u(%02d/%02m/%04Y)", pr.approval.date),	|6
+		sprintf$("%d",tdpur201.oamt),
+		sprintf$("%D(%02d/%02m/%04Y)", tdisg008.spec),		|7
+		sprintf$("%u(%02d/%02m/%04Y)", Request.order.date),	|8				
+		sprintf$("%u(%02d/%02m/%04Y)",tdpur201.dldt),		|9				
+		sprintf$("%s", item.desc),				|10
+		sprintf$("%D(%02d/%02m/%04Y)", tdisg008.enq1),		|11
+		sprintf$("%D(%02d/%02m/%04Y)", tdisg008.enq2),		|12
+		sprintf$("%D(%02d/%02m/%04Y)", tdisg008.qrs1),		|13
+		sprintf$("%D(%02d/%02m/%04Y)", tdisg008.qrs2),		|14
+		sprintf$("%D(%02d/%02m/%04Y)", tdisg008.qrs3),		|15
+		sprintf$("%D(%02d/%02m/%04Y)", tdisg008.cmt1),		|16
+		sprintf$("%D(%02d/%02m/%04Y)", tdisg008.cmt2),		|17
+		sprintf$("%D(%02d/%02m/%04Y)", tdisg008.cmt3),		|18
+		sprintf$("%D(%02d/%02m/%04Y)", tdisg008.rep1),		|19
+		sprintf$("%D(%02d/%02m/%04Y)", tdisg008.rep2),		|20
+		sprintf$("%D(%02d/%02m/%04Y)", tdisg008.rep3),		|21
+		sprintf$("%D(%02d/%02m/%04Y)", tdisg008.sct1),		|22
+		sprintf$("%D(%02d/%02m/%04Y)", tdisg008.sct2),		|23
+		sprintf$("%D(%02d/%02m/%04Y)", tdisg008.sct3),		|24
+		sprintf$("%D(%02d/%02m/%04Y)", tdisg008.srd1),		|25
+		sprintf$("%D(%02d/%02m/%04Y)", tdisg008.srd2),		|26
+		sprintf$("%D(%02d/%02m/%04Y)", tdisg008.srd3),		|27
+		sprintf$("%D(%02d/%02m/%04Y)", tdisg008.tec1),		|28
+		sprintf$("%D(%02d/%02m/%04Y)", tdisg008.tec2),		|29
+		sprintf$("%D(%02d/%02m/%04Y)", tdisg008.tec3),		|30
+		sprintf$("%D(%02d/%02m/%04Y)", tdisg008.loid),		|31
+		sprintf$("%s", po.no),					|32	
+		sprintf$("%d", po.line.no),				|33
+		sprintf$("%u(%02d/%02m/%04Y)", tdpur401.odat),		|34
+		sprintf$("%u(%02d/%02m/%04Y)", po.send.approval.date),	|35
+		sprintf$("%u(%02d/%02m/%04Y)", po.approval.date),	|36
+		sprintf$("%D(%02d/%02m/%04Y)",tdisg008.psdt),		|37
+		sprintf$("%s", supplier.code),				|38
+		sprintf$("%s", supplier.name),				|39
+		sprintf$("%s", buyer.code),				|40
+		sprintf$("%s", buyer.name),				|41
+		sprintf$("%d", po.line.amnt),				|42
+		sprintf$("%u(%02d/%02m/%04Y)", planned.receipt.date),  |43
+		sprintf$("%s", tdisg008.reas),		|44
+		sprintf$("%s", tdisg008.remk))		|45
+
+		line = strip$(shiftl$(line))
+		seq.puts(line, stat.fp)
+}
+
+
+function initialise()
+{
+	p.code = ""
+	p.name = ""
+	pr.no = ""
+	pr.line.no = 0
+	pr.approval.date = 0
+	pr.priority.status = ""
+	Request.order.date = 0
+	po.no = ""
+	po.line.no = 0
+	po.approval.date = 0
+	po.send.approval.date = 0
+	supplier.name = ""
+	supplier.code = ""
+	buyer.code = ""
+	buyer.name = ""
+	po.line.amnt = 0
+	planned.receipt.date = 0
+	tdpur200.rdat = 0
+	tdpur201.oamt = 0
+	tdisg008.spec = 0
+	tdpur201.dldt = 0
+	item.desc = ""
+	tdisg008.remk = ""
+	tdisg008.reas = ""
+	tdisg008.psdt = 0
+	tdisg008.loid = 0
+	tdpur401.odat = 0
+	tdisg008.tec3 = 0
+	tdisg008.tec2 = 0
+	tdisg008.tec1 = 0
+	tdisg008.srd3 = 0
+	tdisg008.srd2 = 0
+	tdisg008.srd1 = 0
+	tdisg008.sct3 = 0
+	tdisg008.sct2 = 0
+	tdisg008.sct1 = 0
+	tdisg008.enq1 = 0
+	tdisg008.enq2	= 0
+	tdisg008.qrs1	= 0
+	tdisg008.qrs2   = 0
+	tdisg008.qrs3	= 0
+	tdisg008.cmt1   = 0
+	tdisg008.cmt2	= 0
+	tdisg008.cmt3   = 0
+	tdisg008.rep1	= 0
+	tdisg008.rep2	= 0
+	tdisg008.rep3	= 0
+}

@@ -1,0 +1,151 @@
+|******************************************************************************
+|* tfisg036  0  VRC B61U a7 live
+|* Project Employee Wise Limit
+|* tools1
+|* 14-07-15 [13:50]
+|******************************************************************************
+|* Script Type: DAL
+|******************************************************************************
+table	ttfisg036
+
+extern	domain	tfisg.type	i.type
+extern	domain	tfgld.date	i.datf,i.datt
+
+#include <bic_dal2>
+
+
+function extern long before.open.object.set()
+{
+	dal.field.depends.on("tfisg036.datf", HOOK_IS_VALID,"tfisg036.datt")
+	dal.field.depends.on("tfisg036.datt", HOOK_IS_VALID,"tfisg036.datf")
+	dal.field.depends.on("tfisg036.tran",HOOK_IS_VALID,"tfisg036.mlim")			
+	dal.field.depends.on("tfisg036.mlim",HOOK_IS_VALID,"tfisg036.tran")			
+		
+	return(0)
+}
+
+function extern long before.save.object(long type)
+{
+	on case	type
+	case	DAL_NEW :
+ 		
+		get_type()
+		if	i.type = tfisg036.type	then
+			dal.set.error.message("@Type Normal Already Used.Please select Other Type")
+			return(DALHOOKERROR)
+		endif
+		
+		if tfisg036.mlim < tfisg036.tran then
+			dal.set.error.message("@Max. Limit must be greater than or equal to Transaction Limit")
+			return(DALHOOKERROR)
+		endif
+		
+		break
+	case	DAL_UPDATE :
+		if tfisg036.mlim < tfisg036.tran then
+			dal.set.error.message("@Max. Limit must be greater than or equal to Transaction Limit")
+			return(DALHOOKERROR)
+		endif	
+	endcase	
+	return(0)
+}
+
+function extern boolean tfisg036.datf.is.valid()
+{
+	if	tfisg036.datf > tfisg036.datf then
+		return(false)
+	endif
+	
+	get_date()
+	
+	if i.datf <> 0 and i.datt <> 0 then
+		if	((tfisg036.datf < i.datf) or (tfisg036.datf > i.datt)) then 
+			return(false)
+		endif
+	endif	
+	
+	return(true)
+}
+
+function extern boolean tfisg036.datt.is.valid()
+{
+	if	tfisg036.datt < tfisg036.datf then
+		return(false)
+	endif
+	
+	get_date()
+	if i.datf <> 0 and i.datt <> 0 then
+		if	((tfisg036.datf < i.datf) or (tfisg036.datf > i.datt)) or 
+			((tfisg036.datt > i.datt) or (tfisg036.datt < tfisg036.datf)) then 
+			return(false)
+		endif
+	endif
+	
+	return(true)
+}
+
+| function extern boolean tfisg036.tran.is.valid(long type)
+| {
+| 	on case type
+| 	case DAL_NEW :
+| 			
+| 		if (tfisg036.tran > tfisg036.mlim) then 
+| 			dal.set.error.message("@Transaction Limit must be less than or equal to Max. Limit")
+| 			return(DALHOOKERROR)
+| 		endif
+| 		break
+| 	case DAL_UPDATE :
+| 		if (tfisg036.tran > tfisg036.mlim) then 
+| 			dal.set.error.message("@Transaction Limit must be less than or equal to Max. Limit")
+| 			return(DALHOOKERROR)
+| 		endif
+| 		break	
+| 	endcase
+| 	return(true)
+| }
+
+| function extern boolean tfisg036.mlim.is.valid(long type)
+| {
+| 	on case type
+| 	case DAL_NEW :
+| 		if tfisg036.mlim < tfisg036.tran then
+| 			dal.set.error.message("@Max. Limit must be greater than or equal to Transaction Limit")
+| 			return(DALHOOKERROR)
+| 	| 		return(false)
+| 		endif
+| 		break
+| 	case DAL_UPDATE :	
+| 		if tfisg036.mlim < tfisg036.tran then
+| 			dal.set.error.message("@Max. Limit must be greater than or equal to Transaction Limit")
+| 			return(DALHOOKERROR)
+| 	| 		return(false)
+| 		endif
+| 		break
+| 	endcase
+| 	return(true)
+| }
+
+function 	get_type()
+{
+	select	tfisg036.type:i.type
+	from	tfisg036
+	where	tfisg036._index1 = {:tfisg036.cprj,:tfisg036.emno,tfisg.type.normal}
+	as set with 1 rows
+	selectdo
+	selectempty
+		i.type = empty
+	endselect	
+}
+
+function get_date()
+{
+	select	tfisg036.datf:i.datf,tfisg036.datt:i.datt
+	from	tfisg036
+	where	tfisg036._index1 = {:tfisg036.cprj,:tfisg036.emno,tfisg.type.normal}
+	as set with 1 rows
+	selectdo
+	selectempty
+		i.datf = 0
+		i.datt = 0
+	endselect
+}

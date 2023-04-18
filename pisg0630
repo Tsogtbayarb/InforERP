@@ -1,0 +1,121 @@
+|******************************************************************************
+|* tpisg063  0  VRC B61U a7 isg 
+|* DAL for tpisg063
+|* baan
+|* 15-01-13 [14:07]
+|******************************************************************************
+|* Script Type: DAL
+|******************************************************************************
+|* ID ISGEC01017, Manish Manchanda, 2015-01-13
+
+|******************************************************************************
+
+	table	ttpisg063	| Engineering Status of Project Master 
+	table	tdmisg001	| Incoming Document Master
+	table	tdmisg002	| Incoming Document Child
+	table	ttpptc100	| Element
+	table	ttpest120	| Structural Elements
+
+#include <bic_dal2>
+
+
+function extern long before.open.object.set()
+{
+	field.dependencies()
+	return(0)
+}
+
+function extern long before.save.object(long type)
+{
+	return(0)
+}
+
+function	field.dependencies()
+{
+	dal.field.depends.on("tpisg063.cspa",HOOK_UPDATE,"tpisg063.cprj")
+	dal.field.depends.on("tpisg063.engs",
+						HOOK_IS_READONLY +
+						HOOK_IS_APPLICABLE , "tpisg063.appl")
+						
+}
+
+function	extern	tpisg063.cspa.update(long	type)
+{
+	select	tpptc100.cprj,tpptc100.cspa
+	from	tpptc100
+	where	tpptc100._index1	=	{:tpisg063.cprj}
+	selectdo
+		update_engineering_status()
+	endselect
+}
+
+function	extern	boolean	tpisg063.appl.is.readonly(long	type)
+{
+	if	tpisg063.appl	=	tcyesno.yes	and	tpisg063.engs	>	tpengs.free	then
+		return(true)
+	endif
+	return(false)
+}
+
+
+function	extern	boolean	tpisg063.engs.free.is.applicable(long	type)
+{
+	if	tpisg063.engs	>	tpengs.free	then	
+		return(false)
+	endif
+	return(true)
+}
+function	extern	boolean	tpisg063.engs.partial.is.applicable(long	type)
+{
+	if	tpisg063.appl	=	tcyesno.yes	then
+		if	tpisg063.engs	=	tpengs.complete	and	check_status()	then
+			return(false)
+		endif
+		return(true)
+	endif
+	return(false)
+}
+
+function	extern	boolean	tpisg063.engs.complete.is.applicable(long	type)
+{
+	if	tpisg063.appl	=	tcyesno.yes	then
+		return(true)
+	endif
+	return(false)
+}
+
+
+function	domain	tcbool	check_status()
+{
+	select	dmisg001.docn, dmisg001.revn, dmisg001.stat
+	from	dmisg001, dmisg002
+	where	dmisg001._index3	=	{:tpisg063.cprj}
+	and	dmisg002._index1	=	{dmisg001.docn,dmisg001.revn}	
+	and	dmisg002.elem		=	:tpisg063.cspa
+	and	dmisg001.stat	>	dmstat.submitted
+	selectdo
+		return(true)
+	endselect
+	return(false)
+}
+
+function	update_engineering_status()
+{
+	select	a_tpisg063.*
+	from	tpisg063	a_tpisg063
+	where	a_tpisg063._index1	=	{:tpptc100.cprj,:tpptc100.cspa}
+	selectdo
+	selectempty
+		select	b_tpest120.levl
+		from	tpest120	b_tpest120
+		where	b_tpest120._index1 = {:tpptc100.cprj}
+		and	b_tpest120.sele = :tpptc100.cspa
+		and	b_tpest120.levl <	4
+		selectdo
+			tpisg063.cprj	=	tpptc100.cprj
+			tpisg063.cspa	=	tpptc100.cspa
+			db.insert(ttpisg063,db.skip.dupl,e)
+			commit.transaction()
+		endselect
+	endselect
+}

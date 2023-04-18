@@ -1,0 +1,195 @@
+|******************************************************************************
+|* tcisg0401m000  0  VRC B61U a7 live
+|* Print Standard Item with Document
+|* Installation user             
+|* 2014-11-27
+|******************************************************************************
+|* Main table tcibd001 Items - General, Form Type 4
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttcibd001 | Items - General
+	table	ttcmcs023
+	table	tdmisg007
+
+	|**************** Form Variables **********************
+	extern	domain	tccitg		citg.f    fixed
+	extern	domain	tccitg		citg.t    fixed
+	extern	domain	tcitem		item.f    fixed
+	extern	domain	tcitem		item.t    fixed
+	
+	|*************** File Handling Variables *******************
+	string		err.file(100), file.name(100), line3(3000), line4(3000)
+	long		ret2, stat.fp
+	
+	|************** Script Variables ****************************
+	extern	domain	tcmcs.str256m	scr.text(100)	
+	
+	|************** File Utilization Variables ******************
+	extern	domain	tcmcs.long	rep.srno				|1
+	extern	domain	tcitem		rep.item				|2				
+	extern	domain	tcdsca		rep.itdc				|3				
+	extern	domain	tcqiv1		rep.uwgt				|4				
+	extern	domain	tccitg		rep.citg				|5				
+	extern	domain	tcdsca		rep.igdc				|6				
+	extern	domain	tccuni		rep.cuni				|7				
+	extern	string			rep.text(2048)				|8				
+	extern	domain	tcmcs.s999m	rep.docn				|9
+	
+	
+|*************** Include **************
+#include<bic_desktop>
+#include<bic_text>
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+group.1:
+init.group:
+	get.screen.defaults()
+
+|****************************** choice section ********************************
+choice.cont.process:
+on.choice:
+	generate.file()
+
+|****************************** field section *********************************
+field.citg.f:
+when.field.changes:
+	citg.t = citg.f
+
+field.item.f:
+when.field.changes:
+	item.t = item.f
+|****************************** function section ******************************
+
+functions:
+
+function generate.file()
+{
+	open.file()
+	generate.header()
+	read.main.table()
+	close.file()
+}
+
+function read.main.table()
+{
+	long	nr_line, i, j
+	
+	rep.srno = 0
+	select	tcibd001.*, tcmcs023.dsca
+	from	tcibd001, tcmcs023
+	where	tcibd001._index4 inrange {:citg.f, :item.f}	and {:citg.t, :item.t}
+	and	tcibd001.citg refers to tcmcs023 Unref Clear
+	order by tcibd001._index1
+	selectdo
+		Initialize_Variable()
+		nr_line = 100
+		rep.srno = rep.srno + 1
+		rep.item = tcibd001.item
+		rep.itdc = tcibd001.dsca
+		rep.uwgt = tcibd001.wght
+		rep.citg = tcibd001.citg
+		rep.igdc = tcmcs023.dsca
+		rep.cuni = tcibd001.cuni
+		j = text.to.buf("tcibd001.txta", language$, nr_line, scr.text)
+		for i = 1 to nr_line
+			if	isspace(rep.text)	then
+				rep.text = trim$(scr.text(1, i))
+			else	
+				rep.text = trim$(rep.text) & " " & trim$(scr.text(1, i))
+			endif	
+			scr.text(1, i) = ""
+		ENDFOR
+		
+		Get_Standard_Document(tcibd001.item, rep.docn)
+		print.detail()
+	endselect
+}
+
+function Get_Standard_Document(
+			domain	tcitem		in.item,
+		ref	domain	tcmcs.s999m	ot.docn
+				)
+{
+	ot.docn = ""	
+	select	dmisg007.docn, dmisg007.revn
+	from	dmisg007
+	where	dmisg007._index1 = {:in.item}
+	selectdo
+		if	isspace(ot.docn)	then
+			ot.docn = trim$(dmisg007.docn) & "/" & trim$(dmisg007.revn)
+		else
+			ot.docn = trim$(ot.docn) & "," & trim$(dmisg007.docn) & "/" & trim$(dmisg007.revn)
+		endif
+	endselect	
+}
+
+function	generate.header()
+{
+	line4 =	concat$("	",
+		sprintf$("Serial Number"),					|1		
+		sprintf$("Item Code"),						|2		
+		sprintf$("Item Description"),					|3		
+		sprintf$("Unit Weight"),					|4		
+		sprintf$("Item Group"),					|5		
+		sprintf$("Item Group Description"),				|6		
+		sprintf$("Unit"),						|7		
+		sprintf$("Item Text"),						|8		
+		sprintf$("Document Drawing Number"))				|9		
+		
+	line4 = strip$(shiftl$(line4))		
+	seq.puts(line4, stat.fp)	
+}
+
+function	print.detail()
+{	
+	line3 =	concat$("	",
+		sprintf$("%d", rep.srno),				|1
+		sprintf$("%s", rep.item),				|2				
+		sprintf$("%s", rep.itdc),				|3				
+		sprintf$("%f", rep.uwgt),				|4				
+		sprintf$("%s", rep.citg),				|5				
+		sprintf$("%s", rep.igdc),				|6				
+		sprintf$("%s", rep.cuni),				|7				
+		sprintf$("%s", rep.text),				|8				
+		sprintf$("%s", rep.docn))				|9				
+	
+		line3 = strip$(shiftl$(line3))
+		seq.puts(line3, stat.fp)
+}	
+
+function	Initialize_Variable()
+{	
+| 	rep.srno = 0				|1
+	rep.item = ""				|2				
+	rep.itdc = ""				|3				
+	rep.uwgt = 0				|4				
+	rep.citg = ""				|5				
+	rep.igdc = ""				|6				
+	rep.cuni = ""				|7				
+	rep.text = ""				|8				
+	rep.docn = ""				|9				
+}
+
+function open.file()
+{
+	err.file = bse.tmp.dir$() & str$(utc.num()) & ".xls"
+	
+	file.name = "c:\temp\" & str$(utc.num())  & ".xls"
+	
+	stat.fp = seq.open(err.file, "w+")
+	if stat.fp >0 then
+ 		seq.seek(0, 0, stat.fp)
+	endif
+}
+
+function close.file()
+{
+	seq.close(stat.fp)
+	ret2 = server2client(err.file,file.name,1)
+	ret2 = app_start(file.name,"c:","","","")
+}

@@ -1,0 +1,106 @@
+|******************************************************************************
+|* dmisg0507m000  0  VRC B61U a7 live
+|* Standard Document Master
+|* Tools                         
+|* 2014-08-04
+|******************************************************************************
+|* Main table dmisg007 Standard Document Master, Form Type 1
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+	table	tdmisg007 | Standard Document Master
+	table	tdmisg011
+	table	tdmisg010
+	
+	|***************** Zoom Variable ************
+	extern	domain	dmdoc.docid	zoom.docn
+	extern	domain	dmdoc.revv	zoom.revm
+	
+	|***************** Global Variable *********
+	extern	domain	tcorno		gbl.issu
+	|***************** Script Variable *********
+	extern	domain	tcmcs.str16	progname
+	extern	domain	tfgld.user	im.issu
+	extern	domain	tcmcs.str10	start.from
+	
+	|********************* Include ******
+	#include <bic_dam>
+|****************************** program section ********************************
+before.program:
+	import("prog.name$", progname)
+	inputfield.invisible("dmisg007.item.segment.1")
+	on case progname
+		case "dmisg0111m000":
+			import("start.from", start.from)
+			import("dmisg011.issu", im.issu)
+			break
+	ENDCASE
+|****************************** group section **********************************
+|****************************** choice section **********************************
+choice.end.program:
+before.choice:
+	if	progname = "dmisg0111m000" and trim$(start.from) <> "ZOOM"	then
+		update.document()
+		export("gbl.issu", dmisg011.issu)
+		refresh.parent(-1)	
+	endif	
+|****************************** zoom section **********************************
+zoom.from.all:
+on.entry:
+	
+on.exit:
+	if progname = "dmisg0111m000"	then
+		export("zoom.docn", dmisg007.docn)
+		export("zoom.revm", dmisg007.revn)
+	endif	
+|**************************** Function Section ************************	
+functions:
+
+function update.document()
+{
+	do.selection(true, insert.document, dmisg007.docn, dmisg007.revn)
+}
+
+function insert.document(domain dmdoc.docid	i.dcid,
+			domain	dmdoc.revv	i.revi)
+{
+	long	ret.val,  rt1, k, ret_val
+	domain	tcpono	tmp.srno
+	string	error1(100)
+	
+	dal.new.object("dmisg011")
+	dal.set.field("dmisg011.issu", im.issu)
+	get.serial.no(im.issu, tmp.srno)
+	dal.set.field("dmisg011.srno", tmp.srno)
+	dal.set.field("dmisg011.docn", i.dcid)
+	dal.set.field("dmisg011.revi", i.revi)
+	dal.set.field("dmisg011.nprt", 5)
+	dal.set.field("dmisg011.shsz", dmisg007.size)
+	ret.val = dal.save.object("dmisg011")
+	if	ret.val = 0	then	
+		commit.transaction()
+	else
+		error1 = ""
+		rt1 = dal.count.error.messages()
+		for k = rt1 to 1 step -1
+			ret_val = dal.get.error.message(error1)
+		endfor
+		abort.transaction()
+	endif	
+}			
+
+function get.serial.no(domain	tfgld.user	t.issu,
+		ref	domain	tcpono		t.srno)
+{
+	select	max(a_dmisg011.srno):t.srno
+	from	dmisg011 a_dmisg011
+	where	a_dmisg011._index1 = {:t.issu}
+	selectdo
+	selectempty
+		t.srno = 0
+	endselect
+	t.srno = t.srno + 1	
+}
+

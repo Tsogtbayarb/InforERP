@@ -1,0 +1,135 @@
+|******************************************************************************
+|* tfisg0403m000  0  VRC B61U a7 isg 
+|* Print Purchase Inv. Requires MRN
+|* Installation user             
+|* 2014-11-03
+|******************************************************************************
+|* Main table tfisg003 GR Details, Form Type 4
+|******************************************************************************
+|* ID: ISGEC001149, IT0327, Ritu Shrivastava, Dt. 03-11-2014, VRC B61U a7 isg
+|* New Report
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttfisg003 | GR Details
+  table   ttfisg001
+  table   ttfisg002
+  table   ttcmcs052
+  table   ttccom100
+
+   extern  domain  tccom.bpid       bpid.f    fixed
+   extern  domain  tccom.bpid       bpid.t    fixed
+   extern  domain  tfgld.date       grdt.f
+   extern  domain  tfgld.date       grdt.t
+   extern  domain  tfacp.isup       grno.f    fixed
+   extern  domain  tfacp.isup       grno.t    fixed
+
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.cont.process:
+on.choice:
+   execute(print.data)
+
+choice.print.data:
+on.choice:
+   if rprt_open() then
+       read.main.table()
+       rprt_close()
+   else
+       choice.again()
+   endif
+
+
+|****************************** field section *********************************
+
+field.grno.f:
+when.field.changes:
+   grno.t = grno.f
+
+field.bpid.f:
+when.field.changes:
+   bpid.t = bpid.f
+
+field.grdt.f:
+when.field.changes:
+   grdt.t = grdt.f
+
+
+|****************************** function section ******************************
+
+functions:
+
+function read.main.table()
+{
+	select tfisg003.*
+	from   tfisg003
+	where  tfisg003._index1 inrange {:grno.f,:bpid.f,:grdt.f} and {:grno.t,:bpid.t,:grdt.t}
+	order by tfisg003.grno
+	selectdo
+		if tfisg003.otbp = tcyesno.no then
+			select tccom100.nama
+			from   tccom100
+			where  tccom100._index1 = {:tfisg003.bpid}
+			selectdo
+				tfisg003.bpnm = tccom100.nama
+			selectempty
+				tfisg003.bpnm = ""
+			endselect
+		endif
+
+		select tfisg002.*
+		from   tfisg002
+		where  tfisg002.grno = :tfisg003.grno
+		and    tfisg002.grbp = :tfisg003.bpid
+		and    tfisg002.grdt = :tfisg003.grdt
+		selectdo
+			select tfisg001.*
+			from   tfisg001
+			where  tfisg001._index1 = {:tfisg002.irno}
+			selectdo
+				select tcmcs052.dsca
+				from   tcmcs052
+				where  tcmcs052._index1 = {:tfisg001.cprj}
+				selectdo
+				selectempty
+					tcmcs052.dsca = ""
+				endselect
+				
+				select tccom100.nama
+				from   tccom100
+				where  tccom100._index1 = {:tfisg001.bpid}
+				selectdo
+				selectempty
+					tccom100.nama  = ""
+				endselect
+
+				rprt_send()
+			selectempty
+				tfisg001.irno = 0
+				tfisg001.irdt = 0
+				tfisg001.cprj = ""
+				tcmcs052.dsca = ""
+				tfisg001.bpid = ""
+				tccom100.nama = ""
+				rprt_send()
+			endselect
+		selectempty
+			tfisg001.irno = 0
+			tfisg001.irdt = 0
+			tfisg001.cprj = ""
+			tcmcs052.dsca = ""
+			tfisg001.bpid = ""
+			tccom100.nama = ""
+			rprt_send()
+		endselect	
+	endselect
+}

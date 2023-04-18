@@ -1,0 +1,476 @@
+|******************************************************************************
+|* tpisg050  0  VRC B61U a7 live
+|* DAL for tpisg050
+|* tools1
+|* 14-11-03 [02:05]
+|******************************************************************************
+|* Script Type: DAL
+|******************************************************************************
+|* ID ISGEC001146,	Sujeet Kumar,		2014-11-02
+|* Cost Forecast
+|* Functional: Mr. Nishant Kaushik
+|*
+|* ID ISGEC004009,	Dharmendra,		2015-02-18
+
+|* IDENT ISGEC015030, Shilpa Janardanan, 27/7/2015
+|* Input currency while inserting the record as this is mandatory field 
+|* w.r.t Quantity
+
+|******************************************************************************
+                                                                                
+#include <bic_dal2>
+
+	|* Table Declaration
+	table	ttpisg050
+	table	ttpptc100	| Elements
+	table	ttpest200
+	table	ttpisg012
+	
+|****************************************************************************
+function extern long before.open.object.set()
+{
+	dal.field.depends.on("tpisg050.rean",
+					HOOK_IS_DERIVED +
+					HOOK_IS_MANDATORY +
+					HOOK_IS_VALID,"tpisg050.iexp")
+	return(0)
+}
+
+function extern long before.save.object(long type)
+{
+	return(0)
+}
+
+function extern boolean method.is.allowed(long type)
+{
+	on case type
+	case	DAL_UPDATE :
+		if tpisg050.frez = tcyesno.yes then
+			return(false)
+		endif
+	endcase
+	return(true)
+}
+
+function extern long before.new.object  ()
+{
+	tpisg050.date = date.num()
+	
+	return(0)
+}
+
+|***************************** Field Hooks***********************************
+function extern boolean tpisg050.cprj.is.valid()
+{
+	if check.current.date.record.is.freez(tpisg050.cprj,date.num()) then
+		dal.set.error.message("@ Cost Forecast Already Freezed")
+		return(DALHOOKERROR)
+	
+	endif
+
+	return(true)
+}
+
+function extern boolean tpisg050.date.is.mandatory(long type)
+{
+	if tpisg050.date = 0 then
+		return(true)
+	endif
+	
+	return(false)
+}
+function extern boolean tpisg050.date.is.valid(long type)
+{
+	if tpisg050.date > date.num() then
+		dal.set.error.message("@ Future Date Cost Forecast Can't be Maintained")
+		return(DALHOOKERROR)
+	endif
+	return(true)
+}
+
+|** [tpisg050.rean Reason]
+function extern boolean tpisg050.rean.is.mandatory(long type)
+{
+	
+	if isspace(tpisg050.rean) and tpisg050.iexp <> 0 then
+		return(true)
+	endif
+	
+	return(false)
+}
+								|# ISGEC004009.sn
+function extern boolean tpisg050.cuni.is.mandatory(long type)
+{
+	
+	if tpisg050.quan > 0 then
+		return(true)
+	endif
+	return(false)
+}
+								|# ISGEC004009.en
+function extern boolean tpisg050.rean.is.valid(long type)
+{
+	domain	tcccty	o.rean
+	
+	if not isspace(tpisg050.rean) then
+		select	tpisg051.rean:o.rean
+		from	tpisg051
+		where	tpisg051._index1 = {:tpisg050.rean}
+		as set with 1 rows
+		selectdo
+		selectempty
+			dal.set.error.message("@ Etner Valid Reason Code")
+			return(DALHOOKERROR)
+		endselect
+	endif
+	
+	return(true)
+}
+
+function extern boolean tpisg050.rean.is.derived(long type)
+{
+	if tpisg050.iexp <> 0 and tpisg050.frez = tcyesno.no then
+		return(false)
+	endif
+	
+	return(true)
+}
+
+
+
+|************************************ Functions******************************
+function extern boolean Insert.Data.Into.Main.Table(domain tfgld.date	i.date)
+{
+	select	tpptc100.cprj,tpptc100.cspa
+	from	tpptc100
+	where	tpptc100._index1 = {:tpisg050.cprj}
+	selectdo
+		Populate.Records(
+				tpptc100.cprj,
+				i.date,
+				tpptc100.cspa,
+				Get.Quantity(tpptc100.cprj,tpptc100.cspa))
+	endselect
+	return(true)
+}
+
+function long Populate.Records
+	(
+		domain	tccprj		i.cprj,		| Project
+		domain	tfgld.date	i.date,		| Registration Date
+		domain	tppdm.cspa	i.cspa,		| Element
+		domain	tppdm.qajc	i.quan		| Estimated Quantity
+	)
+{
+	long ret
+	domain	tppdm.qajc	o.quan
+	domain	tcamnt		o.totl
+	domain	tcamnt		o.avai
+	domain	tcamnt		o.ivai
+	domain	tcamnt		o.exha
+	domain	tcpono		o.levl
+	
+	long ret_val
+	domain	tccuni	o.cuni			|#ISGEC015030.n
+	
+	o.totl = 0
+	o.avai = 0
+	o.exha = 0
+	o.ivai = 0
+	o.cuni = ""
+	get.sanction.control.initial.data(i.cprj,i.cspa,o.ivai)
+	get.sanction.control.data(i.cprj,i.cspa,o.totl,o.avai,o.exha,o.levl)
+	get.unit(i.cprj,i.cspa,o.cuni)			|#ISGEC015030.n
+	
+	select	tpisg050.*
+	from	tpisg050 for update
+	where	tpisg050._index1 = {:i.cprj,:i.date,:i.cspa}
+	selectdo
+		dal.change.object("tpisg050")
+		dal.set.field("tpisg050.quan",i.quan)
+		dal.set.field("tpisg050.cosa",get.estimation.amount(tpisg050.cprj,tpisg050.cspa))
+		dal.set.field("tpisg050.levl",o.levl)
+		dal.set.field("tpisg050.ivai",o.ivai)
+		dal.set.field("tpisg050.totl",o.totl)
+| 		dal.set.field("tpisg050.avai",o.avai)
+		dal.set.field("tpisg050.exha",o.exha)
+| 		dal.set.field("tpisg050.rqno",indenting.pending(i.cprj,i.cspa))
+| 		dal.set.field("tpisg050.edrn",billing.advice.pending(i.cprj,i.cspa))
+		dal.set.field("tpisg050.wght",item.release.total.weight(i.cprj,i.cspa))
+| 		dal.set.field("tpisg050.amor",revenue.amount(i.cprj,i.cspa))
+		ret_val = dal.save.object("tpisg050")
+		if ret_val <> 0 then
+			return(DALHOOKERROR)
+		endif
+	selectempty
+		
+		
+		
+		dal.new.object("tpisg050")
+		
+		if o.ivai = 0 then
+			o.ivai = o.avai
+		endif
+		
+		dal.set.field("tpisg050.cprj",i.cprj)
+		dal.set.field("tpisg050.date",i.date)
+		dal.set.field("tpisg050.cspa",i.cspa)
+		dal.set.field("tpisg050.cosa",get.estimation.amount(i.cprj,i.cspa))
+		dal.set.field("tpisg050.quan",i.quan)
+		dal.set.field("tpisg050.levl",o.levl)
+		dal.set.field("tpisg050.ivai",o.ivai)
+		dal.set.field("tpisg050.totl",o.totl)
+| 		dal.set.field("tpisg050.avai",o.avai)
+		dal.set.field("tpisg050.exha",o.exha)
+| 		dal.set.field("tpisg050.rqno",indenting.pending(i.cprj,i.cspa))
+| 		dal.set.field("tpisg050.edrn",billing.advice.pending(i.cprj,i.cspa))
+		dal.set.field("tpisg050.wght",item.release.total.weight(i.cprj,i.cspa))
+		dal.set.field("tpisg050.cuni",o.cuni)		|#ISGEC015030.n
+| 		dal.set.field("tpisg050.amor",revenue.amount(i.cprj,i.cspa))
+| 		if i.aqty <> 0.00 then
+| 			dal.set.field("tpisg050.aqty",i.aqty)
+| 		endif
+		
+| 		if i.exha <> 0.00 then
+| 			dal.set.field("tpisg050.exha",i.exha)
+| 		endif
+		
+		ret = dal.save.object("tpisg050")
+		
+		if ret <> 0 then
+			show.dal.messages(MSG.ALL)
+		endif
+	endselect
+	
+	return(0)
+}
+
+
+function domain tcamnt get.estimation.amount
+			(
+				domain	tccprj		i.cprj,
+				domain	tppdm.cspa	i.cspa
+			)
+{
+	domain	tppdm.aalc	o.cosa,v.cosa
+	domain	tcratc		o.rtcc
+	
+	v.cosa = 0
+	
+	select 	tpest200.cosa:o.cosa,
+		tpest200.rtcc(1):o.rtcc
+	from	tpest200
+	where	tpest200._index2 = {:i.cprj}
+	and	tpest200.psel = :i.cspa
+	selectdo
+		v.cosa = v.cosa + (o.cosa * o.rtcc)
+	endselect
+	
+	return(v.cosa)
+}
+
+
+
+function get.sanction.control.initial.data
+			(
+				domain	tccprj		i.cprj,		|Project
+				domain	tppdm.cspa	i.cspa,		|Elements
+			ref 	domain	tcamnt		o.avai
+			)
+{
+	domain	tcorno		curr.vers
+	
+	curr.vers = "1.0"
+	
+	select tpisg008.totl:o.avai				|# ISGEC004009.n
+| 	select tpisg008.insa:o.avai				|# ISGEC004009.o
+	from	tpisg008
+	where	tpisg008._index1 = {:i.cprj,:curr.vers,:i.cspa}
+	as set with 1 rows
+	selectdo
+	selectempty
+		o.avai = 0
+	endselect
+	
+	
+}
+
+function get.sanction.control.data
+			(
+				domain	tccprj		i.cprj,		|Project
+				domain	tppdm.cspa	i.cspa,		|Element 
+			ref 	domain	tcamnt		o.totl,		|Total Basic Cost
+			ref	domain	tcamnt		o.avai,		|Current Sanction
+			ref 	domain	tcamnt		o.exha,		|Expenses Yet to Incurred
+			ref	domain	tcpono		o.levl		|Level
+			)
+{
+	select 	tpisg012.totl:o.totl,
+		tpisg012.avai:o.avai,
+		tpisg012.exha:o.exha,
+		tpisg012.levl:o.levl
+	from	tpisg012
+	where	tpisg012._index1 = {:i.cprj}
+	and	tpisg012.elem = :i.cspa
+	as set with 1 rows
+	selectdo
+	endselect
+	
+}
+
+function domain tcqsl1 Get.Quantity
+	(
+		domain	tccprj		i.cprj,
+		domain	tppdm.cspa	i.cspa
+	) 
+{
+	domain	tcqsl1	o.quan
+	select	sum(tpest200.quan):o.quan
+	from	tpest200
+	where	tpest200._index1 = {:i.cprj}
+	and	tpest200.psel = :i.cspa
+	group	by tpest200.cprj,tpest200.psel
+	selectdo
+	selectempty
+		o.quan = 0.00
+	endselect
+	
+	return(o.quan)
+}
+
+function domain tcyesno indenting.pending
+			(
+				domain	tccprj		i.cprj,		|Project Code
+				domain	tppdm.cspa	i.cspa		|Elements
+			)
+{
+	domain	tcyesno	o.indt
+	
+	select 	tcisg004.indt:o.indt
+	from	tcisg004,tcisg003
+	where	tcisg004._index1 = {:i.cprj,:i.cspa}
+	and	tcisg004.cmba refers to tcisg003
+	and	tcisg004.stat = dmstat.released
+	and	tcisg003.stat = tcisg.status.launched
+	and	tcisg004.indt = tcyesno.no
+	as set with 1 rows
+	selectdo
+		return(tcyesno.yes)
+	endselect
+	
+	return(tcyesno.no)
+}
+
+
+function domain tcyesno billing.advice.pending
+			(
+				domain	tccprj		i.cprj,		|Project
+				domain	tppdm.cspa	i.cspa		|Element 
+			)
+{
+	domain	tccprj		o.cprj
+	
+	select 	whisg312.cprj:o.cprj
+	from	whisg312
+	where	whisg312.cprj = :i.cprj
+	and	whisg312.cspa = :i.cspa
+	and	whisg312.inrq = ""
+	as set with 1 rows
+	selectdo
+	selectempty
+		return(tcyesno.no)
+	endselect
+	
+	return(tcyesno.yes)
+}
+
+
+function domain tcqsl1	 item.release.total.weight
+			(
+				domain	tccprj		i.cprj,		|Project
+				domain	tppdm.cspa	i.cspa		|Elements
+			)
+{
+	domain	tcqsl1		o.wght
+	
+	select 	sum(tcisg003.wght):o.wght
+	from	tcisg003
+	where	tcisg003._index1 = {:i.cprj,:i.cspa}
+	and	tcisg003.stat = tcisg.status.launched
+	selectdo
+	selectempty
+		o.wght = 0
+	endselect
+	
+	return(o.wght)
+	
+}
+
+function domain tcamnt	revenue.amount
+			(
+				domain	tccprj		i.cprj,		|Project
+				domain	tppdm.cspa	i.cspa		|Elements
+			)
+{
+	domain	tcamnt		o.amor
+	domain	tcamnt		total.amor
+	
+	select 	sum(tpppc301.amor):o.amor
+	from	tpppc301
+	where	tpppc301._index7 = {:i.cprj,:i.cspa}
+	selectdo
+	selectempty
+		o.amor = 0
+	endselect
+	
+	total.amor = total.amor + o.amor
+	
+	o.amor  = 0
+	
+	select sum(tpppc305.amor):o.amor
+	from	tpppc305
+	where	tpppc305._index1 = {:i.cprj,:i.cspa}
+	selectdo
+	selectempty
+		o.amor = 0
+	endselect
+	
+	total.amor = total.amor + o.amor
+	
+	return(total.amor)
+}
+
+
+
+function boolean check.current.date.record.is.freez
+				(
+					domain	tccprj		i.cprj,
+					domain	tfgld.date	i.date
+				)
+{
+	domain	tccprj	o.cprj
+	
+	select 	tpisg050.cprj:o.cprj
+	from	tpisg050
+	where	tpisg050._index1 = {:i.cprj,:i.date}
+	and	tpisg050.frez = tcyesno.yes 
+	as set with 1 rows
+	selectdo
+		return(true)
+	endselect
+	
+	return(false)
+}
+				
+function get.unit(
+			domain	tccprj		i.cprj,		|Project
+			domain	tppdm.cspa	i.cspa,		|Element
+			ref domain	tccuni	o.cuni)
+{
+	select	tpptc100.cuni:o.cuni
+	from	tpptc100
+	where	tpptc100._index1 = {:i.cprj,:i.cspa}
+	selectdo
+	endselect
+	
+}

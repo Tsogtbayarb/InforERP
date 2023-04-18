@@ -1,0 +1,303 @@
+|******************************************************************************
+|* tpisg082  0  VRC B61U a7 isg 
+|* DAL 2 for tpisg082
+|* baan
+|* 15-04-08 [17:04]
+|******************************************************************************
+|* Script Type: DAL
+|******************************************************************************
+	table	ttpisg081
+	table	ttpisg082
+	table	ttpptc101
+	table	ttpisg011
+	table	ttpest120
+	domain	tcamnt	old.act.value, old.yet.value, new.act.value, new.yet.value, old.incentive, new.incentive
+	extern	domain	tppdm.cspa	var.elem
+	#include <bic_dal2>
+	#define SANCTION_STATUS
+^	check_sanction_status()	
+
+
+function extern long before.open.object.set()
+{
+	dal.field.depends.on("tpisg082.actl", HOOK_IS_DERIVED, "tpisg082.cspa")
+	dal.field.depends.on("tpisg082.yetl", HOOK_IS_DERIVED, "tpisg082.cspa")
+	dal.field.depends.on("tpisg082.totl", HOOK_UPDATE, "tpisg082.actl")
+	dal.field.depends.on("tpisg082.totl", HOOK_UPDATE, "tpisg082.yetl")
+	dal.field.depends.on("tpisg082.parn", HOOK_UPDATE, "tpisg082.cspa")
+	dal.field.depends.on("tpisg082.levl", HOOK_UPDATE, "tpisg082.cspa")
+	return(0)
+}
+
+function extern boolean method.is.allowed(long type)
+{
+	on case type
+	case DAL_NEW :	
+		if tpisg082.stat <> tpisg.sanction.free then
+			return(false)
+		endif	
+		
+		if SANCTION_STATUS then
+			return(false)
+		endif
+		break	
+	case DAL_UPDATE :
+		if tpisg082.stat <> tpisg.sanction.free then
+			return(false)
+		endif
+
+		if SANCTION_STATUS then
+			return(false)
+		endif
+		
+		if tpisg082.levl < 3 then
+			return(false)
+		endif	
+		break
+	case DAL_DESTROY :
+		if tpisg082.stat <> tpisg.sanction.free then
+			return(false)
+		endif
+		
+		if SANCTION_STATUS then
+			return(false)
+		endif		
+		break	
+	endcase
+	return(true)
+}
+
+
+function extern long before.save.object(long type)
+{
+| 	on case type
+| 	case DAL_NEW :	
+| 		new.act.value = tpisg082.actl
+| 		new.yet.value = tpisg082.yetl
+| 		new.incentive = tpisg082.totl
+| 		break	
+| 	case DAL_UPDATE :
+| 		with.old.object.values.do(get_old_value)
+| 		new.act.value = tpisg082.actl
+| 		new.yet.value = tpisg082.yetl
+| 		new.incentive = tpisg082.totl
+| 		break	
+| 	endcase	
+	return(0)
+}
+
+function extern long after.save.object(long type)
+{
+| 	on case type
+| 	case DAL_NEW :	
+| 		if not isspace(tpisg082.parn) then
+| 			check_parent_new()
+| 		endif
+| 		break	
+| 	case DAL_UPDATE :
+| 		if not isspace(tpisg082.parn) then
+| 			check_parent_old()
+| 		endif
+| 		break	
+| 	endcase	
+	return(0)
+}
+
+function extern boolean tpisg082.cspa.is.valid()
+{
+	select 	tpisg011.aver
+	from	tpisg011
+	where	tpisg011._index1 = {:tpisg082.cprj}
+	as set with 1 rows
+	selectdo
+	endselect
+	
+	select	tpest120.sele
+	from	tpest120
+	where	tpest120._index1 = {:tpisg082.cprj, :tpisg011.aver}
+	and	tpest120.sele = :tpisg082.cspa
+	selectdo
+	selectempty
+		return(false)
+	endselect
+	
+	return(true)
+}
+
+
+function extern tpisg082.parn.update()
+{
+	select	tpest120.pele
+	from	tpest120
+	where	tpest120._index1 = {:tpisg082.cprj, :tpisg011.aver}
+	and	tpest120.sele = :tpisg082.cspa
+	selectdo
+		tpisg082.parn = tpest120.pele
+	endselect
+
+}
+
+function extern tpisg082.levl.update()
+{
+	select	tpest120.levl
+	from	tpest120
+	where	tpest120._index1 = {:tpisg082.cprj, :tpisg011.aver}
+	and	tpest120.sele = :tpisg082.cspa
+	selectdo
+		tpisg082.levl = tpest120.levl
+	endselect
+
+}
+
+function extern boolean tpisg082.actl.is.readonly()
+{
+| 	select	tpisg082.cprj
+| 	from	tpisg082
+| 	where	tpisg082._index1 = {:tpisg082.cprj}
+| 	and	tpisg082.parn = :tpisg082.cspa
+| 	selectdo	
+| 		return(true)
+| 	endselect
+		if tpisg082.levl < 3 then
+			return(true)
+		endif	
+	return(false)
+}
+
+function extern boolean tpisg082.actl.is.derived()
+{
+	if tpisg082.levl < 3 then
+		return(true)
+	endif	
+	return(false)
+}
+
+| function extern boolean tpisg082.yetl.is.readonly()
+| {
+| 	select	tpisg082.cprj
+| 	from	tpisg082
+| 	where	tpisg082._index1 = {:tpisg082.cprj}
+| 	and	tpisg082.parn = :tpisg082.cspa
+| 	selectdo	
+| 		return(true)
+| 	endselect
+| 	return(false)
+| }
+
+function extern boolean tpisg082.yetl.is.derived()
+{
+	if tpisg082.levl < 3 then
+		return(true)
+	endif	
+	return(false)
+}
+
+function extern tpisg082.totl.update()
+{
+	tpisg082.totl = tpisg082.actl + tpisg082.yetl
+}
+
+function extern boolean approve.is.allowed()
+{
+	if tpisg082.stat = tpisg.sanction.approved then
+		return(false)
+	endif
+	return(true)
+}
+
+function get_old_value()
+{
+	old.act.value = tpisg082.actl
+	old.yet.value = tpisg082.yetl
+	old.incentive = tpisg082.totl
+}
+
+function check_parent_new()
+{
+	var.elem = tpisg082.parn
+	update_parent_new()
+	while not isspace(var.elem)
+		select	tpptc101.cspp
+		from	tpptc101
+		where	tpptc101._index2 = {:tpisg082.cprj,:var.elem}
+		selectdo
+		selectempty
+			tpptc101.cspp = ""
+		endselect
+		
+		var.elem = tpptc101.cspp
+		
+		if not isspace(var.elem) then
+			update_parent_new()
+		endif				
+	endwhile
+
+}
+
+
+function update_parent_new()
+{
+	select	tpisg082.*
+	from	tpisg082 for update
+	where	tpisg082._index1 = {:tpisg082.cprj, :var.elem}
+	selectdo
+		tpisg082.actl = tpisg082.actl + new.act.value
+		tpisg082.yetl = tpisg082.yetl + new.yet.value
+		tpisg082.totl = tpisg082.totl + new.incentive
+		db.update(ttpisg082, db.retry)
+	endselect
+
+}
+
+function check_parent_old()
+{
+	var.elem = tpisg082.parn
+	update_parent_old()
+	while not isspace(var.elem)
+		select	tpptc101.cspp
+		from	tpptc101
+		where	tpptc101._index2 = {:tpisg082.cprj,:var.elem}
+		selectdo
+		selectempty
+			tpptc101.cspp = ""
+		endselect
+		
+		var.elem = tpptc101.cspp
+		
+		if not isspace(var.elem) then
+			update_parent_old()
+		endif				
+	endwhile
+
+}
+
+
+function update_parent_old()
+{
+	select	tpisg082.*
+	from	tpisg082 for update
+	where	tpisg082._index1 = {:tpisg082.cprj, :var.elem}
+	selectdo
+		tpisg082.actl = tpisg082.actl + new.act.value - old.act.value
+		tpisg082.yetl = tpisg082.yetl + new.yet.value - old.yet.value
+		tpisg082.totl = tpisg082.totl + new.incentive - old.incentive
+		db.update(ttpisg082, db.retry)
+	endselect
+
+}
+
+function boolean check_sanction_status()
+{
+	select	tpisg011.act1
+	from	tpisg011
+	where	tpisg011._index1 = {:tpisg082.cprj}
+	and	(tpisg011.act1 = tpisg.sanction.approved or tpisg011.act1 = tpisg.sanction.approval)
+	as set with 1 rows
+	selectdo
+		return(true)
+	selectempty
+	endselect
+	return(false)
+
+}
+

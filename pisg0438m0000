@@ -1,0 +1,134 @@
+|******************************************************************************
+|* tfisg0438m000  0  VRC B61U a7 isg 
+|* Transportation data for TDS Return - Quarterly
+|* Installation user             
+|* 2015-01-22
+|******************************************************************************
+|* Main table tfisg038 Transporter for TDS Table, Form Type 4
+|******************************************************************************
+|IDENT ISGEC001146,Sandhyarani,22-01-2014   
+|IDENT ISGEC01035, Mani sharma,30-1-2015                                                                           
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttfisg038 | Transporter for TDS Table
+	table	ttfacp200
+	table	ttfgld005
+	table	ttccom100
+	table	ttctax400
+	
+	extern	domain	tfgld.year	year,yearno
+	extern	domain	tfgld.prod	prod.f,prod.t
+	extern	domain	tfgld.amnt	amnt.new
+	extern	domain	tcmcs.str12	stat
+	extern	domain	tcmcs.str2	code
+	extern	domain	tcmcs.str15	ttyp.ninv
+	extern	domain	tfgld.year	prev.year,new.year				|ISGEC01035.sn
+	extern	domain	tfgld.prod	prev.prod,new.prod
+	extern domain  tfgld.ttyp      prev.ttyp,new.ttyp
+	extern domain  tfgld.docn      prev.docn,new.docn
+	extern domain  tccom.bpid      prev.bpid,new.bpid				|ISGEC01035.en
+	string	ninv.str(10)
+	long	monthno, month_dayno
+|****************************** program section ********************************
+before.program:
+	num.to.date  (date.num(),yearno, monthno, month_dayno)	
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+      year = yearno
+|****************************** choice section ********************************
+
+choice.cont.process:
+on.choice:
+   execute(print.data)
+
+choice.print.data:
+on.choice:
+   if rprt_open() then
+       read.main.table()
+       rprt_close()
+   else
+       choice.again()
+   endif
+
+
+|****************************** field section *********************************
+
+field.prod.f:
+when.field.changes:
+   prod.t = prod.f
+
+before.zoom:
+	tfgld005.year = year
+
+field.prod.t:
+before.zoom:
+	tfgld005.year = year
+|****************************** function section ******************************
+
+functions:
+
+function read.main.table()
+{
+	amnt.new = 0
+	select	tfisg038.bpid,tfisg038.comp,tfisg038.nama,tccom100.nama
+	from	tfisg038,tccom100
+	where	tfisg038.bpid refers to tccom100
+	selectdo
+		if	tfisg038.comp = tcyesno.yes	then
+			stat = "Company"
+			code = "01"	
+		else
+			stat = "Non-Company"
+			code = "02"
+		endif
+		
+		ninv.str = " "
+		ttyp.ninv = " "
+		select	tfacp200.ttyp,tfacp200.ninv:ninv.str,tfacp200.docd,tfacp200.prod,tfacp200.year,tfacp200.ifbp,tfacp200.tpay,tfacp200.docn,
+			tfacp200.amth(1):amnt.new
+		from	tfacp200
+		where	tfacp200._index2 = {:tfisg038.bpid}
+		and	tfacp200.year = {:year}
+		and	tfacp200.prod inrange {:prod.f} and {:prod.t}	
+		and     tfacp200.docn = 0								|isgec01035.3-02-2015.n
+		selectdo
+			
+			if etol(tfacp200.tpay) = 1 or etol(tfacp200.tpay) = 4 then 			||isgec01035.3-02-2015.n
+					new.ttyp = tfacp200.ttyp
+					new.docn = val(ninv.str)
+					new.prod = tfacp200.prod
+					new.year = tfacp200.year
+					new.bpid = tfacp200.ifbp
+					if new.ttyp = prev.ttyp and new.docn =prev.docn and new.prod = prev.prod and new.bpid = prev.bpid and new.year = prev.year then
+						continue
+					endif							|ISGEC01035.en
+					
+					ttyp.ninv = tfacp200.ttyp&"/"&ninv.str
+					select	tctax400.fovn,tctax400.efdt
+					from	tctax400
+					where	tctax400._index1={:tfisg038.bpid}
+| 					and	tctax400.efdt < :tfacp200.docd                   |ISGEC01035.03-02-2015.o
+					and	tctax400.catg.l = tctax.catg.l.pan
+| 					order by tctax400.efdt desc				 |ISGEC01035.03-02-2015.o
+					selectdo
+					selectempty
+						tctax400.fovn = " "
+						tctax400.efdt = 0
+					endselect
+					
+					rprt_send()
+					prev.ttyp = new.ttyp					|ISGEC01035.sn
+					prev.docn = new.docn
+					prev.prod = new.prod
+					prev.year = new.year
+					prev.bpid = new.bpid					|ISGEC01035.en
+			endif		
+		endselect
+		
+	endselect
+}

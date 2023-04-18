@@ -1,0 +1,302 @@
+|******************************************************************************
+|* tpisg035  0  VRC B61U a7 live
+|* DAL for tpisg035
+|* tools1
+|* 14-06-03 [19:05]
+|******************************************************************************
+|* Script Type: DAL
+|******************************************************************************
+|* ID ISG001039
+|* Manish Kumar
+|* 04-05-2014
+|* DAL For Maintain Project Details
+|******************************************************************************
+                                                                                
+#include <bic_dal2>
+
+	|* Table Declaration
+	table	ttpisg035
+	table	ttpptc100	| Elements
+	table	ttpest200
+	table	ttpisg012
+	
+|****************************************************************************
+function extern long before.open.object.set()
+{
+	return(0)
+}
+
+function extern long before.save.object(long type)
+{
+	return(0)
+}
+|***************************** Field Hooks***********************************
+|************************************ Functions******************************
+function extern boolean Insert.Data.Into.Main.Table()
+{
+	select	tpptc100.cprj,tpptc100.cspa
+	from	tpptc100
+	where	tpptc100._index1 = {:tpisg035.cprj}
+	selectdo
+		Populate.Records(
+				tpptc100.cprj,
+				tpptc100.cspa,
+				Get.Quantity(tpptc100.cprj,tpptc100.cspa))
+	endselect
+	return(true)
+}
+
+function long Populate.Records
+	(
+		domain	tccprj		i.cprj,		| Project
+		domain	tppdm.cspa	i.cspa,		| Element
+		domain	tppdm.qajc	i.quan		| Estimated Quantity
+	)
+{
+	long ret
+	domain	tppdm.qajc	o.quan
+	domain	tcamnt		o.totl
+	domain	tcamnt		o.avai
+	domain	tcamnt		o.ivai
+	domain	tcamnt		o.exha
+	domain	tcpono		o.levl
+	
+	long ret_val
+	
+	o.totl = 0
+	o.avai = 0
+	o.exha = 0
+	o.ivai = 0
+	get.sanction.control.initial.data(i.cprj,i.cspa,o.ivai)
+	get.sanction.control.data(i.cprj,i.cspa,o.totl,o.avai,o.exha,o.levl)
+	
+	select	tpisg035.*
+	from	tpisg035 for update
+	where	tpisg035._index1 = {:i.cprj,:i.cspa}
+	selectdo
+		dal.change.object("tpisg035")
+		dal.set.field("tpisg035.quan",i.quan)
+		dal.set.field("tpisg035.levl",o.levl)
+		dal.set.field("tpisg035.ivai",o.ivai)
+		dal.set.field("tpisg035.totl",o.totl)
+		dal.set.field("tpisg035.avai",o.avai)
+		dal.set.field("tpisg035.exha",o.exha)
+		dal.set.field("tpisg035.rqno",indenting.pending(i.cprj,i.cspa))
+		dal.set.field("tpisg035.edrn",billing.advice.pending(i.cprj,i.cspa))
+		dal.set.field("tpisg035.wght",item.release.total.weight(i.cprj,i.cspa))
+		dal.set.field("tpisg035.amor",revenue.amount(i.cprj,i.cspa))
+		ret_val = dal.save.object("tpisg035")
+		if ret_val <> 0 then
+			return(DALHOOKERROR)
+		endif
+	selectempty
+		
+		
+		
+		dal.new.object("tpisg035")
+		
+		if o.ivai = 0 then
+			o.ivai = o.avai
+		endif
+		
+		dal.set.field("tpisg035.cprj",i.cprj)
+		
+		dal.set.field("tpisg035.cspa",i.cspa)
+		
+		dal.set.field("tpisg035.quan",i.quan)
+		dal.set.field("tpisg035.levl",o.levl)
+		dal.set.field("tpisg035.ivai",o.ivai)
+		dal.set.field("tpisg035.totl",o.totl)
+		dal.set.field("tpisg035.avai",o.avai)
+		dal.set.field("tpisg035.exha",o.exha)
+		dal.set.field("tpisg035.rqno",indenting.pending(i.cprj,i.cspa))
+		dal.set.field("tpisg035.edrn",billing.advice.pending(i.cprj,i.cspa))
+		dal.set.field("tpisg035.wght",item.release.total.weight(i.cprj,i.cspa))
+		dal.set.field("tpisg035.amor",revenue.amount(i.cprj,i.cspa))
+| 		if i.aqty <> 0.00 then
+| 			dal.set.field("tpisg035.aqty",i.aqty)
+| 		endif
+		
+| 		if i.exha <> 0.00 then
+| 			dal.set.field("tpisg035.exha",i.exha)
+| 		endif
+		
+		ret = dal.save.object("tpisg035")
+		
+		if ret <> 0 then
+			show.dal.messages(MSG.ALL)
+		endif
+	endselect
+	
+	return(0)
+}
+
+
+
+function get.sanction.control.initial.data
+			(
+				domain	tccprj		i.cprj,		|Project
+				domain	tppdm.cspa	i.cspa,		|Elements
+			ref 	domain	tcamnt		o.avai
+			)
+{
+	domain	tcorno		curr.vers
+	
+	curr.vers = "1.0"
+	
+	select tpisg008.avai:o.avai
+	from	tpisg008
+	where	tpisg008._index1 = {:i.cprj,:curr.vers,:i.cspa}
+	as set with 1 rows
+	selectdo
+	selectempty
+		o.avai = 0
+	endselect
+	
+	
+}
+
+function get.sanction.control.data
+			(
+				domain	tccprj		i.cprj,		|Project
+				domain	tppdm.cspa	i.cspa,		|Element 
+			ref 	domain	tcamnt		o.totl,		|Total Basic Cost
+			ref	domain	tcamnt		o.avai,		|Current Sanction
+			ref 	domain	tcamnt		o.exha,		|Expenses Yet to Incurred
+			ref	domain	tcpono		o.levl		|Level
+			)
+{
+	select 	tpisg012.totl:o.totl,
+		tpisg012.avai:o.avai,
+		tpisg012.exha:o.exha,
+		tpisg012.levl:o.levl
+	from	tpisg012
+	where	tpisg012._index1 = {:i.cprj}
+	and	tpisg012.cspa = :i.cspa
+	as set with 1 rows
+	selectdo
+	endselect
+	
+}
+
+function domain tcqsl1 Get.Quantity
+	(
+		domain	tccprj		i.cprj,
+		domain	tppdm.cspa	i.cspa
+	) 
+{
+	domain	tcqsl1	o.quan
+	select	sum(tpest200.quan):o.quan
+	from	tpest200
+	where	tpest200._index1 = {:i.cprj}
+	and	tpest200.psel = :i.cspa
+	group	by tpest200.cprj,tpest200.psel
+	selectdo
+	selectempty
+		o.quan = 0.00
+	endselect
+	
+	return(o.quan)
+}
+
+function domain tcyesno indenting.pending
+			(
+				domain	tccprj		i.cprj,		|Project Code
+				domain	tppdm.cspa	i.cspa		|Elements
+			)
+{
+	domain	tcyesno	o.indt
+	
+	select 	tcisg004.indt:o.indt
+	from	tcisg004,tcisg003
+	where	tcisg004._index1 = {:i.cprj,:i.cspa}
+	and	tcisg004.cmba refers to tcisg003
+	and	tcisg004.stat = dmstat.released
+	and	tcisg003.stat = tcisg.status.launched
+	and	tcisg004.indt = tcyesno.no
+	as set with 1 rows
+	selectdo
+		return(tcyesno.yes)
+	endselect
+	
+	return(tcyesno.no)
+}
+
+
+function domain tcyesno billing.advice.pending
+			(
+				domain	tccprj		i.cprj,		|Project
+				domain	tppdm.cspa	i.cspa		|Element 
+			)
+{
+	domain	tccprj		o.cprj
+	
+	select 	whisg312.cprj:o.cprj
+	from	whisg312
+	where	whisg312.cprj = :i.cprj
+	and	whisg312.cspa = :i.cspa
+	and	whisg312.inrq = ""
+	as set with 1 rows
+	selectdo
+	selectempty
+		return(tcyesno.no)
+	endselect
+	
+	return(tcyesno.yes)
+}
+
+
+function domain tcqsl1	 item.release.total.weight
+			(
+				domain	tccprj		i.cprj,		|Project
+				domain	tppdm.cspa	i.cspa		|Elements
+			)
+{
+	domain	tcqsl1		o.wght
+	
+	select 	sum(tcisg003.wght):o.wght
+	from	tcisg003
+	where	tcisg003._index1 = {:i.cprj,:i.cspa}
+	and	tcisg003.stat = tcisg.status.launched
+	selectdo
+	selectempty
+		o.wght = 0
+	endselect
+	
+	return(o.wght)
+	
+}
+
+function domain tcamnt	revenue.amount
+			(
+				domain	tccprj		i.cprj,		|Project
+				domain	tppdm.cspa	i.cspa		|Elements
+			)
+{
+	domain	tcamnt		o.amor
+	domain	tcamnt		total.amor
+	
+	select 	sum(tpppc301.amor):o.amor
+	from	tpppc301
+	where	tpppc301._index7 = {:i.cprj,:i.cspa}
+	selectdo
+	selectempty
+		o.amor = 0
+	endselect
+	
+	total.amor = total.amor + o.amor
+	
+	o.amor  = 0
+	
+	select sum(tpppc305.amor):o.amor
+	from	tpppc305
+	where	tpppc305._index1 = {:i.cprj,:i.cspa}
+	selectdo
+	selectempty
+		o.amor = 0
+	endselect
+	
+	total.amor = total.amor + o.amor
+	
+	return(total.amor)
+}

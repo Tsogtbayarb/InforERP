@@ -1,0 +1,112 @@
+|******************************************************************************
+|* tpisg032  0  VRC B61U a7 live
+|* 
+|* tools1
+|* 14-04-30 [12:16]
+|******************************************************************************
+|* Script Type: DAL
+|******************************************************************************
+                                                                                
+#include <bic_dal2>
+
+	table	ttpptc100
+	table	ttpisg032
+	table	ttpisg031
+
+function extern long before.open.object.set()
+{
+
+	dal.field.depends.on("tpisg032.inia",
+					HOOK_UPDATE, "tpisg032.insa")
+	return(0)
+}
+
+function extern long before.save.object(long type)
+{
+	return(0)
+}
+
+
+function extern boolean tpisg032.cspa.is.mandatory(long mode)
+{
+	if isspace(tpisg032.cspa) then
+		return(DALHOOKERROR)
+	endif
+	
+	return(false)
+}
+
+function extern boolean tpisg032.cspa.is.valid(long type)
+{
+	select 	tpptc100.cspa
+	from	tpptc100
+	where	tpptc100._index1 = {:tpisg032.cprj,:tpisg032.cspa}
+	as set with 1 rows
+	selectdo
+	selectempty
+		return(DALHOOKERROR)
+	endselect
+	
+	return(true)
+}
+
+
+function extern boolean tpisg032.insa.is.valid(long type)
+{
+	domain 	tppdm.aalc		o.insa
+	
+	with.object.set.do(CalculateTotalLinkedAmount,
+		tpisg032.cprj,tpisg032.ofbp,tpisg032.nins,tpisg032.cspa,o.insa)
+	
+	if (o.insa + tpisg032.insa) > tpisg031.insa then
+		dal.set.error.message("@ Installment Amount is Greater Than Total Installment Amount")
+		return(DALHOOKERROR)
+	endif
+	
+	return(true)
+	
+}
+
+function extern  tpisg032.inia.update(long type)
+{
+	domain 	tppdm.aalc	temp.inia
+	
+	select 	tpisg032.inia:temp.inia
+	from	tpisg032
+	where	tpisg032._index1 = {:tpisg032.cprj,:tpisg032.ofbp,:tpisg032.nins}
+	order by tpisg032.inia desc
+	as set with 1 rows
+	selectdo
+	selectempty
+		temp.inia = 0
+	endselect
+	
+	tpisg032.inia = temp.inia + tpisg032.insa
+}
+
+function CalculateTotalLinkedAmount
+			(
+				domain	tccprj		i.cprj,		|Project Code
+				domain	tccom.bpid	i.ofbp,		|Sold-to Business Partner
+				domain	tppdm.nins	i.nins,		|Installment Number
+				domain	tppdm.cspa	i.cspa,		|Element Code	
+			ref 	domain 	tppdm.aalc	o.insa		|Linked Installment Amount		
+			)
+{
+	domain	tppdm.aalc 	temp.insa
+	domain	tppdm.cspa	temp.cspa
+	o.insa = 0
+	
+	select tpisg032.insa:temp.insa,
+		tpisg032.cspa:temp.cspa
+	from	tpisg032
+	where	tpisg032._index1 = {:i.cprj,:i.ofbp,:i.nins}
+	selectdo
+		if temp.cspa <> i.cspa then
+			o.insa = o.insa + temp.insa
+		else
+			continue
+		endif
+	endselect
+	
+}

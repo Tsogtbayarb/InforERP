@@ -1,0 +1,111 @@
+|******************************************************************************
+|* tpisg0479m100  0  VRC B61U a7 isg 
+|* Quality Failure Report
+|* user07                        
+|* 2015-02-24
+|******************************************************************************
+|* Main table tpisg079 QFR Information, Form Type 4
+|******************************************************************************
+|* PATCH001001, Dharmendra, 11-03-2015   
+|*
+|* PATCH001038, Dharmendra, 18-03-2015
+
+|* IDENT ISGECSUPP015006,Shilpa Janardanan, 16/05/2015
+|* New field added to the report - "Mark to"
+|****************************** declaration section ***************************
+declaration:
+	table	ttpisg079 | QFR Information
+	table	ttppdm740
+	table	ttccom100
+	table	ttcmcs052
+	table	ttpptc100
+	table	ttccom001		|# PATCH001001.n
+	
+
+	extern  domain  tccprj           cprj.f, cprj.t   fixed
+	extern  domain  tcmcs.long       sarn.f, sarn.t
+	extern	domain	tcmcs.str60	reference.no		|# PATCH001038.n
+	
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.cont.process:
+on.choice:
+   execute(print.data)
+
+choice.print.data:
+on.choice:
+   if rprt_open() then
+       read.main.table()
+       rprt_close()
+   else
+       choice.again()
+   endif
+
+
+|****************************** field section *********************************
+
+field.cprj.f:
+when.field.changes:
+   cprj.t = cprj.f
+
+field.sarn.f:
+when.field.changes:
+   sarn.t = sarn.f
+						|# PATCH001001.sn
+before.zoom:
+	query.extend.where.in.zoom("tpisg079.cprj = " & quoted.string(cprj.f))
+	
+field.sarn.t:
+before.zoom:
+	query.extend.where.in.zoom("tpisg079.cprj = " & quoted.string(cprj.t))	
+						|# PATCH001001.en
+|****************************** function section ******************************
+
+functions:
+
+function read.main.table()
+{
+	select tpisg079.*
+	from tpisg079
+	where   tpisg079._index1 inrange {:cprj.f, :sarn.f}	and {:cprj.t, :sarn.t}
+	selectdo
+		reference.no = ""				|# PATCH001038.sn
+		reference.no = strip$(tpisg079.refr) & "\" & strip$(tpisg079.cprj) & "-" & str$(tpisg079.sarn)|# PATCH001038.en
+		
+		select	tppdm740.ofbp, tccom100.bpid, tccom100.nama
+		from	tppdm740, tccom100
+		where	tppdm740._index1 = {:tpisg079.cprj}
+		and	tppdm740.ofbp refers to tccom100
+		selectdo
+		endselect
+		
+		select	tcmcs052.dsca
+		from	tcmcs052
+		where	tcmcs052._index1 = {:tpisg079.cprj}
+		selectdo
+		endselect
+		
+		select	tpptc100.desc
+		from	tpptc100
+		where	tpptc100._index1 = {:tpisg079.cprj, :tpisg079.cspa}
+		selectdo
+		endselect
+						|# PATCH001001.sn
+		select	tccom001.nama, tccom001.namb
+		from	tccom001
+		where	tccom001._index4 = {:tpisg079.auth}
+		selectdo
+		endselect
+						|# PATCH001001.en
+		rprt_send()
+	endselect
+}

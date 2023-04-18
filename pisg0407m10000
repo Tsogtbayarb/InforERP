@@ -1,0 +1,198 @@
+|******************************************************************************
+|* tpisg0407m1000  0  VRC B61U a7 isg 
+|* Contingency, Warranty, Contingency Consumption Detail
+|* Installation User             
+|* 2015-09-21
+|******************************************************************************
+|* Main table tpisg007 Sanction Control History, Form Type 4
+|******************************************************************************
+|* ISGEC015063, Shilpa Janardanan, 21-09-2015
+|* New Contigency report
+|****************************** declaration section ***************************
+declaration:
+
+	table   ttpisg007 | Sanction Control History
+	table	ttpisg008
+	table	ttpisg003
+	table   ttcmcs052
+	table	ttpptc100	
+
+   extern  domain  tccprj           cprj.f    fixed
+   extern  domain  tccprj           cprj.t    fixed
+   extern  domain  tcorno           vers.f    fixed
+   extern  domain  tcorno           vers.t    fixed
+   extern domain	tppdm.cspa	cspa.f, cspa.t
+   extern domain	tcdate		date.f, date.t
+   extern domain	tcemm.grid	unit.f, unit.t
+	domain	tcpono	stat.fp, ret2
+	string	line(2500), err.file(100), file.name(100)
+	domain	tcdsca	desc 
+	
+	 #pragma used dll ottdllbw 
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.cont.process:
+on.choice:
+   execute(print.data)
+
+choice.print.data:
+on.choice:
+
+choice.print:
+on.choice:
+	generate.file()
+
+
+
+|****************************** field section *********************************
+
+field.cprj.f:
+when.field.changes:
+   cprj.t = cprj.f
+
+field.vers.f:
+when.field.changes:
+   vers.t = vers.f
+
+field.cspa.f:
+when.field.changes:
+	cspa.t = cspa.f
+	
+before.zoom:
+	tpptc100.cprj = cprj.f
+	
+field.cspa.t:
+before.zoom:
+	tpptc100.cprj = cprj.t
+	
+field.date.f:
+when.field.changes:
+	date.t = date.f
+	
+field.unit.f:
+when.field.changes:
+	unit.t = unit.f
+|****************************** function section ******************************
+
+functions:
+
+
+function  generate.file()
+{
+	err.file = bse.dir$() & str$(utc.num()) & ".xls"
+	
+	file.name = "c:\temp\" & str$(utc.num())  & ".xls"
+	
+	stat.fp = seq.open(err.file, "w+")
+	
+	process.file()
+	
+	message("Please refer to file %s in C:", file.name)
+	seq.close(stat.fp)
+	ret2 = server2client(err.file,file.name,1)
+	ret2 = app_start(file.name,"c:","","","")
+
+}
+
+function process.file()
+{
+	generate.header()
+	read.main.table()
+}
+
+
+function generate.header()
+{
+	if stat.fp >0 then
+		
+		line =concat$("	", 
+			sprintf$("Project"),				|1
+			sprintf$("Project Name"),			|2
+			sprintf$("Version"),				|3
+			sprintf$("Approval Date"), 			|4
+			sprintf$("Transferred To"),			|5
+			sprintf$("TransferredToElementName"),		|6
+			sprintf$("ReasonCode"),			|7
+			sprintf$("ReasonDescription"),			|8
+			sprintf$("Transferredfrom"),			|9
+			sprintf$("TransferredFromElementName"),	|10	
+			sprintf$("TranferredAmount"))			|11
+			
+			line = strip$(shiftl$(line))
+			seq.puts(line, stat.fp)
+		endif
+	
+}
+
+
+
+function read.main.table()
+{
+	select tpisg007.*, tcmcs052.dsca
+	from 	tpisg007, tcmcs052
+	where  	tpisg007._index1 inrange {:cprj.f} and {:cprj.t}
+	and	tpisg007.apdt inrange {:date.f} and {:date.t}
+	and	tpisg007.cprj refers to tcmcs052
+	selectdo
+		select tpisg008.*, tpisg002.elem
+		from	tpisg008, tpisg002
+		where	tpisg008._index1 = {:tpisg007.cprj}
+		and tpisg008.vers = :tpisg007.vers
+		and	tpisg008.elem inrange {:cspa.f} and  {:cspa.t}
+		and	tpisg008.tran = tpisg002.elem
+		selectdo
+			select	tpptc100.desc
+			from	tpptc100
+			where	tpptc100._index1 = {:tpisg008.cprj, :tpisg008.elem}
+			selectdo
+			selectempty
+				tpptc100.desc = ""
+			endselect
+			
+			select	tpptc100.desc:desc
+			from	tpptc100
+			where	tpptc100._index1 = {:tpisg008.cprj, :tpisg008.tran}
+			selectdo
+			selectempty
+				desc = ""
+			endselect
+			
+			select	tpisg003.*
+			from	tpisg003
+			where	tpisg003._index1 ={20,:tpisg008.reas}
+			selectdo
+			selectempty
+				tpisg003.dsca = ""
+			endselect
+			write.data()
+		endselect
+		
+	endselect
+}
+
+function write.data()
+{
+	line =concat$("	", 
+			sprintf$("%s", tpisg007.cprj),				|1
+			sprintf$("%s", tcmcs052.dsca),				|2
+			sprintf$("%s", tpisg007.vers),				|3
+			sprintf$("%u002 %U001", tpisg007.apdt, tpisg007.apdt) ,	|4
+			sprintf$("%s", tpisg008.elem),				|5
+			sprintf$("%s", tpptc100.desc),				|6
+			sprintf$("%s", tpisg008.reas),				|7
+			sprintf$("%s", tpisg003.dsca),				|8
+			sprintf$("%s", tpisg008.tran),				|8
+			sprintf$("%s", desc),					|9
+			sprintf$("%s", tpisg008.trfm))				|10
+	line = strip$(shiftl$(line))
+	seq.puts(line, stat.fp)
+}

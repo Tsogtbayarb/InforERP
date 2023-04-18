@@ -1,0 +1,260 @@
+|******************************************************************************
+|* tfisg0403m100  0  VRC B61U a7 live
+|* Transportation Cost Provision in Booking of Accounts
+|* Installation user             
+|* 2014-11-21
+|******************************************************************************
+|* Main table tfisg003 GR Details, Form Type 4
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttfisg003 | GR Details
+	table	ttfisg001
+	table	ttfacp100
+	table	tfmfmd047
+	table	ttcmcs052
+
+	|********** Form Variables ******************************
+	extern	domain	tccprj		cprj.f    fixed
+	extern	domain	tccprj		cprj.t    fixed
+	extern	domain	tcdate		date.f
+	extern	domain	tcdate		date.t
+	extern	domain	tfgld.date	cdte
+	extern	domain	tfgld.docn	irno.f    
+	extern	domain	tfgld.docn	irno.t  
+		
+	|*********  FILE HANDLING Variables *********************
+		string		err.file(100), file.name(100), line3(3000), line4(3000)
+		long		ret2, stat.fp	
+		
+	|******** Script Utilization Variables ***********************
+	extern	domain	tcdate		v.date.f
+	extern	domain	tcdate		v.date.t
+	
+	|******** File Utilization Variables ***********************
+	extern	domain	tccprj		rep.cprj		|Project
+	extern	domain	tcdsca		rep.pjdc		|Description
+	extern	domain	tfgld.docn	rep.irno		|IR No.
+	extern	domain	tcmcs.str10	rep.irdt		|IR Date
+	extern	domain	tfacp.isup	rep.grno		|GR No.
+	extern	domain	tcmcs.str10	rep.grdt		|GR Date
+	extern	domain	tcmcs.str40	rep.frpl		|From Place
+	extern	domain	tcmcs.str40	rep.topl		|To Place
+	extern	domain	tccom.bpid	rep.trcd		|Transporter Code
+	extern	domain	tcnama		rep.trnm		|Transporter Name
+	extern	domain	tcdsca		rep.vhtp		|Vehicle Type
+	extern	domain	tcnama		rep.spnm		|Supplier
+	
+|*************** Include **************
+#include<bic_desktop>	
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+group.1:
+init.group:
+	get.screen.defaults()
+
+|****************************** choice section ********************************
+choice.cont.process:
+on.choice:
+	generate.file()
+
+|****************************** field section *********************************
+field.irno.f:
+when.field.changes:
+	irno.t = irno.f
+
+field.cprj.f:
+when.field.changes:
+	cprj.t = cprj.f
+
+field.date.f:
+when.field.changes:
+	date.t = date.f
+
+|****************************** function section ******************************
+functions:
+
+function generate.file()
+{
+	open.file()
+	generate.header()
+	read.main.table()
+	close.file()
+}
+
+function read.main.table()
+{
+	get.date.utc(date.f, 00, 00, 00, v.date.f)
+	get.date.utc(date.t, 23, 59, 59, v.date.t)
+	
+	select	tfisg003.*, tfisg001.*, tfacp100.ifbp, tcmcs052.dsca,
+		fmfmd047.dsca
+	from	tfisg003, tfisg001, tfacp100, tcmcs052, fmfmd047
+	where	tfisg003._index3 inrange {:irno.f}	and	{:irno.t}
+	and	tfisg003.cprj inrange :cprj.f	and	:cprj.t
+	and	tfisg003.grdt <= :cdte
+	and	tfisg003.irno refers to tfisg001 
+	and	tfisg001.irdt inrange :v.date.f	and	:v.date.t
+	and	tfisg001.irno refers to tfacp100
+	and	tfisg003.cprj refers to tcmcs052 Unref Clear
+	and	tfisg003.vhcp refers to fmfmd047 Unref Clear
+	and	tfisg003.tirn = 0
+	order by tfisg003._index1
+	selectdo
+		Initialize_Variable()
+		rep.cprj = tfisg003.cprj
+		rep.pjdc = tcmcs052.dsca
+		rep.irno = tfisg003.irno
+		if	tfisg001.irdt <> 0	then
+			rep.irdt = sprintf$("%u(%02m/%02d/%04Y)", tfisg001.irdt)
+		endif
+		rep.grno = tfisg003.grno
+		if	tfisg003.grdt <> 0	then
+			rep.grdt = sprintf$("%D(%02m/%02d/%04Y)", tfisg003.grdt)
+		endif
+		rep.frpl = get.city.desc(tfisg003.cctf, tfisg003.plcf, tfisg003.citf) & "(" & trim$(tfisg003.plcf) & ")"	
+		rep.topl = get.city.desc(tfisg003.cctt, tfisg003.plct, tfisg003.citt) & "(" & trim$(tfisg003.plct) & ")"
+		rep.trcd = tfisg003.bpid
+		if	tfisg003.otbp = tcyesno.yes	then
+			rep.trnm = tfisg003.bpnm
+		else
+			rep.trnm = Get_BP_Name(rep.trcd)
+		endif
+		rep.vhtp = fmfmd047.dsca	
+		rep.spnm = Get_BP_Name(tfacp100.ifbp)
+		write.details()
+	endselect
+}
+
+function domain tcnama Get_BP_Name
+			(
+			domain	tccom.bpid	i.bpid
+			)
+{
+	domain	tcnama	tbp.nama
+	
+	tbp.nama = ""
+	select	bp_tccom100.nama:tbp.nama
+	from	tccom100 bp_tccom100
+	where	bp_tccom100._index1 = {:i.bpid}
+	selectdo
+	endselect
+		
+	return(tbp.nama)	
+}
+
+function domain tcdsca get.city.desc(
+			domain	tcccty		i.cctf,
+			domain	tcmcs.cste	i.plcf,
+			domain	tccity		i.citf
+					)
+{
+	domain	tcdsca	tmp.dsca
+	
+	select	c_tccom139.dsca:tmp.dsca
+	from	tccom139 c_tccom139
+	where	c_tccom139._index1 = {:i.cctf, :i.plcf, :i.citf}
+	selectdo
+	selectempty
+		tmp.dsca = ""
+	endselect
+
+	return(tmp.dsca)
+}
+
+function get.date.utc(
+		domain	tcdate	i.date,
+		long		i.hh,
+		long		i.mn,
+		long		i.ss,
+	ref	domain	tcdate	o.date
+			)
+{
+	long	dd, mm, yy, hh, mn, ss
+	
+	utc.to.date(i.date, yy , mm, dd, hh, mn, ss)
+	o.date = date.to.utc(yy, mm, dd, i.hh, i.mn, i.ss)
+	if	o.date < 0	then
+		o.date = 0
+	endif
+}
+
+function	generate.header()
+{
+	line4 =	concat$("	",
+		sprintf$("Project"),							|1		
+		sprintf$("Description"),						|2		
+		sprintf$("IR Number"),						|3		
+		sprintf$("Date"),							|4		
+		sprintf$("GR No."),							|5		
+		sprintf$("GR Date"),							|6		
+		sprintf$("From Place"),						|7		
+		sprintf$("To Place"),							|8		
+		sprintf$("Transporter Code"),						|9		
+		sprintf$("Transporter Name"),						|10		
+		sprintf$("Vehicle Type"),						|11
+		sprintf$("Supplier"),							|12
+		sprintf$("Freight Amount to be Filled by Logistic Dept."))		|13
+		
+	line4 = strip$(shiftl$(line4))		
+	seq.puts(line4, stat.fp)	
+}
+
+function write.details()
+{
+	line3 =	concat$("	",
+		sprintf$("%s", rep.cprj),				|1	|Project
+		sprintf$("%s", rep.pjdc),				|2	|Description			
+		sprintf$("%d", rep.irno),				|3	|IR No.			
+		sprintf$("%s", rep.irdt),				|4	|IR Date			
+		sprintf$("%s", rep.grno),				|5	|GR No.			
+		sprintf$("%s", rep.grdt),				|6	|GR Date			
+		sprintf$("%s", rep.frpl),				|7	|From Place			
+		sprintf$("%s", rep.topl),				|8	|To Place			
+		sprintf$("%s", rep.trcd),				|9	|Transporter Code			
+		sprintf$("%s", rep.trnm),				|10	|Transporter Name			
+		sprintf$("%s", rep.vhtp),				|11	|Vehicle Type
+		sprintf$("%s", rep.spnm))				|12	|Supplier
+	
+		line3 = strip$(shiftl$(line3))
+		seq.puts(line3, stat.fp)
+}
+
+function Initialize_Variable()
+{
+	rep.cprj = ""		|Project
+	rep.pjdc = ""		|Description
+	rep.irno = 0		|IR No.
+	rep.irdt = ""		|IR Date
+	rep.grno = ""		|GR No.
+	rep.grdt = ""		|GR Date
+	rep.frpl = ""		|From Place
+	rep.topl = ""		|To Place
+	rep.trcd = ""		|Transporter Code
+	rep.trnm = ""		|Transporter Name
+	rep.vhtp = ""		|Vehicle Type
+	rep.spnm = ""		|Supplier
+}
+
+function open.file()
+{
+	err.file = bse.tmp.dir$() & str$(utc.num()) & ".xls"
+	
+	file.name = "c:\temp\" & str$(utc.num())  & ".xls"
+	
+	stat.fp = seq.open(err.file, "w+")
+	if stat.fp >0 then
+ 		seq.seek(0, 0, stat.fp)
+	endif
+}
+
+function close.file()
+{
+	seq.close(stat.fp)
+	ret2 = server2client(err.file,file.name,1)
+	ret2 = app_start(file.name,"c:","","","")
+}

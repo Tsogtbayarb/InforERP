@@ -1,0 +1,217 @@
+|******************************************************************************
+|* tpisg0412m100  0  VRC B61U a7 isg 
+|* Print Sanction V/s Utilised Report
+|* Installation User             
+|* 2015-04-02
+|******************************************************************************
+|* Main table tpisg012 Sanction Control Lines, Form Type 4
+|******************************************************************************
+|* PATCH002025, Report Development, Mani sharma , Dt. 2.4.2015                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttpisg012 | Sanction Control Lines
+  table   ttpptc100
+  table   ttcmcs052
+  table   ttdpur401
+  table   ttdpur406
+  table   twhinh936
+  
+	extern  domain  tccprj           cprj.f    fixed
+	extern  domain  tccprj           cprj.t    fixed
+	extern  domain  tppdm.cspa       cspa.f    fixed
+	extern  domain  tppdm.cspa       cspa.t    fixed
+		domain   tcamnt	        receipt.confirm.amnt
+		domain	  tcamnt	utilized,utilised
+		domain	  tcamnt	tax.amnt
+		domain   tcamnt		total
+		domain   tcamnt		balance.in.po
+|*******************************Report Variables *******************************
+string 	line(1048)
+long ret2
+long stat.fp
+string err.file(100)
+string file.name(100)
+#pragma used dll ottdllbw
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+choice.generate:
+on.choice:
+   generate.file()
+
+
+|****************************** field section *********************************
+
+field.cprj.f:
+when.field.changes:
+   cprj.t = cprj.f
+
+field.cspa.f:
+before.zoom:
+	query.extend.where.in.zoom("tpptc100.cprj = "&quoted.string(cprj.f))
+
+when.field.changes:
+   cspa.t = cspa.f
+
+field.cspa.t:
+before.zoom:
+	query.extend.where.in.zoom("tpptc100.cprj = "&quoted.string(cprj.t))
+
+|****************************** function section ******************************
+
+
+functions:
+function extern generate.file()
+{
+	err.file = bse.tmp.dir$() & str$(utc.num()) & ".xls"
+	
+	file.name = "c:\temp\" & str$(utc.num())  & ".xls"
+	
+	stat.fp = seq.open(err.file, "w+")
+	if stat.fp >0 then
+ 		seq.seek(0, 0, stat.fp)
+	endif
+
+	generate.header()
+	
+	read.main.table()
+	
+	seq.close(stat.fp)
+	ret2 = server2client(err.file,file.name,1)
+	ret2 = app_start(file.name,"c:","","","")
+}
+
+
+function generate.header()
+{
+	line = concat$("	",
+			sprintf$("Project"),						|1
+			sprintf$("Project Description"),				|2
+			sprintf$("Element"),						|3
+			sprintf$("Element Description"),				|4
+			sprintf$("Sanction Amount"),					|5
+			sprintf$("Sanction utilised in PO"),				|6
+			sprintf$("Balance Sanction"),					|7
+			sprintf$("Purchase Invoice Value"),				|8
+			sprintf$("Tax Amount if Expensed"),				|9
+			sprintf$("Actual Utilisation"),				|10
+			sprintf$("Balance in PO"),					|11
+			sprintf$("Utilised"))						|12
+			
+	line = strip$(shiftl$(line))
+
+	seq.puts(line,stat.fp)
+}
+
+
+function read.main.table()
+{
+	
+	
+	select 	tpisg012.*, tcmcs052.dsca
+	from	tpisg012, tcmcs052
+	where	tpisg012.cprj = tcmcs052.cprj
+	and 	tpisg012._index1 inrange {:cprj.f} and {:cprj.t}
+	and	tpisg012.elem inrange :cspa.f and :cspa.t
+	selectdo
+		tpptc100.desc = ""
+		select tpptc100.desc from tpptc100
+		where tpptc100.cprj = :tpisg012.cprj 
+		and tpptc100.cspa = :tpisg012.cspa
+		selectdo
+		endselect
+		
+		tdpur406.damt = 0
+		total = 0
+		
+		select tdpur401.orno,tdpur401.pono,tdpur401.sqnb,tdpur401.cprj,tdpur401.qoor,tdpur401.tasv.l,tdpur401.pric,tdpur401.ccty,
+			tdpur401.cvat,tdpur401.tase.l,tdpur401.tass.l
+		from    tdpur401
+		where   tdpur401._index5 = {:tpisg012.cprj}
+		and     tdpur401.cspa = {:tpisg012.elem}
+		order by tdpur401.cprj,tdpur401.orno,tdpur401.pono
+		selectdo
+			
+			select tdpur406.damt,tdpur406.conf,tdpur406.rcno,tdpur406.rseq,tdpur406.qiap
+			from   tdpur406
+			where  tdpur406._index1 = {:tdpur401.orno,:tdpur401.pono,:tdpur401.sqnb}
+			selectdo
+				select whinh936.aamt
+				from   whinh936
+				where  whinh936._index1 = {:tdpur406.rcno,:tdpur406.rseq}
+				and    whinh936.expe = tcyesno.yes
+				and	whinh936.taxc <> ""
+				selectdo
+					tax.amnt = tax.amnt + whinh936.aamt
+				endselect	
+				
+				if tdpur406.conf = tcyesno.yes then
+					receipt.confirm.amnt = receipt.confirm.amnt + (tdpur401.pric * tdpur406.qiap)
+				endif	
+			endselect	
+		endselect	
+		
+		total = receipt.confirm.amnt + tax.amnt
+		balance.in.po = tpisg012.exha - total
+		if tpisg012.exha > 0 then
+			utilised = (total/tpisg012.exha)* 100
+		endif	
+		if tpisg012.totl <> 0 then
+			utilized = (tpisg012.exha / tpisg012.totl) * 100
+			utilized = round(utilized,2,1)
+		else
+			utilized = 0
+		endif
+		
+		convert.values.in.lac()
+		
+		line = ""
+		line = concat$("	",
+				sprintf$("%s",tpisg012.cprj),					|1
+				sprintf$("%s",tcmcs052.dsca),					|2
+				sprintf$("%s",tpisg012.elem),					|3
+				sprintf$("%s",tpptc100.desc),					|4
+				sprintf$("%f",tpisg012.totl),					|5	|Total bugdet
+				sprintf$("%f",tpisg012.exha),					|6	|Exhausted			
+				sprintf$("%f",(tpisg012.totl - tpisg012.exha)/100000),	|7	|Available
+				sprintf$("%f",receipt.confirm.amnt),				|8
+				sprintf$("%f",tax.amnt),					|9
+				sprintf$("%f",total),						|10
+				sprintf$("%f",balance.in.po),					|11
+				sprintf$("%f",utilised))					|12
+		line = strip$(shiftl$(line))
+		seq.puts(line,stat.fp)
+		initialise()
+	endselect
+	
+}
+
+
+function initialise()
+{
+	receipt.confirm.amnt = 0
+	tax.amnt = 0
+	total = 0
+	balance.in.po = 0
+	utilised = 0
+
+}
+
+function convert.values.in.lac()
+{
+
+	tpisg012.totl = tpisg012.totl/100000
+	tpisg012.exha = tpisg012.exha/100000
+	receipt.confirm.amnt = receipt.confirm.amnt/100000
+	tax.amnt = tax.amnt/100000
+	total = total/100000
+	balance.in.po = balance.in.po/100000 
+}

@@ -1,0 +1,106 @@
+|******************************************************************************
+|* tpisg0531m000  0  VRC B61U a  stnd
+|* Billing Request
+|* Installation user             
+|* 2012-03-11
+|******************************************************************************
+|* Main table tpisg031 Billing Plan, Form Type 1
+|******************************************************************************
+|* ID  ISGEC001018, 	Sujeet Kumar,		05-09-2014
+|* Only Closed Installment Amount will be Updated
+|****************************** declaration section ***************************
+declaration:
+
+  table   	ttpisg031 | Billing Plan
+  table		ttppdm740
+  table		ttppin020
+
+	extern	domain	tppdm.nins	im.nins
+	extern	domain	tccprj		import.cprj
+	extern	domain	tccom.bpid	import.ofbp
+	
+domain	tppdm.aalc	o.insa		|Installment Amount
+domain	tppdm.aalc	o.tiia
+domain	tppdm.aalc	o.inia
+domain	tppdm.aalc	o.bivl
+
+extern	domain	tppdm.aalc	distributed.amnt
+extern	domain	tppdm.aalc	invoiced.amnt	
+extern	domain	tppdm.aalc	balance.to.billed	
+extern	domain	tppdm.aalc	invoice.proces	
+extern	domain	tppdm.aalc	balance.assigned	
+|****************************** program section ********************************
+before.program:
+	import("tpisg031.nins", im.nins)
+before.display.object:
+	export("tpisg031.nins",tpisg031.nins)
+	
+|#sujeet.so	
+	tpisgdll0031.get.installment.amount.info(
+					tpisg031.cprj,
+					tpisg031.ofbp,
+					tpisg031.nins,
+					o.insa,
+					o.tiia,
+					o.inia)
+	tpisgdll0031.get.installment.under.process(
+					tpisg031.cprj,
+					tpisg031.ofbp,
+					tpisg031.nins,
+					o.bivl)		
+|#sujeet.eo					
+	distributed.amnt = o.insa
+	invoiced.amnt = o.tiia	
+	balance.to.billed = tpisg031.insa - o.tiia
+	invoice.proces = o.bivl
+	balance.assigned = tpisg031.insa - (invoiced.amnt + invoice.proces)
+|****************************** group section **********************************
+
+choice.installment.breakup:
+on.choice:
+	start.synchronized.child("tpisg0132m000",
+					"tpisg031.cprj","tpisg032.cprj",
+					"tpisg031.ofbp","tpisg032.ofbp",
+					"tpisg031.nins","tpisg032.nins",MULTI_OCC)
+
+choice.instm.breakup.actual:
+on.choice:
+	start.synchronized.child("tpisg0138m000",
+					"tpisg031.cprj","tpisg038.cprj",
+					"tpisg031.ofbp","tpisg038.ofbp",
+					"tpisg031.nins","tpisg038.nins",MULTI_OCC)
+
+group.1:
+init.group:
+	export("tpisg031.nins",tpisg031.nins)
+	
+choice.cont.update:
+on.choice:
+	select 	tppin020.insa,
+		tppin020.tiia
+	from	tppin020 for update
+	where	tppin020._index1 = {:tpisg031.cprj,:tpisg031.ofbp}
+	and	tppin020.cdf_nins = :tpisg031.nins
+	and	tppin020.clos = tppdm.yeno.yes
+	selectdo
+		tppin020.insa = tppin020.tiia
+		db.update(ttppin020,db.retry,e)
+	endselect
+	commit.transaction()
+	
+|****************************** Field Section **********************************
+
+field.tpisg031.ofbp:
+| before.field:
+| 	tpisg031.ofbp = import.ofbp
+before.zoom:
+	tppdm740.cprj = tpisg031.cprj
+	
+
+| field.tpisg031.cprj:
+| before.field:
+| 	tpisg031.ofbp = import.cprj
+
+| field.tpisg031.nins:
+| before.field:
+| 	tpisg031.nins = im.nins

@@ -1,0 +1,226 @@
+|******************************************************************************
+|* dmisg0402m001  0  VRC B61U a7 isg 
+|* Print Part Item Session
+|* Installation user             
+|* 2015-01-23
+|******************************************************************************
+|* Main table dmisg002 Incoming Document Child, Form Type 4
+|******************************************************************************
+|* IDENT ISGEC001148,Mani sharma,22-01-2015 VRC B61U a7 isg  
+|* New Report Development
+|****************************** declaration section ***************************
+declaration:
+
+  table   tdmisg002 | Incoming Document Child
+  table   tdmisg001
+  table   tdmisg004
+  
+   extern  domain  tppdm.cspa  cspa.f,cspa.t
+   extern  domain  tcitem      item.f,item.t
+   extern  domain  tccprj      cprj.f    
+   extern  domain  tcmcs.str100m    str.query  ,str.temp,str.temp1,part.item.dsca
+   extern domain   tcpono     len.var,len.var1,len.var 
+   extern domain   tcamnt      part.item.qnty,part.item.wght
+   extern domain   tcdsca      part.item,item.var,elem.str
+   extern domain    tcmcs.str50m  large.rev,new.doc,prev.docn,prev.revn,part.size,status
+   extern domain    tcmcs.str100m  part.spec
+   extern domain    tcmcs.str5    rev.str
+   long 	stat.fp,ret2,cnt.rec
+   string	line(2000), err.file(100), file.name(100),PTR.date.str(20)
+   #pragma used dll ottdllbw 
+
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.cont.process:
+on.choice:
+   execute(print.data)
+
+choice.print.data:
+on.choice:
+	 generate.file()
+        
+choice.print:
+on.choice:
+	generate.file()
+
+
+|****************************** field section *********************************
+
+field.cspa.f:
+when.field.changes:
+   cspa.t = cspa.f
+
+after.input:
+	str.temp = concat$("-",cprj.f,cspa.f)
+	len.var  = len(str.temp)
+before.zoom:
+	query.extend.where.in.zoom("tpptc100.cprj="&quoted.string(cprj.f))
+	
+field.cspa.t:
+before.zoom:
+	query.extend.where.in.zoom("tpptc100.cprj="&quoted.string(cprj.f))
+
+after.input:
+	str.temp1 = concat$("-",cprj.f,cspa.t)
+	len.var1  = len(str.temp1)
+	
+field.item.f.segment.2:
+before.zoom:
+	dmisg002.docn(1;len.var) = str.temp
+| 	str.query = "select dmisg002.item from   dmisg002 where  dmisg002._index1 = '"&dmisg001.docn&"','"&dmisg001.revn&"' and dmisg002.elem = '"&cspa.f&"'"
+field.item.t.segment.2:
+before.zoom:
+	dmisg002.docn(1;len.var1) = str.temp1
+field.item.f:
+when.field.changes:
+	item.t = item.f
+|****************************** function section ******************************
+
+functions:
+
+function  generate.file()
+{
+	err.file = bse.dir$() & str$(utc.num()) & ".xls"
+	
+	file.name = "c:\temp\" & str$(utc.num())  & ".xls"
+	
+	stat.fp = seq.open(err.file, "w+")
+	
+	process.file()
+	
+	message("Please refer to file %s in C:", file.name)
+	
+	seq.close(stat.fp)
+	ret2 = server2client(err.file,file.name,1)
+	ret2 = app_start(file.name,"c:","","","")
+
+}
+
+function process.file()
+{
+	generate.header()
+	read.main.table()
+}
+
+function generate.header()
+{
+	if stat.fp >0 then
+		
+		line =concat$("	", 
+			sprintf$("Project Code"),			|1
+			sprintf$("Element Id"),			|2
+			sprintf$("Document No."),			|3
+			sprintf$("Rev No"), 				|4
+			sprintf$("Document Status"),
+			sprintf$("Child Item"),			|5
+			sprintf$("Child Item Description"),		|6
+			sprintf$("Quantity"),				|7
+			sprintf$("Item Wt."),				|8
+			sprintf$("Part Item"),				|9
+			sprintf$("Part Item Description"),		|10
+			sprintf$("Specification"),			|11
+			sprintf$("Size")	,			|12
+			sprintf$("Part Item Quantity"),		|13
+			sprintf$("Part Item Weight"))			|14
+			
+			line = strip$(shiftl$(line))
+			seq.puts(line, stat.fp)
+		endif
+	
+}
+
+function print.detail()
+{
+	line =	concat$("	",
+		sprintf$("%s",dmisg001.cprj ),				|1
+		sprintf$("%s",elem.str),				|2				
+		sprintf$("%s",dmisg002.docn),				|3				
+		sprintf$("%s",rev.str),		|4	
+		sprintf$("%s",status),
+		sprintf$("%s",dmisg002.item),				|5				
+		sprintf$("%s",dmisg002.dsca),
+		sprintf$("%f",dmisg002.qnty),
+		sprintf$("%f",dmisg002.wght),
+		sprintf$("%s",part.item),
+		sprintf$("%s",part.item.dsca),
+		sprintf$("%s",part.spec),
+		sprintf$("%s",part.size),
+		sprintf$("%f",part.item.qnty),
+		sprintf$("%f",part.item.wght))
+		
+		line = strip$(shiftl$(line))
+		seq.puts(line, stat.fp)
+}
+
+function read.main.table()
+{
+	select dmisg001.docn,dmisg001.cprj,dmisg001.revn,dmisg001.stat
+	from   dmisg001
+	where  dmisg001._index3 = {:cprj.f}
+	order by dmisg001.revn desc
+	selectdo
+		status = enum.descr$("dmstat",dmisg001.stat,language$)
+		large.rev = dmisg001.revn
+		new.doc =   dmisg001.docn 
+		
+		if large.rev <> prev.revn and new.doc = prev.docn   then
+			continue
+		endif
+		
+		select dmisg002.qnty,dmisg002.wght,dmisg002.elem,dmisg002.docn,dmisg002.revn,dmisg002.item,dmisg002.dsca,dmisg002.srno
+		from   dmisg002
+		where  dmisg002._index1 = {:dmisg001.docn,:dmisg001.revn}
+		and    dmisg002.elem inrange {:cspa.f} and {:cspa.t}
+		and    dmisg002.item inrange {:item.f} and {:item.t}
+		selectdo
+			rev.str = "'"&dmisg002.revn
+
+			elem.str= "'"&dmisg002.elem
+
+			select dmisg004.docn,dmisg004.revn,dmisg004.item,dmisg004.prtn,dmisg004.prtd,dmisg004.wght,dmisg004.qnty,dmisg004.srno,
+				dmisg004.spec,dmisg004.size
+			from    dmisg004
+			where   dmisg004._index1 = {:dmisg002.docn,:dmisg002.revn,:dmisg002.srno}
+			order by dmisg004.revn desc
+| 			as set with 1 rows
+			selectdo
+					len.var = len(shiftl$(strip$(dmisg004.item)))
+					item.var = dmisg002.item(10;len.var)
+					if dmisg004.item(10;len.var) = item.var then
+					part.item	= dmisg004.prtn
+					part.item.dsca  = dmisg004.prtd
+					part.item.qnty  = dmisg004.qnty
+					part.item.wght  = dmisg004.wght
+					part.spec       = dmisg004.spec
+					part.size       = dmisg004.size
+					print.detail()
+					initialise.variable()
+					endif
+
+			endselect
+		endselect
+		
+	endselect
+	prev.docn = new.doc
+	prev.revn = large.rev
+}
+
+function initialise.variable()
+{
+	part.item	= ""
+	part.item.dsca  = ""
+	part.item.qnty  = 0
+	part.item.wght  = 0
+	part.spec       = ""
+	part.size       = ""
+
+}

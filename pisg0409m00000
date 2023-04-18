@@ -1,0 +1,444 @@
+|******************************************************************************
+|* tdisg0409m0000  0  VRC B61U a7 isg 
+|* Print Post Order Details
+|* Installation user             
+|* 2015-01-15
+|******************************************************************************
+|* Main table tdisg009 PO Lines Table, Form Type 4
+|******************************************************************************
+|* IDENT ISGEC01027, Mani sharma, 19-01-2015, VRC B61U a7 isg   
+|* New Report Development
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttdisg009 | PO Lines Table
+  table   ttdpur400
+  table   ttdmsl400
+  table   ttdpur401
+  table   ttdpur402
+  table   ttfmsl020
+  table   ttfacp100
+  table   twhinh310
+  table   ttdpur406
+  table   ttccom100
+  table   ttcmcs052
+  table   ttfacp200
+  table   ttcibd001
+  table   ttccom001
+  table   ttdpur201
+  table   twhinh312
+  table	   ttdmsl501
+  
+   extern  domain  tcorno           orno.f    fixed
+   extern  domain  tcorno           orno.t    fixed
+   extern domain   tccom.bpid       otbp.f,otbp.t
+   long 	stat.fp,ret2,cnt.rec,var
+   string	line(2000), err.file(100), file.name(100)
+   extern domain  tcpono             po.line
+   extern domain  tcmcs.str50m       po.no,item.catg,supplier.name,buyer.name,project.name,item.description,rcno
+   extern domain  tcdsca             supplier.code,buyer.code,project.code,var.temp
+   extern domain  tcdate             service.req.date,ir.date,receipt.date,actual.dispatch.date,pl.dt,rv.dt
+   extern domain  tfgld.date         advance.rqdt,advance.release.date,invoice.date
+   extern domain  tcamnt             po.line.value,suppplier.invoice.value
+   extern domain  tfgld.docn         ir.no
+   extern domain  tcsern 	latest.vrsn
+   extern domain   tcorno            buyr.f , buyr.t
+   extern domain   tccprj            cprj.f , cprj.t
+    #pragma used dll ottdllbw 
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+choice.print:
+on.choice:
+	 generate.file()
+|****************************** field section *********************************
+
+field.orno.f:
+when.field.changes:
+   orno.t = orno.f
+
+
+check.input:
+	select tdpur400.orno
+	from    tdpur400
+	where   tdpur400._index1= {:orno.f}
+	selectdo
+	selectempty
+		message("Purchase Order is not Valid")
+	endselect
+
+field.otbp.f:
+when.field.changes:
+   otbp.t = otbp.f
+
+field.orno.t:
+check.input:
+	select tdpur400.orno
+	from    tdpur400
+	where   tdpur400._index1= {:orno.t}
+	selectdo
+	selectempty
+		message("Purchase Order is not Valid")
+	endselect	
+field.buyr.f:
+when.field.changes:
+	buyr.t = buyr.f
+	
+field.cprj.f:
+when.field.changes:
+	cprj.t = cprj.f
+check.input:
+	select tcmcs052.cprj
+	from    tcmcs052
+	where   tcmcs052._index1= {:cprj.f}
+	selectdo
+	selectempty
+		message("Entered Project is not Valid")
+	endselect		
+	
+field.cprj.t:
+check.input:
+	select tcmcs052.cprj
+	from    tcmcs052
+	where   tcmcs052._index1= {:cprj.t}
+	selectdo
+	selectempty
+		message("Entered Project is not Valid")
+	endselect		
+
+|****************************** function section ******************************
+
+functions:
+
+function  generate.file()
+{
+	err.file = bse.dir$() & str$(utc.num()) & ".xls"
+	
+	file.name = "c:\temp\" & str$(utc.num())  & ".xls"
+	
+	stat.fp = seq.open(err.file, "w+")
+	
+	process.file()
+	
+	message("Please refer to file %s in C:", file.name)
+	seq.close(stat.fp)
+	ret2 = server2client(err.file,file.name,1)
+	ret2 = app_start(file.name,"c:","","","")
+
+}
+
+function process.file()
+{
+	generate.header()
+	read.main.table()
+}
+
+
+function generate.header()
+{
+	if stat.fp >0 then
+		
+		line =concat$("	", 
+			sprintf$("PO No"),			|1
+			sprintf$("PO Creation Date"),		|2
+			sprintf$("PO Approval Date"),		|3
+			sprintf$("PO Line"), 			|4
+			sprintf$("Material/Service Required Date"),	|5
+			sprintf$("Planned Receipt Date"),		|6
+			sprintf$("Revised Planned Receipt Date"),	|7
+			sprintf$("Current PO Rev"),		|8
+			sprintf$("Item Category"),		|9
+			sprintf$("Supplier Code"),		|10
+			sprintf$("Supplier Name"),		|11
+			sprintf$("Buyer Code"),		|12
+			sprintf$("Buyer Name"),		|13
+			sprintf$("Project Code"),		|14
+			sprintf$("Project Name"),		|15
+			sprintf$("Item Description"),		|16
+			sprintf$("PO Line Value(Rs)"),		|17
+			sprintf$("PO Acknowledgement Date"),	|18
+			sprintf$("Advance Docs Receipt Date"),	|19
+			sprintf$("Advance Payment Request Date"),	|20
+			sprintf$("Advance Release Date"),		|21
+			sprintf$("Tech Input Submission from Supplier Date"),	|22
+			sprintf$("Manufacturing clearance To Vendor"),	|23
+			sprintf$("Date of Final Technical Approval To Vendor"),|24
+			sprintf$("Drawing Release Date1"),	|25
+			sprintf$("Drawing Release Date2"),	|26
+			sprintf$("Date of Inspection Call"),	|27
+			sprintf$("Date of MICN"),		|28
+			sprintf$("Vehicle Request Date"),	|29
+			sprintf$("Actual Dispatch Date"),	|30
+			sprintf$("IR No."),			|31
+			sprintf$("IR Date"),			|32
+			sprintf$("Supplier Invoice Value"),	|33
+			sprintf$("Supplier Invoice Date"),	|34
+			sprintf$("Receipt No"),		|35
+			sprintf$("Receipt Date"),		|36
+			sprintf$("Reason for Delay noted by Buyer"),	|37
+			sprintf$("Remarks")) 			|38
+			
+			line = strip$(shiftl$(line))
+			seq.puts(line, stat.fp)
+		endif
+	
+}
+
+
+function	print.detail()
+{	
+	line =	concat$("	",
+		sprintf$("%s",po.no ),					|1
+		sprintf$("%u(%02d/%02m/%04Y)",tdpur400.odat),		|2				
+		sprintf$("%u(%02d/%02m/%04Y)", tdmsl400.apdt),		|3				
+		sprintf$("%d", po.line),				|4				
+		sprintf$("%u(%02d/%02m/%04Y)", service.req.date),	|5				
+		sprintf$("%u(%02d/%02m/%04Y)",pl.dt ),		|6
+		sprintf$("%u(%02d/%02m/%04Y)", rv.dt),		|7
+		sprintf$("%d", latest.vrsn),		|8				
+		sprintf$("%s",item.catg),				|9				
+		sprintf$("%s", supplier.code),				|10
+		sprintf$("%s", supplier.name),				|11
+		sprintf$("%s", buyer.code),				|12
+		sprintf$("%s",buyer.name ),				|13
+		sprintf$("%s", project.code),				|14
+		sprintf$("%s", project.name),				|15
+		sprintf$("%s", item.description),			|16
+		sprintf$("%d", po.line.value),				|17
+		sprintf$("%D(%02d/%02m/%04Y)", tdisg009.ackd),		|18
+		sprintf$("%D(%02d/%02m/%04Y)", tdisg009.addt),		|19
+		sprintf$("%u(%02d/%02m/%04Y)", advance.rqdt),		|20
+		sprintf$("%u(%02d/%02m/%04Y)", advance.release.date),	|21
+		sprintf$("%D(%02d/%02m/%04Y)", tdisg009.indt),		|22
+		sprintf$("%D(%02d/%02m/%04Y)", tdisg009.vend),		|23
+		sprintf$("%D(%02d/%02m/%04Y)", tdisg009.datf),		|24
+		sprintf$("%D(%02d/%02m/%04Y)", tdisg009.drd1),		|25
+		sprintf$("%D(%02d/%02m/%04Y)", tdisg009.drd2),		|26
+		sprintf$("%D(%02d/%02m/%04Y)", tdisg009.doic),		|27
+		sprintf$("%D(%02d/%02m/%04Y)", tdisg009.micn),		|28
+		sprintf$("%D(%02d/%02m/%04Y)", tdisg009.rqdt),		|29
+		sprintf$("%u(%02d/%02m/%04Y)",actual.dispatch.date),   |30
+		sprintf$("%d", ir.no),					|31
+		sprintf$("%u(%02d/%02m/%04Y)", ir.date),		|32	
+		sprintf$("%d", suppplier.invoice.value),		|33
+		sprintf$("%D(%02d/%02m/%04Y)", invoice.date),		|34
+		sprintf$("%s", rcno),					|35
+		sprintf$("%u(%02d/%02m/%04Y)", receipt.date),		|36
+		sprintf$("%s",tdisg009.reas),				|37
+		sprintf$("%s",tdisg009.remk))				|38
+
+		line = strip$(shiftl$(line))
+		seq.puts(line, stat.fp)
+}
+
+
+function initialise()
+{
+	po.no = ""
+	po.line = 0
+	service.req.date = 0
+	supplier.code = ""
+	supplier.name = ""
+	po.line.value = 0
+	ir.no = 0
+	suppplier.invoice.value = 0
+	invoice.date = 0
+	item.catg = ""
+	receipt.date = 0
+	rcno = ""
+	actual.dispatch.date = 0
+	project.code = ""
+	project.name = ""
+	buyer.code = ""
+	buyer.name = ""
+}
+
+
+function read.main.table()
+{
+    select   tdpur400.orno,tdpur400.otbp,tdpur400.odat,tdpur400.ccon,tccom001.nama
+    from      tdpur400,tccom001
+    where     tdpur400._index1 inrange {:orno.f} and {:orno.t}
+    and       tdpur400.otbp    inrange  {:otbp.f} and {:otbp.t}
+    and       tdpur400.ccon     inrange {:buyr.f}  and {:buyr.t}
+    and       tdpur400.ccon refers to tccom001
+    selectdo
+	    initialise()
+	    select tdmsl400.apdt
+	    from    tdmsl400
+	    where   tdmsl400._index1 = {:tdpur400.orno} 
+	    and     tdmsl400.stat = tcyesno.yes 
+	    as set with 1 rows 
+	    selectdo
+	    endselect
+	    
+| 	    select tdmsl400.vrsn
+| 	    from   tdmsl400
+| 	    where  tdmsl400._index1 = {:tdpur400.orno} 
+| 	    order by tdmsl400.vrsn desc 
+| 	    as set with 1 rows
+| 	    selectdo
+| 	    endselect
+	    
+	    select tdpur401.pono,tdpur401.ddta,tdpur401.orno,tdpur401.pono,tdpur401.ddtd,tdpur401.otbp,tccom100.nama,tdpur401.cprj,tcmcs052.dsca,
+		    tdpur401.item,tcibd001.dsca
+	    from    tdpur401,tccom100,tcmcs052,tcibd001
+	    where  tdpur401._index1 = {:tdpur400.orno}
+	    and    tdpur401.otbp  = {:tdpur400.otbp}
+	    and    tdpur401.cprj  inrange {:cprj.f}  and {:cprj.t}
+	    and    tdpur401.cprj refers to tcmcs052
+	    and    tdpur401.otbp refers to tccom100
+	    and    tdpur401.item refers to tcibd001
+	    selectdo
+		    supplier.code = tdpur401.otbp
+		    supplier.name = tccom100.nama
+		    buyer.code    = tdpur400.ccon
+		    buyer.name    = tccom001.nama
+		    project.code  = tdpur401.cprj
+		    project.name  = tcmcs052.dsca
+		    po.line = tdpur401.pono
+		    item.description = tcibd001.dsca
+		     po.no = tdpur400.orno
+		    
+		    select tdmsl400.vrsn
+		    from   tdmsl400
+		    where  tdmsl400._index1 = {:tdpur401.orno} 
+		    order by tdmsl400.vrsn desc 
+		    as set with 1 rows
+		    selectdo
+			    latest.vrsn = tdmsl400.vrsn
+		    endselect
+		    
+		    select tdpur401.oamt
+		    from     tdpur401
+		    where   tdpur401._index1 = {:tdpur401.orno,:tdpur401.pono}
+		    as set with 1 rows
+		    selectdo
+			    po.line.value = tdpur401.oamt
+		    endselect
+		    
+		    rv.dt = tdpur401.ddta
+		    pl.dt = tdpur401.ddta
+		    
+		    
+			select tdmsl400.vrsn
+			from   tdmsl400
+			where  tdmsl400._index1 = {:tdpur400.orno} 
+| 			order by tdmsl400.vrsn desC 
+			as set with 1 rows
+			selectdo
+				select	tdmsl501.ddta
+				from	tdmsl501
+				where	tdmsl501._index1 = {:tdpur401.orno,:tdmsl400.vrsn,:tdpur401.pono}
+				selectdo
+					pl.dt = tdmsl501.ddta
+				endselect
+			endselect
+
+			
+		    
+		    select tdpur402.rqno,tdpur402.rqpo
+		    from   tdpur402
+		    where  tdpur402._index1 = {:tdpur401.orno,:tdpur401.pono}
+		    selectdo
+			    select tdpur201.dldt
+			    from    tdpur201
+			    where  tdpur201._index1 = {:tdpur402.rqno,:tdpur402.rqpo}
+			    selectdo
+				service.req.date = tdpur201.dldt
+			    endselect
+		    endselect
+		    
+		    select tdisg009.*
+		    from    tdisg009
+		    where  tdisg009._index1 = {:tdpur401.orno,:tdpur401.pono}
+		    selectdo
+			    item.catg = enum.descr$("tdisg008.catg",tdisg009.catg)
+	            endselect
+		    
+		    select tfmsl020.sfdt,tfmsl020.optn,tfmsl020.docn,tfmsl020.ttyp,tfmsl020.stat,tfmsl020.lino,tfmsl020.rqdt,tfmsl020.chdt
+		    from   tfmsl020
+		    where  tfmsl020._index2 = {:tdpur401.orno} 
+		    and    tfmsl020.optn = tfoption.advance
+		    as set with 1 rows
+		    selectdo
+| 			    if  tfmsl020.stat = tfmsl.lc.stat.sfin then
+					advance.rqdt = tfmsl020.rqdt    
+| 			   endif
+				advance.release.date = tfmsl020.chdt
+| 			    if tfmsl020.stat = tfmsl.lc.stat.proc   then
+| 				select tfacp200.docd
+| 				from    tfacp200
+| 				where   tfacp200._index1 = {:tfmsl020.ttyp,:tfmsl020.docn,:tfmsl020.lino}
+| 				as set with 1 rows
+| 				selectdo
+| 					advance.release.date = tfacp200.docd
+| 				endselect
+| 			   endif	
+			endselect
+		select tfacp100.ninv,tfacp100.cdf_irdt:ir.date,tfacp100.amti,tfacp100.invd
+		from   tfacp100
+		where  tfacp100.cdf_pono = {:tdpur401.orno}
+		selectdo
+			ir.no = tfacp100.ninv
+			suppplier.invoice.value = tfacp100.amti
+			invoice.date = tfacp100.invd
+				var.temp = str$(tfacp100.ninv)
+		if 	get.warehouse.receipt(var.temp) then
+			
+		else 
+			get.purchase.receipt(var.temp)
+		endif
+		
+		endselect
+	print.detail()
+	initialise()
+	    endselect
+    endselect
+    
+}
+
+function boolean get.warehouse.receipt(domain whinh.pksp doc.var)
+{
+	select whinh310.rcno,whinh310.crdt
+	from   whinh310
+	where  whinh310.dino  = {:doc.var}
+	selectdo
+		rcno = whinh310.rcno
+		receipt.date = whinh310.crdt
+		select whinh312.ardt
+		from   whinh312
+		where  whinh312._index1 = {:whinh310.rcno}
+		selectdo
+			actual.dispatch.date = whinh312.ardt
+		endselect
+	selectempty
+		return (false)
+	endselect
+return (true)
+}
+
+function boolean get.purchase.receipt(domain whinh.pksp doc.var)
+{
+	select	tdpur406.ddte,tdpur406.rcno,tdpur406.rcld
+	from	tdpur406
+	where	tdpur406.dino =  {:doc.var}
+	and	tdpur406.rcno not in (select	whinh310.rcno	from	whinh310
+					where	whinh310.dino = {:doc.var})
+	selectdo
+		rcno = tdpur406.rcno
+		receipt.date = tdpur406.rcld
+		actual.dispatch.date = tdpur406.ddte
+	selectempty
+		return (false)
+	endselect
+return (true)
+	
+}

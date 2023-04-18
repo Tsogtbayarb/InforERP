@@ -1,0 +1,220 @@
+|******************************************************************************
+|* dmisg0411m000  0  VRC B61U a7 live
+|* Print Engg. Document Issue Status
+|* Installation user             
+|* 2014-07-11
+|******************************************************************************
+|* Main table dmisg011 Engg. Document Issue, Form Type 4
+|******************************************************************************
+|* ISGEC001143, IT0205, Arjit Gupta, VRC B61U a7 isg, Dt. 31-10-2014
+|* Employee Name should be print from ttaad200 when when not getting from tccom001                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+	table	tdmisg010 | Engg. Document Issue
+	table	tdmisg011 | Engg. Document Issue Lines
+	table	ttcmcs052
+	table	ttccom001
+	table	ttirou001
+	table	tttaad200				|#ISGEC001143.n
+
+	|**************** Form Variables ***************
+	extern	domain	tccprj		var.cprj	fixed
+	extern	domain	tcorno		issu.f	fixed
+	extern	domain	tcorno		issu.t	fixed
+	extern	domain	tcemno		isto.f	fixed
+	extern	domain	tcemno		isto.t	fixed
+	
+	|*************** Script Variables **************
+	extern	domain	tcmcs.str16	progname
+	extern	domain	tccprj		im.cprj
+	extern	domain	tcorno		im.issu
+	extern	domain	tfgld.user	im.isto
+	extern	domain	tcorno		prev.issu
+	
+	|************** Report Variables ***************
+	extern	domain	tcnama		rep.isby.nama
+	extern	domain	tcnama		rep.prpb.nama
+	extern	domain	dmdoc.docdscr	rep.docn.dsca
+	extern	domain	tppdm.desc	rep.header
+
+|****************************** program section ********************************
+before.program:
+	import("prog.name$", progname)
+	
+	on case progname
+		case "dmisg0110m000":
+			import("dmisg010.cprj", im.cprj)
+			import("dmisg010.issu", im.issu)
+			import("dmisg010.isto", im.isto)
+			var.cprj = im.cprj
+			issu.f = im.issu
+			issu.t = im.issu
+			isto.f = im.isto
+			isto.t = im.isto
+			inputfield.invisible("isto.f", "isto.t")
+			break
+		default:
+			inputfield.visible("isto.f", "isto.t")
+	ENDCASE	
+		
+
+before.display.object:
+	on case progname
+		case "dmisg0110m000":
+			disable.fields("var.cprj", actual.occ, "issu.f", actual.occ, "issu.t", actual.occ,
+					"isto.f", actual.occ, "isto.t", actual.occ)
+			break
+		default:
+			enable.fields("var.cprj", actual.occ, "issu.f", actual.occ, "issu.t", actual.occ,
+					"isto.f", actual.occ, "isto.t", actual.occ)
+	ENDCASE	
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+choice.print.data:
+on.choice:
+	if rprt_open() then
+		read.main.table()
+		rprt_close()
+	else
+		choice.again()
+	endif
+
+|****************************** field section *********************************
+field.var.cprj:
+check.input:
+
+field.issu.f:
+when.field.changes:
+	issu.t = issu.f
+
+field.isto.f:
+when.field.changes:
+	isto.t = isto.f
+
+|****************************** function section ******************************
+functions:
+
+function read.main.table()
+{	
+	prev.issu = ""
+	select	dmisg010.*, tcmcs052.dsca, tccom001.nama, tirou001.dsca
+	from	dmisg010, tcmcs052, tccom001, tirou001
+	where	dmisg010._index2 inrange {:var.cprj, :issu.f}	and	{:var.cprj, :issu.t}
+	and	dmisg010.isto	inrange {:isto.f}	and	{:isto.t}
+	and	dmisg010.cprj refers to tcmcs052 Unref Clear
+	and	dmisg010.isto refers to tccom001 Unref Clear
+	and	tccom001.cwoc refers to tirou001 Unref Clear
+	selectdo	
+		select	dmisg011.*
+		from	dmisg011
+		where	dmisg011._index1 = {:dmisg010.issu}
+		order by dmisg011.issu, dmisg011.srno
+		selectdo
+			if	dmisg011.isdt > 0	then
+				if	prev.issu <> dmisg011.issu	then
+					if	isspace(dmisg011.isby) then
+						rep.header = "Provisonal Issue Slip of"
+					else
+						rep.header = "Issue Slip of"
+					endif
+					prev.issu = dmisg011.issu
+				endif	
+				rep.isby.nama = ""
+				rep.prpb.nama = ""
+				rep.docn.dsca = ""
+				rep.docn.dsca = get.document.desc(dmisg011.docn, dmisg011.revi)
+				rep.isby.nama = get.employee.name(dmisg011.isby)
+				rep.prpb.nama = get.employee.name(dmisg010.prpb)
+								|#ISGEC001143.sn
+				if	isspace(rep.isby.nama)	then
+					rep.isby.nama = get.user.name(dmisg011.isby)
+				endif
+				if	isspace(rep.prpb.nama)	then
+					rep.prpb.nama = get.user.name(dmisg010.prpb)
+				endif
+										|#ISGEC001143.en
+				
+	| 			select	tppdm911.desc:ddes.m
+	| 			from	tppdm911
+	| 			where	tppdm911.cprj = :tppdm925.cprj
+	| 			and	tppdm911.cdoc = :tppdm925.cdoc
+	| 			selectdo
+	| 			selectempty
+	| 				select	tppdm904.desc:ddes.m
+	| 				from	tppdm904
+	| 				where	tppdm904.cdoc = :tppdm925.cdoc
+	| 				selectdo
+	| 				endselect
+	| 			endselect
+				rprt_send()
+			else
+				message("Non Finalized Issue Slip cannot be printed")
+			endif	
+		endselect
+	endselect	
+}
+
+
+function domain dmdoc.docdscr get.document.desc(domain dmdoc.docid	tmp.docn,
+						domain	dmdoc.revv	tmp.revi)
+{
+	domain	dmdoc.docdscr	tmp.desc
+	
+	select	a_dmisg001.dttl:tmp.desc
+	from	dmisg001 a_dmisg001
+	where	a_dmisg001._index1 = {:tmp.docn, :tmp.revi}
+	selectdo
+	selectempty
+		select	a_dmisg007.dsca:tmp.desc
+		from	dmisg007 a_dmisg007
+		where	a_dmisg007._index2 = {:tmp.docn, :tmp.revi}
+		selectdo
+		selectempty
+			tmp.desc = ""
+		endselect
+	endselect
+	
+	return(tmp.desc)	
+}
+
+function domain tcnama	get.employee.name(domain tcemno	tmp.emno)
+{
+	domain	tcnama	tmp.nama
+	
+	tmp.emno = toupper$(tmp.emno)
+	
+	select	tccom001.nama:tmp.nama
+	from	tccom001
+	where	tccom001._index1 = {:tmp.emno}
+	selectdo
+	selectempty
+		tmp.nama = ""
+	endselect
+	
+	return(tmp.nama)
+}
+						|#ISGEC001143.sn
+function domain tcnama	get.user.name(domain tcemno	tmp.emno)
+{
+	domain	tcnama	tmp.nama
+	
+	tmp.emno = toupper$(tmp.emno)
+	
+	select	ttaad200.name:tmp.nama
+	from	ttaad200
+	where	ttaad200._index1 = {:tmp.emno}
+	and	ttaad200._compnr = 000
+	selectdo
+	selectempty
+		tmp.nama = ""
+	endselect
+	
+	return(tmp.nama)
+}
+										|#ISGEC001143.en

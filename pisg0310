@@ -1,0 +1,302 @@
+|******************************************************************************
+|* tpisg031  0  VRC B61U a  stnd
+|* 
+|* baan
+|* 12-03-11 [08:07]
+|******************************************************************************
+|* Script Type: DAL
+|******************************************************************************
+                                                                                
+#include <bic_dal2>
+	table		ttpisg031
+	table		ttppdm740
+	
+	extern	domain	tcamnt		tot.insa
+
+function extern long before.open.object.set()
+{
+	dal.field.depends.on("tpisg031.ofbp", 
+					HOOK_IS_MANDATORY + 
+					HOOK_IS_VALID,
+					"tpisg031.cprj")
+	dal.field.depends.on("tpisg031.insa",  
+					HOOK_IS_VALID,
+					"tpisg031.cprj",
+					"tpisg031.ofbp")
+
+	return(0)
+}
+
+function extern long before.save.object(long type)
+{
+	domain	tppdm.nins	linked.insa
+	
+	linked.insa = 0
+	
+	on case type
+		case 	DAL_UPDATE :
+			if dal.is.field.changed("tpisg031.insa") then
+				linked.insa = get.linked.installment.amount(tpisg031.cprj,tpisg031.ofbp,tpisg031.nins)
+				if tpisg031.insa < linked.insa then
+					dal.set.error.message("@ Billing Plan Amount Cann't be Less than Linked Installment")
+					return(DALHOOKERROR)
+				endif
+			endif
+		break
+	endcase
+	
+	return(0)
+}
+
+function extern long before.new.object()
+{
+	domain	tppdm.nins 	max_nins
+	
+	max_nins = 0
+	tpisg031.ofbp = get.sold.to.bp(tpisg031.cprj)
+	
+	select 	max(tpisg031.nins):max_nins
+	from	tpisg031
+	where	tpisg031._index1 = {:tpisg031.cprj,:tpisg031.ofbp}
+	selectdo
+	endselect
+	
+	max_nins = max_nins + 1
+	
+	tpisg031.nins = max_nins
+	
+	return(0)
+}
+
+function extern boolean method.is.allowed(long type)
+{
+	domain	tppdm.nins		o.nins
+	
+	on case type
+	case DAL_UPDATE :
+| 		select 	tppin020.cdf_nins:o.nins
+| 		from	tppin020
+| 		where	tppin020._index1 = {:tpisg031.cprj,:tpisg031.ofbp}
+| 		and	tppin020.cdf_nins = :tpisg031.nins
+| 		as set with 1 rows
+| 		selectdo
+| 			return(false)
+| 		endselect
+		break
+	case DAL_DESTROY :
+		
+		break
+	endcase
+	
+	return(true)
+}
+
+function extern long before.destroy.object()
+{
+	if check.standard.installment.exists(tpisg031.cprj,tpisg031.ofbp,tpisg031.nins) then
+		dal.set.error.message("@ Installment Exists, Deletation Not Allowed!!")
+		return(DALHOOKERROR)
+	endif
+|#sujeet.so	
+| 	if  billing.schedule.linked.with.billing.advice(tpisg031.cprj,tpisg031.ofbp,tpisg031.nins) then
+| 		dal.set.error.message("@ Billing Schedule is linked with Billing Advice, Deletation Not Allowed!!!")
+| 		return(DALHOOKERROR)
+| 	endif
+|#sujeet.eo	
+	return(0)
+}
+
+function boolean check.standard.installment.exists
+				(
+					domain	tccprj		i.cprj,		|Project
+					domain	tccom.bpid	i.ofbp,		|Solt-to Business Partner
+					domain	tppdm.nins	i.nins
+				)
+{
+	domain	tppdm.nins	o.nins
+	
+	select 	tppin020.nins:o.nins
+	from	tppin020
+	where	tppin020._index1 = {:i.cprj,:i.ofbp}
+	and	tppin020.cdf_nins = :i.nins
+	as set with 1 rows
+	selectdo
+	selectempty
+		return(false)
+	endselect
+	
+	return(true)
+	
+}
+
+function boolean billing.schedule.linked.with.billing.advice
+				(
+					domain	tccprj		i.cprj,		|Project
+					domain	tccom.bpid	i.ofbp,		|Solt-to Business Partner
+					domain	tppdm.nins	i.nins
+				)
+{
+	domain	tppdm.nins	o.nins
+	
+	select 	tppin020.nins:o.nins
+	from	tppin020
+	where	tppin020._index1 = {:i.cprj,:i.ofbp}
+	and	tppin020.cdf_nins = :i.nins
+| 	and	tppin020.cdf_edrn <> ""
+	as set with 1 rows
+	selectdo
+		return(true)
+	endselect
+	
+	return(false)
+}
+function extern long set.object.defaults()
+{
+	tpisg031.cprj.object.default()		
+	return(0)
+}
+
+function extern boolean tpisg031.cprj.is.mandatory(long type)
+{
+	if isspace(tpisg031.cprj) then
+		return(FALSE)
+	endif
+	
+	return(false)
+}
+
+function extern boolean tpisg031.cprj.is.valid(long type)
+{
+	select 	tppdm600.cprj
+	from	tppdm600
+	where	tppdm600._index1 = {:tpisg031.cprj}
+	and	tppdm600.invm = tppdm.invm.instalment
+	and	tppdm600.psts = tppdm.psts.construction
+	as set with 1 rows
+	selectdo
+	selectempty
+		dal.set.error.message("@Project not allowed. Check Invoicing method and Project status.")
+		return(DALHOOKERROR)
+	endselect
+	
+	return(true)
+}
+
+function extern boolean tpisg031.ofbp.is.mandatory(long type)
+{
+	if isspace(tpisg031.ofbp) then
+		return(DALHOOKERROR)
+	endif
+	
+	return(false)
+}
+
+function extern boolean tpisg031.ofbp.is.valid(long type)
+{
+	select 	tppdm740.ofbp
+	from	tppdm740
+	where	tppdm740._index1 = {:tpisg031.cprj,:tpisg031.ofbp}
+	as set with 1 rows
+	selectdo
+	selectempty
+		return(DALHOOKERROR)
+	endselect
+	
+	return(true)
+}
+
+|*** Billing Schedule Amount
+function extern boolean tpisg031.insa.is.valid()
+{
+	domain	tppdm.aalc	o.copr
+	domain	tcamnt		old.insa
+	
+	select 	tppdm740.copr:o.copr
+	from	tppdm740
+	where	tppdm740._index1 = {:tpisg031.cprj,:tpisg031.ofbp}
+	as set with 1 rows
+	selectdo
+	endselect
+	
+	get.total.installment.amnt()
+	with.object.set.do  (get.billing.schedule.old.value,tpisg031.cprj,tpisg031.ofbp,tpisg031.nins,old.insa)
+	if	(tot.insa + tpisg031.insa - old.insa) > o.copr	then
+		dal.set.error.message("@ Billing Schedlue Amount is Greater Than Contract Amount")
+		return(DALHOOKERROR)
+	endif
+	return(true)
+}
+function get.billing.schedule.old.value
+				(
+					domain	tccprj		i.cprj,
+					domain	tccom.bpid	i.ofbp,
+					domain	tppdm.nins	i.nins,
+				ref 	domain	tcamnt		o.insa
+				)
+{
+	select 	tpisg031.insa:o.insa
+	from	tpisg031
+	where	tpisg031._index1 = {:i.cprj,:i.ofbp,:i.nins}
+	as set with 1 rows
+	selectdo
+	selectempty
+		o.insa = 0
+	endselect
+	
+}
+|********************* Sold to BP ****************
+function void tpisg031.cprj.object.default()
+{
+	tpisg031.ofbp = get.sold.to.bp(tpisg031.cprj)	
+}
+
+|********************* Get Sold to BP ***********
+function domain tccom.bpid	get.sold.to.bp(
+					domain	tccprj	g.cprj)
+{
+	domain	tccom.bpid	tmp.bpid
+	
+	select	a_tppdm740.ofbp:tmp.bpid
+	from	tppdm740 a_tppdm740
+	where	a_tppdm740._index1 = {:g.cprj}
+	as set with 1 rows
+	selectdo
+	selectempty
+		tmp.bpid = ""
+	endselect
+	
+	return(tmp.bpid)
+}					
+
+function get.total.installment.amnt()
+{
+	select	sum(b_tpisg031.insa):tot.insa
+	from	tpisg031 b_tpisg031
+	where	b_tpisg031._index1 = {:tpisg031.cprj, :tpisg031.ofbp}
+	selectdo
+	selectempty
+		tot.insa = 0
+	endselect
+}
+
+
+function domain tppdm.aalc get.linked.installment.amount
+				(
+					domain	tccprj		i.cprj,
+					domain	tccom.bpid	i.ofbp,
+					domain	tppdm.nins	i.nins
+				)
+{
+	domain	tppdm.aalc	o.tppin020.insa
+	
+	o.tppin020.insa = 0
+	
+	select 	sum(tppin020.cdf_insa):o.tppin020.insa
+	from	tppin020
+	where	tppin020._index1 = {:i.cprj,:i.ofbp}
+	and	tppin020.cdf_nins = :i.nins
+	selectdo
+	endselect
+
+	return(o.tppin020.insa)
+}

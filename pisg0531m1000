@@ -1,0 +1,163 @@
+|******************************************************************************
+|* tpisg0531m100  0  VRC B61U a7 live
+|* Billing Plan
+|* Tools                         
+|* 2014-07-05
+|******************************************************************************
+|* Main table tpisg031 Billing Plan, Form Type 1
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttpisg031 | Billing Plan
+	table	ttppdm740
+	table	ttcmcs052
+
+| extern	domain	tcamnt		contract.amnt
+domain	tppdm.aalc	o.insa		|Installment Amount
+domain	tppdm.aalc	o.tiia
+domain	tppdm.aalc	o.inia
+domain	tppdm.aalc	o.bivl
+
+extern	domain	tppdm.aalc	distributed.amnt
+extern	domain	tppdm.aalc	invoiced.amnt
+extern	domain	tppdm.aalc	balance.to.billed
+extern	domain	tppdm.aalc	invoice.proces
+extern	domain	tppdm.aalc	balance.assigned
+	extern	domain	tppdm.aalc	tot.distributed.amnt
+	extern	domain	tppdm.aalc	tot.invoiced.amnt
+	extern	domain	tppdm.aalc	tot.balance.to.billed
+	extern	domain	tppdm.aalc	tot.invoice.proces
+	extern	domain	tppdm.aalc	tot.balance.assigned
+	extern	domain	tcdsca		cprj.dsca
+	extern	domain	tcamnt		tot.insa
+
+|****************************** program section ********************************
+before.program:
+	fattr.total.line = true
+	
+before.display.object:
+|#sujeet.so	
+	tpisgdll0031.get.installment.amount.info(
+					tpisg031.cprj,
+					tpisg031.ofbp,
+					tpisg031.nins,
+| 					130,
+					o.insa,
+					o.tiia,
+					o.inia)
+	tpisgdll0031.get.installment.under.process(
+					tpisg031.cprj,
+					tpisg031.ofbp,
+					tpisg031.nins,
+| 					130,
+					o.bivl)	
+|#sujeet.eo					
+	distributed.amnt = o.insa
+	invoiced.amnt = o.tiia	
+	balance.to.billed = tpisg031.insa - o.tiia
+	invoice.proces = o.bivl
+
+	balance.assigned = tpisg031.insa - (invoiced.amnt + invoice.proces)
+
+after.form.read:
+	enable.save.on.occ.change()
+	
+on.display.total.line:
+	get.total()
+	display.total.fields("tpisg031.insa", tot.insa, "distributed.amnt", tot.distributed.amnt,
+				"invoiced.amnt", tot.invoiced.amnt, "balance.to.billed", tot.balance.to.billed,
+				"invoice.proces", tot.invoice.proces, "balance.assigned", tot.balance.assigned)
+|****************************** group section **********************************
+field.all:
+before.input:
+	attr.dorp = true
+	
+field.tpisg031.ofbp:
+before.zoom:
+	tppdm740.cprj = tpisg031.cprj
+	
+before.input:
+	tpisg031.ofbp = get.sold.to.bp(tpisg031.cprj)
+	
+field.tpisg031.cprj:
+before.zoom:
+	query.extend.where.in.zoom("tppdm600.invm = tppdm.invm.instalment and tppdm600.psts = tppdm.psts.construction")
+	
+after.input:
+	tpisg031.ofbp = get.sold.to.bp(tpisg031.cprj)
+	
+field.cprj.dsca:
+before.display:
+	select	tcmcs052.dsca:cprj.dsca
+	from	tcmcs052
+	where	tcmcs052._index1 = {:tpisg031.cprj}
+	selectdo
+	selectempty
+		cprj.dsca = ""
+	endselect
+	
+|******************************** Function section ***********
+Functions:
+
+function domain tccom.bpid	get.sold.to.bp(
+					domain	tccprj	g.cprj)
+{
+	domain	tccom.bpid	tmp.bpid
+	
+	select	a_tppdm740.ofbp:tmp.bpid
+	from	tppdm740 a_tppdm740
+	where	a_tppdm740._index1 = {:g.cprj}
+	as set with 1 rows
+	selectdo
+	selectempty
+		tmp.bpid = ""
+	endselect
+	
+	return(tmp.bpid)
+}	
+
+function get.total()
+{
+	domain	tppdm.nins	tmp.nins
+	domain	tcamnt		tmp.insa
+	
+	tot.distributed.amnt = 0
+	tot.invoiced.amnt = 0
+	tot.balance.to.billed = 0
+	tot.invoice.proces = 0
+	tot.balance.assigned = 0
+	
+	select	sum(t_tpisg031.insa):tot.insa
+	from	tpisg031 t_tpisg031
+	where	t_tpisg031._index1 = {:tpisg031.cprj, :tpisg031.ofbp}
+	selectdo
+	selectempty
+		tot.insa = 0
+	endselect
+	
+	select	b_tpisg031.nins:tmp.nins, b_tpisg031.insa:tmp.insa
+	from	tpisg031 b_tpisg031
+	where	b_tpisg031._index1 = {:tpisg031.cprj, :tpisg031.ofbp}
+	selectdo
+		tpisgdll0031.get.installment.amount.info(
+					tpisg031.cprj,
+					tpisg031.ofbp,
+					tmp.nins,
+					o.insa,
+					o.tiia,
+					o.inia)
+		tpisgdll0031.get.installment.under.process(
+						tpisg031.cprj,
+						tpisg031.ofbp,
+						tmp.nins,
+						o.bivl)	
+						
+		tot.distributed.amnt = tot.distributed.amnt + o.insa
+		tot.invoiced.amnt = tot.invoiced.amnt + o.tiia	
+		tot.balance.to.billed = tot.balance.to.billed + (tmp.insa - o.tiia)
+		tot.invoice.proces = tot.invoice.proces + o.bivl
+		tot.balance.assigned = tot.balance.assigned + (tmp.insa - (o.tiia + o.bivl))				
+	endselect	
+}

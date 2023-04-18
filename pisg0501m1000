@@ -1,0 +1,139 @@
+|******************************************************************************
+|* dmisg0501m100  0  VRC B61U a7 live
+|* Display Document Master
+|* Tools                         
+|* 2014-07-16
+|******************************************************************************
+|* Main table dmisg001 Incoming Document Master, Form Type 1
+|******************************************************************************
+|* ISGECDV001006, IT0205, Arjit Gupta, VRC B61U a7 live
+|* Disable "expire" form command when status is "Submitted" or "Expired"
+|****************************** declaration section ***************************
+declaration:
+
+	table	tdmisg001 | Incoming Document Master
+	table	tdmisg005
+	table	ttcisg004
+
+	|********************* Include ******
+	#include <bic_dam>
+|****************************** program section ********************************
+			|#ISGECDV001006.sn
+before.display.object:
+	set.command.enable.disable()
+			|#ISGECDV001006.en
+|****************************** group section **********************************
+|****************************** choice section **********************************
+choice.expire:
+on.choice:
+	if	ask.enum("dmisg000003", tcyesno.no, dmisg001.docn, dmisg001.revn) = tcyesno.yes	then
+		|Do you want to Expire Document %1$s Revision %2$s  ...?
+		Change_Status()
+		message("Drawing Expired")
+	endif	
+	
+|**************************** Function Section ************************	
+Functions:
+
+function Change_Status()
+{
+	long	ret, k, rt, ret_val
+	string	tmp.error(100), error(200)
+	
+	select	dmisg001.stat
+	from	dmisg001 for update
+	where	dmisg001._index1 = {:dmisg001.docn, :dmisg001.revn}
+	selectdo
+		dal.change.object("dmisg001")
+		dal.set.field("dmisg001.stat", dmstat.expire)
+		ret = dal.save.object("dmisg001")
+		error = ""
+		tmp.error = ""
+		if	ret <> 0	then
+			error = ""
+			rt = dal.count.error.messages()
+			for k = rt to 1 step -1
+				ret_val = dal.get.error.message(tmp.error)
+				error = error & trim$(tmp.error)
+			endfor
+		endif	
+		if	not isspace(error)	then
+			mess("@" & error, 0)
+		endif	
+		Change_Status_Incoming_Lot_Item()
+		commit.transaction()
+	endselect
+	clean.mess()	
+}
+
+function Change_Status_Incoming_Lot_Item()
+{
+	long	ret1, k, rt1, ret_val
+	string	tmp.error(100), error1(200)
+	
+	select	dmisg005.stat, dmisg005.cprj, dmisg005.cspa, dmisg005.loti,
+		dmisg005.item
+	from	dmisg005 for update
+	where	dmisg005.docn = {:dmisg001.docn}
+	and	dmisg005.revn = {:dmisg001.revn}
+	selectdo
+		dal.change.object("dmisg005")
+		dal.set.field("dmisg005.stat", dmstat.expire)
+		ret1 = dal.save.object("dmisg005")
+		error1 = ""
+		tmp.error = ""
+		if	ret1 <> 0	then
+			error1 = ""
+			rt1 = dal.count.error.messages()
+			for k = rt1 to 1 step -1
+				ret_val = dal.get.error.message(tmp.error)
+				error1 = error1 & trim$(tmp.error)
+			endfor
+		endif	
+		if	not isspace(error1)	then
+			mess("@" & error1, 0)
+		endif
+		|Change_Status_Item_Release_Line()
+	endselect	
+}
+
+function Change_Status_Item_Release_Line()
+{
+	long	ret2, k, rt2, ret_val
+	string	tmp.error(100), error2(200)
+	
+	select	tcisg004.stat
+	from	tcisg004 for update
+	where	tcisg004._index1 = {:dmisg005.cprj, :dmisg005.cspa, :dmisg005.loti, :dmisg005.item}
+	and	tcisg004.docn = :dmisg001.docn
+	and	tcisg004.rvid = :dmisg001.revn
+	selectdo
+		dal.change.object("tcisg004")
+		dal.set.field("tcisg004.stat", dmstat.expire)
+		ret2 = dal.save.object("tcisg004")
+		error2 = ""
+		tmp.error = ""
+		if	ret2 <> 0	then
+			error2 = ""
+			rt2 = dal.count.error.messages()
+			for k = rt2 to 1 step -1
+				ret_val = dal.get.error.message(tmp.error)
+				error2 = error2 & trim$(tmp.error)
+			endfor
+		endif	
+		if	not isspace(error2)	then
+			mess("@" & error2, 0)
+		endif
+	endselect	
+	
+}
+		|#ISGECDV001006.sn
+function set.command.enable.disable()
+{
+	if	dmisg001.stat = dmstat.submitted or dmisg001.stat = dmstat.expire	then
+		disable.commands("expire")
+	else
+		enable.commands("expire")
+	endif	
+}
+			|#ISGECDV001006.en

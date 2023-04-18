@@ -1,0 +1,284 @@
+|******************************************************************************
+|* tpisg0463m001  0  VRC B61U a7 isg 
+|* Print Engineering Completion Status
+|* Installation user             
+|* 2015-01-13
+|******************************************************************************
+|* Main table tpisg063 Engineering Status of Project Elements, Form Type 4
+|******************************************************************************
+|* ID ISGEC01034
+|* Manish Kumar
+|* 30-01-2015
+|* Modifications in report.
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttpisg063 | Engineering Status of Project Elements
+	table	ttpisg065 | Table Used for Report purpose only		|#ISGEC01034.n
+  	table	ttcmcs052 | Projects
+	table	ttpptc100 | Elements
+	
+	table	ttppdm090
+	
+|****************************** form variables *********************************
+	extern	domain	tccprj		cprj.f    fixed
+	extern	domain	tccprj		cprj.t    fixed
+	extern	domain	tppdm.cspa	cspa.f    fixed
+	extern	domain	tppdm.cspa	cspa.t    fixed
+	extern	domain	tpptc.cspt	cspt.f
+	extern	domain	tpptc.cspt	cspt.t
+					|#ISGEC01034.sn
+	extern	domain	tpengs	stat.f
+	extern	domain	tpengs	stat.t
+	
+	extern	domain	tppdm.seak	sort.f
+	extern	domain	tppdm.seak	sort.t
+					|#ISGEC01034.en
+					
+|****************************** script variables *******************************		
+	domain	tcqiv2		elem.p, elem.a, percent, bala	
+| 	domain	tpptc.cspt	temp.cspt			|#ISGEC01034.o
+	domain	tppdm.seak	temp.cspt			|#ISGEC01034.n
+	
+	long 			file_ptr
+	string 			file_name(50),rec(1024),str(300)
+	string			err(100), error(100), c.file(70), s.file(70), line(1500), err.file(100), file.name(100),supplytimedays(100)
+	long			ret.insert, ret, ret2, cnt, line.no, stat.fp, fp, var.long
+	
+	#pragma used dll ottdllbw 
+	#include<bic_desktop>
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+
+|****************************** field section *********************************
+
+field.cprj.f:
+when.field.changes:
+	cprj.t	=	cprj.f
+
+field.cspa.f:
+when.field.changes:
+	cspa.t	=	cspa.f
+selection.filter:
+	str	=	"tpest120.cprj in(select tppdm600.cprj from tppdm600 where tppdm600._index1 = '"&cprj.f&"')"
+before.zoom:
+	query.extend.where.in.zoom(str)
+
+field.cspa.t:
+selection.filter:
+	str	=	"tpest120.cprj in(select tppdm600.cprj from tppdm600 where tppdm600._index1 = '"&cprj.t&"')"
+before.zoom:
+	query.extend.where.in.zoom(str)	
+
+field.cspt.f:
+when.field.changes:
+	cspt.t	=	cspt.f
+
+|****************************** function section ******************************
+
+functions:
+
+function	extern	generate.file()
+{
+	err.file	=	bse.dir$() & str$(utc.num()) & ".xls"
+	
+	file.name	=	"c:\temp\" & str$(utc.num())  & ".xls"
+	
+	stat.fp 	=	seq.open(err.file, "w+")
+	
+	process.file()
+	
+	seq.close(stat.fp)
+	ret2	=	server2client(err.file,file.name,1)
+	ret2	=	app_start(file.name,"c:","","","")
+}
+
+
+function	process.file()
+{
+	generate.header()
+	read.main.table()
+}
+
+
+function	read.main.table()
+{
+	delete.record.from.table.tpisg065(logname$)		|#ISGEC01034.sn
+	
+	if not isspace(sort.f) then
+		sort.t = sort.f
+	else
+		set.fmin(sort.f,"tppdm.seak")
+		set.fmax(sort.t,"tppdm.seak")
+	endif
+								|#ISGEC01034.en
+								
+	select	tpisg063.*, tcmcs052.dsca, 
+		tppdm090.sort			|#ISGEC01034.n
+| 		tpptc100.cspt			|#ISGEC01034.o
+	from	tpisg063, tcmcs052, 
+		tppdm090			|#ISGEC01034.n
+| 		tpptc100			|#ISGEC01034.o
+	where	tpisg063._index1	inrange		{:cprj.f, :cspa.f}	and	{:cprj.t, :cspa.t}
+	and	tpisg063.appl = tcyesno.yes			|#ISGEC01034.n
+	and	tpisg063.cprj		refers to	tcmcs052
+| 	and	tpptc100._index1	=		{tpisg063.cprj,tpisg063.cspa}			|#ISGEC01034.o
+	and	tpisg063.cspa	refers to tppdm090							|#ISGEC01034.n
+| 	and	tpptc100.cspt		inrange		:cspt.f			and	:cspt.t		|#ISGEC01034.o 
+	and	tppdm090.sort	inrange	:sort.f	and :sort.t		|#ISGEC01034.n
+	selectdo
+| 		if	temp.cspt	<>	tpptc100.cspt	then		|#ISGEC01034.so
+| 			percentage.completion()
+| 			write.data()
+| 			temp.cspt	=	tpptc100.cspt			
+| 		endif								|#ISGEC01034.eo
+										|#ISGEC01034.sn
+										
+		if not exist.in.table.tpisg065(logname$,tpisg063.cprj,tppdm090.sort)	then		
+			percentage.completion()
+			write.data()
+		endif
+	endselect
+}
+
+
+function delete.record.from.table.tpisg065
+	(
+		domain	tclogn		i.user
+	)
+{
+	select	tpisg065.*
+	from	tpisg065 for update
+	where	tpisg065._index1 = {:i.user}
+	selectdo
+		db.delete(ttpisg065,db.retry,e)
+		if not e then
+			commit.transaction()
+		else
+			abort.transaction()
+		endif
+	endselect
+}
+function boolean exist.in.table.tpisg065
+	(
+		domain	tclogn		i.user,
+		domain	tccprj		i.cprj,
+		domain	tppdm.seak	i.sort
+	)
+{
+	select	tpisg065.*
+	from	tpisg065
+	where	tpisg065._index1 = {:i.user,:i.cprj,:i.sort}
+	selectdo
+		return(true)
+	selectempty
+		tpisg065.user = i.user
+		tpisg065.cprj = i.cprj
+		tpisg065.sort = i.sort
+		db.insert(ttpisg065,db.retry,e)
+		if not e then
+			commit.transaction()
+		else
+			abort.transaction()
+		endif
+	endselect
+	return(false)
+}
+							|#ISGEC01034.en
+
+
+function	generate.header()
+{
+	if stat.fp >0 then
+ 		seq.seek(0, 0, stat.fp)
+	
+		line	=	concat$("	", 
+				sprintf$("Project Code"),			 		|1
+				sprintf$("Project Name"),					|2
+				sprintf$("Element Type"),					|3
+				sprintf$("Percentage Completion"),				|4
+				sprintf$("Balance"))						|5
+				
+		line	=	strip$(shiftl$(line))		
+		ret2	=	seq.write(line, len(line), stat.fp)
+		line	=	""
+		seq.puts(line, stat.fp)
+		ret2	=	seq.write(line, len(line), stat.fp)
+		line	=	""
+		seq.puts(line, stat.fp)
+	endif	
+}
+
+function percentage.completion()
+{
+							|#ISGEC01034.so
+| 	select	count(tpisg063.cprj):elem.p
+| 	from	tpisg063, tpptc100
+| 	where	tpisg063._index1	inrange		{:cprj.f, :cspa.f}	and	{:cprj.t, :cspa.t}
+| 	and	tpisg063.engs		=		tpengs.partial
+| 	and	tpptc100._index1	=		{tpisg063.cprj,tpisg063.cspa}
+| 	and	tpptc100.cspt		=		:tpptc100.cspt
+| 	selectdo
+| 	endselect
+| 	
+| 	select	count(tpisg063.cprj):elem.a
+| 	from	tpisg063, tpptc100
+| 	where	tpisg063._index1	inrange		{:cprj.f, :cspa.f}	and	{:cprj.t, :cspa.t}
+| 	and	tpisg063.appl		=		tcyesno.yes
+| 	and	tpptc100._index1	=		{tpisg063.cprj,tpisg063.cspa}
+| 	and	tpptc100.cspt		=		:tpptc100.cspt
+| 	selectdo
+| 	endselect
+							|#ISGEC01034.eo
+						
+							|#ISGEC01034.sn
+	select	count(tpisg063.cprj):elem.p
+	from	tpisg063, tppdm090
+| 	where	tpisg063._index1	inrange		{:cprj.f, :cspa.f}	and	{:cprj.t, :cspa.t}			|#ISGEC01034.o
+	where	tpisg063._index1	inrange		{:tpisg063.cprj, :cspa.f}	and	{:tpisg063.cprj, :cspa.t}	|#ISGEC01034.n
+| 	and	tpisg063.engs		=		tpengs.partial					|#ISGEC01034.o
+	and	tpisg063.engs		in	(tpengs.partial,tpengs.complete)			|#ISGEC01034.n
+	and	tppdm090._index1	=		{tpisg063.cspa}
+	and	tppdm090.sort		=		:tppdm090.sort
+	selectdo
+	endselect
+	
+	select	count(tpisg063.cprj):elem.a
+	from	tpisg063, tppdm090
+| 	where	tpisg063._index1	inrange		{:cprj.f, :cspa.f}	and	{:cprj.t, :cspa.t}			|#ISGEC01034.o
+	where	tpisg063._index1	inrange		{:tpisg063.cprj, :cspa.f}	and	{:tpisg063.cprj, :cspa.t}	|#ISGEC01034.n
+	and	tpisg063.appl		=		tcyesno.yes
+	and	tppdm090._index1	=		{tpisg063.cspa}
+	and	tppdm090.sort		=		:tppdm090.sort
+	selectdo
+	endselect
+						|#ISGEC01034.eo
+	if elem.a <> 0 then							
+		percent	=	elem.p/elem.a	*	100
+	else							|#ISGEC01034.sn
+		percent = 0					|#ISGEC01034.en
+	endif
+	bala	=	100	-	percent
+}
+
+function	write.data()
+{
+	line	=	concat$("	",
+			sprintf$("%s",tpisg063.cprj),						|1
+			sprintf$("%s",tcmcs052.dsca),						|2
+| 			sprintf$("%s",enum.descr$("tpptc.cspt",tpptc100.cspt)),			|3		|#ISGEC01034.o
+			sprintf$("%s",tppdm090.sort),						|3		|#ISGEC01034.n
+			sprintf$("%f",percent),						|4
+			sprintf$("%f",bala))							|5
+							
+		line	=	strip$(shiftl$(line))
+		seq.puts(line, stat.fp)
+}
+|****************************** End of code ************************************

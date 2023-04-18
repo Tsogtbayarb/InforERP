@@ -1,0 +1,178 @@
+|******************************************************************************
+|* dmisg0402m0000  0  VRC B61U a7 isg 
+|* Print Item wise Report
+|* Installation user             
+|* 2015-01-14
+|******************************************************************************
+|* Main table dmisg002 Incoming Document Child, Form Type 4
+|******************************************************************************
+|* ISGEC01040, Mani sharma,TIT0376, 27-01-2015
+|* New Report Development
+|*
+|* ID ISGEC015030, Manish Manchanda, 2015-10-01
+|* Excel report layout
+|****************************** declaration section ***************************
+declaration:
+
+  table   tdmisg002 | Incoming Document Child
+  table   tdmisg001
+   extern  domain  tppdm.cspa  cspa.f,cspa.t
+   extern  domain  tcitem      item.f,item.t
+   extern  domain  tccprj      cprj.f    
+   extern  domain  tcmcs.str100m    str.query  ,str.temp,str.temp1
+   extern domain   tcpono     len.var,len.var1
+|    string read_data(35)	based
+   domain tcmcs.str1	rec
+   extern domain	tcmcs.str100m 		rep.dsca	
+
+									|#ISGEC015030.sn
+	string		line(1500), err.file(100), file.name(100)
+	long		ret2, stat.fp, fp		
+
+	#include <bic_desktop>
+									|#ISGEC015030.en
+|****************************** program section ********************************
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.cont.process:
+on.choice:
+   execute(print.data)
+
+choice.print.data:
+on.choice:
+   if rprt_open() then
+       read.main.table()
+       rprt_close()
+   else
+       choice.again()
+   endif
+
+
+|****************************** field section *********************************
+
+field.cspa.f:
+when.field.changes:
+   cspa.t = cspa.f
+
+after.input:
+	str.temp = concat$("-",cprj.f,cspa.f)
+	len.var  = len(str.temp)
+before.zoom:
+	query.extend.where.in.zoom("tpptc100.cprj="&quoted.string(cprj.f))
+	
+field.cspa.t:
+before.zoom:
+	query.extend.where.in.zoom("tpptc100.cprj="&quoted.string(cprj.f))
+
+after.input:
+	str.temp1 = concat$("-",cprj.f,cspa.t)
+	len.var1  = len(str.temp1)
+	
+field.item.f.segment.2:
+| when.field.changes:
+|    item.t = item.f
+   
+| selection.filter:	
+before.zoom:
+	dmisg002.docn(1;len.var) = str.temp
+| 	str.query = "select dmisg002.item from   dmisg002 where  dmisg002._index1 = '"&dmisg001.docn&"','"&dmisg001.revn&"' and dmisg002.elem = '"&cspa.f&"'"
+field.item.t.segment.2:
+before.zoom:
+	dmisg002.docn(1;len.var1) = str.temp1
+	
+field.item.f:
+when.field.changes:
+	item.t = item.f
+|****************************** function section ******************************
+
+functions:
+
+function read.main.table()
+{
+	long	counter, fp
+	
+	select dmisg001.docn,dmisg001.cprj,dmisg001.revn,dmisg001.stat
+	from   dmisg001
+	where  dmisg001._index3 = {:cprj.f}
+	and    dmisg001.stat <> dmstat.submitted
+	selectdo
+		rep.dsca = ""
+		select dmisg002.qnty,dmisg002.wght,dmisg002.elem,dmisg002.docn,dmisg002.revn,dmisg002.item,dmisg002.dsca
+		from   dmisg002
+		where  dmisg002._index1 = {:dmisg001.docn,:dmisg001.revn}
+		and    dmisg002.elem inrange {:cspa.f} and {:cspa.t}
+		and    dmisg002.item inrange {:item.f} and {:item.t}
+		selectdo
+| 			rprt_send()				|#ISGEC015030.o
+			write.data()				|#ISGEC015030.n
+		endselect
+	endselect
+}
+
+								|#ISGEC015030.sn
+function extern generate.excel()
+{
+	err.file	=	bse.tmp.dir$() & str$(utc.num()) & ".xls"
+	
+	file.name	=	"c:\temp\" & str$(utc.num()) & ".xls"
+	
+	stat.fp		=	seq.open(err.file, "w+")
+	
+	process.file()
+		
+	seq.close(stat.fp)
+	ret2		=	server2client(err.file,file.name,1)
+	ret2		=	app_start(file.name,"c:","","","")
+}
+
+function	process.file()
+{
+	generate.header()
+	read.main.table()
+}					
+
+function	generate.header()
+{
+	if	stat.fp	>	0	then
+ 		seq.seek(0, 0, stat.fp)
+	
+		line	= 	concat$("	", 
+				sprintf$("Element"),				|1
+				sprintf$("Document No."),			|2
+				sprintf$("Rev"),				|3
+				sprintf$("Child Item"),			|4
+				sprintf$("Child Item Description"),		|5
+				sprintf$("Quantity"),				|6
+				sprintf$("Item Wt."))				|7
+						
+		line	=	strip$(shiftl$(line))		
+		ret2	=	seq.write(line, len(line), stat.fp)
+		line	=	""
+		seq.puts(line, stat.fp)
+		ret2	=	seq.write(line, len(line), stat.fp)
+	endif	
+}
+
+function	write.data()
+{
+	line	=	concat$("	",
+			sprintf$("%s",dmisg002.elem),				|1	|Element
+			sprintf$("%s",dmisg002.docn),				|2	|Document No.
+			sprintf$("%s",dmisg002.revn),				|3	|Rev
+			sprintf$("%s",dmisg002.item),				|4	|Child Item
+			sprintf$("%s",dmisg002.dsca),				|5	|Child Item Description
+			sprintf$("%f",dmisg002.qnty),				|6	|Quantity
+			sprintf$("%f",dmisg002.wght))				|7	|Item Wt.
+		
+	line	=	strip$(shiftl$(line))
+	seq.puts(line, stat.fp)
+}
+								|#ISGEC015030.en
+|****************************** END OF CODE ***********************************

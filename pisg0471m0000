@@ -1,0 +1,467 @@
+|******************************************************************************
+|* tfisg0471m000  0  VRC B61U a7 live
+|* Print TDS Deposit Report
+|* Installation user             
+|* 2014-12-02
+|******************************************************************************
+|* Main table tfgld071 Financial Data for Singular Tax Codes by Country, Form Type 4
+|******************************************************************************
+|* IDENT ISGEC0107, Mani sharma, 19-12-2014                                                                                 
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttfgld071 | Financial Data for Singular Tax Codes by Country
+  table   ttfgld005
+  table   ttcmcs036
+  table   ttfgld018
+  table   ttfgld102
+  table   ttfgld106
+  table   ttfgld107
+  table   ttccom100
+  table   ttctax400
+  table   ttfcmg112
+  table   ttfacp203
+
+   extern  domain  tccvat           cvat.f    fixed
+   extern  domain  tccvat           cvat.t    fixed
+   extern  domain  tfgld.year	     fyer
+   extern  domain  tfgld.prod       fprd.f
+   extern  domain  tfgld.prod       fprd.t
+   extern  domain  tfgld.year 	     year
+   extern  domain  tfgld.prod       prdf
+   extern  domain  tfgld.ttyp       ttyp
+   extern  domain  tfgld.docn       docn
+   extern  domain  tccvat           txcd
+   extern  domain  tccom.bpid       ifbp
+   extern  domain  tcdsca	      nama,nama1
+   extern  domain  tctax.txnb       fovn
+   extern  domain  tctax.txnb       fovn.tin
+   extern  domain  tcamnt           amnt
+   extern  domain  tcmcs.str20      stat
+   extern domain   tctax.txcg       catg.f,catg.t		|	ISGEC0107.n
+   extern domain   tfgld.date        date.f
+   extern domain   tcyesno           chek,chek.f
+   extern domain   tcpono            count.var
+   extern domain   tfgld.leac        leac.f
+|****************************** program section ********************************
+before.display.object:							|ISGEC0107.sn
+	if chek.f = tcyesno.yes then
+		enable.fields("leac.f",actual.occ)
+	else
+		disable.fields("leac.f",actual.occ)
+	endif									|ISGEC0107.en
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.cont.process:
+on.choice:
+   execute(print.data)
+
+choice.print.data:
+on.choice:
+   if rprt_open() then
+       read.main.table()
+       rprt_close()
+   else
+       choice.again()
+   endif
+
+
+|****************************** field section *********************************
+
+field.fprd.f:
+when.field.changes:
+   fprd.t = fprd.f
+   
+before.zoom:
+	tfgld005.year = fyer
+	
+field.fprd.t:
+before.zoom:
+	tfgld005.year = fyer
+when.field.changes:
+		count.var = fprd.t - fprd.f					|ISGEC0107.n
+
+| field.cvat.f:									|ISGEC0107..so
+| when.field.changes:
+|    cvat.t = cvat.f
+
+
+|    
+| before.zoom:
+| 	query.extend.where.in.zoom("tcmcs036.ktax=4 and tcmcs036.smpl=1")
+| 	
+| field.cvat.t:
+| before.zoom:
+| 	query.extend.where.in.zoom("tcmcs036.ktax=4 and tcmcs036.smpl=1")	|ISGEC0107.eo	
+
+field.catg.f:									|ISGEC0107.sn
+when.field.changes:
+	catg.t = catg.f								
+
+field.chek:
+when.field.changes:
+	if chek = tcyesno.yes and count.var <> 2 then
+		message("Enter only 3 months for Quarterly TDS Return Report")
+		execute(abort.program)
+	endif
+	
+field.chek.f:
+when.field.changes:
+	if chek.f = tcyesno.yes then
+		enable.fields("leac.f")
+	else
+		disable.fields("leac.f")
+	endif
+										|ISGEC0107.en
+|****************************** function section ******************************
+
+functions:
+
+function read.main.table()
+{
+	select tcmcs036.cvat,						
+		tcmcs036.txcg							|ISGEC0107.n
+	from   tcmcs036
+	where  tcmcs036.txcg inrange :catg.f and :catg.t			|ISGEC0107.n
+| 	and    tcmcs036.txcg <> ""						|ISGEC0107.n			
+| 	where  tcmcs036.cvat inrange :cvat.f and :cvat.t			|ISGEC0107.so		
+	and    tcmcs036.ktax = tcktax.income.tax
+	and    tcmcs036.smpl = tcyesno.yes					|ISGEC0107.eo	
+	selectdo
+		initialize.variables()
+		select tfgld106.fyer, tfgld106.fprd, tfgld106.otyp, tfgld106.odoc, tfgld106.cvat, tfgld106.bpid, tfgld106.amnt,tfgld106.dcdt
+		from   tfgld106
+		where  tfgld106.cvat = :tcmcs036.cvat
+		and    tfgld106.fyer = :fyer
+		and    tfgld106.fprd inrange :fprd.f and :fprd.t
+		selectdo 
+			get.details(tfgld106.bpid)
+			
+			year = tfgld106.fyer
+			prdf = tfgld106.fprd
+			ttyp = tfgld106.otyp
+			docn = tfgld106.odoc
+			txcd = tfgld106.cvat
+			ifbp = tfgld106.bpid
+			nama = tccom100.nama
+			nama1= toupper$(tccom100.nama)				|ISGEC0107.sn
+			date.f = tfgld106.dcdt					|ISGEC0107.en	
+| 				fovn = tctax400.fovn
+			amnt = tfgld106.amnt
+			stat = "Finalized"
+			
+			if tfgld106.tcsh = tfcmg.tcsh.cash.ant then
+				if valid.period(tfgld106.otyp,tfgld106.odoc) then
+					rprt_send()
+				endif
+			else 
+				rprt_send()
+			endif
+		endselect
+		
+		select tfgld107.*
+		from   tfgld107
+		where  tfgld107.cvat = :tcmcs036.cvat
+		and    tfgld107.year = :fyer
+		selectdo
+			
+			select tfgld102.fyer, tfgld102.fprd, tfgld102.ttyp, tfgld102.docn, tfgld102.cvat, tfgld102.bpid, tfgld102.amnt,tfgld102.catg,tfgld102.dcdt
+			from   tfgld102
+			where  tfgld102.ttyp = :tfgld107.ttyp
+			and    tfgld102.docn = :tfgld107.docn
+			and    tfgld102.lino = :tfgld107.lino
+			and    tfgld102.fyer = :fyer
+			and    tfgld102.fprd inrange :fprd.f and :fprd.t
+			as set with 1 rows
+			selectdo
+				
+				get.details(tfgld102.bpid)
+				
+				year = tfgld102.fyer
+				prdf = tfgld102.fprd
+				ttyp = tfgld102.ttyp
+				docn = tfgld102.docn
+				txcd = tfgld107.cvat
+				ifbp = tfgld102.bpid
+				nama = tccom100.nama
+				nama1=toupper$(tccom100.nama)			|ISGEC0107.sn
+				date.f = tfgld102.dcdt				|ISGEC0107.en
+| 				fovn = tctax400.fovn
+				amnt = tfgld107.vamt
+				stat = "Non-Finalized"
+				
+				
+				
+				if tfgld102.tcsh = tfcmg.tcsh.cash.ant then
+					if valid.period(tfgld102.ttyp,tfgld102.docn) then
+						rprt_send()
+					endif
+				else
+					rprt_send()
+				endif
+			endselect
+			
+		endselect
+		
+		get.reconciliation()
+	endselect
+	check.ledger.account(leac.f)
+}
+
+function get.details(domain  tccom.bpid	i.bpid)
+{
+	select tctax400.fovn, tctax400.catg.l
+	from   tctax400
+	where  tctax400._index1 = {:i.bpid}
+	and    tctax400.catg.l in (tctax.catg.l.pan, tctax.catg.l.tan)
+	selectdo
+		if tctax400.catg.l = tctax.catg.l.pan then
+			fovn = tctax400.fovn
+		else if tctax400.catg.l = tctax.catg.l.tan then
+			fovn.tin = tctax400.fovn
+		endif
+		endif
+	selectempty
+		fovn = ""
+		fovn.tin = ""
+	endselect
+	
+	select tccom100.nama
+	from   tccom100
+	where  tccom100._index1 = {:i.bpid}
+	selectdo
+	selectempty
+		tccom100.nama = ""
+	endselect
+}
+
+function initialize.variables()
+{
+	year = 0
+	prdf = 0
+	ttyp = ""
+	docn = 0
+	txcd = ""
+	ifbp = ""
+	nama = ""
+	nama1= ""								|ISGEC0107.sn
+	date.f = 0								|ISGEC0107.en
+	fovn = ""
+	fovn.tin = ""
+	amnt = 0
+}
+
+function get.reconciliation()
+{
+	select tfgld018.vyer, tfgld018.vprd, tfgld018.ttyp, tfgld018.docn, tfacp203.leac, tfacp203.amti, tfacp203.cvat
+	from   tfgld018,tfacp203
+	where  tfgld018.vyer = :fyer
+	and    tfgld018.vprd inrange :fprd.f and :fprd.t
+	and    tfacp203.ttyp = tfgld018.ttyp
+	and    tfacp203.ninv = tfgld018.docn
+	and    tfacp203.cvat = :tcmcs036.cvat
+	selectdo
+		select tfcmg112.*
+		from   tfcmg112
+		where  tfcmg112.tdoc = :tfgld018.ttyp
+		and    tfcmg112.pdoc = :tfgld018.docn
+		and    tfcmg112.ctyp = ""
+		and    tfcmg112.cdoc = 0
+		selectdo
+			txcd = tfacp203.cvat
+			get.print.record(tfcmg112.tdoc,tfcmg112.pdoc,tfcmg112.scom)
+		endselect
+	endselect
+	
+| 	select tfgld107.ttyp, tfgld107.docn, tfgld107.vlac, tfgld107.vamh,tfgld107.lino
+| 	from   tfgld107
+| 	where  tfgld107.cvat = :tcmcs036.cvat
+| 	and    tfgld107.year = :fyer
+| 	selectdo
+| 		select tfgld102.*
+| 		from   tfgld102
+| 		where  tfgld102.ttyp = :tfgld107.ttyp
+| 		and    tfgld102.docn = :tfgld107.docn
+| 		and    tfgld102.lino = :tfgld107.lino
+| 		and    tfgld102.fyer = :fyer
+| 		and    tfgld102.fprd inrange :fprd.f and :fprd.t
+| 		and    tfgld102.wtsc = tcyesno.yes
+| 		as set with 1 rows
+| 		selectdo
+| 			if tfgld102.wtsc = tcyesno.yes then
+| 				year = tfgld102.year
+| 				prdf = tfgld102.fprd
+| 				ttyp = tfgld102.ttyp
+| 				docn = tfgld102.docn
+| 				txcd = tfgld107.cvat
+| 				ifbp = tfgld102.bpid
+| 				nama = tccom100.nama
+| 				fovn = tctax400.fovn
+| 				amnt = tfgld107.vamt
+| 				stat = "Non-Finalized"	
+| 					
+| 				rprt_send()
+| 			endif
+| 		endselect
+| 	endselect
+| 	
+| 	select tfgld106.*
+| 	from   tfgld106
+| 	where  tfgld106._index4 inrange {:tfgld071.vacp,:fyer,:fprd.f} and {:tfgld071.vacp,:fyer,:fprd.t}
+| 	where  tfgld106.cvat = :tcmcs036.cvat
+|       and    tfgld106.fyer = :fyer.f
+|       and    tfgld106.fprd inrange :fprd.f and :fprd.t
+| 	selectdo
+| 		select tfcmg112.*
+| 		from   tfcmg112
+| 		where  tfcmg112._index2 = {:tfgld106.otyp,:tfgld106.odoc,:tfgld106.olin}
+| 		selectdo
+|			txcd = tfgld106.cvat
+| 			get.print.record(tfcmg112.tdoc,tfcmg112.pdoc,tfcmg112.scom)
+| 		endselect
+| 	endselect
+}
+
+function get.print.record(domain tfgld.ttyp	i.ttyp,
+			   domain tfgld.docn   i.docn,
+			   domain tfgld.sern	i.lino)
+{
+	select tfgld102.*
+	from   tfgld102
+	where  tfgld102.ttyp = :i.ttyp
+	and    tfgld102.docn = :i.docn
+	and    tfgld102.lino = :i.lino
+	and    tfgld102.fyer = :fyer
+	and    tfgld102.fprd inrange :fprd.f and :fprd.t
+	and    tfgld102.tcsh = tfcmg.tcsh.cash.ant
+	as set with 1 rows
+	selectdo
+| 		
+		get.details(tfgld102.bpid)
+		
+		year = tfgld102.year
+		prdf = tfgld102.fprd
+		ttyp = tfgld102.ttyp
+		docn = tfgld102.docn
+| 		txcd = tfgld071.cvat
+		ifbp = tfgld102.bpid
+		nama = tccom100.nama
+		nama1=toupper$(tccom100.nama)					|ISGEC0107.sn
+		date.f = tfgld102.dcdt						|ISGEC0107.en
+| 		fovn = tctax400.fovn
+		amnt = tfacp203.amti
+		stat = "Interim/Anticipated"	
+				
+		rprt_send()
+		
+	endselect
+	
+	select tfgld106.*
+	from   tfgld106
+	where  tfgld106._index1 = {:i.ttyp,:i.docn,:i.lino}
+	and    tfgld106.tcsh = tfcmg.tcsh.cash.ant
+	selectdo
+		get.details(tfgld106.bpid)
+			
+		year = tfgld106.fyer
+		prdf = tfgld106.fprd
+		ttyp = tfgld106.otyp
+		docn = tfgld106.odoc
+| 		txcd = tfgld071.cvat
+		ifbp = tfgld106.bpid
+		nama = tccom100.nama
+		nama1 = toupper$(tccom100.nama)			|ISGEC0107.sn
+		date.f = tfgld106.dcdt					|ISGEC0107.en
+| 		fovn = tctax400.fovn
+		amnt = tfacp203.amti
+		stat = "Interim/Anticipated"
+		
+		rprt_send()
+		
+	endselect
+}
+
+function boolean valid.period(domain tfgld.ttyp 	i.ttyp,
+				domain tfgld.docn	i.docn)
+{
+	select tfcmg112.*
+	from   tfcmg112
+	where  tfcmg112._index2 = {:i.ttyp,:i.docn}
+	selectdo
+		select tfgld018.vprd
+		from   tfgld018
+		where  tfgld018._index1 = {:tfcmg112.tdoc, :tfcmg112.pdoc}
+		and    tfgld018.vprd inrange :fprd.f and :fprd.t
+		selectdo
+			return(true)
+		endselect
+	endselect
+	
+	return(false)
+}
+
+function check.ledger.account(domain tfgld.leac leac.f)				|ISGEC0107.sn.22.12.2014
+{
+	select tfgld102.fyer, tfgld102.fprd, tfgld102.ttyp, tfgld102.docn, tfgld102.cvat, tfgld102.bpid, tfgld102.amnt,tfgld102.catg,tfgld102.dcdt,tfgld102.leac
+	from   tfgld102
+	where  tfgld102.fyer = :fyer
+		and    tfgld102.fprd inrange :fprd.f and :fprd.t
+		and    tfgld102.leac = :leac.f
+	selectdo
+			initialize.variables()
+		if tfgld102.catg = tfgld.catg.journals and chek.f = tcyesno.yes then
+			get.details(tfgld102.bpid)
+				tcmcs036.txcg = ""
+				year = tfgld102.fyer
+				prdf = tfgld102.fprd
+				ttyp = tfgld102.ttyp
+				docn = tfgld102.docn
+				
+				ifbp = tfgld102.bpid
+				nama = tccom100.nama
+				nama1=toupper$(tccom100.nama)			
+				date.f = tfgld102.dcdt				
+| 				fovn = tctax400.fovn
+				amnt = tfgld102.amnt
+				stat = "Journal Vouchers"
+			
+			rprt_send()
+		endif									|ISGEC0107.en.22.12.2014
+				
+	endselect
+	
+	select tfgld106.fyer, tfgld106.fprd, tfgld106.otyp, tfgld106.odoc, tfgld106.cvat, tfgld106.bpid, tfgld106.amnt,tfgld106.dcdt,tfgld106.leac,tfgld106.catg
+	from   tfgld106
+	where  tfgld106.fyer = :fyer
+		and    tfgld106.fprd inrange :fprd.f and :fprd.t
+		and    tfgld106.leac =:leac.f
+	selectdo
+		initialize.variables()
+		if tfgld106.catg = tfgld.catg.journals and chek.f = tcyesno.yes then
+			get.details(tfgld106.bpid)
+			
+			tcmcs036.txcg = ""
+			year = tfgld106.fyer
+			prdf = tfgld106.fprd
+			ttyp = tfgld106.otyp
+			docn = tfgld106.odoc
+			txcd = tfgld106.cvat
+			ifbp = tfgld106.bpid
+			nama = tccom100.nama
+			nama1= toupper$(tccom100.nama)			
+			date.f = tfgld106.dcdt				
+			amnt = tfgld106.amnt
+			stat = "Journal Vouchers"								
+			rprt_send()
+		endif									
+	endselect
+	
+}
+										|ISGEC0107.en.22.12.2014

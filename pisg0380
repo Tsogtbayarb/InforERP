@@ -1,0 +1,324 @@
+|******************************************************************************
+|* tpisg038  0  VRC B61U a7 live
+|* Installment Breakup (Actual)
+|* tools1
+|* 14-06-18 [11:43]
+|******************************************************************************
+|* Script Type: DAL
+|******************************************************************************
+                                                                                
+#include <bic_dal2>
+
+	table   ttpisg038
+	table   ttpppc295
+	table   ttfgld005
+	table   ttfisg001
+	table   twhinh310
+	table	ttppdm600
+	table	ttdisg831
+
+	long		dd,mm,yy,v.stdt,comp,v.dino
+	long 	global.value,ret_val
+function extern long before.open.object.set()
+{
+	dal.field.depends.on("tpisg038.scel",HOOK_IS_MANDATORY + HOOK_IS_APPLICABLE,"tpisg038.btyp")
+	dal.field.depends.on("tpisg038.quan",HOOK_IS_MANDATORY + HOOK_IS_VALID + HOOK_IS_APPLICABLE,"tpisg038.btyp")	|#20140620.o
+	dal.field.depends.on("tpisg038.cvat",HOOK_IS_MANDATORY + HOOK_IS_APPLICABLE,"tpisg038.btyp")
+	
+	return(0)
+}
+
+function extern long before.save.object(long type)
+{
+	long	ret_val,curr.date
+	curr.date = date.num()
+	comp = get.compnr()
+	
+	if type = DAL_NEW then
+		if tpisg038.btyp = tpbilling.type.tax.reimburse then	
+			get.period(curr.date)
+			
+			dal.new.object("tpppc295")
+			
+			dal.set.field("tpppc295.cprj", tpisg038.cprj)
+			dal.set.field("tpppc295.cspa", tpisg038.cspa)
+			dal.set.field("tpppc295.cico", tpisg038.scel)
+			dal.set.field("tpppc295.cact", tpisg038.cact)
+			dal.set.field("tpppc295.ccco", tpisg038.ccco)
+			dal.set.field("tpppc295.cpla",get.plan(tpisg038.cprj))
+			dal.set.field("tpppc295.quan", tpisg038.quan)
+			dal.set.field("tpppc295.amos", tpisg038.samt)
+			dal.set.field("tpppc295.pris", (tpisg038.samt/tpisg038.quan))
+			dal.set.field("tpppc295.svat.l",tpisg038.cvat)
+			dal.set.field("tpppc295.rgdt",curr.date)
+			dal.set.field("tpppc295.year",yy)
+			dal.set.field("tpppc295.peri",tfgld005.prno)
+			dal.set.field("tpppc295.fyea",yy)
+			dal.set.field("tpppc295.fper",tfgld005.prno)
+			dal.set.field("tpppc295.rtyp","PUR")
+			dal.set.field("tpppc295.curc","INR")
+			dal.set.field("tpppc295.curs","INR")
+			dal.set.field("tpppc295.cuni","ea")
+			dal.set.field("tpppc295.cptf","MON")
+			dal.set.field("tpppc295.cptc","MON")
+			
+			ret_val= dal.save.object("tpppc295")
+			
+			if ret_val <> 0 then
+				return(DALHOOKERROR)
+			else
+				tpisg038.sern = tpppc295.sern
+	| 				if not 	update.tpisg038.seqn() then
+	| 					return(DALHOOKERROR)
+	| 				endif
+			endif
+		endif	
+	endif
+	
+	if type = DAL_UPDATE and global.value = 1 then
+			select	whinh310.dino
+			from	whinh310
+			where	whinh310._index1 = {:tpisg038.rcno}
+			selectdo
+				v.dino = lval(whinh310.dino)
+				select	tfisg001.ityp,tfisg001.idoc
+				from	tfisg001 for update
+				where	tfisg001._index1 = {:comp,:v.dino,:tpisg038.ofbp}
+				selectdo
+					dal.change.object("tfisg001")
+					
+					dal.set.field("tfisg001.ityp",tpisg038.ttyp)
+					dal.set.field("tfisg001.idoc",tpisg038.docn)
+					
+					ret_val = dal.save.object("tfisg001")
+					
+					if ret_val <> 0 then
+						return(DALHOOKERROR)
+					endif
+				endselect
+			endselect
+			
+	endif
+| 	
+	return(0)
+}
+
+function extern long after.save.object(long type)
+{	
+	on case	type
+	case	DAL_UPDATE:
+		if	dal.is.field.changed("tpisg038.aamt") then
+			tdisgdll0831.update.tpppc215.from.billing.plan(tpisg038.cprj,
+									tpisg038.nins,
+									tpisg038.cspa,
+									tpisg038.item,
+									tpisg038.rcno,
+									tpisg038.pono,
+									tpisg038.aamt)
+			
+		endif
+		break	
+	endcase
+	return(0)
+}
+
+
+function extern boolean method.is.allowed(long type)
+{
+	on case type
+	case DAL_DESTROY :
+		if tpisg038.invd = tcyesno.yes then
+			return(false)
+		endif
+		break
+	endcase
+	
+	
+	return(true)
+}
+
+function get.period(domain tfgld.date		v.date)
+{
+	num.to.date(v.date,yy,mm,dd)
+	v.stdt = date.to.num(yy,mm,01)
+	
+	select	tfgld005.prno,tfgld005.stdt
+	from	tfgld005
+	where	tfgld005._index1 = {1,:yy}
+	and	tfgld005.stdt = :v.stdt
+	selectdo
+	endselect
+}
+
+function extern boolean tpisg038.scel.is.mandatory()
+{
+	if tpisg038.btyp = tpbilling.type.tax.reimburse and isspace(tpisg038.scel) then
+		dal.set.error.message("@Sundry Cost Element cannot be blank for tax reimbursement")
+		return(true)
+	endif
+	
+	| 	return(true)
+	return(false)
+}
+
+
+function extern boolean tpisg038.scel.is.applicable()
+{
+	if tpisg038.btyp = tpbilling.type.tax.reimburse then
+		return(true)
+	endif
+	
+	return(false)
+}
+
+
+function extern boolean tpisg038.quan.is.mandatory()
+{
+	if tpisg038.btyp = tpbilling.type.tax.reimburse and tpisg038.quan = 0 then
+		dal.set.error.message("@Please enter quantity")
+		return(true)
+	endif
+	
+	return(false)
+}
+
+function extern boolean tpisg038.quan.is.valid()
+{
+	if tpisg038.btyp = tpbilling.type.tax.reimburse and tpisg038.quan <= 0 then
+		dal.set.error.message("@Please enter proper quantity")
+		return(DALHOOKERROR)
+	endif
+	
+	return(true)
+}
+
+
+
+function extern long set.global.value(long i.val)
+{
+	global.value = i.val
+	return(0)
+}
+| function extern boolean tpisg038.quan.is.applicable()
+| {
+| 	if tpisg038.btyp = tpbilling.type.tax.reimburse then
+| 		return(true)
+| 	endif
+| 	
+| 	return(false)
+| }
+
+| function extern boolean tpisg038.cvat.is.applicable()
+| {
+| 	if tpisg038.btyp = tpbilling.type.tax.reimburse then
+| 		return(true)
+| 	endif
+| 	
+| 	return(false)
+| }
+
+function domain tppss.cpla get.plan
+		(
+			domain	tccprj		i.cprj
+		)
+{
+	select tppdm600.cpla
+	from	tppdm600
+	where	tppdm600._index1 = {:i.cprj}
+	as set with 1 rows
+	selectdo
+	selectempty
+		tppdm600.cpla = ""
+	endselect
+	
+	return(tppdm600.cpla)
+}
+
+
+
+|********  Disable Field *****************
+
+function extern boolean tpisg038.ccco.is.derived()
+{
+	if tpisg038.invd = tcyesno.yes then
+		return(true)
+	endif
+	return(false)
+}
+
+
+
+function extern boolean tpisg038.btyp.is.derived()
+{
+	if tpisg038.invd = tcyesno.yes then
+		return(true)
+	endif
+	return(false)
+}
+
+
+function extern boolean tpisg038.quan.is.derived()
+{
+	if tpisg038.invd = tcyesno.yes then
+		return(true)
+	endif
+	return(false)
+}
+
+
+function extern boolean tpisg038.cpro.is.derived()
+{
+	if tpisg038.invd = tcyesno.yes then
+		return(true)
+	endif
+	return(false)
+}
+
+function extern boolean tpisg038.cvat.is.derived()
+{
+	if tpisg038.invd = tcyesno.yes then
+		return(true)
+	endif
+	return(false)
+}
+
+function extern boolean tpisg038.camt.is.derived()
+{
+	if tpisg038.invd = tcyesno.yes then
+		return(true)
+	endif
+	return(false)
+}
+
+
+function extern boolean tpisg038.samt.is.derived()
+{
+	if tpisg038.invd = tcyesno.yes then
+		return(true)
+	endif
+	return(false)
+}
+
+function extern boolean tpisg038.aamt.is.derived()
+{
+	if tpisg038.invd = tcyesno.yes then
+		return(true)
+	endif
+	return(false)
+}
+
+function extern boolean tpisg038.trin.is.derived()
+{
+	if tpisg038.invd = tcyesno.yes then
+		return(true)
+	endif
+	return(false)
+}
+
+function extern boolean tpisg038.cact.is.derived()
+{
+	if tpisg038.invd = tcyesno.yes then
+		return(true)
+	endif
+	return(false)
+}

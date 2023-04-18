@@ -1,0 +1,178 @@
+
+|******************************************************************************
+|* tpisg064  0  VRC B61U a7 isg 
+|* DAL for tpisg064
+|* baan
+|* 15-01-15 [12:46]
+|******************************************************************************
+|* Script Type: DAL
+|******************************************************************************
+|* ISGEC001142, Ankit Sharma,IT0302, 15-01-2015,B61U a7 isg   
+|******************************************************************************
+|*IDENT ISGEC01059,Sandhyarani,IT0375,Dt.21-02-2015
+|*Modification on Revision
+|******************************************************************************
+|* IDENT ISGEC01092, Mani sharma , Dt. 16-03-2015
+|* Make project mandatory on condition
+|******************************************************************************
+#include <bic_dal2>
+
+	table	ttcemm030
+	table	ttpisg064
+	table	ttppdm600
+	table	ttcibd001
+	table	ttccom100
+	table	ttcemm110
+	
+domain	tcrono revn.new
+|******************************object hooks **********************************
+function extern long before.open.object.set()
+{	
+	dal.field.depends.on("tpisg064.revn",HOOK_UPDATE,"tpisg064.eunt","tpisg064.cprj","tpisg064.qapn","tpisg064.item")
+	return(0)
+}
+function extern long before.save.object(long i.mode)
+{
+	
+	if tpisg064.item = tcibd001.item or tpisg064.item = "" then
+		on case i.mode										|#ISGEC01059.sn
+		case DAL_NEW :
+			select	max(tpisg064.revn):revn.new
+			from	tpisg064
+			where	tpisg064._index1 = {:tpisg064.eunt,:tpisg064.cprj,:tpisg064.qapn}
+			and	tpisg064.item = :tpisg064.item
+			selectdo
+				revn.new = revn.new + 1
+			selectempty
+				revn.new = 0	
+			endselect
+			tpisg064.stat = tpisg.status.created
+			tpisg064.revn = revn.new	
+		endcase										|#ISGEC01059.en	
+	endif
+	return(0)
+}
+function extern boolean method.is.allowed(long mode)
+{
+	on case mode
+		case DAL_UPDATE :
+		
+			if	(tpisg064.stat = tpisg.status.active) or (tpisg064.stat = tpisg.status.expire) then
+				return(false)
+			endif
+		endcase
+	return(true)	
+}
+function extern boolean tpisg064.eunt.is.valid( long	i.mode)
+
+{
+	select	tcemm030.eunt
+	from	tcemm030
+	where	tcemm030._index1 = {:tpisg064.eunt}
+	selectdo
+		return(true)
+	endselect
+	
+	return(false)	
+}
+
+function extern boolean tpisg064.cprj.is.mandatory(long i.mode)			|ISGEC01092.sn
+{
+	if 	tpisg064.type = tptype.standard then
+			return (false)
+	endif
+		return(true)							|ISGEC01092.en
+
+}
+function extern boolean tpisg064.cprj.is.valid( long	i.mode)
+
+{	
+	domain	tcncmp	comp
+	
+	comp = get.compnr()
+	select 	tcemm110.enid
+	from	tcemm110
+	where	tcemm110._index2 = {:tpisg064.eunt,7,:comp,:tpisg064.cprj}
+	selectdo
+		select	tppdm600.cprj
+		from	tppdm600
+		where	tppdm600._index1 = {:tcemm110.enid}
+		selectdo
+			return(true)
+		endselect
+	endselect
+	
+	return(false)	
+}
+
+function extern boolean tpisg064.revn.is.valid( long	i.mode)
+
+{
+	if not isspace(tpisg064.revn) then
+		return(true)
+	endif
+	
+	return(false)
+}
+
+function extern boolean tpisg064.item.is.valid( long	i.mode)
+
+{
+| 	select 	tcibd001.item							|temp.mani.o
+	select 	tcibd001.citg							|temp.mani.n
+	from	tcibd001
+| 	where	tcibd001._index1 = {:tpisg064.item}
+	where	tcibd001._index4 = {:tpisg064.item}
+	selectdo
+		return(true)
+	endselect
+	
+| 	if tpisg064.item = tcibd001.item or tpisg064.item = "" then
+| 		on case i.mode										|#ISGEC01059.sn
+| 		case DAL_NEW :
+| 			select	max(tpisg064.revn):revn.new
+| 			from	tpisg064
+| 			where	tpisg064._index1 = {:tpisg064.eunt,:tpisg064.cprj,:tpisg064.qapn}
+| 			and	tpisg064.item = :tpisg064.item
+| 			selectdo
+| 				revn.new = revn.new + 1
+| 			selectempty
+| 				revn.new = 0	
+| 			endselect
+| 			tpisg064.stat = tpisg.status.created
+| 			tpisg064.revn = revn.new	
+| 		endcase										|#ISGEC01059.en	
+
+| 		return(true)
+| 	endif
+	
+	return(false)	
+}
+
+function extern boolean tpisg064.bpid.is.valid( long	i.mode)
+
+{
+	select 	tccom100.bpid
+	from	tccom100
+	where	tccom100._index1 = {:tpisg064.bpid}
+	selectdo
+		return(true)
+	endselect
+	
+	return(false)	
+}
+
+
+function extern tpisg064.revn.update()				|ISGEC01092.sn
+{
+	domain tcpono  max_revn
+	max_revn = -1
+	
+	select max(tpisg064.revn):max_revn
+	from   tpisg064
+	where  tpisg064._index1 = {:tpisg064.eunt,:tpisg064.cprj,:tpisg064.qapn,:tpisg064.item}
+	selectdo
+	endselect
+	
+	tpisg064.revn = max_revn + 1
+}									|ISGEC01092.en

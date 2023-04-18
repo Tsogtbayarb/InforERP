@@ -1,0 +1,308 @@
+|******************************************************************************
+|* tcisg0404m000  0  VRC B61U a7 live
+|* Print Engineering Details
+|* Tools                         
+|* 2014-08-01
+|******************************************************************************
+|* Main table tcisg004 Item Release Line, Form Type 4
+|******************************************************************************
+|* ISGEC001027, IT0205, Arjit Gupta, VRC B61U a7 isg
+|* Logic Modified Now Read Document & Revision from dmisg005 lot item master
+|* 
+|* ISGECDV001003, IT0205, Arjit Gupta, VRC B61U a7 live
+|* Remove enum value "Submitted" from Status field of Input Form
+|*
+|* ISGECDV001165, IT0205, Arjit Gupta, VRC B61U a7 live, Dt. 18-11-2014
+|* If Child Item is Standard then Text will be printed from Item General.
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttcisg004 | Item Release Line
+	table	tdmisg001
+	table	ttpptc100
+	table	tdmisg001
+	table	tdmisg002
+	table	tdmisg003
+	table	ttcisg005
+	table	ttcmcs052
+	table	ttdpur400
+	table	tdmisg005		|#ISGEC001027.n
+	table	ttppdm600		|#ISGEC001027.n
+
+	|******************** Form Variables ***********
+	extern	domain	tppdm.cspa	cspa.f    fixed
+	extern	domain	tppdm.cspa	cspa.t    fixed
+	extern	domain	tcitem		item.f    fixed
+	extern	domain	tcitem		item.t    fixed
+	extern	domain	tccprj		var.cprj	fixed
+	extern	domain	tccitg		citg.f    fixed
+	extern	domain	tccitg		citg.t    fixed
+	extern	domain	dmstat		stat.f
+	extern	domain	dmstat		stat.t
+	extern	domain	tcyesno		item.text
+	
+	|********************** Report Variables *********
+	extern	domain	tcmcs.str1	rep.tran
+	extern	domain	tcmcs.long	prnt
+	extern	domain	tcqiv1		tot.wght
+	extern	domain	tcpono		rep.srno	|#ISGEC001027.n
+	|********************** Script Variables ***********
+	
+
+|****************************** program section ********************************
+before.program:
+	inputfield.invisible("item.f.segment.1", "item.t.segment.1")
+
+before.display.object:
+				|#ISGECDV001003.sn
+	set.enum.values.for.field("stat.f", ALL_ENUMS_EXCEPT, dmstat.submitted)
+	set.enum.values.for.field("stat.t", ALL_ENUMS_EXCEPT, dmstat.submitted)
+				|#ISGECDV001003.en
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.cont.process:
+on.choice:
+	execute(print.data)
+
+choice.print.data:
+on.choice:
+	if rprt_open() then
+		read.main.table()
+		rprt_close()
+	else
+		choice.again()
+	endif
+
+
+|****************************** field section *********************************
+				|#ISGEC001027.sn
+field.var.cprj:
+before.zoom:
+	tppdm600.cprj = var.cprj
+				|#ISGEC001027.en
+	
+field.cspa.f:
+when.field.changes:
+	cspa.t = cspa.f
+
+before.zoom:
+	tpptc100.cprj = var.cprj
+	
+field.cspa.t:
+before.zoom:
+	tpptc100.cprj = var.cprj
+
+field.citg.f:
+when.field.changes:
+	citg.t = citg.f
+
+field.item.f:
+when.field.changes:
+	item.t = item.f
+
+field.stat.f:
+when.field.changes:
+	stat.t = stat.f
+|****************************** function section ******************************
+
+functions:
+|#ISGEC001027.sn
+function read.main.table()
+{
+	domain	dmdoc.docid	tmp.docn
+	domain	dmdoc.revv	tmp.revi
+	domain	tppdm.cspa	old.cspa
+	domain	tccprj		tmp.cprj Fixed	|#ISGECDV001165.n
+	
+	old.cspa = ""
+	set.fmin(tmp.docn)
+	set.fmin(tmp.revi)
+	tot.wght = 0
+	prnt = 0
+	rep.srno = 0
+	rep.tran = ""
+	Initialize_variables()
+	select	dmisg005.*, tcmcs052.dsca
+	from	dmisg005, tcmcs052
+	where	dmisg005._index1 inrange {:var.cprj, :cspa.f}	and	{:var.cprj, :cspa.t}
+	and	dmisg005.item inrange :item.f	and	:item.t
+	and	dmisg005.stat inrange :stat.f	and	:stat.t
+	and	dmisg005.cprj refers to tcmcs052 Unref Clear
+	order by dmisg005._index1
+	selectdo
+		if	old.cspa <> dmisg005.cspa	then
+			old.cspa = dmisg005.cspa
+			tot.wght = 0
+			rep.srno = 0
+		endif
+		rep.srno = rep.srno + 1
+		tot.wght = tot.wght + dmisg005.wght
+		rep.tran = "N"
+		select	tpptc100.desc
+		from	tpptc100
+		where	tpptc100._index1 = {:dmisg005.cprj, :dmisg005.cspa}
+		selectdo
+		selectempty
+			tpptc100.desc = ""
+		endselect
+				
+		select	dmisg001.*
+		from	dmisg001
+		where	dmisg001._index1 = {:dmisg005.docn, :dmisg005.revn}
+		and	dmisg001._index1 <> {:tmp.docn, :tmp.revi}
+		order by dmisg001.cprj, dmisg001.cspa	
+		selectdo
+			select	dmisg002.*
+			from	dmisg002
+			where	dmisg002._index1 = {:dmisg005.docn, :dmisg005.revn}
+			and	dmisg002.citg inrange {:citg.f}	and	{:citg.t}
+			and	dmisg002.item = {:dmisg005.item}
+			selectdo
+								|#ISGECDV001165.sn
+				tmp.cprj = ""
+				tmp.cprj = string.set$(" ", 9)
+				if	trim$(dmisg002.itmt) = "S"	then
+					select	tcibd001.txta:dmisg002.txta
+					from	tcibd001
+					where	tcibd001._index1 = {:1}
+					wherebind(1, tmp.cprj & trim$(dmisg002.oitm))
+					selectdo
+					selectempty
+						dmisg002.txta = 0
+					endselect
+				endif	
+								|#ISGECDV001165.en
+				select	tcisg004.itmh
+				from	tcisg004
+				where	tcisg004._index1 = {:dmisg005.cprj, :dmisg005.cspa}
+				and	tcisg004.item = :dmisg002.item
+				and	tcisg004.docn = :dmisg005.docn
+				and	tcisg004.rvid = :dmisg005.revn
+				and	tcisg004.orno = tcyesno.yes
+				selectdo
+					select	tcisg005.orno, tdpur400.odat
+					from	tcisg005, tdpur400
+					where	tcisg005._index1 = {:dmisg005.cprj, :dmisg005.cspa, :tcisg004.itmh, :dmisg002.item, tdisg.item.order}
+					and	tcisg005.orno refers to tdpur400 Unref Clear
+					selectdo
+						rep.tran = "Y"
+					endselect
+				endselect
+				prnt = 1
+				rprt_send()
+				prnt = 0
+				select	dmisg003.*
+				from	dmisg003
+				where	dmisg003._index1 = {:dmisg002.docn, :dmisg002.revn}
+				selectdo
+					prnt = 2
+					rprt_send()
+					prnt = 0
+				selectempty
+					dmisg003.drgn = ""
+					dmisg003.drev = ""
+				endselect
+			selectempty
+				Initialize_variables()
+				prnt = 1
+				rprt_send()
+				prnt = 0	
+			endselect
+		selectempty
+			Initialize_variables()
+			prnt = 1
+			rprt_send()
+			prnt = 0
+		endselect
+	endselect	
+}
+
+function Initialize_variables()
+{
+	dmisg002.citg = ""
+	dmisg002.cuni = ""
+	dmisg002.dsca = ""
+	dmisg002.qnty = 0
+	dmisg002.txta = 0
+	dmisg002.wght = 0
+	tdpur400.odat = 0
+	dmisg003.drgn = ""
+	dmisg003.drev = ""
+}
+
+|#ISGEC001027.en
+
+|#ISGEC001027.so
+| function read.main.table.old()
+| {
+| 	extern	domain	dmdoc.docid		x.docn
+| 	
+| 	x.docn = ""
+| 	
+| 	select	dmisg001.*, tcmcs052.dsca
+| 	from	dmisg001, tcmcs052
+| 	where	dmisg001.cprj = {:var.cprj}
+| 	and	dmisg001.stat inrange	{:stat.f}	and	{:stat.t}
+| 	and	dmisg001.cprj refers to tcmcs052 Unref Clear	
+| 	order by dmisg001.cprj, dmisg001.cspa	
+| 	selectdo
+| 		
+| 		if x.docn <> dmisg001.docn then
+| 			x.docn = dmisg001.docn
+| 			tot.wght = 0
+| 		endif
+| 		
+| 		select	dmisg002.*
+| 		from	dmisg002
+| 		where	dmisg002._index1 = {:dmisg001.docn, :dmisg001.revn}
+| 		and	dmisg002.citg inrange {:citg.f}	and	{:citg.t}
+| 		and	dmisg002.item inrange {:item.f}	and	{:item.t}
+| 		and	dmisg002.elem inrange	{:cspa.f}	and	{:cspa.t}
+| 		selectdo
+| 			tot.wght = tot.wght + dmisg002.wght
+| 			dmisg001.cspa = dmisg002.elem
+| 			select	tpptc100.desc
+| 			from	tpptc100
+| 			where	tpptc100._index1 = {:dmisg001.cprj, :dmisg001.cspa}
+| 			selectdo
+| 			selectempty
+| 				tpptc100.desc = ""
+| 			endselect
+| 			rep.tran = "N"
+| 			select	tcisg004.itmh
+| 			from	tcisg004
+| 			where	tcisg004._index1 = {:dmisg001.cprj, :dmisg001.cspa}
+| 			and	tcisg004.item = :dmisg002.item
+| 			and	tcisg004.docn = :dmisg001.docn
+| 			and	tcisg004.rvid = :dmisg001.revn
+| 			and	tcisg004.orno = tcyesno.yes
+| 			selectdo
+| 				select	tcisg005.orno, tdpur400.odat
+| 				from	tcisg005, tdpur400
+| 				where	tcisg005._index1 = {:dmisg001.cprj, :dmisg001.cspa, :tcisg004.itmh, :dmisg002.item, tdisg.item.order}
+| 				and	tcisg005.orno refers to tdpur400 Unref Clear
+| 				selectdo
+| 					rep.tran = "Y"
+| 				endselect
+| 			endselect
+| 			prnt = 1
+| 			rprt_send()
+| 			prnt = 0
+| 			select	dmisg003.*
+| 			from	dmisg003
+| 			where	dmisg003._index1 = {:dmisg002.docn, :dmisg002.revn}
+| 			selectdo
+| 				prnt = 2
+| 				rprt_send()
+| 				prnt = 0
+| 			endselect	
+| 		endselect
+| 	endselect
+| }
+|#ISGEC001027.eo
