@@ -1,0 +1,171 @@
+|******************************************************************************
+|* tdisg4400m600  0  VRC B61U a7 isg 
+|* Print PO Report
+|* Installation user             
+|* 2015-02-02
+|******************************************************************************
+|* Main table tdmsl500 Purchase Orders History, Form Type 4
+|******************************************************************************
+|*ISGEC01053 , Mani sharma, Dt. 03-02-2015 
+|* New Report Development
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttdmsl500 | Purchase Orders History
+  table   tdmisg001
+  table   ttdmsl501
+  table   ttdisg502
+  table   ttdmsl400
+  table	   ttcibd001 
+	table	ttdisg002
+	table	tdmisg003
+  
+   extern  domain  tcorno           orno
+   extern  domain  tcsern           vrsn
+   extern domain   tcpono           pono
+   extern domain   tcdsca	      dsca	
+	extern boolean highest.vrsn
+|****************************** program section ********************************
+before.program:
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.cont.process:
+on.choice:
+   execute(print.data)
+
+choice.print.data:
+on.choice:
+   if rprt_open() then
+       read.main.table()
+       rprt_close()
+   else
+       choice.again()
+   endif
+
+
+|****************************** field section *********************************
+
+field.orno:
+when.field.changes:
+	vrsn = 0
+
+check.input:
+	select	tdpur400.orno
+	from	tdpur400
+	where	tdpur400._index1 = {:orno}
+	selectdo
+	selectempty
+		message("Invalid Purchase Order")
+		set.input.error("",e)
+	endselect
+	
+field.vrsn:
+before.zoom:
+	tdmsl400.orno = orno
+	
+check.input:
+	select	tdmsl400.vrsn
+	from	tdmsl400
+	where	tdmsl400._index1 = {:orno,:vrsn}
+	selectdo
+	selectempty
+		message("Invalid Revision")
+		set.input.error("",e)
+	endselect
+	
+|****************************** function section ******************************
+
+functions:
+
+function read.main.table()
+{
+	highest.vrsn = true
+	select tdmsl400.vrsn from tdmsl400
+	where tdmsl400._index1 = {:orno}
+	order by tdmsl400.vrsn desc
+	as set with 1 rows
+	selectdo
+		if tdmsl400.vrsn <> vrsn then
+			highest.vrsn = false
+		endif
+	endselect
+	
+	select tdmsl500.odat,tdmsl500.orno,tdmsl500.vrsn
+	from   tdmsl500
+	where  tdmsl500._index1 = {:orno, :vrsn}
+	selectdo
+	    pono= 0
+	    select tdmsl501.item,tdmsl501.pono,tdmsl501.orno,tdmsl501.vrsn
+	    from   tdmsl501
+	    where  tdmsl501._index1 = {:tdmsl500.orno,:tdmsl500.vrsn}
+	    selectdo
+		select 	tcibd001.dsca
+		from	tcibd001
+		where	tcibd001._index1 = {:tdmsl501.item}
+		selectdo
+			dsca = tcibd001.dsca
+		endselect
+		
+		select tdisg502.orno,tdisg502.pono,tdisg502.vrsn,tdisg502.item,tdisg502.desc,tdisg502.qnty,tdisg502.wght,tdisg502.docn,
+		tdisg502.revi,tdisg502.pric,tdisg502.amnt,tdisg502.quom
+		from    tdisg502
+		where   tdisg502._index1 = {:tdmsl501.orno,:tdmsl501.vrsn,:tdmsl501.pono}
+		selectdo
+| 			select dmisg001.dttl,dmisg001.revn
+| 			from   dmisg001
+| 			where  dmisg001._index1  = :tdisg502.docn
+| 			order by dmisg001.revn desc
+| 			as set with 1 rows
+| 			selectdo
+| 			endselect
+			pono = pono + 1
+			send.document()
+| 			rprt_send()
+		endselect
+	    endselect
+    endselect
+}
+
+function 	send.document()
+{
+	if highest.vrsn then
+		select 	tdisg002.*,dmisg001.*
+		from 	tdisg002,dmisg001
+		where 	tdisg002._index1 = {:tdisg502.orno,:tdisg502.pono,:tdisg502.item}
+		and	tdisg002.cmba refers to dmisg001
+		and	tdisg002.slct = tcyesno.yes
+		and	tdisg002.stat = tcyesno.yes
+		selectdo
+			rprt_send()
+			read.child.documents()
+		endselect
+	else
+		rprt_send()
+	endif
+}	
+
+function read.child.documents()
+{
+	tdisg502.qnty = 0			
+	tdisg502.wght = 0
+	tdisg502.quom = ""	
+	tdisg502.item = ""
+	tdisg502.desc = ""	
+
+	select dmisg003.* from dmisg003
+	where dmisg003._index1 = {:tdisg002.docn,:tdisg002.revi}
+	selectdo
+		dmisg001.dcid = dmisg003.drgn
+		dmisg001.dttl = dmisg003.dcfn
+		dmisg001.revn = dmisg003.drev
+		rprt_send()
+	endselect
+}

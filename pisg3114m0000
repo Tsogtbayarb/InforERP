@@ -1,0 +1,88 @@
+|******************************************************************************
+|* whisg3114m000  0  VRC B61U a7 live
+|* Receipt Process
+|* Tools                         
+|* 2014-09-05
+|******************************************************************************
+|* Main table whisg314 Receipt Process, Form Type 1
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+  table   twhisg314 | Receipt Process
+table	twhisg312
+extern	domain	whinh.shpm	i.rcno
+extern	domain	tcmcs.str16	session.name
+|****************************** program section ********************************
+before.program:
+	import("prog.name$",session.name)
+	if session.name = "tdpur4106m000" then
+		import("tdpur406.rcno",i.rcno)
+		query.extension = "whisg314._index1 = :i.rcno"
+	else if session.name = "whinh3512m000" then
+		import("whinh310.rcno",i.rcno)
+		query.extension = "whisg314._index1 = :i.rcno"	
+	endif	
+	endif
+after.form.read:
+	enable.save.on.occ.change()
+|****************************** group section **********************************
+field.whisg314.rcno:
+before.field:
+	if session.name = "tdpur4106m000" or session.name = "whinh3512m000" then
+		whisg314.rcno = i.rcno
+	endif	
+after.field:
+	if whisg314.flag = tcyesno.yes then
+		disable.commands(ADD.SET,MODIFY.SET,"process")
+	endif	
+| field.whisg314.flag:
+| after.field:
+| 	if whisg314.flag = tcyesno.yes then
+| 		disable.commands(ADD.SET,MODIFY.SET)
+| 	endif	
+|***************************** choice section ************************************
+choice.process:
+before.choice:
+	if whisg314.proc = tcyesno.no then
+		message("First Checked Processed in Old Baan")
+		choice.again()
+	endif	
+on.choice:
+	update_invoicing_request_no()
+	update_flag()
+	
+| 	if whisg314.flag = tcyesno.yes then
+| 		disable.commands(ADD.SET,MODIFY.SET)	
+| 	endif	
+|***************************** function ********************************************
+functions:
+
+function	update_invoicing_request_no()
+{
+	select	whisg312.inrq
+	from	whisg312 for update
+	where	whisg312._index1 = {:whisg314.rcno}
+	and	whisg312.inrq = ""
+	selectdo
+		whisg312.inrq = "NA/OLD"
+		db.update(twhisg312,db.retry,e)
+	endselect
+	
+	commit.transaction()
+}
+
+function	update_flag()
+{
+	select	whisg314.flag
+	from	whisg314 for update
+	where	whisg314._index1 = {:whisg314.rcno}
+	and	whisg314.proc = tcyesno.yes
+	selectdo
+		whisg314.flag = tcyesno.yes
+		db.update(twhisg314,db.retry,e)
+		commit.transaction()
+	endselect
+}
+

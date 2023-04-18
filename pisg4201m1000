@@ -1,0 +1,200 @@
+|******************************************************************************
+|* tdisg4201m100  0  VRC B61U a7 live
+|* Linked Purchase Order Lines with Requisition
+|* Tools                         
+|* 2014-07-23
+|******************************************************************************
+|* Main table tdpur401 Purchase Order Lines, Form Type 4
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttdpur401 | Purchase Order Lines
+	table	ttdpur201
+	table	ttdpur402
+
+	|****************** Form Variables ********************
+	extern	domain	tcorno		var.orno
+	extern	domain	tcpono		var.pono
+	extern	domain	tcpono		var.srnb
+	extern	domain	tcrqno		var.rqno
+	extern	domain	tcpono		var.rqpo
+	
+	|**************** Script Variables ********************
+	extern	domain	tcitem		im.item
+	extern	domain	tccprj		im.cprj
+	extern	domain	tppdm.cspa	im.cspa
+	extern	domain	tppdm.cact	im.cact
+	long	ret
+	
+	|*************** Include 
+	#include <bic_dam>
+
+|****************************** program section ********************************
+before.program:
+	import("tdpur401.orno", var.orno)
+	import("tdpur401.pono", var.pono)
+	import("tdpur401.sqnb", var.srnb)
+	import("tdpur401.item", im.item)
+	import("tdpur401.cprj", im.cprj)
+	import("tdpur401.cspa", im.cspa)
+	import("tdpur401.cact", im.cact)
+	if	not get.po.status()	then
+		message("Order Status must be Created or Modified")
+		exit()
+	else
+		if	not not.linked.exist()	then
+			message("PO linked with another Requisition")
+			exit()
+		endif
+	endif	
+|****************************** group section **********************************
+group.1:
+init.group:
+	get.screen.defaults()
+
+|****************************** choice section **********************************
+choice.exec.cont.process:
+before.choice:
+	check.all.input()
+	if	isspace(var.rqno) or var.rqpo = 0	then
+		message("Requisition Number and Position cannot be blank")
+		choice.again()
+	endif
+	if	not not.linked.exist()	then
+		message("Requisition linked with another PO")
+		choice.again()
+	endif	
+	
+on.choice:
+	Link_PO_with_Requisition()
+	
+|****************************** field section **********************************
+field.var.rqpo:
+before.zoom:
+	tdpur201.rqno = var.rqno
+
+check.input:
+	select	tdpur202.prno
+	from	tdpur202
+	where	tdpur202._index1 = {:var.rqno, :var.rqpo}
+	and	tdpur202.prno <> "         "
+	as set with 1 rows
+	selectdo
+		message("Requisition already Linked with another Purcahse Order")
+		set.input.error("", e)
+	selectempty
+		select	tdpur201.cnty
+		from	tdpur201
+		where	tdpur201._index1 = {:var.rqno, :var.rqpo}
+		and	tdpur201.cnty = tdpur.cnty.pur
+		and	tdpur201.item = {:im.item}
+		and	tdpur201.cprj = {:im.cprj}
+		and	tdpur201.cspa = {:im.cspa}
+		and	tdpur201.cact = {:im.cact}
+		selectdo
+		selectempty
+			message("Requisition Conversion Type must be Purchase Order and Item, Project, Element, Activity must be same.")
+			set.input.error("", e)
+		endselect	
+	endselect	
+	
+field.var.rqno:
+before.zoom:
+	query.extend.where.in.zoom("tdpur200.rqst = tdpur.rqst.approved and	tdpur200.cnty = tdpur.cnty.pur")
+
+check.input:
+	select	tdpur200.rqst
+	from	tdpur200
+	where	tdpur200._index1 = {:var.rqno}
+	and	tdpur200.rqst = tdpur.rqst.approved
+	selectdo
+	selectempty
+		message("Requisition not Found or Approved")
+		set.input.error("", e)
+	endselect	
+		
+|*********************** Function section ***************
+functions:
+
+function Link_PO_with_Requisition()
+{
+	select	tdpur402.orno
+	from	tdpur402
+	where	tdpur402._index1 = {:var.orno, :var.pono, :var.srnb}
+	selectdo
+	selectempty
+		dal.new.object("tdpur402")
+		dal.set.field("tdpur402.orno", var.orno)
+		dal.set.field("tdpur402.pono", var.pono)
+		dal.set.field("tdpur402.sqnb", var.srnb)
+		dal.set.field("tdpur402.rqno", var.rqno)
+		dal.set.field("tdpur402.rqpo", var.rqpo)
+		ret = dal.save.object("tdpur402")
+		Link_Requisition_with_PO()
+	endselect
+	commit.transaction()
+	message("PO Linked")	
+}
+
+function boolean get.po.status()
+{
+	select	tdpur400.hdst
+	from	tdpur400
+	where	tdpur400._index1 = {:var.orno}
+	and	tdpur400.hdst in (tdpur.hdst.modified, tdpur.hdst.created)
+	selectdo
+		return(true)
+	endselect
+	
+	return(false)
+}
+
+function boolean not.linked.exist()
+{
+	domain	tcorno	tmp.rqno
+	
+	set.fmin(tmp.rqno)
+	select	tdpur402.rqno
+	from	tdpur402
+	where	tdpur402._index1 = {:var.orno, :var.pono, :var.srnb}
+	as set with 1 rows
+	selectdo
+		if	isspace(tdpur402.rqno)	then
+			return(true)
+		else
+			return(false)
+		endif	
+	selectempty
+		select	tdpur402.orno
+		from	tdpur402
+		where	tdpur402._index9 = {:var.rqno, :var.rqpo, :var.orno, :var.pono, :var.srnb}
+		selectdo
+		selectempty
+			return(true)
+		endselect
+	endselect
+	
+	return(false)
+}
+
+function Link_Requisition_with_PO()
+{
+	select	tdpur202.prno, tdpur202.ppon
+	from	tdpur202 for update
+	where	tdpur202._index1 = {:var.rqno, :var.rqpo}
+	selectdo
+		dal.change.object("tdpur202")
+		dal.set.field("tdpur202.prno", var.orno)
+		dal.set.field("tdpur202.ppon", var.pono)
+		ret = dal.save.object("tdpur202")
+	selectempty
+		dal.new.object("tdpur202")
+		dal.set.field("tdpur202.rqno", var.rqno)
+		dal.set.field("tdpur202.pono", var.rqpo)
+		dal.set.field("tdpur202.prno", var.orno)
+		dal.set.field("tdpur202.ppon", var.pono)
+		ret = dal.save.object("tdpur202")
+	endselect
+}

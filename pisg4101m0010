@@ -1,0 +1,121 @@
+|******************************************************************************
+|* tdisg4101m001  0  VRC B61U a7 isg 
+|* Display Project wise Purchase Order Lines
+|* Installation User             
+|* 2015-04-08
+|******************************************************************************
+|* Main table tdpur401 Purchase Order Lines, Form Type 1
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+  table   ttdpur401 | Purchase Order Lines
+  table   ttdisg045
+  table   ttdisg002
+  table   tdmisg001
+  
+  extern domain tccprj i.cprj
+  extern domain tccprj o.cprj
+  extern domain tcorno i.orno
+  string query.string(300)
+  
+  #include <bic_dam>
+|****************************** program section ********************************
+before.program:
+	import("cprj",i.cprj)
+	import("orno",i.orno)
+	query.string = ""
+	query.string = "tdpur401.cprj = :i.cprj and tdpur401.orno = :i.orno"
+	query.string = strip$(query.string) & " and tdpur401.oltp in (1,4)"
+	query.extend.where(query.string)
+|****************************** group section **********************************
+
+choice.process:
+on.choice:
+	read.main.table()
+	start.synchronized.child  ("tdisg0145m000","tdpur401.orno","tdisg045.orno","tdpur401.pono","tdisg045.pono")
+	refresh.all.occs()
+	
+|***************************** Field section ************************************
+field.tccom100.nama:
+before.display:
+	select tccom100.nama
+	from    tccom100
+	where   tccom100._index1 = {:tdpur401.otbp}
+	selectdo
+	endselect
+|***************************** Function Section *********************************
+functions:
+function read.main.table()
+{
+	long	ret
+	
+	Delete.Records(i.cprj,i.orno)
+	
+	select	tdisg002.*
+	from    tdisg002
+	where	tdisg002._index1 = {:tdpur401.orno,:tdpur401.pono}
+	selectdo
+		select tdisg045.*
+		from   tdisg045
+		where  tdisg045._index1 = {:tdpur401.orno,:tdpur401.pono,:tdisg002.item}
+		and     tdisg045.cprj = {:tdpur401.cprj}
+		selectdo
+		selectempty	
+			tdisg045.orno = tdpur401.orno
+			tdisg045.pono = tdpur401.pono
+			tdisg045.loti = tdpur401.item
+			tdisg045.item = tdisg002.item
+			tdisg045.dsca = tdisg002.desc
+			tdisg045.docn = tdisg002.docn
+			tdisg045.revi = tdisg002.revi
+			tdisg045.cprj = tdpur401.cprj
+			tdisg045.cspa = tdpur401.cspa
+			tdisg045.qnty = tdisg002.qnty
+			tdisg045.wght = tdisg002.wght
+
+			select	dmisg001.dttl
+			from	dmisg001
+			where	dmisg001._index1 = {:tdisg002.docn, :tdisg002.revi}
+			selectdo
+			selectempty
+				dmisg001.dttl = ""
+			endselect
+			tdisg045.ddsc = dmisg001.dttl
+			tdisg045.sele = tcyesno.no
+			db.insert(ttdisg045, db.skip.dupl,e)
+			if e then 
+				abort.transaction()
+			else
+				commit.transaction()
+			endif	
+		endselect	
+	endselect	
+	
+}
+
+function Delete.Records(
+			domain	tccprj		in.cprj,
+			domain	tcorno		in.orno
+			)
+{
+	long d.ret 
+	
+	select	tdisg045.*
+	from	tdisg045 for update
+	where	tdisg045._index5 = {:in.cprj, :in.orno,:tdpur401.pono}
+	selectdo
+| 		d.ret = dal.destroy.object("tdisg042")
+		db.delete(ttdisg045,db.retry,e)
+		if e then 
+			abort.transaction()
+		else
+			commit.transaction()
+		endif	
+	endselect
+
+}	
+
+
+

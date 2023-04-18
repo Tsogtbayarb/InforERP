@@ -1,0 +1,383 @@
+|******************************************************************************
+|* tdisg4401m001  0  VRC B61U a7 live
+|* Print Delievery Status at PO Level
+|* Tools                         
+|* 2014-06-10
+|******************************************************************************
+|* Main table tdpur401 Purchase Order Lines, Form Type 4
+|******************************************************************************
+|* ID ISG001049 Manish Manchanda, 10-06-2014, B61U a7 live
+|****************************** declaration section ***************************
+declaration:
+#ident "@(#) ISG001049, Manish Manchanda, 10-06-2014, B61U a7 live"
+
+	table	ttdpur401 | Purchase Order Lines
+	table	ttdpur400 | Purchase Orders
+	table	ttppdm740 | Projects Business Partners 
+	table	ttdpur406 | Purchase Actual Receipts
+	table	ttclct200 | Landed Cost Lines
+	table	twhinh312 | Receipt Lines 
+	table	ttcmcs052 | Projects
+	table	ttcibd001 | Item - General
+	table	ttdpur401
+
+	extern	domain	tccprj		cprj.f, cprj.t, temp.cprj
+	extern	domain	tccom.bpid	ofbp.f, ofbp.t, temp.ofbp
+	extern	domain	tcemno		ccon.f, ccon.t
+	extern	domain	tcdate		podt.f, podt.t
+	extern	domain	tcdate		ddta.f, ddta.t
+	extern	domain	tcyesno		excl.1
+	extern	domain	tcorno		orno.f,orno.t
+		domain	tcamnt		app.lan.cost, lan.cost.rec, tot.val.ordered, tot.val.delivered, basic.val.bal, tot.val.bal
+		domain	tcborf		borf.w, borf.v
+		domain	tppdm.cspa	temp.cspa
+			string		str(300),err.file(100),file.name(100),line(2000),line1(2000),line2(2000),line3(2000),line4(2000)
+			long		ret2, stat.fp, flag
+			
+	#include<bic_desktop>
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+
+choice.print.excel:
+on.choice:
+	generate.file()
+
+|****************************** field section *********************************
+
+field.cprj.f:
+when.field.changes:
+   cprj.t = cprj.f
+
+field.ofbp.f:
+when.field.changes:
+   ofbp.t = ofbp.f
+before.zoom:
+| 	str = "tccom100.bpid in ("
+| 	str = str & "select tppdm740.ofbp from tppdm740 where tppdm740._index1 inrange '" &cprj.f&"' and '"&cprj.t&"')"
+| 	query.extend.where.in.zoom(str)
+
+field.ofbp.t:
+before.zoom:
+| 	str = "tccom100.bpid in ("
+| 	str = str & "select tppdm740.ofbp from tppdm740 where tppdm740._index1 inrange '" &cprj.f&"' and '"&cprj.t&"')"
+| 	query.extend.where.in.zoom(str)
+	
+field.ccon.f:
+when.field.changes:
+   ccon.t = ccon.f
+
+field.orno.f:
+before.zoom:
+	str = "tdpur400.orno in ("
+	str = str & "select tdpur401.orno from tdpur401 where tdpur401._index5 inrange '" &cprj.f&"' and '"&cprj.t&"')"
+	query.extend.where.in.zoom(str)
+when.field.changes:
+   orno.t = orno.f
+   
+field.orno.t:
+before.zoom:
+	str = "tdpur400.orno in ("
+	str = str & "select tdpur401.orno from tdpur401 where tdpur401._index5 inrange '" &cprj.f&"' and '"&cprj.t&"')"
+	query.extend.where.in.zoom(str)
+	
+field.podt.f:
+when.field.changes:
+   podt.t = podt.f
+
+|****************************** function section ******************************
+
+functions:
+
+function extern generate.file()
+{	
+	err.file = bse.tmp.dir$() & str$(utc.num()) & ".xls"
+	
+	file.name = "c:\temp\" & str$(utc.num())  & ".xls"
+	
+	stat.fp = seq.open(err.file, "w+")
+	if stat.fp >0 then
+ 		seq.seek(0, 0, stat.fp)
+	endif	
+	read.main.table()
+	
+	seq.close(stat.fp)
+	ret2 = server2client(err.file,file.name,1)
+	ret2 = app_start(file.name,"c:","","","")
+}
+
+function read.main.table()
+{
+	domain	tcmcs.long	temp.podt.f, temp.podt.t,yy,mm,dd,hh.f,mn.f,ss.f,hh.t,mn.t,ss.t
+	domain	tcdate		temp.ddta.f, temp.ddta.t
+	temp.cprj  = ""
+	temp.ofbp  = ""
+	flag = 0 
+	
+	utc.to.date(podt.f,yy,mm,dd,hh.f,mn.f,ss.f)
+	temp.podt.f = date.to.utc(yy,mm,dd,hh.f,mn.f,ss.f)	
+	utc.to.date(podt.t,yy,mm,dd,hh.t,mn.t,ss.t)
+	temp.podt.t = date.to.utc(yy,mm,dd,hh.t,mn.t,ss.t)
+	utc.to.date(ddta.f,yy,mm,dd,hh.f,mn.f,ss.f)
+	temp.ddta.f = date.to.utc(yy,mm,dd,00,00,00)	
+	utc.to.date(ddta.t,yy,mm,dd,hh.t,mn.t,ss.t)
+	temp.ddta.t = date.to.utc(yy,mm,dd,23,59,59)
+	
+	
+	select	tdpur401.*, tdpur400.orno, tdpur400.otbp, tdpur400.otbp, tdpur400.ccon, tcmcs052.dsca, tcibd001.dsca
+	from	tdpur401, tdpur400, tcmcs052, tcibd001
+	where	tdpur401._index5 inrange :cprj.f and :cprj.t
+	and	tdpur401.odat inrange :temp.podt.f and :temp.podt.t 
+	and	tdpur401.ddta inrange :temp.ddta.f	and	:temp.ddta.t
+	and	tdpur401.orno	refers to tdpur400
+	and	tdpur400.ccon inrange :ccon.f and :ccon.t
+	and	tdpur400.orno inrange :orno.f and :orno.t
+	and	tdpur400.otbp inrange :ofbp.f and :ofbp.t
+	and	tdpur401.oltp <> tdgen.oltp.total
+	and	tdpur401.cprj	refers to tcmcs052 UNREF CLEAR
+	and	tdpur401.item	refers to tcibd001 UNREF CLEAR
+	order by tdpur401.cprj, tdpur401.orno
+	selectdo
+		
+		select	tppdm740.ofbp	from	tppdm740
+		where	tppdm740._index1 = :tdpur401.cprj
+		and	tppdm740.ofbp inrange :ofbp.f and :ofbp.t
+		selectdo
+		selectempty
+			tppdm740.ofbp = ""
+		endselect
+		if	not isspace(tdpur401.cprj)	then
+			if	excl.1 =tcyesno.yes  then
+				if	tdpur401.cprj <> temp.cprj or tppdm740.ofbp <> temp.ofbp or tdpur401.cspa <> temp.cspa then
+					generate.header()
+					generate.lines()
+					temp.cprj = tdpur401.cprj 
+					temp.ofbp = tppdm740.ofbp 
+					temp.cspa = tdpur401.cspa
+				endif
+			else
+				if	flag = 0 then
+					generate.header.lines()
+				endif
+			endif
+		endif	
+		
+		borf.w = str$(tdpur401.pono) & "/" & str$(tdpur401.sqnb)
+		
+		app.lan.cost = get.landed.cost.amount(	tclct.bo.type.tdpur401,
+							tclct.boor.not.appl,
+							tdpur401.orno,
+							borf.w)
+		
+		tot.val.ordered = tdpur401.oamt + app.lan.cost
+		
+		select	tdpur406.rcno, tdpur406.rseq, tdpur406.qiap, tdpur406.damt,tdpur406.qidl	from	tdpur406
+		where	tdpur406._index1 = {:tdpur401.orno,:tdpur401.pono,:tdpur401.sqnb}
+		selectdo
+			tdpur406.damt = tdpur401.pric * tdpur406.qidl
+		selectempty
+			tdpur406.rcno = ""
+			tdpur406.rseq = 0
+ 			tdpur406.qiap = 0
+			tdpur406.damt = 0
+		endselect
+		
+		select	whinh312.rcno, whinh312.rcln	from	whinh312
+		where	whinh312._index1 = {:tdpur401.rcno,:tdpur401.rseq}
+		selectdo
+		selectempty
+			whinh312.rcno = ""
+			whinh312.rcln = 0
+		endselect
+		if	whinh312.rcln = 0 then
+			borf.v = str$(tdpur401.pono)
+		else
+			borf.v = str$(whinh312.rcln) 
+		endif
+		
+		lan.cost.rec = get.landed.cost.amount(	tclct.bo.type.whinh312,
+							tclct.boor.not.appl,
+							tdpur401.orno,
+							borf.v)
+		
+		tot.val.delivered = tdpur406.damt + lan.cost.rec
+		
+		basic.val.bal = tdpur401.oamt - tdpur406.damt
+		
+		tot.val.bal = tot.val.ordered - tot.val.delivered
+		if	not isspace(tdpur401.cprj)	then
+			if	excl.1 =tcyesno.yes	then	
+				write.data()
+			else
+				write.data1()
+			endif
+		endif
+	endselect
+}
+
+
+function	domain	tcamnt	get.landed.cost.amount( domain	tclct.bo.type temp.type,
+							domain	tclct.boor temp.boor,	
+							domain	tcprbo temp.orno,
+							domain	tcborf temp.borf)
+{		
+	select	tclct200.lcam	from	tclct200
+	where	tclct200._index1 = {:temp.type,:temp.boor,:temp.orno,:temp.borf}
+	selectdo
+	selectempty
+		tclct200.lcam = 0
+	endselect
+	return(tclct200.lcam)
+}
+
+function	generate.header()
+{
+	if	temp.cprj <> ""	then
+		line =	concat$("	")
+		line = strip$(shiftl$(line))		
+		seq.puts(line, stat.fp)	
+	endif
+
+	line1 =	concat$("	",
+		sprintf$("Project"),					|1
+		sprintf$("%s",tdpur401.cprj),			  	|2
+		sprintf$("%s",tcmcs052.dsca),			  	|3
+		sprintf$("Element"),			  		|4
+		sprintf$("%s",tdpur401.cspa))			  	|5
+		
+	line1 = strip$(shiftl$(line1))		
+	seq.puts(line1, stat.fp)		
+	
+	line2 =	concat$("	",
+		sprintf$("Business Partner"),				|1
+		sprintf$("%s",tppdm740.ofbp))				|2
+		
+	line2 = strip$(shiftl$(line2))		
+	seq.puts(line2, stat.fp)		
+}
+
+function	generate.lines()
+{
+	line3 =	concat$("	",
+		sprintf$("Order No"),					|1
+		sprintf$("Order Date"),			  	|2
+		sprintf$("Supplier"),					|3
+		sprintf$("Buyer"),				        |4
+		sprintf$("P.O Description"),				|5
+		sprintf$("Position Number"),				|6
+		sprintf$("Seq.No"),					|7
+		sprintf$("Quantity Ordered"),				|8	
+		sprintf$("Basic Value Ordered"),			|9
+		sprintf$("Applicable Landed Cost"),			|10
+		sprintf$("Total Value Ordered"),			|11
+		sprintf$("Receipt No."),				|12
+		sprintf$("Receipt Position No."),			|13
+		sprintf$("Quantity Delivered"),			|14
+		sprintf$("Basic Value Delivered"),			|15
+		sprintf$("Landed Cost at Receipt"),			|16	
+		sprintf$("Total Value Delivered"),			|17	
+		sprintf$("Basic Value Balance"),			|18
+		sprintf$("Total Value Balance"))			|19											
+		
+	line3 = strip$(shiftl$(line3))		
+	seq.puts(line3, stat.fp)
+}
+
+
+function	write.data()
+{	
+	line3 =	concat$("	",
+		sprintf$("%s",tdpur400.orno),				|1
+		sprintf$("%u(%02d/%02m/%04Y)",tdpur401.odat),		|2
+		sprintf$("%s",tdpur400.otbp),				|3
+		sprintf$("%s",tdpur400.ccon),				|4
+		sprintf$("%s",tcibd001.dsca),				|5
+		sprintf$("%d",tdpur401.pono),				|6	
+		sprintf$("%d",tdpur401.sqnb),				|7
+		sprintf$("%f",tdpur401.qoor),				|8
+		sprintf$("%f",tdpur401.oamt),				|9
+		sprintf$("%f",app.lan.cost),				|10
+		sprintf$("%f",tot.val.ordered),			|11
+		sprintf$("%s",tdpur406.rcno),				|12
+		sprintf$("%d",tdpur406.rseq),				|13
+		sprintf$("%f",tdpur406.qiap),				|14
+		sprintf$("%f",tdpur406.damt),				|15
+		sprintf$("%f",lan.cost.rec),				|16
+		sprintf$("%f",tot.val.delivered),			|17
+		sprintf$("%f",basic.val.bal),				|18
+		sprintf$("%f",tot.val.bal))				|19
+		
+		line3 = strip$(shiftl$(line3))
+		seq.puts(line3, stat.fp)
+}	
+
+function	generate.header.lines()
+{
+	line4 =	concat$("	",
+		sprintf$("Project"),					|1
+		sprintf$("Description"),				|2
+		sprintf$("Business Partner"),				|3
+		sprintf$("Element"),			  		|4
+		sprintf$("Order No"),					|5
+		sprintf$("Order Date"),			  	|6
+		sprintf$("Supplier"),					|7
+		sprintf$("Buyer"),				        |8
+		sprintf$("P.O Description"),				|9
+		sprintf$("Position Number"),				|10
+		sprintf$("Seq.No"),					|11
+		sprintf$("Quantity Ordered"),				|12	
+		sprintf$("Basic Value Ordered"),			|13
+		sprintf$("Applicable Landed Cost"),			|14
+		sprintf$("Total Value Ordered"),			|15
+		sprintf$("Receipt No."),				|16
+		sprintf$("Receipt Position No."),			|17
+		sprintf$("Quantity Delivered"),			|18
+		sprintf$("Basic Value Delivered"),			|19
+		sprintf$("Landed Cost at Receipt"),			|20	
+		sprintf$("Total Value Delivered"),			|21	
+		sprintf$("Basic Value Balance"),			|22
+		sprintf$("Total Value Balance"))			|23											
+		
+	line4 = strip$(shiftl$(line4))		
+	seq.puts(line4, stat.fp)	
+	flag = 1 
+}
+
+function	write.data1()
+{	
+	line4 =	concat$("	",
+		sprintf$("%s",tdpur401.cprj),			  	|1
+		sprintf$("%s",tcmcs052.dsca),			  	|2
+		sprintf$("%s",tppdm740.ofbp),				|3
+		sprintf$("%s",tdpur401.cspa),				|4
+		sprintf$("%s",tdpur400.orno),				|5
+		sprintf$("%u(%02m/%02d/%04Y)",tdpur401.odat),		|6
+		sprintf$("%s",tdpur400.otbp),				|7
+		sprintf$("%s",tdpur400.ccon),				|8
+		sprintf$("%s",tcibd001.dsca),				|9
+		sprintf$("%d",tdpur401.pono),				|10	
+		sprintf$("%d",tdpur401.sqnb),				|11
+		sprintf$("%f",tdpur401.qoor),				|12
+		sprintf$("%f",tdpur401.oamt),				|13
+		sprintf$("%f",app.lan.cost),				|14
+		sprintf$("%f",tot.val.ordered),			|15
+		sprintf$("%s",tdpur406.rcno),				|16
+		sprintf$("%d",tdpur406.rseq),				|17
+		sprintf$("%f",tdpur406.qiap),				|18
+		sprintf$("%f",tdpur406.damt),				|19
+		sprintf$("%f",lan.cost.rec),				|20
+		sprintf$("%f",tot.val.delivered),			|21
+		sprintf$("%f",basic.val.bal),				|22
+		sprintf$("%f",tot.val.bal))				|23
+		
+		line4 = strip$(shiftl$(line4))
+		seq.puts(line4, stat.fp)
+}	

@@ -1,0 +1,212 @@
+|******************************************************************************
+|* whisg3212m000  0  VRC B61U a7 isg 
+|* Receipt Status Report
+|* Installation user             
+|* 2014-09-16
+|******************************************************************************
+|* Main table whisg312 Purchase Receipt, Form Type 4
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+	table	twhisg312 | Purchase Receipt
+	table	ttdisg832
+	table	ttcibd001
+	table	twhisg311
+	table	ttdisg831
+
+extern	domain	whinh.shpm	rcno.f,rcno.t
+extern	domain	tccprj		cprj.f,cprj.t
+extern	domain	tcmcs.str6	reas.f,reas.t
+
+|********* File Read/Write Variables *******************************************
+
+long	stat.fp
+string 	line1(1000),file.name(100),err.file(100)
+long ret_val
+
+#pragma used dll ottdllbw
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** field section **********************************
+
+field.rcno.f:
+when.field.changes:
+	rcno.t = rcno.f
+
+field.cprj.f:
+when.field.changes:
+	cprj.t = cprj.f
+
+field.reas.f:
+when.field.changes:
+	reas.t = reas.f
+
+|****************************** choice section **********************************
+
+choice.cont.generate:
+on.choice:
+	create.file()
+
+
+|***************************** Functions ****************************************
+functions:
+function create.file()
+{
+| 	file.name = creat.tmp.file$(bse.tmp.dir$())
+	
+	err.file = bse.tmp.dir$() & str$(utc.num()) & ".xls"
+	
+	file.name = "c:\temp\" & str$(utc.num())  & ".xls"
+	
+	stat.fp = seq.open(err.file, "w+")
+	if stat.fp >0 then
+		generate.header()
+		read.main.table()
+	endif	
+	
+	seq.close(stat.fp)
+	ret_val = server2client(err.file,file.name,1)
+	ret_val = app_start(file.name,"c:","","","")
+}
+
+
+
+function generate.header()							
+{	
+	line1= 	concat$("	",
+		sprintf$("Project"),
+		sprintf$("Receipt No."),
+		sprintf$("Line No."),
+		sprintf$("Item"),
+		sprintf$("Item Description"),
+		sprintf$("Billing Advice No."),
+		sprintf$("Billing Schedule No."),
+		sprintf$("Installment No."),
+		sprintf$("To Be Billed"),
+		sprintf$("Reason Code"),
+		sprintf$("Reason Description"),
+		sprintf$("Reason Type"))
+		
+	line1 = strip$(shiftl$(line1))		
+	seq.puts(line1, stat.fp)	
+}
+
+function read.main.table()
+{
+	select 	whisg312.*,
+		tcibd001.dsca
+	from	whisg312,tcibd001
+	where	whisg312._index1 inrange {:rcno.f} and {:rcno.t}
+	and	whisg312.cprj inrange :cprj.f and :cprj.t
+	and	whisg312.item refers to tcibd001
+	selectdo
+		if whisg312.sele = tcyesno.yes then
+			select 	tdisg832.*,
+				tdisg831.stat
+			from	tdisg832,tdisg831
+			where	tdisg832._index1 = {:whisg312.inrq}
+			and	tdisg832.edrn refers to tdisg831
+			and	tdisg832.reas inrange :reas.f and :reas.t
+			selectdo
+				if not isspace(tdisg832.reas) then
+					select whisg311.*
+					from	whisg311 
+					where	whisg311._index1 = {:tdisg832.reas}
+					as set with 1 rows
+					selectdo
+					selectempty
+						whisg311.desc = ""
+						whisg311.type = empty
+					endselect
+				else
+					tdisg832.reas = ""
+					whisg311.desc = ""
+					whisg311.type = empty
+				endif
+				
+				write.data(	whisg312.cprj,
+						whisg312.rcno,
+						whisg312.rcln,
+						whisg312.item,
+						tcibd001.dsca,
+						tdisg832.edrn,
+						tdisg832.ninc,
+						tdisg832.nins,
+						tdisg832.tobi,
+						tdisg832.reas,
+						whisg311.desc,
+						whisg311.type,
+						tdisg831.stat)
+			endselect
+		else
+			write.data(	whisg312.cprj,
+					whisg312.rcno,
+					whisg312.rcln,
+					whisg312.item,
+					tcibd001.dsca,
+					"",
+					0,
+					0,
+					tcyesno.no,
+					"",
+					"",
+					empty,
+					empty)
+		endif
+	endselect
+}
+
+
+function write.data
+		(
+			domain	tccprj		i.cprj,		|Project
+			domain	whinh.shpm	i.rcno,		|Receipt Number
+			domain	tcpono		i.rcln,		|Line Number
+			domain	tcitem		i.item,		|Item
+			domain	tcdsca		i.dsca,		|Description
+			domain	tcorno		i.edrn,		|Billing Advice Number
+			domain	tppdm.nins	i.ninc,		|Billing Schedule Number
+			domain	tppdm.nins	i.nins,		|Installment
+			domain	tcyesno		i.tobi,		|To Be Billed
+			domain	tcmcs.str6	i.reas,		|Reason Code
+			domain	tcdsca		i.desc,		|Reason Code Description
+			domain	whreas.type	i.type,		|Reason Type
+			domain	tdisg.stat	i.stat		|Billing Advice Status
+		)
+{
+	domain	tcmcs.str3	o.tobi
+	domain	tcmcs.str30	o.type
+	domain	tcmcs.str30	o.stat
+	
+	o.tobi = enum.descr$("tcyesno",i.tobi)
+	o.type = enum.descr$("whreas.type",i.type)
+	o.stat = enum.descr$("tdisg.stat",i.stat)
+	
+	line1 = ""
+	line1 = concat$("	",
+			sprintf$("%s",i.cprj),
+			sprintf$("%s",i.rcno),
+			sprintf$("%d",i.rcln),
+			sprintf$("%s",i.item),
+			sprintf$("%s",i.dsca),
+			sprintf$("%s",i.edrn),
+			sprintf$("%d",i.ninc),
+			sprintf$("%d",i.nins),
+			sprintf$("%s",o.tobi),
+			sprintf$("%s",i.reas),
+			sprintf$("%s",i.desc),
+			sprintf$("%s",o.type),
+			sprintf$("%s",o.stat))
+			
+	line1 = strip$(shiftl$(line1))		
+	seq.puts(line1, stat.fp)		
+}

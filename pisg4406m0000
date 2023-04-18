@@ -1,0 +1,1036 @@
+|******************************************************************************
+|* whmsl3410r  0  VRC B61U a  msl 
+|* Purchase Bill Approval Memo
+|* Dhirender                     
+|* 2009-07-23
+|******************************************************************************
+|* Main table whinh310 Receipt Headers, Form Type 4
+|******************************************************************************
+|* ISGECDV001031, IT0205, Arjit Gupta, Dt. 19-09-2014, VRC B61U a7 live
+|* Calculate Excise on tdpur401.tase.l and Service on tdpur401.tass.l
+|*
+|* ISGECDV001032, IT0205, Arjit Gupta, Dt. 20-09-2014, VRC B61U a7 live
+|* Calculate Excise on tdpur401.tase.l and Service on tdpur401.tass.l on the basis 
+|* of receipt quantity.
+|*
+|* ISGECDV001074, IT0205, Arjit Gupta, Dt. 04-10-2014, VRC B61U a7 live
+|* Add SRN Details in Annexure Report.
+|*
+|* ISGECDV001078, IT0205, Arjit Gupta, Dt. 04-10-2014, VRC B61U a7 Live
+|* Tax Calculation based on PO line wise 
+|*
+|* ISGECDV001146, IT0205, Arjit Gupta, Dt. 07-11-2014, VRC B61U a7 live
+|* Add column GR Weight & Vehicle Number
+|* Revert As GR Patch is not on 192.9.200.121 server, Arjit, 14-11-2014
+|*
+|* ISGECDV001154, IT0205, Arjit Gupta, Dt. 13-11-2014, VRC B61U a7 live
+|* Add a Purchase Receipt Text
+|* 
+|* ISGECDV001166, IT0205, Arjit Gupta, Dt. 18-11-2014, VRC B61U a7 live
+|* Add a new Annexure for Vehicle which repeated within 15 days.
+
+|*ISG10103, IT0289, Shilpa Janardanan, Dt. 22-12-2014, VRC B61U a7 live
+|* Picking Service tax from the financial company maintained against the Purchase Office
+|*
+|*PATCH002016 , Mani sharma , Dt . 24-03-2015, VRC B61U a7 isg
+|* Change supplier address fields
+
+|* ISGEC015016, IT0289, Shilpa Janardanan, Dt. 22-12-2014, VRC B61U a7 live
+|* tax rate to be calculated on the basis of date
+
+|******************************************************************************
+|* ISGEC015036, IT0308, Somak Mondal, Dt. 04-08-2015, VRC B61U a7 isg
+|* 			
+|* ISGEC015024, IT0302, Ankit Sharma, Dt. 20-08-2015, VRC B61U a7 isg
+|* New report layout developed for concatenate approval bill memo annexure
+|* and Annexure Repeated Vehicle within 15 days.
+|
+|* If in session tdisg8131m600 on line level To be Billed check box is selected 
+|* then Billing value associate with that line will be printed in the below 
+|* mentioned Purchase Bill Approval Memo report. And if To be billed check box 
+|* is unticked then Reason Code associated to that Billing advice line will be printed. 
+|* ----- Report field added - rep.bivl-----
+|****************************** declaration section ***************************
+declaration:
+
+table	twhinh310 | Receipt Headers
+table	twhinh312
+table	twhinh940
+table	ttdpur400
+table	ttdpur401	
+table	ttdpur406	
+table	ttccom130
+table	ttcibd001
+table	ttctax400
+table	ttctax941
+table   ttcmcs041
+table	ttcmcs013
+table	ttcmcs032
+table	ttcmcs036
+table   ttcmcs143
+table	ttcmcs010
+table   ttcmcs080  | transporter Name
+table   ttccom139  |PATCH002016.n
+	table	ttppdm600
+	table	ttfisg001
+	table	ttfisg003
+	table	ttcisg001
+	table	ttdisg001
+	table	ttpisg005
+	table	twhisg312
+	table	tttaad200
+	table	ttppdm740
+| 	table	ttdmsl121
+| 	table   ttimsl000
+table   twhinh936
+table	ttclct200, ttclct115, ttfacp935
+table	ttcmcs003
+	table	ttdmsl400
+	table	ttfisg002
+	table	ttfisg000
+	table	ttdisg452				|#ISGECDV001074.n
+	table	ttdisg406				|#ISGECDV001154.n
+	table	ttdisg832 |Billing Advice Lines		|#ISGEC015036.n
+
+extern  domain  whinh.shpm       rcno.f    
+extern  domain  whinh.shpm       rcno.t  
+extern  domain  tcdsca           v.dsca
+extern  domain  tcpric           v.totl,g.totl,gv.totl,rate.pric
+extern  domain  tcfovn           v.tino,v.ecno 
+extern  domain  tcsern	    srno
+extern  domain tcamnt	    bed.amount, ecess.amount,hecess.amount,cst.amount,ad.amount, total.amount, decc, final.amount
+extern  domain tcmcs.st65m       amount1,amount2,amount3,amount4, amount5, amount6
+extern  domain tcmcs.s130m       decode0,decode1,decode2,decode3,decode4,decode5,decode6,decode7
+extern 	domain tcmcs.str20	rcpt.date,pur.date,inv.date
+extern	domain	tcnama		reportdesc,company_name,tc
+extern	domain	tcamnt	r.eces.per, r.cess.per, r.vat.per
+extern	domain	tcamnt	r.eces, r.cess, r.vat, add.chg,frt.amnt,add.chg.tax
+extern	domain	tcamnt	total.vat,v.eces, v.cess, v.vat, v.add.chg,tax.amnt,tot.amnt
+extern	domain	tcamnt	r.disc,cal.per
+extern	domain	tclang	language
+extern	domain	tcdsca	additional.code
+string	qury.strg(5000)
+extern 	domain tcsern a
+extern  domain  tcpono  pono
+extern	string additional.array(20, 5)
+extern	domain	tcamnt		additional.value(5)
+extern	domain	tcsern	printed.addition
+|Varibales for Additional Charges
+
+extern  domain	tcccty		g.imp.tax.country
+extern  domain	tccvat		g.imp.group.tax.code
+extern  domain	tcdate		g.imp.tax.date
+extern  domain	tcamnt		g.imp.order.line.price
+extern  domain	tcamnt		g.imp.customs.value
+extern  domain	tcamnt		g.imp.market.retail.price
+extern  domain	tcamnt		g.imp.retail.sales.price 
+extern  domain	tcamnt		g.imp.tariff.price
+extern  domain	tcccur		g.imp.price.currency
+extern  domain	tcdate		g.imp.rate.date
+extern  domain	tcrtyp		g.imp.exchange.rate.type				
+extern  domain	tcpric		g.imp.asv.excise,previous.maximum.amount
+extern  domain	tcpric		g.imp.asv.vat
+extern  domain	tcpric		g.imp.asv.service.tax
+extern	domain	tcdate		g.ship.or.recreive.date
+extern	domain	tcyesno		g.as.is.sales
+extern	domain	tcyesno		g.used.goods
+extern	domain	tctax.indt.l	g.duty.type.array(1,1)	based
+extern	domain	tcamnt		g.duties.array(1,1)	based
+extern	domain	tcpvat		g.layer.tax.rate(1,1)	based
+extern	domain	tcamnt		g.layer.base.amount.array(1, 1)	based
+extern	domain	tcamnt		g.layer.tax.amount.array(1, 1)	based
+extern	domain	tccvat		g.layer.tax.code.array(1, 1)	based
+extern	domain	tctax.indt.l	g.line.indirect.tax.array(1,1) 	based
+extern	domain	tcyesno		g.expensed.tax(1,1)		based
+domain	tcmcs.s250m	comb.output.set(1)	based
+extern	domain	tcamnt		f.claimable
+extern	domain	tcamnt		f.non.claimable
+extern	domain	tcamnt		f.total,totaltax ,grndtotaltax ,truetotaltax
+extern	domain	tcamnt		f.layer.base.amnt,var
+extern	domain	tcamnt		f.layer.tax.amnt	
+extern	domain	tcpvat		f.layer.tax.rate	
+extern	domain	tctax.indt.l	f.indirect.tax		
+extern	domain	tcdsca		f.tax.code.dsca
+extern		long	i, j
+extern	domain	tccvat		f.cvat
+extern	domain	tcnamb		tax   
+	long	line.no
+domain	tcmcs.s250m	i.comb.output.set(1) based
+domain	tccvat		o.line.tax.code.array(1,1)	based
+domain	tctax.indt.l	i.duty.type.array(1,1)	based
+domain	tcamnt 		i.duties.array(1,1)	based
+domain	tcpvat		o.tax.rates(1,1)	based
+domain	tctax.seqn	o.maximum.sequence.number
+domain	tcamnt		o.line.base.amount.array(1,1)	based
+domain	tcamnt		o.line.tax.amount.array(1,1)	based
+domain	tctax.indt.l	o.line.indirect.tax.array(1,1)	based
+domain	tcyesno		o.expensed.tax(1,1)	based
+domain	tcamnt		o.total.tax.amount
+domain	tcamnt		o.sales.tax
+domain	tcmcs.s250m	o.error.msg
+
+extern	domain	tcnama		v.nama
+extern	domain	tcmcs.str100	v.ln01,v.ln02,v.ln03,v.ln04,v.ln05
+	extern	domain	tcyesno		with.tax
+	extern	domain	tcnama		rep.prj.nama
+	extern	domain	tcnamd		rep.prj.namd
+	extern	domain	tcmcs.str100m	rep.prj.ln01
+	extern	domain	tcmcs.str100m	rep.prj.ln03
+	extern	domain	tcdsca		rep.prj.dsca
+	extern	domain	tcmail		rep.prj.info
+	extern	domain	tcamnt		rep.ot.amnt
+	extern	domain	tcamnt		rep.exc.amnt
+	extern	domain	tcamnt		rep.st.amnt
+	extern	domain	tcamnt		line.amnt
+	extern	domain	tcamnt		gros.total
+	extern	domain	tcamnt		line.total
+	extern	domain	tfgld.amnt	gros.amnt.total
+	extern	domain	tfgld.amnt	gros.exc.amnt
+	extern	domain	tfgld.amnt	gros.ot.amnt
+	extern	domain	tfgld.amnt	gros.st.amnt
+	extern	domain	tfgld.amnt	less.amnt
+	extern	domain	tfgld.amnt	gros.less.amnt
+	extern	domain	tcmcs.long	prnt
+	extern	domain	tcyesno		free.issue
+	extern	domain	tcdsca		rep.free.issue
+	extern	domain	tcnama		rep.prd.by
+	extern	domain	tcmcs.str10	rep.stat
+	extern	domain	tcnama		rep.tran.name
+	extern	domain	tcmcs.long	rpt.no
+	extern	domain	tcdsca		rep.from.place
+	extern	domain	tcdsca		rep.to.place
+		domain	tcbool		service.tax			|#ISGECDV001031.n
+								|#ISGECDV001166.sn
+	extern	domain	tcmcs.long	rpt.vhno
+	extern	domain	tcorno		rep.rcno
+	extern	domain	tfacp.isup	rep.grno
+	extern	domain	tccom.bpid	rep.bpid
+	extern	domain	tfgld.date	rep.grdt
+	extern	domain	tcmcs.str15	rep.vhno
+	extern	domain	tcdsca		rep.vhtp
+	extern	domain	tcorno		rep.srct
+	extern	domain	tfgld.date	rep.srdt
+	extern	domain	tcnama		rep.bpnm
+								|#ISGECDV001166.en
+	domain	tcncmp			fin_comp, curr_comp			|#ISG1010103.n							
+	extern domain tcdesc  		vend.nama,vend.namb,vend.namc,vend.namd,vend.namf,vend.pstc,
+					vend.telp,vend.tefx,vend.dsca,vend.ccty,vend.cste,vend.ccit		|PATCH002016.n	
+	extern	domain	tcmcs.str14	rep.bivl				|ISGEC015036.n	
+	extern	domain	tcpono	r.var			|ISGEC015024.n
+
+|****************************** program section ********************************
+before.program:
+	reportdesc = "Purchase Bill Approval Memo"
+	language = language$
+	curr_comp = get.compnr()
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.cont.process:
+on.choice:
+   execute(print.data)
+
+choice.print.data:
+on.choice:
+| 	if rprt_open() then
+| 		if	reportno = 1	then
+| 			read.main.table()
+| 		endif	
+| 		rprt_close()
+| 	else
+| 		choice.again()
+| 	endif
+	rpt.no = 0
+	spool.open("",spool.device,1)
+	|if	reportno = 1	then
+		rpt.no = brp.open("rtdisg40600001",spool.device,0)
+		if rpt.no > 0 then
+			read.main.table()
+			brp.close(rpt.no)
+		else
+			choice.again()
+		endif
+	|endif
+	|if	reportno = 2	then
+| 		rpt.no = brp.open("rtdisg40600002",spool.device,0)			|ISGEC015024.o
+		rpt.no = brp.open("rtdisg40600004",spool.device,0)			|ISGEC015024.n
+| 		rpt.vhno = brp.open("rtdisg40600003",spool.device,0)	|temp.o		|#ISGECDV001166.n |#ISGEC015024.o
+		if rpt.no > 0 then
+			read.main.table.annexure()
+			brp.close(rpt.no)
+| 			brp.close(rpt.vhno)				|#ISGECDV001166.n	|ISGEC015024.o
+		else
+			choice.again()
+		endif
+	|endif
+	spool.close()
+
+|****************************** field section *********************************
+
+field.rcno.f:
+when.field.changes:
+	rcno.t = rcno.f
+	
+before.zoom:
+| 	qury.strg = "whinh310.rcno in (select whinh312.rcno from whinh312 where whinh312.oorg in (1,2,3,80,81,82))"	
+| 	query.extend.where.in.zoom(qury.strg)
+
+|****************************** function section ******************************
+
+functions:
+
+function read.main.table()
+{
+	srno =0
+	g.totl = 0
+	v.totl =0
+	bed.amount =0
+	ecess.amount =0
+	hecess.amount =0
+	cst.amount =0
+	ad.amount =0
+	total.amount =0
+	decc =0
+	final.amount =0
+	r.eces.per = 0 
+	r.cess.per = 0
+	r.vat.per = 0
+	r.eces = 0
+	r.cess = 0
+	r.vat = 0
+	add.chg = 0
+	
+	v.eces = 0
+	v.cess = 0
+	v.vat = 0
+	v.add.chg = 0
+	total.vat = 0
+
+	gros.total = 0
+	gros.amnt.total = 0
+	gros.exc.amnt = 0
+	gros.ot.amnt = 0
+	gros.st.amnt = 0
+	gros.less.amnt = 0
+	prnt = 0
+	
+	fin_comp = 0		|ISG10103.n
+	select	ttaad200.name:rep.prd.by
+	from	ttaad200
+	where	ttaad200._index1 = {:1}
+	and	ttaad200._compnr = 000
+	wherebind(1, logname$)
+	selectdo
+	selectempty
+		rep.prd.by = ""
+	endselect
+
+	select	tdpur406.*
+	from	tdpur406
+	where	tdpur406._index2 inrange {:rcno.f} and	{:rcno.t}
+	selectdo	
+			
+		select	tdpur401.*, tdpur400.*, tppdm600.padr, tcibd001.dsca, 
+			tcmcs065.dsca, tccom100.nama, tcmcs041.dsca, tcmcs052.dsca,
+			tcmcs065.comp:fin_comp				|ISG10103.n
+		from	tdpur401, tdpur400, tppdm600, tcibd001, tcmcs065,
+			tccom100, tcmcs041, tcmcs052
+		where	tdpur401._index1 = {:tdpur406.orno, :tdpur406.pono, :tdpur406.sqnb}
+		and	tdpur401.orno refers to tdpur400 Unref Clear
+		and	tdpur401.cprj refers to tppdm600 Unref Clear
+		and	tdpur401.item refers to tcibd001 Unref Clear
+		and	tdpur400.cofc refers to tcmcs065 Unref Clear
+		and	tdpur400.otbp refers to tccom100 Unref Clear
+		and	tdpur400.cdec refers to tcmcs041 Unref Clear
+		and	tdpur401.cprj refers to tcmcs052 Unref Clear
+		selectdo	
+			if	free.issue = tcyesno.yes	then
+				rep.free.issue = "Free Issue Delivery"
+			else
+				rep.free.issue = ""
+			endif
+			
+			select	tppdm740.ofbp
+			from	tppdm740
+			where	tppdm740._index1 = {:tdpur401.cprj}
+			as set with 1 rows
+			selectdo
+			selectempty
+				tppdm740.ofbp = ""
+			endselect
+			
+			if	not isspace(tppdm600.padr)	then
+				Get_Project_addr(tppdm600.padr)
+			endif	
+				
+			select	tfisg001.irno, tfisg001.irdt, tfacp100.isup, tfacp100.invd,
+				tfacp100.amth
+			from	tfisg001, tfacp100
+			where	tfisg001._index1 = {:1}
+			and	tfisg001.irno refers to tfacp100 Unref Clear
+			as set with 1 rows
+			wherebind(1, lval(tdpur406.dino))
+			selectdo
+				select	tfisg002.grno, tfisg002.grdt
+				from	tfisg002
+				where	tfisg002._index1 = {:tfisg001.irno}
+				as set with 1 rows
+				selectdo
+					tfisg003.grno = tfisg002.grno
+					tfisg003.grdt = tfisg002.grdt
+				selectempty
+					tfisg003.grno = ""
+					tfisg003.grdt = 0
+				endselect	
+				| select	tfisg003.grno, tfisg003.grdt
+				| from	tfisg003
+				| where	tfisg003._index3 = {:tfisg001.irno}
+				| as set with 1 rows
+				| selectdo
+				| endselect
+			endselect	
+					
+			srno = srno +1
+			
+| 			select	whisg312.inrq						|#ISGEC015036.o
+			select	whisg312.inrq,whisg312.rcno,whisg312.rcln		|#ISGEC015036.n
+			from	whisg312
+			where	whisg312._index1 = {:tdpur406.rcno, :tdpur406.rseq}
+			selectdo
+			selectempty
+				whisg312.inrq = ""
+			endselect
+													
+			get.billing.advics.lines(whisg312.rcno,whisg312.rcln)		|#ISGEC015036.n	
+												
+			select	tdmsl400.vrsn, tdmsl400.apdt
+			from	tdmsl400
+			where	tdmsl400._index1 = {:tdpur406.orno}
+			and	tdmsl400.stat = tcyesno.yes
+			order by tdmsl400.vrsn desc
+			as set with 1 rows
+			selectdo
+			endselect
+				
+			select	tctax400.*
+			from	tctax400
+			where	tctax400._index1 = {:tdpur400.otbp}
+			and	tctax400.efdt <= :whinh312.ardt
+			and	(tctax400.exdt >= :whinh312.ardt or tctax400.exdt =0)
+			selectdo
+				if	tctax400.catg.l = tctax.catg.l.excise then
+					v.ecno = tctax400.fovn
+				endif 
+				if	tctax400.catg.l = tctax.catg.l.lst then
+					v.tino = tctax400.fovn
+				endif
+			endselect
+			get.address(tdpur400.otad)				|PATCH002016.n			
+			select	tccom130.*
+			from	tccom130
+			where	tccom130._index1 = {:tdpur400.otad}
+			selectdo
+				select	tcmcs143.dsca
+				from	tcmcs143
+				where	tcmcs143._index1 ={:tccom130.ccty, :tccom130.cste} 
+				selectdo
+				endselect
+
+				select	tcmcs010.dsca
+				from	tcmcs010
+				where	tcmcs010._index1 = {:tccom130.ccty} 
+				selectdo
+				endselect
+			endselect
+				
+			total.vat = 0
+			line.amnt = 0
+			rep.ot.amnt = 0
+			rep.exc.amnt = 0
+			rep.st.amnt = 0
+			
+			total.vat = total.vat + tdpur401.tasv.l
+| 			line.amnt = line.amnt + (tdpur406.qiap * tdpur401.pric)		|#ISGECDV001031.o
+			| select	tdpur401.*, tppdm600.padr
+			| from	tdpur401, tppdm600
+			| where	tdpur401._index1 = {:whinh312.orno ,:whinh312.pono, :whinh312.seqn}
+			| and	tdpur401.item = :whinh312.item
+			| and	tdpur401.cprj refers to tppdm600 Unref Clear
+			| selectdo
+			| 	get.discount.amount()
+			| 	v.totl = (tdpur401.pric - r.disc ) * whinh312.qrec
+			| 	g.totl = g.totl + v.totl	
+			| endselect
+			service.tax = false			|#ISGECDV001031.n
+			calculate_freight()
+			get.tax.rate(tdpur401.ccty, tdpur401.cvat)
+			
+								|#ISGECDV001031.sn
+			if	service.tax	then
+| 				line.amnt = tdpur401.tass.l	|#ISGECDV001032.o
+											|#ISGECDV001032.sn
+				if	tdpur401.qoor <> 0	then
+					line.amnt = (tdpur401.tass.l/tdpur401.qoor) * tdpur406.qiap
+				else
+					line.amnt = 0
+				endif
+											|#ISGECDV001032.en
+			else
+| 				line.amnt = tdpur401.tase.l				|#ISGECDV001032.o
+										|#ISGECDV001032.sn
+				if	tdpur401.qoor <> 0	then
+					line.amnt = (tdpur401.tase.l/tdpur401.qoor) * tdpur406.qiap
+				else
+					line.amnt = 0
+				endif
+										|#ISGECDV001032.en
+			endif
+								|#ISGECDV001031.en
+					
+			v.eces =  ( (line.amnt * r.eces.per) / 100 )
+			v.cess = (v.eces * r.cess.per) / 100 
+			
+			rep.exc.amnt = rep.exc.amnt + (v.eces + v.cess)
+					
+			if	tdpur401.qoor <> 0	then
+				total.vat = (total.vat/tdpur401.qoor)*tdpur406.qiap
+			else
+				total.vat = 0
+			endif	
+			|rep.st.amnt = ((total.vat + rep.exc.amnt  ) * r.vat.per) / 100
+			rep.st.amnt = ((total.vat ) * r.vat.per) / 100
+			
+			if	tdpur406.conf = tcyesno.yes	then
+				rep.stat = "Confirmed"
+				get.tax.from.tfacp935()
+			else
+				rep.stat = "Open"
+			endif	
+			
+			line.total = 0
+			line.total = (rep.ot.amnt + rep.exc.amnt + rep.st.amnt) + (tdpur406.qiap * tdpur401.pric)
+			gros.amnt.total = gros.amnt.total + (tdpur406.qiap * tdpur401.pric)
+			gros.exc.amnt = gros.exc.amnt + rep.exc.amnt
+			gros.ot.amnt = gros.ot.amnt + rep.ot.amnt
+			gros.st.amnt = gros.st.amnt + rep.st.amnt
+			gros.total = gros.total + line.total
+					
+			tcmcs.dll0006.decode(g.totl,2,decode0,decode1,decode2,decode3, language)
+			decc= lval(decode3) * 1
+			tcmcs.dll0006.decode(decc,2,decode4,decode5,decode6,decode7, language)
+			if isspace(decode3)  then
+				amount1=toupper$("Rs. " & strip$(decode0))                       
+				amount2 =toupper$(" and " & strip$(decode4) & " Paise" &" ONLY") 
+			
+			endif
+			if not isspace(decode3)  then
+				amount1=toupper$("Rs. " & strip$(decode0))                         
+				amount2=toupper$(" and " & strip$(decode4)  & " Paise" &  " ONLY") 
+				
+			endif
+								|#ISGECDV001154.sn
+			select	tdisg406.txta
+			from	tdisg406
+			where	tdisg406._index1 = {:tdpur406.rcno}
+			selectdo
+			selectempty
+				tdisg406.txta = 0
+			endselect
+								|#ISGECDV001154.en
+			prnt = 1
+			|rprt_send()
+			brp.ready(rpt.no)
+			prnt = 0	
+		endselect
+		
+		
+	endselect
+	
+	prnt = 2
+	|rprt_send()
+	brp.ready(rpt.no)
+	prnt = 0
+	
+	select	tcisg001.*
+	from	tcisg001
+	where	tcisg001._index1 = {:tdpur406.orno, :tdmsl400.vrsn}
+	and	tcisg001.cpay = {:tdpur400.cpay}
+	selectdo
+		select	tdisg001.*, tpisg005.desc
+		from	tdisg001, tpisg005
+		where	tdisg001._index1 = {:tdpur406.orno, :tdmsl400.vrsn}
+		and	tdisg001.pmtl = :tcisg001.srno
+		and	tdisg001.docn refers to tpisg005 Unref Clear
+		selectdo
+			prnt = 3
+			|rprt_send()
+			brp.ready(rpt.no)
+			prnt = 0
+		selectempty
+			prnt = 3
+			|rprt_send()
+			brp.ready(rpt.no)
+			prnt = 0
+		endselect	
+	endselect
+	
+	prnt = 4
+| 	rprt_send()
+	brp.ready(rpt.no)
+	prnt = 0
+	
+	select	tcisg001.*
+	from	tcisg001
+	where	tcisg001._index1 = {:tdpur406.orno, :tdmsl400.vrsn}
+	and	tcisg001.cpay = {:tdpur400.cpay}
+	and	tcisg001.catg in (tcisg.catg.advance, tcisg.catg.retention)
+	selectdo
+		less.amnt = 0
+		if	with.tax = tcyesno.yes	then
+			less.amnt = (tcisg001.perc * gros.total) / 100
+		else	
+			less.amnt = (tcisg001.perc * gros.amnt.total) / 100
+		endif	
+		gros.less.amnt = gros.less.amnt + less.amnt
+		prnt = 5
+		|rprt_send()
+		brp.ready(rpt.no)
+		prnt = 0
+	endselect
+		
+}
+
+function read.main.table.annexure()
+{
+	prnt = 0
+	r.var = 0
+	rep.tran.name = ""
+	tcmcs.dll0095.read.parm("tfisg000")
+	select	tdpur406.*
+	from	tdpur406
+	where	tdpur406._index2 inrange {:rcno.f} and	{:rcno.t}
+	selectdo	
+		select	tdpur401.*, tdpur400.odat, tcmcs052.dsca
+		from	tdpur401, tdpur400, tcmcs052
+		where	tdpur401._index1 = {:tdpur406.orno, :tdpur406.pono, :tdpur406.sqnb}
+		and	tdpur401.orno refers to tdpur400 Unref Clear
+		and	tdpur401.cprj refers to tcmcs052 Unref Clear
+		selectdo	
+			if	free.issue = tcyesno.yes	then
+				rep.free.issue = "Free Issue Delivery"
+			else
+				rep.free.issue = ""
+			endif
+			
+			select	tdmsl400.vrsn, tdmsl400.apdt
+			from	tdmsl400
+			where	tdmsl400._index1 = {:tdpur406.orno}
+			and	tdmsl400.stat = tcyesno.yes
+			order by tdmsl400.vrsn desc
+			as set with 1 rows
+			selectdo
+			endselect
+			
+			select	tfisg001.irno, tfisg001.irdt, tfacp100.isup, tfacp100.invd,
+				tfacp100.amth
+			from	tfisg001, tfacp100
+			where	tfisg001._index1 = {:1}
+			and	tfisg001.irno refers to tfacp100 Unref Clear
+			as set with 1 rows
+			wherebind(1, lval(tdpur406.dino))
+			selectdo
+				select	tfisg002.grno, tfisg002.grdt, tfisg002.grbp, tccom100.nama:rep.tran.name
+				from	tfisg002, tccom100
+				where	tfisg002._index1 = {:tfisg001.irno}
+				and	tfisg002.grbp refers to tccom100 Unref Clear
+				selectdo
+					select	tfisg003.plcf, tfisg003.plct, tfisg003.citf, tfisg003.citt,
+						tfisg003.cctf, tfisg003.cctt, tfisg003.bpnm, tfisg003.tmod,
+						tfisg003.grwt, tfisg003.vhno					|ISGECDV001146.n
+					from	tfisg003
+					where	tfisg003._index1 = {:tfisg002.grno, :tfisg002.grbp, :tfisg002.grdt}
+					selectdo
+						rep.from.place = get.city.desc(tfisg003.cctf, tfisg003.plcf, tfisg003.citf)
+						rep.to.place = get.city.desc(tfisg003.cctt, tfisg003.plct, tfisg003.citt)
+					selectempty
+						rep.from.place = ""
+						rep.to.place = ""
+					endselect
+					if	tfisg000.bpid = tfisg002.grbp	then
+						rep.tran.name = tfisg003.bpnm
+					endif	
+					tfisg003.grno = tfisg002.grno
+					tfisg003.grdt = tfisg002.grdt
+					tfisg003.bpid = tfisg002.grbp
+					prnt = 1
+					brp.ready(rpt.no)
+					prnt = 0
+										|#ISGECDV001074.sn
+					tdisg452.srdt = 0
+					tdisg452.srct = ""
+					select	tdisg452.srdt, tdisg452.srct
+					from	tdisg452
+					where	tdisg452._index2 = {:tfisg002.grno, :tfisg002.grbp, :tfisg002.grdt}
+					selectdo
+						prnt = 1
+						brp.ready(rpt.no)
+						prnt = 0
+					endselect	
+										|#ISGECDV001074.en
+										|#ISGECDV001166.sn
+					read.main.vehicle.annexure(tdpur406.rcno, tfisg002.grno, tfisg002.grbp, tfisg002.grdt)
+										|#ISGECDV001166.en
+				selectempty
+					tfisg003.grno = ""
+					tfisg003.grdt = 0
+					tfisg003.bpid = ""
+					rep.tran.name = ""
+				endselect	
+			endselect	
+		endselect
+	endselect
+		
+}
+
+
+function get.tax.rate(domain tcccty i.ccty, 
+		      domain tccvat i.cvat)
+{
+	r.eces.per = 0 
+	r.cess.per = 0
+	r.vat.per = 0
+	
+	select 	tctax941.*
+	from 	tctax941
+	where	tctax941._index1={:i.ccty,
+				  :i.cvat}
+	and	tctax941.type = {20}
+	selectdo
+		select 	tcmcs036.*
+		from 	tcmcs036
+		where	tcmcs036._index1={:tctax941.ccty,
+					  :tctax941.cvat}
+		selectdo
+			if tcmcs036.indt.l = tctax.indt.l.bed or
+				tcmcs036.indt.l = tctax.indt.l.service	 then |or tcmcs036.indt.l = tctax.indt.l.sb.cess
+				select 	tcmcs032.*
+				from 	tcmcs032
+				where	tcmcs032._index1={:tcmcs036.ccty,
+							  :tcmcs036.cvat}
+				
+				and	tcmcs032.edat <= :tdpur406.ddte	|#ISGEC015016.n				  
+				order by tcmcs032._index1 desc
+				as set with 1 rows
+				selectdo
+					r.eces.per = tcmcs032.pvat
+				endselect
+				|#ISGECDV001031.sn
+				if	tcmcs036.indt.l = tctax.indt.l.service	then
+					service.tax = true
+				endif	
+				|#ISGECDV001031.en
+			endif
+			
+			if tcmcs036.indt.l = tctax.indt.l.e.cess.excise or
+			   tcmcs036.indt.l = tctax.indt.l.hse.cess.excise or
+			   tcmcs036.indt.l = tctax.indt.l.e.cess.service or		 
+			   tcmcs036.indt.l = tctax.indt.l.hse.cess.servic 	then 
+				select 	tcmcs032.*
+				from 	tcmcs032
+				where	tcmcs032._index1={:tcmcs036.ccty,
+							  :tcmcs036.cvat}
+							
+				and	tcmcs032.edat <= :tdpur406.ddte	|#ISGEC015016.n
+				order by tcmcs032._index1 desc
+				as set with 1 rows
+				selectdo
+					r.cess.per = r.cess.per + tcmcs032.pvat
+				endselect
+			endif
+					
+			if tcmcs036.indt.l = tctax.indt.l.vat  or
+			tcmcs036.indt.l = tctax.indt.l.cst	or
+			tcmcs036.indt.l = tctax.indt.l.lst	or
+			tcmcs036.indt.l	= tctax.indt.l.n.a or tcmcs036.indt.l = tctax.indt.l.sb.cess then  
+				select 	tcmcs032.*
+				from 	tcmcs032
+				where	tcmcs032._index1={:tcmcs036.ccty,
+							  :tcmcs036.cvat}
+				and	tcmcs032.edat <= :tdpur406.ddte		|#ISGEC015016.n			  
+				order by tcmcs032._index1 desc
+				as set with 1 rows
+				selectdo
+					r.vat.per = r.vat.per + tcmcs032.pvat
+				endselect
+			endif
+		endselect
+	endselect
+	
+}
+
+function get.discount.amount()
+{
+	r.disc = 0
+	
+	if tdpur401.disc(1) <> 0 then 	| disc % 
+		r.disc = tdpur401.pric * tdpur401.disc(1) / 100
+	else
+		if tdpur401.ldam(1) <> 0 then  | disc amnt	
+			r.disc = tdpur401.ldam(1)
+		endif
+	endif
+}
+
+function Get_Project_addr(domain tccom.cadr r.cadr)
+{
+	init.addr.var()
+	select	a_tccom130.nama:rep.prj.nama,
+		a_tccom130.namd:rep.prj.namd,
+		a_tccom130.dsca:rep.prj.dsca,
+		a_tccom130.ln01:rep.prj.ln01,
+		a_tccom130.ln03:rep.prj.ln03,
+		a_tccom130.info:rep.prj.info
+	from	tccom130 a_tccom130
+	where	a_tccom130._index1 = {:r.cadr}
+	selectdo
+	endselect	
+}
+
+function init.addr.var()
+{
+	rep.prj.nama = ""
+	rep.prj.namd = ""
+	rep.prj.ln01 = ""
+	rep.prj.ln03 = ""
+	rep.prj.dsca = ""
+	rep.prj.info = ""
+}
+
+
+function calculate_freight()
+{
+	domain tcamnt	additional.amount
+	
+	select 	tclct200.lcos, sum(tclct200.lcam):additional.amount
+	from	tclct200
+	where	tclct200._index1 = {21, 100, :tdpur406.rcno, :1}
+	group by tclct200.lcos
+	wherebind(1, str$(tdpur406.rseq))
+	selectdo
+		select	tclct115.dsca from tclct115
+		where	tclct115._index1 = {:tclct200.lcos}
+		selectdo
+		endselect
+		rep.ot.amnt = rep.ot.amnt + additional.amount
+	endselect
+}
+
+function get.tax.from.tfacp935()
+{
+	domain	tcamnt	amount
+	
+	rep.exc.amnt = 0
+	rep.st.amnt = 0
+	
+	switch.to.company(fin_comp)		|ISG10103.n
+	
+	select	tfacp935.ccty, tfacp935.cvat, sum(tfacp935.vamt):amount
+	from	tfacp935
+	where	tfacp935.rcno = :tdpur406.rcno
+	and	tfacp935.rseq = :tdpur406.rseq
+	and	tfacp935.orno = :tdpur406.orno		|#ISGECDV001078.n
+	and	tfacp935.pono = :tdpur406.pono		|#ISGECDV001078.n
+	and	tfacp935.sqnb = :tdpur406.sqnb		|#ISGECDV001078.n
+	group by tfacp935.ccty, tfacp935.cvat
+	selectdo
+		select	tcmcs036.indt.l,tcmcs036.dsca
+		from	tcmcs036
+		where	tcmcs036._index1 = {:tfacp935.ccty, :tfacp935.cvat}
+		selectdo
+			on case etol(tcmcs036.indt.l)
+			case 1:				|Service
+			case 4:				|Basic Excise Duty
+			case 9:				|Basic Custom Duty	
+			case 10:			|Countervailing Duty
+			case 14:			|ECess CVD
+			case 15:			|ECess on Custom
+			case 16:			|Ecess on Service
+			case 17:			|Ecess on Excise
+			case 19:			|SHE Cess on CVD
+			case 20:			|SHE Cess on Excise
+			case 21:			|SHE Cess on Service
+			case 22:			|SHE Cess on Custom
+				rep.exc.amnt = rep.exc.amnt + amount
+				break
+			case 2:				|Local Sales Tax	
+			case 3:				|Central Sales Tax
+			case 26:			|VAT
+			case 27:			|Swatchh Bharat Cess
+				rep.st.amnt = rep.st.amnt + amount
+				break
+			case 30:			|Not Applicable
+				rep.st.amnt = rep.st.amnt + amount
+			endcase
+		endselect
+	endselect
+	switch.to.company(curr_comp)		|ISG10103.n
+}
+
+function domain tcdsca get.city.desc(
+			domain	tcccty		i.cctf,
+			domain	tcmcs.cste	i.plcf,
+			domain	tccity		i.citf
+					)
+{
+	domain	tcdsca	tmp.dsca
+	
+	select	c_tccom139.dsca:tmp.dsca
+	from	tccom139 c_tccom139
+	where	c_tccom139._index1 = {:i.cctf, :i.plcf, :i.citf}
+	selectdo
+	selectempty
+		tmp.dsca = ""
+	endselect
+
+	return(tmp.dsca)
+}					
+					
+						|#ISGECDV001166.sn
+function read.main.vehicle.annexure
+			(
+			domain	tcorno		in.rcno,
+			domain	tfacp.isup	in.grno,
+			domain	tccom.bpid	in.grbp,
+			domain	tfgld.date	in.grdt
+			)
+{
+	domain	tfgld.date	frm.grdt
+	domain	tfgld.date	to.grdt
+	domain	tcbool		vehicle_exist
+	r.var = 0
+	
+	select	tfisg003.vhno, tfisg003.grdt
+	from	tfisg003
+	where	tfisg003._index1 = {:in.grno, :in.grbp, :in.grdt}
+	selectdo
+		frm.grdt = 0
+		to.grdt = 0
+		vehicle_exist = false
+		frm.grdt = tfisg003.grdt - 15
+		to.grdt = tfisg003.grdt + 15
+		select	tfisg003.vhno, tfisg003.grno, tfisg003.bpid, tfisg003.grdt,
+			tfisg003.vhcp, tfisg003.otbp, tfisg003.bpnm
+		from	tfisg003
+		where	tfisg003.grdt inrange :frm.grdt	and	:to.grdt
+		and	tfisg003.vhno = :tfisg003.vhno
+		and	tfisg003._index1 <> {:in.grno}
+		selectdo
+			Initialize_Vehicle_Variable()
+			rep.rcno = in.rcno
+			rep.grno = tfisg003.grno
+			if	tfisg003.otbp = tcyesno.yes	then
+				rep.bpnm = tfisg003.bpnm
+			else
+				select	bp_tccom100.nama:rep.bpnm
+				from	tccom100 bp_tccom100
+				where	bp_tccom100._index1 = {:tfisg003.bpid}
+				selectdo
+				endselect
+			endif
+			rep.grdt = tfisg003.grdt
+			rep.vhno = tfisg003.vhno
+			select	vh_fmfmd047.dsca:rep.vhtp
+			from	fmfmd047 vh_fmfmd047
+			where	vh_fmfmd047._index1 = {:tfisg003.vhcp}
+			selectdo
+			endselect
+			select	sr_tdisg452.srdt:rep.srdt,
+				sr_tdisg452.srct:rep.srct
+			from	tdisg452 sr_tdisg452
+			where	sr_tdisg452._index2 = {:tfisg003.grno, :tfisg003.bpid, :tfisg003.grdt}
+			selectdo
+			endselect
+| 			brp.ready(rpt.vhno)					|ISGEC015024.o
+			r.var = 1						|ISGEC015024.sn
+			brp.ready(rpt.no)
+			r.var = 0						|ISGEC015024.en	
+		endselect
+	endselect	
+}
+
+function Initialize_Vehicle_Variable()
+{
+	rep.rcno = ""
+	rep.grno = ""
+	rep.bpid = ""
+	rep.grdt = 0
+	rep.vhno = ""
+	rep.vhtp = ""
+	rep.srct = ""
+	rep.srdt = 0
+	rep.bpnm = ""
+}
+										|#ISGECDV001166.en
+function get.address(domain tccom.cadr in.address)			|PATCH002016.sn
+{
+	select tccom130vend.nama:vend.nama,
+		tccom130vend.namb:vend.namb,
+		tccom130vend.namc:vend.namc,
+		tccom130vend.telp:vend.telp,
+		tccom130vend.tefx:vend.tefx,
+		tccom130vend.namd:vend.namd,
+		tccom130vend.namf:vend.namf,
+		tccom130vend.pstc:vend.pstc,
+		tccom130vend.dsca:vend.dsca,
+		tccom130vend.ccty:vend.ccty,
+		tccom130vend.ccit:vend.ccit,           
+		tccom130vend.cste:vend.cste
+	from    tccom130 tccom130vend
+	where   tccom130vend._index1 = {:in.address}
+	selectdo
+		if isspace(vend.namf) then
+			vend.namf = vend.dsca
+		endif
+		if isspace(vend.namf) then
+			select tccom139.dsca from tccom139
+			where tccom139._index1 = {:vend.ccty,:vend.cste,:vend.ccit}
+			as set with 1 rows
+			selectdo
+				vend.namf = tccom139.dsca
+			endselect
+		endif
+
+	endselect	
+									|PATCH002016.en
+
+}		
+										|#ISGEC015036.sn
+function get.billing.advics.lines(
+				   domain	whinh.shpm	i.rcno,
+				   domain	tcpono		i.rcln
+				  )
+{
+	select	tdisg832.tobi,tdisg832.bivl,tdisg832.reas
+	from	tdisg832
+	where	tdisg832._index4 = {:i.rcno,:i.rcln}
+	selectdo
+		if tdisg832.tobi = tcyesno.yes then
+			rep.bivl = "Rs." & str$(tdisg832.bivl)
+		else
+			rep.bivl = tdisg832.reas
+		endif	
+	selectempty
+		tdisg832.tobi = empty
+		tdisg832.bivl = 0.00
+		tdisg832.reas = ""
+		rep.bivl = ""
+	endselect
+	
+}
+										|#ISGEC015036.en
+

@@ -1,0 +1,521 @@
+|******************************************************************************
+|* tpisg6400m200  0  VRC B61U a7 live
+|* Print Billing Report - Projects
+|* Installation user             
+|* 2014-12-29
+|******************************************************************************
+|* Main table tppdm600 Project, Form Type 4
+|******************************************************************************
+|* ID: ISGEC001202, IT0327, Ritu Shrivastava, Dt. 03-01-2014
+|* Modifications to get print record.\
+|******************************************************************************
+|*IDENT ISGEC001203,Sandhyarani,05-01-2014
+|*Modifications
+|******************************************************************************
+|* ID: ISGEC001149, IT0327, Ritu Shrivastava, Dt. 06-02-2015
+|* Modifications to print the proper values for previous records.
+|*
+|* ID: ISGEC01052, IT0047, Dharmendra, Dt. 12-02-2015
+|* Modifications in picking the Exchange rate(from tdisg832 to tppdm740.
+|******************************************************************************
+|* ID: ISGEC001153, IT0327, Ritu Shrivastava, Dt. 20-02-2015
+|* Modifications to print basic amount.
+|*****************************************************************************
+|* IDENT ISGEC01089,IT0376, Mani sharma , Dt. 13-03-2015
+|* Modification to print project wise value 
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttppdm600 | Project
+	table	ttfgld005
+	table	ttfgld006
+	table	ttcmcs052
+	table	ttppdm740
+	table	ttcemm170
+	table	ttccom000
+	table	ttccom130
+	table	ttdisg831
+	table	ttdisg832
+	table	ttpisg039
+	table	ttcemm030
+	table  ttcmcs008
+	table	ttcemm110
+	table	tciisg999						|#ISGEC001149.n
+	|*************** Form Variables ********************
+	extern	domain	tccprj		cprj.f    fixed
+	extern	domain	tccprj		cprj.t    fixed
+	extern	domain	tfgld.year	var.year
+	extern	domain	tfgld.prod	prod.f
+	extern	domain	tfgld.prod	prod.t
+	extern domain  tccprj          project.var 
+	|************** Script Variables *******************
+	extern	domain	tfgld.prod	prd
+	extern	domain	tcdate		scr.date.f
+	extern	domain	tcdate		scr.date.t
+	extern	domain	tcdsca		scr.prod
+	extern	domain	tcamnt		scr.amnt
+	extern	domain	tdisg.type	proj.type
+	extern	domain	tfgld.ttyp	ttyp.new
+	extern	domain	tfgld.docn	docn.new
+	extern	domain	tcamnt		amnt.new
+	extern	domain	tcamnt		total.new
+	extern	domain	tcncmp		comp.new
+		domain	tcdate		tmp.indt		|Inv. Date
+		domain	tccom.bpid	rep.cuno		|Customer
+		domain	tcnama		rep.cnnm		|Customer Name
+		domain	tcamnt		tmp.bamt		|Basic Amount
+		domain	tcamnt		tmp.samt		|Sales Tax Amount
+		domain	tcamnt		rep.ed.reim		|ED Reimbursement
+		domain	tcamnt		tmp.st.reim		|Service Reimbursement
+		domain	tcamnt		rep.cst.reim		|CST Reimbursement
+		domain	tcamnt		tmp.vat.reim		|VAT Reimbursement
+		domain	tcamnt		rep.fgt.reim		|Freight Reimbursement
+		domain	tcamnt		tmp.gr.val		|Gross Value
+		domain	tcamnt		tmp.advn		|Advance
+		domain	tcamnt		tmp.retn		|Retention
+		domain	tcamnt		tmp.nt.val		|Net Value
+		domain	tcamnt		tmp.misc.clm		|Miscellaneous Value			|#ISGEC001149.n
+		
+	extern domain  tcncmp		curr.comp			|#ISGEC001149.n
+	extern domain  tcemm.grid	cdf.divs			|#ISGEC001149.n
+	extern domain tcratc 		 currency.rate
+	|************** Report Field ***********************
+	extern	domain	tccprj		rep.cprj		|Project
+	extern	domain	tcdsca		rep.pjdc		|Project Description
+	extern	domain	tccwoc		rep.divs		|Division / Group
+	extern	domain	tcamnt		rep.tipc		|Total In Process
+	extern	domain	tcamnt		rep.amnt(1) Based	|Sale Invoice Amount
+	extern	domain	tcdsca		rep.prod(1) Based	|Period
+	extern domain  tcpono          p
+	
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+	get.screen.defaults()
+
+|****************************** choice section ********************************
+choice.print.data:
+on.choice:
+	if	rprt_open() then
+		read.main.table()
+		rprt_close()
+	else
+		choice.again()
+	endif
+
+|****************************** field section *********************************
+field.cprj.f:
+when.field.changes:
+	cprj.t = cprj.f
+
+field.prod.f:
+before.field:
+	prod.f = 1
+
+before.zoom:
+	tfgld005.ptyp = tfgld.ptyp.financial
+	tfgld005.year = var.year
+	
+when.field.changes:
+	prod.t = prod.f
+	
+check.input:
+	select	tfgld005.prno
+	from	tfgld005
+	where	tfgld005._index1 = {tfgld.ptyp.financial, :var.year, :prod.f}
+	and	tfgld005.corr = tcyesno.no
+	selectdo
+	selectempty
+		message("Please Input correct Fiscal Period")
+		set.input.error("", e)
+	endselect	
+	
+field.prod.t:
+before.zoom:
+	tfgld005.ptyp = tfgld.ptyp.financial
+	tfgld005.year = var.year
+
+check.input:
+	select	tfgld005.prno
+	from	tfgld005
+	where	tfgld005._index1 = {tfgld.ptyp.financial, :var.year, :prod.t}
+	and	tfgld005.corr = tcyesno.no
+	selectdo
+	selectempty
+		message("Please Input correct Fiscal Period")
+		set.input.error("", e)
+	endselect
+
+field.var.year:
+check.input:
+	select	tfgld006.year
+	from	tfgld006
+	where	tfgld006._index1 = {:var.year}
+	selectdo
+	selectempty
+		message("Please Input correct Fiscal Year")
+		set.input.error("", e)
+	endselect
+|****************************** function section ******************************
+
+functions:
+
+function read.main.table()
+{	
+	comp.new = get.compnr()
+	select	tppdm600.cprj, tppdm600.cdf_divs, tcmcs052.dsca
+	from	tppdm600, tcmcs052
+	where	tppdm600._index1 inrange {:cprj.f}	and {:cprj.t}
+	and	tppdm600.cprj refers to tcmcs052 Unref Clear
+	order by tppdm600._index1
+	selectdo
+		project.var = shiftl$(strip$(tppdm600.cprj))
+		free.mem(rep.prod)
+		free.mem(rep.amnt)
+		proj.type = empty
+		rep.cprj = tppdm600.cprj
+		rep.pjdc = tcmcs052.dsca
+| 		get.var(pid, "tppdm600.cdf_divs", rep.divs)			|#ISGEC001203.o
+		proj.type = determine.project.type(tppdm600.cprj)
+		for prd = prod.f to prod.t
+			scr.prod = ""
+			scr.date.f = 0
+			scr.date.t = 0
+			scr.amnt = 0
+			Get_Fiscal_Detail(var.year, prd, scr.prod, scr.date.f, scr.date.t)
+			alloc.mem(rep.prod, 30, prd)
+			alloc.mem(rep.amnt, prd)
+			rep.prod(1, prd) = scr.prod
+			ttyp.new = " "						|#ISGEC001203.n								
+			docn.new = 0						|#ISGEC001203.n	
+			Initialize_Dll_Variable()			|#ISGEC001203.n				
+
+			get.var(pid,"tppdm600.cdf_divs", cdf.divs)
+			
+			select tcemm030.dsca
+			from   tcemm030
+			where  tcemm030._index1 = {:cdf.divs}
+			selectdo
+			selectempty
+				tcemm030.dsca = ""
+			endselect
+			
+			p = 0
+			select	tdisg831.rate	,tdisg831.stat	,tdisg831.ofbp	|#ISGEC001203.sn
+			        ,tdisg831.cinv, tdisg831.edrn			|#ISGEC001149.n
+			from	tdisg831
+			where	tdisg831._index4 = {:project.var}
+| 			and	tdisg831.stat = tdisg.stat.freeze		|ISGEC01089.o
+			and	tdisg831.stat in (tdisg.stat.freeze,tdisg.stat.process)				|ISGEC01089.n
+| 			and	tdisg832.edrn = tdisg831.edrn
+			order by tdisg831.cinv
+			selectdo
+				select tdisg832.edrn,tdisg832.rcno,tdisg832.rcln,tdisg832.nins,tdisg832.bivl
+				from	tdisg832
+				where	tdisg832._index1 = {:tdisg831.edrn}
+				selectdo
+				amnt.new = tdisg832.bivl		|#ISGEC001149.o
+| 				total.new = amnt.new * tdisg831.rate		|#ISGEC001149.o
+				if proj.type = tdisg.type.export then		|#ISGEC001149.sn
+					if not isspace(tdisg831.cinv) then
+						if tdisg831.stat = tdisg.stat.freeze then
+						get.rate(tppdm740.ccur)
+						total.new = total.new + (amnt.new * currency.rate)
+						endif
+						if tdisg831.stat = tdisg.stat.process then
+							print.process()
+						endif
+					endif
+				else
+| 					amnt.new = tdisg832.bivl
+| 					total.new = total.new + (amnt.new * tdisg831.rate)
+					if tdisg831.stat = tdisg.stat.freeze then		
+						total.new = total.new + (amnt.new * tppdm740.rate(1))
+					else if tdisg831.stat = tdisg.stat.process then
+						print.process()
+					endif
+					endif
+					
+				endif						
+				endselect					|#ISGEC001149.en
+			endselect
+			if total.new > 0 then
+				total.new = total.new/100000	
+			endif	
+| 			total.new = total.new/100000				|#ISGEC001149.n
+		endfor
+		rprt_send()
+	endselect
+}
+function print.process()
+{
+| 	select	tpisg039.ityp, tpisg039.idoc	|#ISGEC001203.sn
+| 	from	tdisg831, tdisg832,tpisg039				|#ISGEC001203.en				
+| 	where	tdisg831._index4 = {:tppdm600.cprj}
+| 	and	tdisg831.stat = tdisg.stat.process
+| 	and	tdisg832.edrn = tdisg831.edrn
+| 	and	tpisg039._index1 = {:tppdm600.cprj,tdisg831.ofbp,tdisg832.nins,tdisg831.edrn,tdisg832.rcno,tdisg832.rcln}	|#ISGEC001203.n	
+| 	group by tpisg039.ityp, tpisg039.idoc					|#ISGEC001203.n	
+| 	order by tpisg039.ityp, tpisg039.idoc					|#ISGEC001203.n	
+
+	select	tpisg039.ityp, tpisg039.idoc
+	from	tpisg039						
+	where	tpisg039._index1 = {:tppdm600.cprj, :tdisg831.ofbp, :tdisg832.nins, :tdisg831.edrn,
+				:tdisg832.rcno,:tdisg832.rcln}
+	group by tpisg039.ityp, tpisg039.idoc		
+	order by tpisg039.ityp, tpisg039.idoc	
+	selectdo								
+		if	(ttyp.new <> tpisg039.ityp  or	docn.new <> tpisg039.idoc)		|#ISGEC001203.n
+		and (tpisg039.idoc <> 0 and not isspace(tpisg039.ityp)) then  		|#ISGEC001203.n
+			tdisg.dll0003.Get_Sale_Detail(tppdm600.cprj, tpisg039.ityp, tpisg039.idoc, scr.date.f, scr.date.t,
+					tmp.indt, rep.cuno, rep.cnnm, tmp.bamt, tmp.samt, rep.ed.reim,
+					tmp.st.reim, rep.cst.reim, tmp.vat.reim, rep.fgt.reim, tmp.gr.val,
+					tmp.advn, tmp.retn, tmp.nt.val)	
+					
+| 			scr.amnt = scr.amnt + tmp.gr.val	|#ISFEC001153.o
+			scr.amnt = scr.amnt + tmp.bamt		|#ISFEC001153.n
+		endif					|#ISGEC001203.sn
+		ttyp.new = tpisg039.ityp
+		docn.new = tpisg039.idoc
+						|#ISGEC001203.en	
+	endselect
+			
+	print.composed.invoice(tppdm600.cprj,scr.date.f, scr.date.t)		|#ISGEC001149.n
+	
+	rep.amnt(prd) = rep.amnt(prd) + scr.amnt
+	if rep.amnt(prd) > 0 then
+		rep.amnt(prd) = rep.amnt(prd)/100000				|#ISGEC001149.n
+	endif	
+
+
+}
+function Get_Fiscal_Detail(
+			domain	tfgld.year	in.year,
+			domain	tfgld.prod	in.prd,
+		ref	domain	tcdsca		ot.prod,
+		ref	domain	tcdate		ot.date.f,
+		ref	domain	tcdate		ot.date.t
+			)
+{
+	domain	tfgld.date	date.f
+	domain	tfgld.date	date.t
+	domain	tfgld.year	tmp.yr
+	domain	tfgld.year	tmp.prd
+	long	yy, mm, dd
+	
+	yy = 0
+	mm = 0
+	dd = 0
+	date.f = 0
+	date.t = 0
+	ot.prod = ""
+	ot.date.f = 0
+	ot.date.t = 0
+	tmp.yr = 0
+	tmp.prd = 0
+	select	tfgld005.desc, tfgld005.stdt
+	from	tfgld005
+	where	tfgld005._index1 = {tfgld.ptyp.financial, :in.year, :in.prd}
+	and	tfgld005.corr = tcyesno.no
+	selectdo
+| 		ot.prod = trim$(tfgld005.desc) & " " & str$(in.year)	|#ISGEC001203.o
+		ot.prod = trim$(tfgld005.desc) 				|#ISGEC001203.n
+		date.f = tfgld005.stdt
+		num.to.date(date.f,yy,mm,dd)
+	endselect
+
+	if	in.prd = 12	then
+		tmp.yr = in.year + 1
+		tmp.prd = 1
+	else
+		tmp.yr = in.year
+		tmp.prd = in.prd + 1
+	endif
+		
+	select	tfgld005.stdt
+	from	tfgld005
+	where	tfgld005._index1 = {tfgld.ptyp.financial, :tmp.yr, :tmp.prd}
+	and	tfgld005.corr = tcyesno.no
+	selectdo
+		date.t = tfgld005.stdt - 1
+		num.to.date(date.t,yy,mm,dd)
+	selectempty
+		num.to.date(date.f, yy, mm, dd)
+		date.t = date.to.num(mm<12?yy:yy+1, mm<12?mm+1:1, 1) - 1
+	endselect
+	get.utc.from.date(date.f, 00, 00, 00, ot.date.f)
+| 	get.utc.from.date(date.t, 00, 00, 00, ot.date.t)						|#ISGEC001149.o
+	get.utc.from.date(date.t, 23, 59, 59, ot.date.t)						|#ISGEC001149.n
+}
+
+function get.utc.from.date
+		(
+		domain	tfgld.date	i.date,
+		long			i.hh,
+		long			i.mn,
+		long			i.ss,
+	ref	domain	tcdate		o.date
+			)
+{
+	long	dd, mm, yy
+	
+	yy = 0
+	mm = 0
+	dd = 0
+	num.to.date(i.date, yy, mm, dd)
+	o.date = date.to.utc(yy, mm, dd, i.hh, i.mn, i.ss)
+	if	o.date < 0	then
+		o.date = 0
+	endif
+}
+
+function domain tdisg.type determine.project.type
+			(
+				domain	tccprj		i.cprj
+			)
+{
+	select 	tppdm740.ofbp,
+		tppdm740.ccur,
+		tppdm740.rate,
+		tccom130.ccty,
+		tppdm600.ncmp
+	from	tppdm740,tccom100,tppdm600,tccom130
+	where	tppdm740._index1 = {:i.cprj}
+	and	tppdm740.ofbp refers to tccom100
+	and	tppdm740.cprj refers to tppdm600
+	and	tccom100.cadr refers to tccom130
+	as set with 1 rows
+	selectdo
+	endselect
+	
+	select	tcemm170.lcur
+	from	tcemm170
+	where	tcemm170._index1 = {:tppdm600.ncmp}
+	and	tcemm170.lcur = :tppdm740.ccur
+	as set with 1 rows
+	selectdo
+		select	tccom000.ccty
+		from	tccom000
+		where	tccom000._index1 = {0,:tppdm600.ncmp}
+		selectdo
+			if tccom000.ccty <> tccom130.ccty then
+				return(tdisg.type.export)
+			else	
+				return(tdisg.type.domestic)
+			endif	
+		endselect
+	selectempty
+		return(tdisg.type.export)
+	endselect
+	
+	return(tdisg.type.domestic)
+}
+
+function Initialize_Dll_Variable()
+{
+	tmp.indt = 0		|Inv. Date
+	rep.cuno = ""		|Customer
+	rep.cnnm = ""		|Customer Name
+	tmp.bamt = 0		|Basic Amount
+	tmp.samt = 0		|Sales Tax Amount
+	rep.ed.reim = 0		|ED Reimbursement
+	tmp.st.reim = 0		|Service Reimbursement
+	rep.cst.reim = 0		|CST Reimbursement
+	tmp.vat.reim = 0		|VAT Reimbursement
+	rep.fgt.reim = 0		|Freight Reimbursement
+	tmp.gr.val = 0		|Gross Value
+	tmp.advn = 0		|Advance
+	tmp.retn = 0		|Retention
+	tmp.nt.val = 0		|Net Value
+	amnt.new = 0				|#ISGEC001203.n			
+	total.new = 0				|#ISGEC001203.n
+	tmp.misc.clm = 0			|#ISGEC001149.n
+	cdf.divs = ""			|#ISGEC001149.n
+}
+
+										|#ISGEC001149.sn
+function print.composed.invoice(domain tccprj	      i.cprj,
+				 domain tcdate	      i.date.f,
+				 domain tcdate       i.date.t)
+{
+	domain tfgld.date	v.date.f
+	domain tfgld.date	v.date.t
+	
+	v.date.f = 0
+	v.date.t = 0
+	
+	get.utc.to.date(i.date.f, v.date.f)
+	get.utc.to.date(i.date.t, v.date.t)
+	
+	select	ciisg999.proj
+	from	ciisg999
+	where	ciisg999._index3 = {:i.cprj} 
+	and	ciisg999.date inrange :v.date.f	and :v.date.t
+	group by ciisg999.proj				
+	order by ciisg999.proj
+	selectdo
+		if p = 0 then
+			select	ciisg999.date, ciisg999.cprc, ciisg999.stax, ciisg999.edre,
+				ciisg999.stre, ciisg999.misc, ciisg999.advc, ciisg999.rete,
+				ciisg999.pris, tcmcs052.dsca
+			from	ciisg999, tcmcs052
+			where	ciisg999._index3 = {:ciisg999.proj}
+			and	ciisg999.date inrange :v.date.f	and	:v.date.t
+			and	ciisg999.proj refers to tcmcs052 unref Clear
+			selectdo
+				
+				tmp.bamt = tmp.bamt + ciisg999.cprc				
+				rep.ed.reim = rep.ed.reim + ciisg999.edre
+				tmp.st.reim = tmp.st.reim + ciisg999.stre
+				tmp.misc.clm = tmp.misc.clm + ciisg999.misc
+				tmp.samt = tmp.samt + ciisg999.stax
+				tmp.advn = tmp.advn + ciisg999.advc
+				tmp.retn = tmp.retn + ciisg999.rete
+				p = 1
+			endselect
+			tmp.gr.val = tmp.bamt + tmp.samt + rep.ed.reim + tmp.st.reim + tmp.misc.clm
+			tmp.nt.val = tmp.gr.val - (tmp.advn + tmp.retn)
+	| 		scr.amnt = scr.amnt + tmp.gr.val		|#ISGEC001153.o
+			scr.amnt = scr.amnt + tmp.bamt			|#ISGEC001153.n
+		endif	
+	endselect
+			
+}
+
+function get.utc.to.date(
+			domain	tcdate		i.utc,
+		ref	domain	tfgld.date	o.dte	
+			)
+{
+	long	dd, mm, yy, hh, mn, ss
+	utc.to.date(i.utc, yy , mm, dd, hh, mn, ss)
+	o.dte = date.to.num(yy, mm, dd)
+	if	o.dte < 0	then
+		o.dte = 0
+	endif
+}
+										|#ISGEC001149.en
+
+function void get.rate(domain tcccur  in.ccur)
+{
+
+domain tcccur in.c
+
+	in.c = 		"INR"
+	currency.rate = 0
+	
+	select tcmcs008.rate,tcmcs008.stdt
+	from    tcmcs008
+	where  tcmcs008._index1 = {:in.c,:in.ccur,"SAL"}
+	order by tcmcs008.stdt desc 
+	as set with 1 rows
+	selectdo
+		currency.rate = tcmcs008.rate
+	endselect	
+
+
+}

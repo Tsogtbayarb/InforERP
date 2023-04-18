@@ -1,0 +1,585 @@
+ |******************************************************************************
+|* tfcmg44012  0  VRC B40O c4 SIS 
+|* Print Receipt
+|* Veena Development User        
+|* 2007-03-26
+|******************************************************************************
+|* Main table tfcmg401 Direct Debit Advice, Form Type 4
+|* ID ISGEC01048,	Mani sharma,		2015-02-05
+|* ****************************************************************************
+|* ID: ISGEC01105, Mani sharma
+|* Case ID :6870
+|* Functional: Manoj Barman
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttfcmg401	| Direct Debit Advice
+	table	ttccom000	| Companies
+	table	ttccom100	| Companies
+	table	ttccom130
+	table	ttfgld004
+	table	ttfgld011
+	table	ttfcmg409
+	table	ttccom114	| Pay By BP
+	table   ttfgld008
+
+	extern	domain	tfgld.btno    	btno.f
+	extern	domain	tcnama    	cuno.nama    
+	extern	domain	tcnama    	cuno.namb    
+	extern	domain	tfgld.desc    	ttyp.desc    
+	extern	domain	tcnama        	pcun.nama    
+	extern	domain	tfgld.desc    	otyp.desc    
+	extern	domain	tfgld.desc    	ptyp.desc    
+	extern	domain	tcccor    	postaladd.m	
+	extern	domain tcmcs.str215 	cash.str
+	extern	domain	tcnama		nama.m
+	extern	domain	tcnama		namb.m
+	extern	domain	tcmcs.str45		grpnama.m
+	domain 	tfgld.amnt	totamnt.m
+	extern	domain	tcmcs.str30	against.m
+	extern	domain	tccuno	branch
+	extern domain  tcmcs.str50m   rep.bpid.ln06
+|****************************** Form Field variables ******************************
+					
+extern	domain	tfisg.fin01	source.f
+extern	domain	tfgld.year	fyer.f
+extern	domain	tcncmp		curr.comp
+
+	table	ttfgld102
+	table	ttfgld106
+	table	ttfgld018
+	table	ttfgld100
+					
+|****************************** report variables **********************************
+					
+extern	domain	tfgld.btno	rep.btno
+extern	domain	tccom.bpid	rep.bpid
+extern	domain	tcnama		rep.bpid.nama
+extern	domain	tcnamb		rep.bpid.namb
+extern	domain	tcccty		rep.comp.ccty
+extern	domain	tcnama		rep.comp.nama
+
+extern	domain	tcmcs.str100m	rep.bpid.ln01
+extern	domain	tcmcs.str100m	rep.bpid.ln02
+extern	domain	tcmcs.str100m	rep.bpid.ln03
+extern	domain	tcmcs.str100m	rep.bpid.ln04
+extern	domain	tcmcs.str100m	rep.bpid.ln05
+
+extern	domain	tcmcs.str100m	rep.comp.ln01
+extern	domain	tcmcs.str100m	rep.comp.ln02
+extern	domain	tcmcs.str100m	rep.comp.ln03
+extern	domain	tcmcs.str100m	rep.comp.ln04
+extern	domain	tcmcs.str100m	rep.comp.ln05
+
+extern	domain	tcdsca		rep.against
+
+extern	domain	tfgld.amnt	rep.amnt
+extern	domain	tcccur		rep.ccur
+extern	domain	tcncmp		rep.comp
+extern	domain	tfgld.docn	rep.ninv
+extern	domain	tfgld.date	rep.plan
+extern	domain	tfgld.refc	rep.refr
+extern	domain	tfgld.ttyp	rep.ttyp
+extern	domain	tcncmp		rep.gcmp
+extern	domain	tfgld.amnt	rep.tot.amnt
+extern domain  tcmcs.str100m   rep.namf
+extern domain  tctelp          rep.telp
+extern domain  tctefx          rep.tefx
+extern domain  tcpstc          o.pstc
+extern domain  tcdsca          ledger.desc
+extern domain  tcamnt          rep.dbcr,total,rep.amnt.sum
+extern  domain  tcpono  i,q
+|****************************** program section **********************************
+before.program:
+	curr.comp = get.compnr()
+|****************************** form section **********************************
+form.1:
+init.form:
+	|get.screen.defaults()
+	btno.f = tfcmg401.btno
+|****************************** choice section ********************************
+choice.cont.process:
+on.choice:
+	execute(print.data)
+
+choice.print.data:
+on.choice:
+	if rprt_open() then
+		on case	source.f
+		case	tfisg.fin01.tran:
+			read.transactions()
+			break
+		default:
+| 			read.main.table()
+			read.direct.receipt()
+		endcase
+		rprt_close()
+	else
+		choice.again()
+	endif
+
+|****************************** field section *********************************
+field.source.f:
+after.field:
+	if source.f = tfisg.fin01.tran then
+		enable.fields("fyer.f")
+	else
+		disable.fields("fyer.f")
+	endif
+	
+field.btno.f:
+before.zoom:
+	if source.f = tfisg.fin01.tran then
+		tfgld100.year = fyer.f
+		attr.zoomcode = Z.SESSION 
+		attr.zoomsession$ = "tfgld1500m000" 
+		attr.zoomreturn$ = "tfgld100.btno"
+	else
+		query.extend.where.in.zoom("tfcmg409.stdd = 6")
+		attr.zoomsession$ = "tfcmg4521m000"
+		attr.zoomreturn$ = "tfcmg409.btno"
+	endif
+	
+after.field:
+	select	tfcmg401.itbp 
+	from	tfcmg401 
+	where	tfcmg401.btno = :btno.f 
+	selectdo 
+	endselect
+	
+	select	tccom130.* 
+	from	tccom130 
+	where	tccom130._index1 = {:tfcmg401.itbp}
+	selectdo 
+	endselect
+
+|****************************** function section ******************************
+functions:
+function read.main.table()
+{
+	totamnt.m = 0
+	select tfcmg401.*,tccom100.nama:cuno.nama,tccom114.cadr
+	from	tfcmg401, tccom100, tccom114
+	where	tfcmg401._index1 = {:btno.f}
+	and	tfcmg401.itbp refers to tccom100
+	and	tfcmg401.itbp refers to tccom114
+	order by tfcmg401._index1
+	selectdo
+		select	tccom130.ln01,tccom130.ln02,tccom130.ln03,tccom130.ln04,tccom130.ln05
+		from	tccom130
+		where	tccom130._index1 = {:tccom114.cadr}
+		selectdo
+		selectempty
+			tccom130.ln01 = ""
+			tccom130.ln02 = ""
+			tccom130.ln03 = ""
+			tccom130.ln04 = ""	
+			tccom130.ln05 = ""
+		endselect
+		
+		select	tccom000.ncmp,tccom000.nama,tccom000.ccty
+		from	tccom000
+		where	tccom000._index2 = {:tfcmg401.comp}
+		selectdo
+		selectempty
+		endselect
+		
+		branch = ""
+		if tfcmg401.comp = 200 then 
+			branch = "HO-IJT"
+		else
+			if tfcmg401.comp = 300 then 
+				branch = "HO-XYD"
+			endif
+		endif
+		
+	
+		against.m = enum.descr$("tfcmg.dbdv", tfcmg401.tadv)
+		if tfcmg401.tadv = tfcmg.dbdv.unallocated then
+			against.m = "Receipt ag Dues"
+		endif
+		grpnama.m = ""
+		select	tccom000.nama:nama.m,tfgld004.gcmp 
+		from	tccom000, tfgld004 
+		where	tccom000.ncmp = tfgld004.gcmp 
+		selectdo 
+			grpnama.m = strip$(nama.m) & " " & strip$(namb.m)
+		endselect
+		
+		select	tccom130.*
+		from	tccom130
+		where	tccom130._index1 = :tfcmg401.itbp
+		selectdo
+		selectempty		
+		endselect
+		
+		totamnt.m = totamnt.m + tfcmg401.amnt
+		cash.str = ""
+		tfgld.dll9999.1.in.words(totamnt.m,cash.str)
+		rprt_send()
+	endselect
+}
+
+
+
+function read.direct.receipt()
+{
+	get.company.info(curr.comp)
+	select 	tfcmg401.btno,
+		tfcmg401.ttyp,
+		tfcmg401.ninv,
+		tfcmg401.itbp,
+		tfcmg401.amth,
+		tfcmg401.plan,
+		tfcmg401.ccur,
+		tfcmg401.refr,
+		tfcmg401.tadv,
+		tccom100.nama,
+		tccom114.cadr
+	from	tfcmg401, tccom100, tccom114
+	where	tfcmg401._index1 = {:btno.f}
+	and	tfcmg401.itbp refers to tccom100
+	and	tfcmg401.itbp refers to tccom114
+	selectdo
+		rep.btno = tfcmg401.btno
+		rep.ttyp = tfcmg401.ttyp
+		rep.ninv = tfcmg401.ninv
+		rep.bpid = tfcmg401.itbp
+		rep.bpid.nama = tccom100.nama
+		rep.amnt = tfcmg401.amth(1)
+		rep.plan = tfcmg401.plan
+		rep.ccur = tfcmg401.ccur
+		rep.refr = tfcmg401.refr
+		rep.namf = ""
+		rep.telp = ""
+		rep.tefx = ""
+		get.address.data(tccom114.cadr,rep.bpid.ln01,rep.bpid.ln02,rep.bpid.ln03,rep.bpid.ln04,rep.bpid.ln05,rep.bpid.ln06,rep.namf,rep.telp,rep.tefx)
+		
+		rep.against = enum.descr$("tfcmg.dbdv", tfcmg401.tadv)
+		
+		if tfcmg401.tadv = tfcmg.dbdv.unallocated then
+			rep.against = "Receipt ag Dues"
+		endif
+		if tfcmg401.amth(1) <> 0 then
+			rep.tot.amnt = rep.tot.amnt + rep.amnt
+		endif
+		
+		cash.str = ""
+		tfgld.dll9999.1.in.words(rep.tot.amnt,cash.str)
+		rprt_send()
+		
+	endselect
+	rep.tot.amnt = 0
+}
+
+function read.transactions()
+{
+	rep.tot.amnt = 0
+	select 	tfgld018.trun,
+		tfgld018.btno,
+		tfgld018.ttyp,
+		tfgld018.docn
+	from	tfgld018
+	where	tfgld018._index2 = {:fyer.f,:btno.f}
+	and     tfgld018._compnr = :curr.comp
+	selectdo
+		rep.btno = tfgld018.btno
+		total = 0
+		rep.amnt.sum = 0
+		if tfgld018.trun <> 0 then
+			get.data.from.finalized.transaction(tfgld018.ttyp,tfgld018.docn)
+		else
+			get.data.from.non.finalized.transaction(curr.comp,btno.f,fyer.f,tfgld018.ttyp,tfgld018.docn)
+		endif
+		
+	endselect
+}
+
+function get.data.from.non.finalized.transaction
+			(
+				domain	tcncmp		i.comp,
+				domain	tfgld.btno	i.btno,
+				domain	tfgld.year	i.year,
+				domain	tfgld.ttyp	i.ttyp,
+				domain	tfgld.docn	i.docn
+			)
+{
+	
+	get.company.info(curr.comp)
+	rep.tot.amnt = 0
+	
+	select	tfgld102.bpid,
+		tfgld102.ctyp,
+		tfgld102.cdoc,
+		tfgld102.amth,
+		tfgld102.tcsh,
+		tfgld102.dcdt,
+		tfgld102.ccur,
+		tfgld102.refr,
+		tfgld102.tran,
+		tccom100.cadr,
+		tccom100.nama
+	from	tfgld102,tccom100
+	where	tfgld102._index1 = {:i.comp,:i.year,:i.btno,:i.ttyp,:i.docn}
+	and	(tfgld102.tcsh = tfcmg.tcsh.cntr.ant or
+		tfgld102.tcsh = tfcmg.tcsh.ssgn.ant  or
+		tfgld102.tcsh = tfcmg.tcsh.ssgn      or
+		tfgld102.tcsh = tfcmg.tcsh.cntr	     or
+		tfgld102.tcsh = tfcmg.tcsh.jrnl)
+	and     tfgld102.cont = tcyesno.yes
+	and     tfgld102._compnr = :curr.comp
+	and	tfgld102.bpid refers to tccom100
+	selectdo
+		
+		rep.ttyp = tfgld102.ctyp
+		rep.ninv = tfgld102.cdoc
+		rep.bpid = tfgld102.bpid
+		rep.bpid.nama = tccom100.nama
+		rep.amnt = tfgld102.amth(1)
+		rep.plan = tfgld102.dcdt
+		rep.ccur = tfgld102.ccur
+		get.reference()
+		rep.namf = ""
+		rep.telp = ""
+		rep.tefx = ""
+		get.address.data(tccom100.cadr,rep.bpid.ln01,rep.bpid.ln02,rep.bpid.ln03,rep.bpid.ln04,rep.bpid.ln05,rep.bpid.ln06,rep.namf,rep.telp,rep.tefx)
+		on case tfgld102.tcsh
+			case	tfcmg.tcsh.cntr.ant:
+			case	tfcmg.tcsh.cntr:
+			case    tfcmg.tcsh.ssgn:	
+				if tfgld106.tran = tfcmg.tran.unalloc.rec then
+					rep.against = "Against Dues"
+				else if tfgld106.tran =  tfcmg.tran.advance.rec then
+					rep.against = "Advance Receipt"
+					else	
+					rep.against = "Sales Invoice"
+				endif	
+				endif
+			break
+			case	tfcmg.tcsh.ssgn.ant:
+			case	tfcmg.tcsh.jrnl:
+				rep.against = "Receipt ag Dues"
+				rep.ttyp = ""
+				rep.ninv = 0
+			break
+		endcase
+		i = 0
+		if i <> 10 then
+			rprt_send()
+		endif
+		
+		ledger.desc = ""
+		
+		
+		select tfgld106.amth,tfgld008.desc,tfgld106.dbcr
+		from    tfgld106,tfgld008
+		where   tfgld106._index1 = {:i.ttyp,:i.docn,:tfgld106.olin}
+		and     tfgld106.tcsh = tfcmg.tcsh.csts
+		and     tfgld106.leac refers to tfgld008
+		selectdo
+			if tfgld106.dbcr = ltoe(1) then
+				rep.dbcr = -1 * tfgld106.amth(1)
+			else
+				rep.dbcr = tfgld106.amth(1)
+			endif	
+			ledger.desc = tfgld008.desc
+			total = rep.dbcr + total
+			i = 10
+			rprt_send()
+			i = 0
+		selectempty
+			ledger.desc = ""
+			rep.dbcr = 0
+		endselect
+	endselect
+	rep.tot.amnt = rep.tot.amnt + rep.amnt.sum + total
+	cash.str = ""
+	tfgld.dll9999.1.in.words(rep.tot.amnt,cash.str)
+	 q = 1
+	 i = 1
+	 rprt_send()
+}
+
+function get.data.from.finalized.transaction
+			(
+				domain	tfgld.ttyp	i.ttyp,
+				domain	tfgld.docn	i.docn
+			)
+{
+	get.company.info(curr.comp)
+	rep.amnt.sum = 0
+	
+	select 	tfgld106.bpid,
+		tfgld106.ctyp,
+		tfgld106.cinv,
+		tfgld106.ocmp,
+		tfgld106.amth,
+		tfgld106.tcsh,
+		tfgld106.dcdt,
+		tfgld106.ccur,
+		tfgld106.refr,
+		tfgld106.tran,
+		tccom100.cadr,
+		tfgld106.olin,
+		tccom100.nama
+	from	tfgld106,tccom100
+	where	tfgld106._index1 = {:i.ttyp,:i.docn}
+	and	(tfgld106.tcsh = tfcmg.tcsh.cash    or
+		tfgld106.tcsh = tfcmg.tcsh.cntr.ant or
+		tfgld106.tcsh = tfcmg.tcsh.ssgn.ant  or
+		tfgld106.tcsh = tfcmg.tcsh.ssgn      or
+		tfgld106.tcsh = tfcmg.tcsh.cntr	     or
+		tfgld106.tcsh = tfcmg.tcsh.jrnl)
+	and     tfgld106.cont = tcyesno.yes	
+	and     tfgld106._compnr = :curr.comp						|temp.mani
+	and	tfgld106.bpid refers to tccom100
+	selectdo
+		rep.ttyp = tfgld106.ctyp
+		rep.ninv = tfgld106.cinv
+		rep.bpid = tfgld106.bpid
+		rep.bpid.nama = tccom100.nama
+		rep.amnt = tfgld106.amth(1)
+		rep.amnt.sum = rep.amnt.sum + rep.amnt
+		rep.plan = tfgld106.dcdt
+		rep.ccur = tfgld106.ccur
+		get.reference()
+		rep.namf = ""
+		rep.telp = ""
+		rep.tefx = ""
+		get.address.data(tccom100.cadr,rep.bpid.ln01,rep.bpid.ln02,rep.bpid.ln03,rep.bpid.ln04,rep.bpid.ln05,rep.bpid.ln06,rep.namf,rep.telp,rep.tefx)
+		on case tfgld106.tcsh
+			case	tfcmg.tcsh.cntr.ant:
+			case	tfcmg.tcsh.cntr:
+			case    tfcmg.tcsh.ssgn:	
+				if tfgld106.tran = tfcmg.tran.unalloc.rec then
+					rep.against = "Against Dues"
+				else if tfgld106.tran =  tfcmg.tran.advance.rec then
+					rep.against = "Advance Receipt"
+					else	
+					rep.against = "Sales Invoice"
+				endif	
+				endif
+			
+			break
+			case	tfcmg.tcsh.ssgn.ant:
+			case	tfcmg.tcsh.jrnl:
+			
+				rep.against = "Receipt ag Dues"
+				rep.ttyp = ""
+				rep.ninv = 0
+			break
+		endcase
+		i = 0
+		if i <> 10 then
+			rprt_send()
+		endif
+		
+		ledger.desc = ""
+		
+		
+		select tfgld106.amth,tfgld008.desc,tfgld106.dbcr
+		from    tfgld106,tfgld008
+		where   tfgld106._index1 = {:i.ttyp,:i.docn,:tfgld106.olin}
+		and     tfgld106.tcsh = tfcmg.tcsh.csts
+		and     tfgld106.leac refers to tfgld008
+		selectdo
+			if tfgld106.dbcr = ltoe(1) then
+				rep.dbcr = -1 * tfgld106.amth(1)
+			else
+				rep.dbcr = tfgld106.amth(1)
+			endif	
+			ledger.desc = tfgld008.desc
+			total = rep.dbcr + total
+			i = 10
+			rprt_send()
+			i = 0
+		selectempty
+			ledger.desc = ""
+			rep.dbcr = 0
+		endselect
+		 
+	 endselect
+	rep.tot.amnt = rep.tot.amnt + rep.amnt.sum + total
+	cash.str = ""
+	tfgld.dll9999.1.in.words(rep.tot.amnt,cash.str)
+	 q = 1
+	 i = 1
+	 rprt_send()
+| 	rep.tot.amnt = 0
+}
+
+function get.company.info
+			(
+				domain	tcncmp		i.ncmp
+			)
+{
+	rep.comp.nama = ""
+	rep.namf = ""
+	rep.telp = ""
+	rep.tefx = ""
+	
+	select 	tccom000.cadr,
+		tccom000.nama
+	from	tccom000
+	where	tccom000._index1 = {0,:i.ncmp}
+	as set with 1 rows
+	selectdo
+		rep.comp.nama = tccom000.nama
+		get.address.data(tccom000.cadr,rep.comp.ln01,rep.comp.ln02,rep.comp.ln03,rep.comp.ln04,rep.comp.ln05,rep.bpid.ln06,rep.namf,rep.telp,rep.tefx)
+	endselect
+	
+}
+
+function get.address.data
+			(
+				domain	tccom.cadr	i.cadr,
+			ref 	domain	tcmcs.str100m	o.ln01,
+			ref	domain	tcmcs.str100m	o.ln02,
+			ref	domain	tcmcs.str100m	o.ln03,
+			ref	domain	tcmcs.str100m	o.ln04,
+			ref     domain tcmcs.str100m   o.ln05,
+			ref     domain tcmcs.str100m   o.ln06,
+			ref     domain tcmcs.str100m   o.namf,
+			ref     domain tctelp          o.telp,
+			ref     domain tctefx          o.tefx
+			)
+{
+	o.ln01 = ""
+	o.ln02 = ""
+	o.ln03 = ""
+	o.ln04 = ""
+	o.ln05 = ""
+	o.namf = ""
+	o.pstc = ""
+	o.ln06 = ""
+	select 	tccom130.ln01:o.ln01,
+		tccom130.ln02:o.ln02,
+		tccom130.ln03:o.ln03,
+		tccom130.ln04:o.ln04,
+		tccom130.ln05:o.ln05,
+		tccom130.ln06:o.ln06,
+		tccom130.namf:o.namf,
+		tccom130.pstc:o.pstc,
+		tccom130.telp:o.telp,
+		tccom130.tefx:o.tefx
+	from	tccom130
+	where	tccom130._index1 = {:i.cadr}
+	selectdo
+		o.namf = strip$(shiftl$(o.namf)) & "    ZIP Code: " & shiftl$(strip$(o.pstc))
+	endselect
+	
+}
+
+function get.reference()
+{
+	rep.refr = ""
+	
+	select tfacr200.bppn:rep.refr
+	from    tfacr200
+	where   tfacr200._index1 = {:tfgld018.ttyp,:tfgld018.docn}
+	and     tfacr200.bppn <> ""
+	as set with 1 rows
+	selectdo
+	endselect
+
+}

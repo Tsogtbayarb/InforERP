@@ -1,0 +1,146 @@
+|******************************************************************************
+|* tdisg4200m100  0  VRC B61U a7 isg 
+|* Default Registration Numbers
+|* Merino1                       
+|* 2015-11-16
+|******************************************************************************
+|* Main table tdpur400 Purchase Orders, Form Type 4
+|******************************************************************************
+| IDENT, ISGEC01139
+| GAURAV GUPTA, IT0304
+| 16-11-2015,  VRC B61U a7 isg 
+| FOR UPDATE PURCHASE ORDERS LINES Registration Numbers
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttdpur400 | Purchase Orders
+	table	ttdpur401
+	table	ttctax400
+	table	ttctax941
+	table	ttccom130
+	
+	long ret	
+	extern	domain	tcorno		orno.v
+	extern	domain	tctax.seqn.l	v.seqn.l
+	
+#include<bic_dam>
+|****************************** program section ********************************
+before.program:
+	import("tdpur400.orno", orno.v)
+	
+	if not isspace(orno.v) then
+		update.purchase.order.lines(orno.v)
+	endif
+	exit()
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+| ************************************function ************************************
+functions:
+
+function update.purchase.order.lines(domain	tcorno	i.orno)
+{
+	purchase.order.details(i.orno)
+	
+	select	tdpur401.*
+	from	tdpur401
+	where	tdpur401._index1 = {:i.orno}
+	selectdo
+		select	tctax941.*
+		from	tctax941
+		where	tctax941._index1 = {:tdpur401.ccty,:tdpur401.cvat,1}
+		as set with 1 rows
+		selectdo
+			if tctax941.amor = tctax.amor.l.asv.excise then
+					pick.registration.no(
+							tctax.catg.l.excise,
+							v.seqn.l)
+				else if tctax941.amor = tctax.amor.l.asv.vat then
+					 pick.registration.no(
+								tctax.catg.l.vat,
+								v.seqn.l)
+						if isspace(v.seqn.l) then
+							pick.registration.no(
+								tctax.catg.l.lst, 
+								v.seqn.l)
+						endif
+					else if tctax941.amor = tctax.amor.l.asv.service then
+						pick.registration.no(
+							tctax.catg.l.service,
+							v.seqn.l)
+						else if tctax941.amor = tctax.amor.l.not.appl then
+							pick.registration.no(
+								tctax.catg.l.n.a,
+								v.seqn.l)
+						else
+							select	tctax400.seqn.l:v.seqn.l
+							from	tctax400
+							where	tctax400._index1 = {:tdpur400.otbp,:tccom130.ccty}
+							as set with 1 rows
+							selectdo
+							selectempty
+								v.seqn.l = 0
+							endselect
+						endif	
+					endif
+				endif
+			endif
+		endselect
+		if v.seqn.l <> 0 then
+			if not update.tdpur401.line.dal(v.seqn.l) then
+				abort.transaction()
+			endif
+		endif
+	endselect
+}
+
+function boolean update.tdpur401.line.dal(domain tctax.seqn.l	i.rnsb.l)
+{
+	select	tdpur401.rnsb.l
+	from	tdpur401 for update
+	where	tdpur401._index1 = {:tdpur401.orno,:tdpur401.pono,:tdpur401.sqnb}
+	as set with 1 rows
+	selectdo
+		if tdpur401.rnsb.l <> i.rnsb.l then
+			dal.change.object("tdpur401")
+			dal.set.field("tdpur401.rnsb.l",i.rnsb.l)
+			ret = dal.save.object("tdpur401")
+			if ret <> 0 then
+				show.dal.messages(MSG.ALL)
+				return(false)
+			else
+				commit.transaction()
+			endif
+		endif
+	endselect
+	return(true)
+}
+
+
+function  pick.registration.no(
+				domain	tctax.catg.l	i.catg.l,
+			ref	domain	tctax.seqn.l	o.seqn.l)
+{
+	select	tctax400.seqn.l:o.seqn.l
+	from	tctax400
+	where	tctax400._index1 = {:tdpur400.otbp,:tccom130.ccty}
+	and	tctax400.catg.l = :i.catg.l
+	selectdo
+	selectempty
+		o.seqn.l = 0
+	endselect
+}
+function purchase.order.details(domain	tcorno	i.orno)
+{
+	select	tdpur400.*, tccom130.ccty
+	from	tdpur400, tccom130
+	where	tdpur400._index1 = {:i.orno}
+	and	tdpur400.otad refers to tccom130 UNREF CLEAR
+	selectdo
+	selectempty
+		tccom130.ccty = ""
+	endselect
+}

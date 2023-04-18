@@ -1,0 +1,102 @@
+|******************************************************************************
+|* tdisg8130  0  VRC B61U a7 live
+|* Container/Lorry Numbers From Customers
+|* Tools                         
+|* 2014-05-05
+|******************************************************************************
+|* Main table tdisg830 Container/Lorry Master From Customers, Form Type 1
+|******************************************************************************
+|* IDENT ISG001016, Yoshita Kundwani, IT0177, 31-05-2014 , VRC B61U a7 live  
+|******************************************************************************
+|* ID ISGECDV001103, IT0327, Ritu Shrivastava, VRC B61U a7 live Dt. 13-10-2014
+|****************************** declaration section ***************************
+declaration:
+#ident "@(#)ISG001016, Yoshita Kundwani, IT0177, 31-05-2014 , VRC B61U "
+
+table   ttdisg830 | Container/Lorry Master From Customers
+table	ttdisg800
+table	ttcmcs050
+table	ttdisg862
+table	ttdisg866
+
+  
+extern	domain	tcpono	i.srno
+extern	domain	tcorno	import.shno,v.type,i.bold 
+extern domain  tcmcs.str15	prog.name			|#ISGECDV001103.n
+extern domain  tcorno		import.cinv			|#ISGECDV001103.n
+|****************************** program section ********************************
+before.program:
+| 	import("i.bold",import.shno)				|#ISGECDV001103.o
+	import("prog.name$", prog.name)			|#ISGECDV001103.sn
+	if prog.name = "tdisg8131m200" then
+		import("i.bold",import.shno)
+		update.container.selection()
+	else if prog.name = "tdisg8131m800" then
+		import("tdisg831.bold",import.shno)
+		import("tdisg831.cinv",import.cinv)
+	endif
+	endif							|#ISGECDV001103.en
+
+	tcmcs.dll0095.read.parm("tdisg800")
+	
+| 	query.extend.where("tdisg830.sele = tcyesno.no")
+	
+after.form.read:
+	enable.save.on.occ.change()
+	
+after.program:										|#ISGECDV001103.sn
+	if prog.name = "tdisg8131m800" then
+		select tdisg830.*
+		from   tdisg830 for update
+		where  tdisg830._index1 = {:import.shno}
+		and    tdisg830.sele = tcyesno.yes
+		selectdo
+			select tdisg866.* 
+			from   tdisg866 for update
+			where  tdisg866._index1 = {:import.shno,:tdisg830.srno,:import.cinv}
+			selectdo
+			selectempty
+				tdisg866.rqno = import.shno
+				tdisg866.srno = tdisg830.srno
+				tdisg866.cinv = import.cinv
+				db.insert(ttdisg866,db.skip.dupl,e)
+			endselect
+		endselect
+		commit.transaction()
+	endif
+											|#ISGECDV001103.en
+|****************************** field section ********************************
+field.tdisg830.rqno:
+before.field:
+	tdisg830.rqno = import.shno
+before.zoom:
+	tcmcs050.nrgr = tdisg800.blgr	
+
+field.tdisg830.size:
+| when.field.changes:
+| 	select	tdisg862.type
+| 	from	tdisg862
+| 	where	tdisg862._index1 = {:tdisg830.rqno}
+| 	selectdo
+| 		tdisg830.type = tdisg862.type
+| 	endselect
+after.zoom:
+	tdisg830.type = v.type
+		
+|****************************** functions section**********************************      
+functions:
+
+function update.container.selection()
+{
+	select tdisg830.sele
+	from   tdisg830 for update
+	where  tdisg830._index1 = {:import.shno}
+	and    tdisg830.sele = tcyesno.yes
+	selectdo
+		tdisg830.sele = tcyesno.no
+		db.update(ttdisg830,db.retry,e)
+	endselect
+	commit.transaction()
+}
+
+

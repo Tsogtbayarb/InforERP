@@ -1,0 +1,889 @@
+|******************************************************************************
+|* tdisg4400m300  0  VRC B61U a7 live
+|* PO Ammendment Report
+|* Installation user             
+|* 2014-11-19
+|******************************************************************************
+|* Main table tdmsl400 Purchase Order Ion Tracking, Form Type 4
+|*****************************************************************************
+|* ID:ISGEC01121, Monika Mandal, 14-11-2018
+|* Add three fields on Report and apply logic for same.
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttdmsl400 | Purchase Order Ion Tracking
+	table	ttdpur400
+	table	ttccom100
+	table	ttdmsl500
+	table	ttdmsl501
+	table	ttcmcs036
+	table	ttctax941
+	table	ttclct200
+
+	|******************** Form Variables **********************
+	extern	domain	tccom.bpid	suno.f
+	extern	domain	tccom.bpid	suno.t
+	extern	domain	tcemno		buyr.f
+	extern	domain	tcemno		buyr.t
+	extern	domain	tcorno		orno.f    fixed
+	extern	domain	tcorno		orno.t    fixed
+	extern	domain	tcdate		apdt.f
+	extern	domain	tcdate		apdt.t
+	
+	|*************** File Handling Variables *******************
+	string		err.file(100), file.name(100), line3(3000), line4(3000)
+	long		ret2, stat.fp
+	
+	|****************** Script Variables ***************
+	extern	domain	tcdate		v.apdt.f
+	extern	domain	tcdate		v.apdt.t
+	extern	domain	tcccty		var.reas
+	
+	|************** File Utilization Variables ******************
+	extern	domain	tccprj		rep.cprj			|1
+	extern	domain	tcdsca		rep.pjdc			|2				
+	extern	domain	tcorno		rep.orno			|3				
+	extern	domain	tcpono		rep.revi			|4				
+	extern	domain	tcmcs.str10	rep.apdt			|5				
+	extern	domain	tfgld.user	rep.apby			|6
+	extern	domain	tcnama		rep.apnm			|7	
+	extern	domain	tcemno		rep.buyr			|8				
+	extern	domain	tcnama		rep.bynm			|9				
+	extern	domain	tccom.bpid	rep.suno			|10				
+	extern	domain	tcnama		rep.spnm			|11				
+	extern	domain	tcrefa		rep.refa			|12
+	extern	domain	tcrefb		rep.refb			|13
+	extern	domain	tcmcs.st150m	rep.reas			|14
+	extern	domain	tcamnt		i.gross.value,i.rev.val		|#ISGEC01121.sn
+	extern	domain	tcamnt	tot.bas,tot.exc,tot.stx,tot.sgst,tot.cgst,
+				tot.igst,tot.oth1,tot.oth2,cess,sgst.amnt,
+				cgst.amnt,igst.amnt,stx.amnt,oth.chg1,oth.chg2,
+				cess.amnt,exc.amnt,oth.exc,oth.stx
+	extern domain tctax.layr.l	layer.temp1,layer.temp2				
+	extern	domain	tcsern		i.vrsn				|#ISGEC01121.en
+			
+
+|*************** Include **************
+#include<bic_desktop>
+
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+group.1:
+init.group:
+	get.screen.defaults()
+
+|****************************** choice section ********************************
+choice.cont.process:
+on.choice:
+	generate.file()
+
+|****************************** field section *********************************
+field.suno.f:
+when.field.changes:
+	suno.t = suno.f
+
+field.buyr.f:
+when.field.changes:
+	buyr.t = buyr.f
+	
+field.orno.f:
+when.field.changes:
+	orno.t = orno.f
+
+field.apdt.f:
+when.field.changes:
+	apdt.t = apdt.f
+
+|****************************** function section ******************************
+
+functions:
+
+function generate.file()
+{
+	open.file()
+	generate.header()
+	read.main.table()
+	close.file()
+}
+
+function read.main.table()
+{
+	get.date.utc(apdt.f, 00, 00, 00, v.apdt.f)
+	get.date.utc(apdt.t, 23, 59, 59, v.apdt.t)
+	i.gross.value = 0.00			|ISGEC01121.n
+	i.vrsn = 0 				|ISGEC01121.n
+	i.rev.val = 0				|ISGEC01121.n
+	
+	select	tdmsl400.*, tdpur400.orno, tdpur400.refa, tdpur400.refb,
+		tdpur400.ccon, tdpur400.cdf_reas:var.reas, tdpur400.otbp,
+		tccom100.nama,
+		tdpur400.ccur,				|ISGEC01121.sn			
+		tdpur400.ratd,				
+		tdpur400.ratt				|ISGEC01121.en
+	from	tdmsl400, tdpur400, tccom100
+	where	tdmsl400._index1 inrange {:orno.f}	and {:orno.t}
+	and	tdmsl400.apdt inrange :v.apdt.f		and :v.apdt.t
+	and	tdmsl400.vrsn <> 0
+	and	tdmsl400.orno refers to tdpur400
+	and	tdpur400._index2 inrange {:suno.f}	and	{:suno.t}	
+	and	tdpur400._index4 inrange {:buyr.f}	and	{:buyr.t}	
+	and	tdpur400.otbp refers to tccom100 Unref Clear 
+	order by tdmsl400._index1
+	selectdo
+		Initialize_Variables()
+		if	tdmsl400.vrsn = Get_Max_Version(tdmsl400.orno)	then
+			Get_Project(tdpur400.orno, rep.cprj, rep.pjdc)
+			rep.orno = tdpur400.orno
+			rep.revi = tdmsl400.vrsn
+			rep.apdt = sprintf$("%u(%02m/%02d/%04Y)", tdmsl400.apdt)
+			rep.apby = tdmsl400.apby
+			rep.apnm = Get_Approval_Name(trim$(tdmsl400.apby))
+			rep.buyr = tdpur400.ccon
+			rep.bynm = Get_Employee_Name(tdpur400.ccon)
+			rep.suno = tdpur400.otbp
+			rep.spnm = tccom100.nama
+			rep.refa = tdpur400.refa
+			rep.refb = tdpur400.refb
+			rep.reas = Get_Reason_Desc(var.reas)
+			get_current_revision_value()			|#ISGEC01121.sn
+			get_previous_revision_number()	
+			if tdmsl400.vrsn > 0 then	
+				get_previous_revision_value()
+			else
+				i.rev.val = 0			
+			endif					|#ISGEC01121.en
+		else	
+			select	tdmsl500.orno, tdmsl500.refa, tdmsl500.refb, tdmsl500.ccon,
+				tdmsl500.reas, tdmsl500.otbp, tccom100.nama
+			from	tdmsl500, tccom100
+			where	tdmsl500._index1 = {:tdmsl400.orno, :tdmsl400.vrsn}
+			selectdo
+			endselect		
+			Get_Project_History(tdmsl500.orno, tdmsl400.vrsn, rep.cprj, rep.pjdc)
+			rep.orno = tdmsl500.orno
+			rep.revi = tdmsl400.vrsn
+			rep.apdt = sprintf$("%u(%02m/%02d/%04Y)", tdmsl400.apdt)
+			rep.apby = tdmsl400.apby
+			rep.apnm = Get_Approval_Name(trim$(tdmsl400.apby))
+			rep.buyr = tdmsl500.ccon
+			rep.bynm = Get_Employee_Name(tdmsl500.ccon)
+			rep.suno = tdmsl500.otbp
+			bp_desc()
+			rep.spnm = tccom100.nama
+			rep.refa = tdmsl500.refa
+			rep.refb = tdmsl500.refb
+			rep.reas = Get_Reason_Desc(tdmsl500.reas)
+			get_current_revision_value()			|#ISGEC01121.sn
+			get_previous_revision_number()	
+			if tdmsl400.vrsn > 0 then	
+				get_previous_revision_value()
+			else
+				i.rev.val = 0	
+			endif					|#ISGEC01121.en
+		endif
+		
+		print.detail()	
+	endselect
+}
+
+function domain tcpono Get_Max_Version
+				(
+				domain	tcorno	in.orno
+				)
+{
+	domain	tcpono	tmp.vrsn
+	
+	tmp.vrsn = 0
+	select	max(mx_tdmsl400.vrsn):tmp.vrsn
+	from	tdmsl400 mx_tdmsl400
+	where	mx_tdmsl400._index1 = {:in.orno}
+	selectdo
+	endselect
+	
+	return(tmp.vrsn)
+}
+
+function Get_Project(
+		domain	tcorno	in.orno,
+	ref	domain	tccprj	ot.cprj,
+	ref	domain	tcdsca	ot.pjdc
+			)
+{
+	ot.cprj = ""
+	ot.pjdc = ""
+	select	pj_tdpur401.cprj:ot.cprj,
+		pj_tcmcs052.dsca:ot.pjdc
+	from	tdpur401 pj_tdpur401, tcmcs052 pj_tcmcs052
+	where	pj_tdpur401._index1 = {:in.orno}
+	and	pj_tdpur401.cprj refers to pj_tcmcs052 Unref Clear
+	as set with 1 rows
+	selectdo
+	endselect
+}
+
+function Get_Project_History(
+		domain	tcorno	in.orno,
+		domain	tcpono	in.vrsn,
+	ref	domain	tccprj	ot.cprj,
+	ref	domain	tcdsca	ot.pjdc
+			)
+{
+	ot.cprj = ""
+	ot.pjdc = ""
+	select	pj_tdmsl501.cprj:ot.cprj,
+		pj_tcmcs052.dsca:ot.pjdc
+	from	tdmsl501 pj_tdmsl501, tcmcs052 pj_tcmcs052
+	where	pj_tdmsl501._index1 = {:in.orno, :in.vrsn}
+	and	pj_tdmsl501.cprj refers to pj_tcmcs052 Unref Clear
+	as set with 1 rows
+	selectdo
+	endselect
+}
+
+function domain tcmcs.st150m Get_Reason_Desc
+				(
+				domain	tcccty		in.reas
+				)
+{
+	domain	tcmcs.st150m	tmp.reas
+	
+	tmp.reas = ""
+	select	rn_tdisg400.desc:tmp.reas
+	from	tdisg400 rn_tdisg400
+	where	rn_tdisg400._index1 = {:in.reas}
+	selectdo
+	endselect
+	
+	return(tmp.reas)
+}
+
+function domain tcnama Get_Employee_Name
+				(
+				domain tcemno		in.emno
+				)
+{
+	domain	tcnama		emp.nama
+	
+	emp.nama = ""
+	select	em_tccom001.nama:emp.nama
+	from	tccom001 em_tccom001
+	where	em_tccom001._index1 = {:in.emno}
+	selectdo
+	endselect
+	
+	return(emp.nama)
+}
+
+function domain tcnama Get_Approval_Name
+				(
+				domain tcemno		in.emno
+				)
+{
+	domain	tcnama		emp.nama
+	
+	emp.nama = ""
+	select	em_tccom001.nama:emp.nama
+	from	tccom001 em_tccom001
+	where	em_tccom001._index4 = {:in.emno}
+	selectdo
+	endselect
+	
+	return(emp.nama)
+}
+
+function	generate.header()
+{
+	line4 =	concat$("	",
+		sprintf$("Project"),					|1		
+		sprintf$("Description"),				|2		
+		sprintf$("PO Number"),					|3		
+		sprintf$("Revision No."),				|4
+		sprintf$("Current Revision PO Gross Value"),		|4A		|#ISGEC01121.sn
+		sprintf$("Previous Revision Number"),			|4B
+		sprintf$("Previous Revision Value"),			|4C		|#ISGEC01121.en		
+		sprintf$("Approval Date"),				|5		
+		sprintf$("Approval By"),				|6		
+		sprintf$("Approval By(Name)"),				|7		
+		sprintf$("Buyer"),					|8		
+		sprintf$("Buyer(Name)"),				|9		
+		sprintf$("Supplier"),					|10		
+		sprintf$("Supplier Name"),				|11		
+		sprintf$("Reference A"),				|12		
+		sprintf$("Reference B"),				|13
+		sprintf$("Revision Reason"))				|14
+		
+		
+	line4 = strip$(shiftl$(line4))		
+	seq.puts(line4, stat.fp)	
+}
+
+function	print.detail()
+{	
+	line3 =	concat$("	",
+		sprintf$("%s", rep.cprj),				|1
+		sprintf$("%s", rep.pjdc),				|2				
+		sprintf$("%s", rep.orno),				|3				
+		sprintf$("%d", rep.revi),				|4
+		sprintf$("%f", i.gross.value),				|4A		|#ISGEC01121.sn
+		sprintf$("%d", i.vrsn),				|4B
+		sprintf$("%f", i.rev.val),				|4C		|#ISGEC01121.sn
+		sprintf$("%s", rep.apdt),				|5				
+		sprintf$("%s", rep.apby),				|6				
+		sprintf$("%s", rep.apnm),				|7				
+		sprintf$("%s", rep.buyr),				|8				
+		sprintf$("%s", rep.bynm),				|9				
+		sprintf$("%s", rep.suno),				|10				
+		sprintf$("%s", rep.spnm),				|11				
+		sprintf$("%s", rep.refa),				|12
+		sprintf$("%s", rep.refb),				|13
+		sprintf$("%s", rep.reas))				|14
+		
+	
+		line3 = strip$(shiftl$(line3))
+		seq.puts(line3, stat.fp)
+}	
+
+function	Initialize_Variables()
+{	
+	rep.cprj = ""				|1
+	rep.pjdc = ""				|2				
+	rep.orno = ""				|3				
+	rep.revi = 0				|4				
+	rep.apdt = ""				|5				
+	rep.apby = ""				|6				
+	rep.apnm = ""				|7				
+	rep.buyr = ""				|8				
+	rep.bynm = ""				|9				
+	rep.suno = ""				|10				
+	rep.spnm = ""				|11				
+	rep.refa = ""				|12
+	rep.refb = ""				|13
+	rep.reas = ""				|14
+	
+}
+
+function get.date.utc(
+		domain	tcdate	i.date,
+		long		i.hh,
+		long		i.mn,
+		long		i.ss,
+	ref	domain	tcdate	o.date
+			)
+{
+	long	dd, mm, yy, hh, mn, ss
+	
+	utc.to.date(i.date, yy , mm, dd, hh, mn, ss)
+	o.date = date.to.utc(yy, mm, dd, i.hh, i.mn, i.ss)
+	if	o.date < 0	then
+		o.date = 0
+	endif
+}	
+
+function open.file()
+{
+	err.file = bse.tmp.dir$() & str$(utc.num()) & ".xls"
+	
+	file.name = "c:\temp\" & str$(utc.num())  & ".xls"
+	
+	stat.fp = seq.open(err.file, "w+")
+	if stat.fp >0 then
+ 		seq.seek(0, 0, stat.fp)
+	endif
+}
+
+function close.file()
+{
+	seq.close(stat.fp)
+	ret2 = server2client(err.file,file.name,1)
+	ret2 = app_start(file.name,"c:","","","")
+}
+
+function bp_desc()
+{
+
+	select tccom100.nama
+	from	tccom100
+	where	tccom100._index1 = {:tdmsl500.otbp}
+	as set with 1 rows
+	selectdo
+	selectempty
+		tccom100.nama = ""
+	endselect
+}
+function get_gross_value()						|#ISGEC01121.sn
+{
+	i.gross.value = 0
+	select	sum(tdpur401.oamt):i.gross.value
+	from	tdpur401
+	where	tdpur401._index1 inrange {:tdpur400.orno} and {:tdpur400.orno}
+	selectdo
+	selectempty
+		i.gross.value = 0.00
+	endselect
+}
+function get_previous_revision_number()
+{
+	if tdmsl400.vrsn > 0 then
+		i.vrsn = tdmsl400.vrsn - 1
+	else
+		i.vrsn = 0 
+	endif
+				
+}
+
+function get_current_revision_value()
+{
+	domain	tcqsl1	add.qty
+	
+	i.gross.value = 0
+	tot.bas = 0
+	tot.exc = 0
+	tot.stx = 0
+	tot.sgst = 0
+	tot.cgst = 0
+	tot.igst = 0
+	tot.oth1 = 0
+	tot.oth2 = 0
+	
+	select	tdmsl501.*
+	from	tdmsl501
+	where	tdmsl501._index1 ={:tdpur400.orno,:tdmsl400.vrsn}
+	selectdo
+		add.qty = get.additional.qty.from.501_current()
+		sgst.amnt = 0
+		cgst.amnt = 0	
+		igst.amnt = 0	
+		stx.amnt = 0
+		oth.chg1 = 0
+		oth.chg2 = 0
+		exc.amnt = 0
+		
+		Get_Landed_Cost_current(tdmsl501.orno, tdmsl501.pono)
+		populate.tax.amounts()
+		
+		tot.bas = tot.bas + (tdmsl501.oamt / tdmsl501.qoor ) * (add.qty)
+		tot.exc = tot.exc + exc.amnt + oth.exc
+ 		tot.stx = tot.stx + stx.amnt + oth.stx
+		tot.sgst = tot.sgst + sgst.amnt	
+		tot.cgst = tot.cgst + cgst.amnt	
+		tot.igst = tot.igst + igst.amnt	
+						
+		tot.oth1 = tot.oth1 + oth.chg1
+		tot.oth2 = tot.oth2 + oth.chg2
+	endselect
+	i.gross.value = tot.bas+tot.sgst+tot.exc + tot.stx+tot.oth1+tot.oth2
+}	
+
+function get_previous_revision_value()
+{
+	domain	tcqsl1	add.qty
+	
+	i.rev.val = 0
+	tot.bas = 0
+	tot.exc = 0
+	tot.stx = 0
+	tot.sgst = 0
+	tot.cgst = 0
+	tot.igst = 0
+	tot.oth1 = 0
+	tot.oth2 = 0
+	
+	select	tdmsl501.*
+	from	tdmsl501
+	where	tdmsl501._index1 ={:tdpur400.orno,:i.vrsn}
+	selectdo
+		add.qty = get.additional.qty.from.501()
+		sgst.amnt = 0
+		cgst.amnt = 0	
+		igst.amnt = 0	
+		stx.amnt = 0
+		oth.chg1 = 0
+		oth.chg2 = 0
+		exc.amnt = 0
+		
+		Get_Landed_Cost(tdmsl501.orno, tdmsl501.pono)
+		populate.tax.amounts()
+		
+		tot.bas = tot.bas + (tdmsl501.oamt / tdmsl501.qoor ) * (add.qty)
+		tot.exc = tot.exc + exc.amnt + oth.exc
+ 		tot.stx = tot.stx + stx.amnt + oth.stx
+		tot.sgst = tot.sgst + sgst.amnt	
+		tot.cgst = tot.cgst + cgst.amnt	
+		tot.igst = tot.igst + igst.amnt	
+						
+		tot.oth1 = tot.oth1 + oth.chg1
+		tot.oth2 = tot.oth2 + oth.chg2
+	endselect
+	i.rev.val = tot.bas+tot.sgst+tot.exc + tot.stx+tot.oth1+tot.oth2
+}	
+function populate.tax.amounts()
+{
+	domain	tcamnt		line.tax.amount.array(1, 1)	based
+	domain	tcamnt		line.base.amount.array(1, 1)	based
+	domain	tccvat		line.tax.code.array(1, 1)	based
+	domain	tctax.indt.l	o.line.indirect.tax.array(1, 1)	based
+	domain	tctax.indt.l	i.duty.type.array(1, 1)		based
+	domain	tcyesno		expensed.tax(1, 1)		based
+	domain	tcmcs.s250m	o.comb.output.set(1)		based
+	domain	tcpvat		o.tax.rates(1,1)		based
+	domain	tcamnt		i.duties.array(1,1)		based
+	domain tctax.seqn 	o.maximum.sequence.number
+	domain tcamnt 		o.claimable.tax.amount
+	domain tcamnt 		o.non.claimable.tax.amount
+	domain tcamnt 		o.total.tax.amount
+	domain tcamnt 		o.sales.tax
+	domain tcmcs.s250m 	o.error.msg mb
+	domain	tcamnt		tmp.rate,o.kkcess.rate,rate		|#ISGEC0104.n
+	domain	tcamnt		temp.1.rate, temp.amnt	|#ISG10102.n
+	
+	
+	tmp.rate = 0					|#ISGEC0104.n
+	o.kkcess.rate = 0.00	|#ISGECFIN012.n
+	temp.1.rate = 0	|#ISG10102.n
+	rate = 0	|#ISG10102.n
+	temp.amnt = 0
+	tctax.dll9141.determine.aggregate.tax.amounts.per.line( 
+						tdmsl501.ccty,				| domain tcccty i.tax.country, 
+						tdmsl501.cvat,				| domain tccvat i.aggregate.tax.code, 
+						tdmsl501.odat,				| domain tcdate i.tax.date, 
+						tdmsl501.oamt,				| domain tcamnt i.order.line.price, 
+						tdmsl501.cuva,				| domain tcamnt i.customs.value, 
+						tdmsl501.mrpi.l,			| domain tcamnt i.market.retail.price, 
+						0.00,					| domain tcamnt i.retail.sales.price, 
+						0.00,					| domain tcamnt i.tariff.price, 
+						tdpur400.ccur,				| domain tcccur i.price.currency, 
+						tdpur400.ratd,				| domain tcdate i.currency.rate.date, 
+						tdpur400.ratt,				| domain tcrtyp i.currency.exchange.rate.type, 
+						tdmsl501.tase.l,			| domain tcpric i.asv.excise, 
+						tdmsl501.tasv.l,			| domain tcpric i.asv.vat, 
+						tdmsl501.tass.l,			| domain tcpric i.asv.service.tax, 
+						tdmsl501.tasg.l,			| domain tcpric i.asv.gst, 
+						tdmsl501.ddta,				| domain tcdate i.ship.or.receive.date, 
+						tcyesno.no,				| domain tcyesno i.as.is.sales, 
+						tcyesno.no,				| domain tcyesno i.yesno.flag, 
+						i.duty.type.array,			| ref domain tctax.indt.l i.duty.type.array(,), 
+						i.duties.array,				| ref domain tcamnt i.duties.array(,), 
+						o.tax.rates,				| ref domain tcpvat o.tax.rates(,), 
+						o.maximum.sequence.number,		| ref domain tctax.seqn o.maximum.sequence.number, 
+						line.base.amount.array,			| ref domain tcamnt o.line.base.amount.array(,), 
+						line.tax.amount.array,			| ref domain tcamnt o.line.tax.amount.array(,), 
+						line.tax.code.array,			| ref domain tccvat o.line.tax.code.array(,) fixed, 
+						o.line.indirect.tax.array,		| ref domain tctax.indt.l o.line.indirect.tax.array(,), 
+						expensed.tax,				| ref domain tcyesno o.expensed.tax(,), 
+						o.claimable.tax.amount,			| ref domain tcamnt o.claimable.tax.amount, 
+						o.non.claimable.tax.amount,		| ref domain tcamnt o.non.claimable.tax.amount, 
+						o.total.tax.amount,			| ref domain tcamnt o.total.tax.amount, 
+						o.sales.tax,				| ref domain tcamnt o.sales.tax, 
+						o.comb.output.set,			| ref domain tcmcs.s250m o.comb.output.set() fixed mb, 
+						o.error.msg)				| ref domain tcmcs.s250m o.error.msg mb )
+	select tctax941.*,tcmcs036.*
+	from tctax941,tcmcs036
+	where tctax941._index1 = {:tdmsl501.ccty,:tdmsl501.cvat}
+	and	tctax941.type = 20		|tctax.type.l.tax
+	and	tctax941.cmbb refers to tcmcs036
+	selectdo
+		on case tcmcs036.indt.l
+		case	tctax.indt.l.kk.cess:	|#ISGECFIN012.n
+		case	tctax.indt.l.bed:
+		case	tctax.indt.l.service:			|#ISGEC0104.n
+		case	tctax.indt.l.igst:	|#ISGEC017006.n
+			exc.amnt = exc.amnt + line.tax.amount.array(tctax941.layr,tctax941.seqn)
+			break
+		case	tctax.indt.l.aed:	
+		case	tctax.indt.l.sed:	
+		case	tctax.indt.l.e.cess.excise:	
+		case	tctax.indt.l.e.cess.service:		|#ISGEC0104.n	
+		case	tctax.indt.l.hse.cess.excise:
+		case	tctax.indt.l.hse.cess.servic:		|#ISGEC0104.n
+			exc.amnt = exc.amnt + line.tax.amount.array(tctax941.layr,tctax941.seqn)
+			break
+			
+		case	tctax.indt.l.sgst:								|#ISGEC017006.sn
+		case	tctax.indt.l.utgst:								
+			sgst.amnt = sgst.amnt + line.tax.amount.array(tctax941.layr,tctax941.seqn)
+			break
+			
+| 		case	tctax.indt.l.cgst:							
+| 			cgst.rate = cgst.rate + o.tax.rates(tctax941.layr,tctax941.seqn)
+| 			cgst.amnt = cgst.amnt + line.tax.amount.array(tctax941.layr,tctax941.seqn)
+| 			break	
+				
+| 		case	tctax.indt.l.igst:							
+| 			igst.rate = igst.rate + o.tax.rates(tctax941.layr,tctax941.seqn)
+| 			igst.amnt = igst.amnt + line.tax.amount.array(tctax941.layr,tctax941.seqn)
+| 			break			
+									|#ISGEC017006.en
+| 													|#ISGECMOD020.sn	
+| 		case	tctax.indt.l.gstcess:
+| 			cess.amnt = cess.amnt + line.tax.amount.array(tctax941.layr,tctax941.seqn)
+| 			break
+													|#ISGECMOD020.en			
+		default:
+			rate = rate + 1	
+			if rate =  1 then
+				stx.amnt = stx.amnt + line.tax.amount.array(tctax941.layr,tctax941.seqn)
+			else
+				if layer.temp1 = layer.temp2 then
+					stx.amnt = stx.amnt + line.tax.amount.array(tctax941.layr,tctax941.seqn)			
+				endif						
+			endif	
+		endcase
+		
+	endselect
+}
+
+function Get_Landed_Cost_current(domain tcorno		im.orno,
+			domain	tcpono		im.pono)
+{
+	domain	tcpono	tmp.sqnb
+	string	tmp.borf(5), prv.borf(5)
+	
+	oth.chg1 = 0
+	oth.chg2 = 0
+	oth.stx = 0					|#ISGEC001071.sn
+	oth.exc = 0					|#ISGEC001071.en
+	select	a_tdpur401.sqnb:tmp.sqnb 
+	from	tdpur401 a_tdpur401
+	where	a_tdpur401._index1 = {:im.orno, :im.pono}
+	and	a_tdpur401.oltp in (2,3,4)
+	selectdo
+		tmp.borf = str$(im.pono)&"/"&str$(tmp.sqnb)
+		select	tclct200.* from tclct200
+		where	tclct200._index1 = {2}
+		and	tclct200.bobj = :im.orno
+		and	tclct200.borf = :tmp.borf
+		order by tclct200._index1
+		as set with 2 rows
+		selectdo
+| 			if not highest.vrsn then
+				select	tcmsl200.*
+				from	tcmsl200
+				where	tcmsl200._index1 ={:tclct200.boty,:tclct200.boor,:tclct200.bobj,:tclct200.borf,:tdmsl400.vrsn,:tclct200.lcln}
+				as set with 1 rows
+				selectdo
+					tdmsl.dll0500.move.tcmsl200.to.tclct200()
+				endselect
+| 			endif
+			if	tmp.borf <> prv.borf	then
+				prv.borf = tmp.borf
+				oth.chg1 = oth.chg1 + tclct200.lcam
+			else
+				oth.chg2 = oth.chg2 + tclct200.lcam
+			endif	
+			calculate.oth.tax.amounts()		
+			
+		endselect
+	endselect	
+}
+
+function Get_Landed_Cost(domain tcorno		im.orno,
+			domain	tcpono		im.pono)
+{
+	domain	tcpono	tmp.sqnb
+	string	tmp.borf(5), prv.borf(5)
+	
+	oth.chg1 = 0
+	oth.chg2 = 0
+	oth.stx = 0					|#ISGEC001071.sn
+	oth.exc = 0					|#ISGEC001071.en
+	select	a_tdpur401.sqnb:tmp.sqnb 
+	from	tdpur401 a_tdpur401
+	where	a_tdpur401._index1 = {:im.orno, :im.pono}
+	and	a_tdpur401.oltp in (2,3,4)
+	selectdo
+		tmp.borf = str$(im.pono)&"/"&str$(tmp.sqnb)
+		select	tclct200.* from tclct200
+		where	tclct200._index1 = {2}
+		and	tclct200.bobj = :im.orno
+		and	tclct200.borf = :tmp.borf
+		order by tclct200._index1
+		as set with 2 rows
+		selectdo
+| 			if not highest.vrsn then
+				select	tcmsl200.*
+				from	tcmsl200
+				where	tcmsl200._index1 ={:tclct200.boty,:tclct200.boor,:tclct200.bobj,:tclct200.borf,:i.vrsn,:tclct200.lcln}
+				as set with 1 rows
+				selectdo
+					tdmsl.dll0500.move.tcmsl200.to.tclct200()
+				endselect
+| 			endif
+			if	tmp.borf <> prv.borf	then
+				prv.borf = tmp.borf
+				oth.chg1 = oth.chg1 + tclct200.lcam
+			else
+				oth.chg2 = oth.chg2 + tclct200.lcam
+			endif	
+			calculate.oth.tax.amounts()		
+			
+		endselect
+	endselect	
+}
+
+
+function calculate.oth.tax.amounts()
+{
+	domain	tcamnt		line.tax.amount.array(1, 1)	based
+	domain	tcamnt		line.base.amount.array(1, 1)	based
+	domain	tccvat		line.tax.code.array(1, 1)	based
+	domain	tctax.indt.l	o.line.indirect.tax.array(1, 1)	based
+	domain	tctax.indt.l	i.duty.type.array(1, 1)		based
+	domain	tcyesno		expensed.tax(1, 1)		based
+	domain	tcmcs.s250m	o.comb.output.set(1)		based
+	domain	tcpvat		o.tax.rates(1,1)		based
+	domain	tcamnt		i.duties.array(1,1)		based
+	domain tctax.seqn 	o.maximum.sequence.number
+	domain tcamnt 		o.claimable.tax.amount
+	domain tcamnt 		o.non.claimable.tax.amount
+	domain tcamnt 		o.total.tax.amount
+	domain tcamnt 		o.sales.tax
+	domain tcmcs.s250m 	o.error.msg mb
+	if isspace(tclct200.cvat) then
+		return
+	endif
+	tctax.dll9141.determine.aggregate.tax.amounts.per.line( 
+						tdmsl501.ccty,				| domain tcccty i.tax.country, 
+						tclct200.cvat,				| domain tccvat i.aggregate.tax.code, 
+						tdmsl501.odat,				| domain tcdate i.tax.date, 
+						tdmsl501.oamt,				| domain tcamnt i.order.line.price, 
+						tdmsl501.cuva,				| domain tcamnt i.customs.value, 
+						tdmsl501.mrpi.l,			| domain tcamnt i.market.retail.price, 
+						0.00,					| domain tcamnt i.retail.sales.price, 
+						0.00,					| domain tcamnt i.tariff.price, 
+						tdpur400.ccur,				| domain tcccur i.price.currency, 
+						tdpur400.ratd,				| domain tcdate i.currency.rate.date, 
+						tdpur400.ratt,				| domain tcrtyp i.currency.exchange.rate.type, 
+						tclct200.lcam,				| domain tcpric i.asv.excise, 
+						tclct200.lcam,				| domain tcpric i.asv.vat, 
+						tclct200.lcam,				| domain tcpric i.asv.service.tax, 
+						tclct200.lcam,				| domain tcpric i.asv.gst 
+						tdmsl501.ddta,				| domain tcdate i.ship.or.receive.date, 
+						tcyesno.no,				| domain tcyesno i.as.is.sales, 
+						tcyesno.no,				| domain tcyesno i.yesno.flag, 
+						i.duty.type.array,			| ref domain tctax.indt.l i.duty.type.array(,), 
+						i.duties.array,				| ref domain tcamnt i.duties.array(,), 
+						o.tax.rates,				| ref domain tcpvat o.tax.rates(,), 
+						o.maximum.sequence.number,		| ref domain tctax.seqn o.maximum.sequence.number, 
+						line.base.amount.array,			| ref domain tcamnt o.line.base.amount.array(,), 
+						line.tax.amount.array,			| ref domain tcamnt o.line.tax.amount.array(,), 
+						line.tax.code.array,			| ref domain tccvat o.line.tax.code.array(,) fixed, 
+						o.line.indirect.tax.array,		| ref domain tctax.indt.l o.line.indirect.tax.array(,), 
+						expensed.tax,				| ref domain tcyesno o.expensed.tax(,), 
+						o.claimable.tax.amount,			| ref domain tcamnt o.claimable.tax.amount, 
+						o.non.claimable.tax.amount,		| ref domain tcamnt o.non.claimable.tax.amount, 
+						o.total.tax.amount,			| ref domain tcamnt o.total.tax.amount, 
+						o.sales.tax,				| ref domain tcamnt o.sales.tax, 
+						o.comb.output.set,			| ref domain tcmcs.s250m o.comb.output.set() fixed mb, 
+						o.error.msg)				| ref domain tcmcs.s250m o.error.msg mb )
+	select tctax941.*,tcmcs036.*
+	from tctax941,tcmcs036
+	where tctax941._index1 = {:tdmsl501.ccty,:tdmsl501.cvat}
+	and	tctax941.type = 20		|tctax.type.l.tax
+	and	tctax941.cmbb refers to tcmcs036
+	selectdo
+		on case tcmcs036.indt.l
+		case	tctax.indt.l.bed:
+		case	tctax.indt.l.service:	
+			oth.exc = oth.exc + line.tax.amount.array(tctax941.layr,tctax941.seqn)
+			break
+		case	tctax.indt.l.aed:	
+		case	tctax.indt.l.sed:	
+		case	tctax.indt.l.e.cess.excise:	
+		case	tctax.indt.l.e.cess.service:	
+		case	tctax.indt.l.hse.cess.excise:
+		case	tctax.indt.l.hse.cess.servic:	
+			oth.exc = oth.exc + line.tax.amount.array(tctax941.layr,tctax941.seqn)
+			break
+		default:
+			oth.stx = oth.stx + line.tax.amount.array(tctax941.layr,tctax941.seqn)
+		endcase
+	endselect
+}
+
+
+function domain tcqsl1	get.additional.qty.from.501_current()
+{
+	domain tcqsl1 ord.qty,app.qty,diff.qty,bac.qty
+	domain tcqsl1 final.rcpt.qnty, non.final.rcpt.qnty	
+	ord.qty = 0
+	app.qty = 0
+	bac.qty = 0
+	non.final.rcpt.qnty = 0	
+	final.rcpt.qnty = 0	
+			
+					
+					
+	select	sum(tdmsl501.qidl):final.rcpt.qnty
+	from 	tdmsl501 
+	where 	tdmsl501._index1 = {:tdmsl501.orno,:tdmsl400.vrsn, :tdmsl501.pono}
+	and	tdmsl501.oltp <> 1		|* Not Total Line Type
+	and	tdmsl501.clyn <> tcyesno.yes 	|* Not Consider Cancelled PO Line
+	selectdo
+	selectempty
+		final.rcpt.qnty = 0.00
+	endselect
+	
+	final.rcpt.qnty = final.rcpt.qnty/tdmsl501.cvqp	       
+	
+	select	sum(tdmsl501.qidl):non.final.rcpt.qnty,
+		sum(tdmsl501.qoor):ord.qty
+	from 	tdmsl501 
+	where 	tdmsl501._index1 = {:tdmsl501.orno,:tdmsl400.vrsn, :tdmsl501.pono}
+	and	tdmsl501.fire = tcyesno.no
+	and	tdmsl501.oltp <> 1		|* Not Total Line Type
+	and	tdmsl501.clyn <> tcyesno.yes 	|* Not Consider Cancelled PO Line
+	selectdo
+	selectempty
+		ord.qty = 0.00
+		non.final.rcpt.qnty = 0.00
+	endselect
+	
+	diff.qty = final.rcpt.qnty + (ord.qty - non.final.rcpt.qnty)
+					
+	return(diff.qty)
+}				
+
+function domain tcqsl1	get.additional.qty.from.501()
+{
+	domain tcqsl1 ord.qty,app.qty,diff.qty,bac.qty
+	domain tcqsl1 final.rcpt.qnty, non.final.rcpt.qnty	
+	ord.qty = 0
+	app.qty = 0
+	bac.qty = 0
+	non.final.rcpt.qnty = 0	
+	final.rcpt.qnty = 0	
+			
+					
+					
+	select	sum(tdmsl501.qidl):final.rcpt.qnty
+	from 	tdmsl501 
+	where 	tdmsl501._index1 = {:tdmsl501.orno,:i.vrsn, :tdmsl501.pono}
+	and	tdmsl501.oltp <> 1		|* Not Total Line Type
+	and	tdmsl501.clyn <> tcyesno.yes 	|* Not Consider Cancelled PO Line
+	selectdo
+	selectempty
+		final.rcpt.qnty = 0.00
+	endselect
+	
+	final.rcpt.qnty = final.rcpt.qnty/tdmsl501.cvqp	       
+	
+	select	sum(tdmsl501.qidl):non.final.rcpt.qnty,
+		sum(tdmsl501.qoor):ord.qty
+	from 	tdmsl501 
+	where 	tdmsl501._index1 = {:tdmsl501.orno,:i.vrsn, :tdmsl501.pono}
+	and	tdmsl501.fire = tcyesno.no
+	and	tdmsl501.oltp <> 1		|* Not Total Line Type
+	and	tdmsl501.clyn <> tcyesno.yes 	|* Not Consider Cancelled PO Line
+	selectdo
+	selectempty
+		ord.qty = 0.00
+		non.final.rcpt.qnty = 0.00
+	endselect
+	
+	diff.qty = final.rcpt.qnty + (ord.qty - non.final.rcpt.qnty)
+					
+	return(diff.qty)
+}												|#ISGEC01121.en

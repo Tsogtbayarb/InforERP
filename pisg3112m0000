@@ -1,0 +1,110 @@
+|******************************************************************************
+|* whisg3112m000  0  VRC B61U a7 live
+|* Purchase Receipts
+|* Tools                         
+|* 2014-06-27
+|******************************************************************************
+|* Main table whisg312 Purchase Receipt, Form Type 1
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+  table   	twhisg312 | Purchase Receipt
+  table		ttdisg831
+  table		ttdisg832
+  table		ttcibd001
+  table		ttdpur401
+
+extern	domain	tcorno		import.edrn
+extern	domain	tcorno		i.inrq
+long ret_val
+extern	domain	tcqsl1		receipt.qnty
+#include <bic_dam>
+|****************************** program section ********************************
+before.program:
+	import("tdisg832.edrn",import.edrn)
+	query.extension = "whisg312.inrq = :i.inrq"
+|****************************** choice section **********************************
+
+choice.cont.tag.receipt:
+on.choice:
+	if link.billing.advice.line(whisg312.cprj,import.edrn) then
+		show.dal.messages(MSG.ALL)
+		abort.transaction()
+	else
+		commit.transaction()
+	endif
+
+after.choice:
+	execute(end.program)
+choice.end.program:
+before.choice:
+	refresh.parent(-1)
+	
+|************** FIELD SECTION ******************	
+field.whisg312.qrec:
+after.field:
+	select 	tdpur401.pric
+	from	tdpur401
+	where	tdpur401._index1 = {:whisg312.orno,:whisg312.line,:whisg312.seqn}
+	as set with 1 rows
+	selectdo
+	endselect
+	receipt.qnty = whisg312.qrec * tdpur401.pric
+			
+functions:
+function long link.billing.advice.line
+			(
+				domain	tccprj		i.cprj,		|Project Code
+				domain	tcorno		i.edrn		|Billing Advice
+			)
+{			
+	select 	whisg312.*,tcibd001.dsca
+	from	whisg312,tcibd001
+	where	whisg312._index2 = {:i.cprj}
+	and	whisg312.sele = tcyesno.yes
+	and	whisg312.inrq = ""
+	and	whisg312.item refers to tcibd001
+	selectdo
+		select 	tdisg832.edrn
+		from 	tdisg832
+		where	tdisg832._index1 = {:i.edrn,:whisg312.rcno,:whisg312.rcln}			
+		as set with 1 rows
+		selectdo
+		selectempty
+			dal.new.object("tdisg832")
+			
+			dal.set.field("tdisg832.edrn", import.edrn)
+			dal.set.field("tdisg832.rcno", whisg312.rcno)
+			dal.set.field("tdisg832.rcln", whisg312.rcln)
+			dal.set.field("tdisg832.oorg", whisg312.oorg)
+			dal.set.field("tdisg832.oset", whisg312.oset)
+			dal.set.field("tdisg832.orno", whisg312.orno)
+			dal.set.field("tdisg832.pono", whisg312.line)
+			dal.set.field("tdisg832.seqn", whisg312.seqn)
+			dal.set.field("tdisg832.item", whisg312.item)
+			dal.set.field("tdisg832.dsca", tcibd001.dsca)
+			dal.set.field("tdisg832.qnty", whisg312.qrec)
+			ret_val= dal.save.object("tdisg832")
+			
+			if ret_val <> 0 then
+				return(DALHOOKERROR)
+			else
+| 				select whisg312.inrq
+| 				from	whisg312 for update
+| 				where	whisg312._index1 = {:whisg312.rcno,:whisg312.rcln}
+| 				selectdo
+| 					whisg312.inrq = tdisg832.edrn
+| 					db.update(twhisg312,db.retry,e)
+| 				endselect
+			endif
+		endselect
+	endselect
+	return(0)	
+}
+
+
+
+
+

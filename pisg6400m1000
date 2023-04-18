@@ -1,0 +1,455 @@
+|******************************************************************************
+|* tpisg6400m100  0  VRC B61U a7 live
+|* Print Project Invoice
+|* Installation user             
+|* 2014-09-08
+|******************************************************************************
+|* Main table tppdm600 Project, Form Type 4
+|******************************************************************************
+|* ISGECDV001065, IT0205, Arjit Gupta, VRC B61U a7 live, Dt. 29-09-2014
+|* Add logic of Advance and Rentention.
+|******************************************************************************
+|* ISGEC001079, IT0327, Ritu Shrivastava, VRC B61U a7 isg, Dt. 08-10-2014
+|* Added calculation for miscellaneous claims
+|* 
+|* ISGEC001097, IT0205, Arjit Gupta, VRC B61U a7 isg, Dt. 14-10-2014
+|* Composed Invoice logic added from temp. Table ciisg999.
+|*
+|* ISGEC001128, IT0205, Arjit Gupta, VRC B61U a7 isg, Dt. 27-10-2014
+|* Composed Invoice Basic Amount Logic Changed.
+|*
+|* ISGEC001193, IT0205, Arjit Gupta, VRC B61U a7 isg, Dt. 23-12-2014
+|* Case ID : 173, Label "Excise Duty Reimbursement" to be changed to 
+|* "ED Reimbursement/SHE cess on Service Tax" and "S. Tax Reimbursement" to be
+|* changed to "Sales Tax Reimbursement/Edu Cess on Service Tax" and both cess
+|* on Service Tax will be bifurcated accordingly.
+
+|*ISGEC01055, IT0289, SHilpa Janardanan, VRC B61U a7 isg, Dt 18-12/2015,
+|* calculation for Advance remittance to be done only for "AAR" type
+|*
+|* ISGEC015062, Shilpa Janardanan, VRC B61U a7 isg, Dt 21-09-2015,
+|* Logic correction to print domestic & export data
+
+|****************************** declaration section ***************************
+declaration:
+
+	table	tcisli235
+	table	ttcmcs052
+	table	ttppin020
+	table	tciisg000
+	table	ttcemm170
+	table	ttfacr200			|#ISGECDV001065.n
+	table	tciisg999		|#ISGEC001097.n
+	table	ttppdm740		|#ISGEC001097.n
+							|#|#ISGEC001167.sn
+	table	ttppdm600
+	table	ttccom000
+	table	ttccom130
+							|#ISGEC001167.en
+	table	tcisli936		|#ISGEC001193.n
+
+	|***************** Form Variable ****************
+	extern	domain	tccprj		cprj.f    fixed
+	extern	domain	tccprj		cprj.t    fixed
+	extern	domain	tcdate		indt.f
+	extern	domain	tcdate		indt.t
+	extern	domain	tcncmp		ncmp.f
+	extern	domain	tcncmp		ncmp.t
+	
+	|**************** Script Variable ***************
+	extern	domain	tcdate		v.indt.f
+	extern	domain	tcdate		v.indt.t
+	extern	domain	tcncmp		curr.comp
+	extern	domain	tfgld.date	v.date.f		|#ISGEC001097.n
+	extern	domain	tfgld.date	v.date.t		|#ISGEC001097.n
+	extern	domain	tcamnt		scr.samt		|#ISGEC001193.n
+	extern	domain	tcamnt		scr.sces		|#ISGEC001193.n
+	extern	domain	tcamnt		scr.shcs		|#ISGEC001193.n
+	|*************** Report Variable ****************
+	extern	domain	tcamnt		rep.bamt	|Basic Amount
+	extern	domain	tcamnt		rep.samt	|Sales Tax Amount
+	extern	domain	tcamnt		rep.rem.edmt	|ED Reimbursement
+	extern	domain	tcamnt		rep.rem.samt	|S. Tax Reimbursement
+	extern	domain	tcamnt		rep.misc.claim	|Misc. Claims Reimbursement
+	extern	domain	tcamnt		rep.gross.val	|Gross Invoice
+	extern	domain	tcamnt		rep.advn	|Advance
+	extern	domain	tcamnt		rep.retn	|Retention
+	extern	domain	tcamnt		rep.nt.inmt	|Net Invoice Amount
+	
+	
+	extern	domain	tdisg.type	type.f		|#ISGEC001167.n
+
+|****************************** program section ********************************
+before.program:
+	curr.comp = get.compnr()
+
+|****************************** group section **********************************
+group.1:
+init.group:
+	get.screen.defaults()
+
+|****************************** choice section ********************************
+choice.cont.process:
+on.choice:
+	execute(print.data)
+
+choice.print.data:
+on.choice:
+	if	rprt_open()	then
+		print.composed.invoice()		|#ISGEC001097.n
+		read.main.table()
+		rprt_close()
+	else
+		choice.again()
+	endif
+
+|****************************** field section *********************************
+field.cprj.f:
+when.field.changes:
+	cprj.t = cprj.f
+
+field.indt.f:
+when.field.changes:
+	indt.t = indt.f
+	
+field.ncmp.f:
+when.field.changes:
+	ncmp.t = ncmp.f	
+
+field.ncmp.t:
+check.input:
+	if	ncmp.f > ncmp.t	then
+		message("To Company cannot be greater than From Company")
+		set.input.error("", e)
+	endif	
+|****************************** function section ******************************
+
+functions:
+
+function read.main.table()
+{
+	domain	tcyesno		tmp.remb
+	domain	tcccty		tmp.rtyp
+	domain	tcamnt		o.adv.amnt		|#ISGECDV001065.n
+	domain	tcamnt		o.rtn.amnt		|#ISGECDV001065.n
+	domain	tfgld.ttyp	prv.ttyp		|#ISGECDV001065.n
+	domain	tfgld.docn	prv.docn		|#ISGECDV001065.n
+	
+	tcmcs.dll0095.read.parm("ciisg000")
+	
+	get.date.utc(indt.f, 00, 00, 00, v.indt.f)
+	get.date.utc(indt.t, 23, 59, 59, v.indt.t)
+	
+	select	tcemm170.comp
+	from	tcemm170
+	where	tcemm170._index1 inrange {:ncmp.f}	and	{:ncmp.t}
+	selectdo
+		switch.to.company(tcemm170.comp)
+		select	cisli235.cprj
+		from	cisli235
+		where	cisli235.cprj	inrange :cprj.f		and	:cprj.t
+		and	cisli235.codt	inrange :v.indt.f	and	:v.indt.t
+		and	cisli235.stat	in	(cisli.stat.printed, cisli.stat.posted)
+		group by cisli235.cprj
+		order by cisli235.cprj
+		selectdo
+									|#ISGEC001167.sn
+			if determine.project.type(cisli235.cprj) = type.f then
+			else
+				continue
+			endif
+									|#ISGEC001167.en
+			initialize.variable()
+			prv.ttyp = ""				|#ISGECDV001065.n
+			prv.docn = 0				|#ISGECDV001065.n
+			select	cisli235.ofbp, cisli235.nins, cisli235.amth, cisli235.txah,
+				cisli235.cprj, cisli235.invt, cisli235.piln,			|#ISGEC001193.n
+				cisli235.slcp, cisli235.ityp, cisli235.idoc			|#ISGECDV001065.n
+			from	cisli235
+			where	cisli235.cprj = :cisli235.cprj
+			and	cisli235.codt inrange :v.indt.f	and	:v.indt.t
+			and	cisli235.stat	in	(cisli.stat.printed, cisli.stat.posted)
+			order by cisli235.ityp, cisli235.idoc				|#ISGECDV001065.n
+			selectdo
+				tmp.remb = empty
+				tmp.rtyp = ""
+				select	tcmcs052.dsca
+				from	tcmcs052
+				where	tcmcs052._index1 = {:cisli235.cprj}
+				and	tcmcs052._compnr = :cisli235.slcp
+				selectdo
+				selectempty
+					tcmcs052.dsca = ""
+				endselect	
+					
+				select	tppin020.cdf_remb:tmp.remb,
+					tppin020.cdf_rtyp:tmp.rtyp
+				from	tppin020
+				where	tppin020._index1 = {:cisli235.cprj, :cisli235.ofbp, :cisli235.nins}
+				and	tppin020._compnr = :cisli235.slcp
+				selectdo
+				endselect
+				if	tmp.remb = tcyesno.no	then
+					rep.bamt = rep.bamt + cisli235.amth(1)
+				else
+					if	not isspace(tmp.rtyp)	then
+						if	trim$(tmp.rtyp) = trim$(ciisg000.exii)	or
+							trim$(tmp.rtyp) = trim$(ciisg000.hcex)	or
+							trim$(tmp.rtyp) = trim$(ciisg000.scex)	then
+							rep.rem.edmt = rep.rem.edmt + cisli235.amth(1)
+						else
+							if	trim$(tmp.rtyp) = trim$(ciisg000.csti)	then
+								rep.rem.samt = rep.rem.samt + cisli235.amth(1)
+							else
+								if	trim$(tmp.rtyp) = trim$(ciisg000.vati)	or
+									trim$(tmp.rtyp) = trim$(ciisg000.srvi)	or
+									trim$(tmp.rtyp) = trim$(ciisg000.hcsv)	or
+									trim$(tmp.rtyp) = trim$(ciisg000.scsv)	then		|#ISGEC001079.n
+| 									trim$(tmp.rtyp) = trim$(ciisg000.scsv)	or		|#ISGEC001079.so
+| 									trim$(tmp.rtyp) = trim$(ciisg000.frgt)	then		|#ISGEC001079.eo
+									rep.rem.samt = rep.rem.samt + cisli235.amth(1)
+								else									|#ISGEC001079.sn	
+									if	trim$(tmp.rtyp) = trim$(ciisg000.frgt)	then			
+										rep.misc.claim = rep.misc.claim + cisli235.amth(1)
+									endif								|#ISGEC001079.en
+								endif
+							endif	
+						endif
+					endif
+				endif
+| 				rep.samt = rep.samt + cisli235.txah(1)		|#ISGEC001193.o
+										|#ISGEC001193.sn
+				scr.samt = 0
+				scr.sces = 0
+				scr.shcs = 0
+				Get_Service_Sales_Tax(cisli235.slcp, cisli235.cprj, cisli235.ofbp, cisli235.invt, cisli235.piln,
+						scr.samt, scr.sces, scr.shcs)
+				rep.rem.edmt = rep.rem.edmt + scr.shcs
+				rep.rem.samt = rep.rem.samt + scr.sces
+				rep.samt = rep.samt + scr.samt
+										|#ISGEC001193.en
+										|#ISGECDV001065.sn
+				o.adv.amnt = 0					
+				o.rtn.amnt = 0					
+				if	prv.ttyp <> cisli235.ityp	or prv.docn <> cisli235.idoc	then
+					get.advance.retention(cisli235.ityp, cisli235.idoc, o.adv.amnt, o.rtn.amnt)
+					rep.advn = rep.advn + o.adv.amnt
+					rep.retn = rep.retn + o.rtn.amnt
+					prv.ttyp = cisli235.ityp
+					prv.docn = cisli235.idoc
+				endif
+										|#ISGECDV001065.en
+			endselect
+			rep.gross.val = rep.bamt + rep.samt + rep.rem.edmt + rep.rem.samt + rep.misc.claim
+			rep.nt.inmt = rep.gross.val - (rep.advn + rep.retn)		|#ISGECDV001065.n
+			rprt_send()
+		endselect
+		switch.to.company(curr.comp)
+	endselect	
+}
+
+							|#ISGEC001193.sn
+function Get_Service_Sales_Tax(
+			domain	tcncmp		in.slcp,
+			domain	tccprj		in.cprj,
+			domain	tccom.bpid	in.ofbp,
+			domain	tcinvt		in.invt,
+			domain	cisli.piln	in.piln,
+		ref	domain	tcamnt		ot.samt,
+		ref	domain	tcamnt		ot.sces,
+		ref	domain	tcamnt		ot.shcs
+				)
+{
+	select	cisli936.itax, cisli936.txah
+	from	cisli936
+	where	cisli936._index1 = {:in.slcp, :in.cprj, :in.ofbp, :in.invt, :in.piln}
+	selectdo
+		on case cisli936.itax
+			case tctax.indt.l.service:		|Service Tax
+			case tctax.indt.l.lst:			|Local Sales Tax
+			case tctax.indt.l.cst:			|Central Sales Tax
+			case tctax.indt.l.vat:			|VAT
+			case tctax.indt.l.n.a:			|Not Applicable
+				ot.samt = ot.samt + cisli936.txah(1)
+				break
+			case tctax.indt.l.e.cess.service:			|Service CESS 
+				ot.sces = ot.sces + cisli936.txah(1)
+				break
+			case tctax.indt.l.hse.cess.servic:			|Service SHE CESS 	
+				ot.shcs = ot.shcs + cisli936.txah(1)
+				break
+		ENDCASE
+	endselect	
+}
+							|#ISGEC001193.en
+
+function initialize.variable()
+{
+	rep.bamt = 0
+	rep.samt = 0
+	rep.rem.edmt = 0
+	rep.misc.claim = 0
+	rep.rem.samt = 0
+	rep.gross.val = 0
+	rep.advn = 0						|#ISGECDV001065.n
+	rep.retn = 0						|#ISGECDV001065.n
+	rep.nt.inmt = 0						|#ISGECDV001065.n
+}
+
+function get.date.utc(
+		domain	tcdate	i.date,
+		long		i.hh,
+		long		i.mn,
+		long		i.ss,
+	ref	domain	tcdate	o.date
+			)
+{
+	long	dd, mm, yy, hh, mn, ss
+	utc.to.date(i.date, yy , mm, dd, hh, mn, ss)
+	o.date = date.to.utc(yy, mm, dd, i.hh, i.mn, i.ss)
+	if	o.date < 0	then
+		o.date = 0
+	endif
+}
+
+								|#ISGECDV001065.sn
+function get.advance.retention(
+			domain	tfgld.ttyp	i.ttyp,
+			domain	tfgld.docn	i.docn,
+		ref	domain	tcamnt		o.advn,
+		ref	domain	tcamnt		o.retn
+				)
+{
+	o.advn = 0
+	o.retn = 0
+	select	tfacr200.amth, tfacr200.trec, 
+		tfacr200.tdoc			|#ISGEC01156.n
+	from	tfacr200
+	where	tfacr200._index1 = {:i.ttyp, :i.docn}
+	and	tfacr200.docn <> 0
+	and	tfacr200.trec in (tfacr.trec.assignment, tfacr.trec.credit)
+	selectdo
+		on case tfacr200.trec
+		case tfacr.trec.assignment:
+			if tfacr200.tdoc = "AAR" then	|#ISGEC01055.n
+				o.advn = o.advn + abs(tfacr200.amth(1))
+			endif				|#ISGEC01055.n	
+				break
+			case tfacr.trec.credit:
+				o.retn = o.retn + abs(tfacr200.amth(1))
+				break
+		EndCAsE
+	endselect	
+}				
+								|#ISGECDV001065.en
+
+							|#ISGEC001097.sn
+function print.composed.invoice()
+{
+	get.utc.to.date(indt.f, v.date.f)
+	get.utc.to.date(indt.t, v.date.t)
+	select	tcemm170.comp
+	from	tcemm170
+	where	tcemm170._index1 inrange {:ncmp.f}	and	{:ncmp.t}
+	selectdo
+		switch.to.company(tcemm170.comp)
+		select	ciisg999.proj
+		from	ciisg999
+		where	ciisg999._index3 inrange {:cprj.f}	and	{:cprj.t}
+		and	ciisg999.date inrange :v.date.f	and	:v.date.t
+		group by ciisg999.proj				
+		order by ciisg999.proj
+		selectdo
+									|#ISGEC001167.sn
+			if determine.project.type(ciisg999.proj) = type.f then
+			else
+				continue
+			endif
+									|#ISGEC001167.en
+			
+			initialize.variable()
+			cisli235.cprj = ciisg999.proj
+			select	ciisg999.date, ciisg999.cprc, ciisg999.stax, ciisg999.edre,
+				ciisg999.stre, ciisg999.misc, ciisg999.advc, ciisg999.rete,
+				ciisg999.pris, tcmcs052.dsca
+			from	ciisg999, tcmcs052
+			where	ciisg999._index3 = {:ciisg999.proj}
+			and	ciisg999.date inrange :v.date.f	and	:v.date.t
+			and	ciisg999.proj refers to tcmcs052 unref Clear
+			selectdo
+				rep.bamt = rep.bamt + ciisg999.cprc			|#ISGEC001128.n
+| 				rep.bamt = rep.bamt + ciisg999.pris			|#ISGEC001128.o
+				rep.rem.edmt = rep.rem.edmt + ciisg999.edre
+				rep.rem.samt = rep.rem.samt + ciisg999.stre
+				rep.misc.claim = rep.misc.claim + ciisg999.misc
+				rep.samt = rep.samt + ciisg999.stax
+				rep.advn = rep.advn + ciisg999.advc
+				rep.retn = rep.retn + ciisg999.rete						
+			endselect
+			rep.gross.val = rep.bamt + rep.samt + rep.rem.edmt + rep.rem.samt + rep.misc.claim
+			rep.nt.inmt = rep.gross.val - (rep.advn + rep.retn)
+			rprt_send()
+		endselect
+		switch.to.company(curr.comp)
+	endselect	
+}
+
+function get.utc.to.date(
+			domain	tcdate		i.utc,
+		ref	domain	tfgld.date	o.dte	
+			)
+{
+	long	dd, mm, yy, hh, mn, ss
+	utc.to.date(i.utc, yy , mm, dd, hh, mn, ss)
+	o.dte = date.to.num(yy, mm, dd)
+	if	o.dte < 0	then
+		o.dte = 0
+	endif
+}
+
+										|#ISGEC001097.en
+
+
+
+
+function domain tdisg.type determine.project.type
+			(
+				domain	tccprj		i.cprj
+			)
+{
+	select 	tppdm740.ofbp,
+		tppdm740.ccur,
+		tccom130.ccty,
+		tppdm600.ncmp	
+	from	tppdm740,tccom100,tppdm600,tccom130
+	where	tppdm740._index1 = {:i.cprj}
+	and	tppdm740.ofbp refers to tccom100
+	and	tppdm740.cprj refers to tppdm600
+	and	tccom100.cadr refers to tccom130
+	and	tppdm740._compnr = 200			|#ISGEC015062.n
+	as set with 1 rows
+	selectdo
+	endselect
+	
+	select	tcemm170.lcur
+	from	tcemm170
+	where	tcemm170._index1 = {:tppdm600.ncmp}
+	and	tcemm170.lcur = :tppdm740.ccur
+	as set with 1 rows
+	selectdo
+		select	tccom000.ccty
+		from	tccom000
+		where	tccom000._index1 = {0,:tppdm600.ncmp}
+		selectdo
+			if tccom000.ccty <> tccom130.ccty then
+				return(tdisg.type.export)
+			else	
+				return(tdisg.type.domestic)
+			endif	
+		endselect
+	selectempty
+		return(tdisg.type.export)
+	endselect
+	
+	return(tdisg.type.domestic)
+}

@@ -1,0 +1,495 @@
+|******************************************************************************
+|* dmisg0501  0  VRC B61U a7 live
+|* Document Master [Multiple Element]
+|* Installation user             
+|* 2014-08-17
+|******************************************************************************
+|* Main table dmisg001 , Form Type 1
+|******************************************************************************
+|* ISGECDV001129, IT0205, Arjit Gupta, Dt. 31-10-2014, VRC B61U a7 live
+|* Update Reference Document for Standard Item From Standard Document.
+|*
+|* ISGECDV001209, IT0047, Dharmendra, Dt. 02-01-2015, VRC B61U a7 live
+|* Copy the existing Document Number and lines to New document and Revision.
+|*
+|*|* ISGEC004003, IT0047, Dharmendra, 15-01-2015, B61U a7 isg
+|*
+|* IDENT ISGEC001175, Ritu Sharma, 2015-05-14
+|* Created this dll to update the size for man hours.
+|****************************** declaration section ***************************
+declaration:
+
+table  	tdmisg001 
+table  	tdmisg002 
+table	tdmisg003
+table	tdmisg005
+table	ttpmsl000
+table	ttcibd001
+	table	tdmisg007			|#ISGECDV001129.n
+table	ttcmcs018				|#ISGEC004003.n
+
+extern	domain	tcmcs.long ret_val
+extern	long	count.item
+extern	domain	dmdoc.docid	new.document	|#ISGECDV001209.sn
+extern	domain	dmdoc.docid	old.document
+extern	domain	dmdoc.revv	new.revision	
+extern	domain	dmdoc.revv	old.revision	|#ISGECDV001209.en
+	domain	tcpono		get.stnd.error	|#ISGEC004003.n
+
+#include <bic_dam>
+
+|****************************** program section ********************************
+before.program:
+	dal.start.business.method("dmisg001","set.global.variable",ret_val,1)
+
+| 	query.extend.where("dmisg001.crtp = tcyesno.yes")
+	
+before.display.object:	
+	set.enum.values.for.field("dmisg001.stat", dmstat.submitted, dmstat.released, dmstat.process)
+	
+	if dmisg001.stat = ltoe(1) then
+		disable.commands(mark.delete)
+		enable.commands("Get_Standard_Item_Updated")
+	else
+		enable.commands(mark.delete)
+		disable.commands("Get_Standard_Item_Updated")
+	endif
+|****************************** Choice section *********************************
+choice.process.cont:
+before.choice:
+	|*  If Item is Repeated, Process is not Continue
+	
+	if	not Check_Project_Exist(dmisg001.cprj)	then
+		message("Project is not Active")
+		choice.again()
+	endif	
+	
+	select	dmisg002.elem
+	from	dmisg002
+	where	dmisg002._index1 = {:dmisg001.docn,:dmisg001.revn}
+	group by dmisg002.elem
+	selectdo
+		if	not Check_Element_Level(dmisg001.cprj, dmisg002.elem)	then
+			message("Element must be Equal or Greater than Level 4")
+			choice.again()
+		else	
+			if	not Check_Element_Status(dmisg001.cprj, dmisg002.elem)	then
+				message("Work Authorization Status of Element is not Released")
+				choice.again()
+			endif	
+		endif	
+	endselect
+	Check_Duplicate_Item_Exists()
+	Check_Item_Length()
+	if	not Check_Previous_Rev_Expire(dmisg001.docn, dmisg001.revn)	then
+		message("Previous Revision of Document %s is not Expire", dmisg001.docn)
+		choice.again()
+	endif	
+								|#ISGEC004003.sn
+	get.stnd.error = Get_Standard_Item_Updated()
+	if get.stnd.error = 1 then
+		message("Item is Block for Purchase.")
+		choice.again()
+	else if get.stnd.error = 2 then	
+		message("Item not available in Standard Item")
+		choice.again()
+	endif	
+	endif
+								|#ISGEC004003.en
+on.choice:
+	if	dmisg001.stat = dmstat.submitted	then
+		InsertRecord_dmisg005()
+		dmisg.dll0910.update.size.man.haours(dmisg001.docn,dmisg001.revn,dmisg001.size)	|#ISGEC001175.n
+		commit.transaction()							|#ISGEC001175.n
+		message("Drawing Released")
+	else
+		message("Already Released")
+		choice.again()
+	endif
+							|#ISGECDV001209.sn	
+choice.copy.document:
+on.choice:
+	zoom.to$("dmisg0501m400", Z.SESSION, "new.document", "", 0)
+	
+	if not isspace(new.document) and not isspace(new.revision) then
+		old.document = dmisg001.docn
+		old.revision = dmisg001.revn
+		
+		select	dmisg001.docn
+		from	dmisg001
+		where	dmisg001._index1 = {:new.document, :new.revision}
+		selectdo
+		selectempty
+			ceate.new.document()
+		endselect	
+	
+		dmisg001.docn = new.document
+		execute(find.data)
+	endif	
+							|#ISGECDV001209.en	
+|****************************** field section **********************************
+field.dmisg001.cspa:
+before.zoom:
+	query.extend.where.in.zoom("tpptc100.cprj = "&quoted.string(dmisg001.cprj))
+
+|****************************** functions section **********************************
+functions:
+function boolean Check_Project_Exist(domain	tccprj	i.cprj)
+{
+	select	tppdm600.psts
+	from	tppdm600
+	where	tppdm600._index1 = {:i.cprj}
+	and	tppdm600.psts in (tppdm.psts.construction, tppdm.psts.finished)
+	selectdo
+	selectempty
+		return(false)
+	endselect
+	
+	return(true)
+}
+
+function boolean Check_Element_Level(	domain	tccprj		i.cprj,
+					domain	tppdm.cspa	i.cspa)
+{
+	long	level
+	domain	tppdm.cspa	o.elem
+	
+	tcmcs.dll0095.read.parm("tpmsl000")
+	level = tpmsl000.levl + 1
+		
+	select 	tpest120.sele:o.elem
+	from	tpest120
+	where	tpest120._index1 = {:i.cprj}
+	and	tpest120.sele = :i.cspa
+	and	tpest120.levl > :level
+	as set with 1 rows
+	selectdo
+		return(true)
+	endselect
+	return(false)
+	
+}
+function Check_Duplicate_Item_Exists()
+{
+	select 	count(dmisg002.item):count.item,
+		dmisg002.item
+	from	dmisg002
+	where	dmisg002._index1 = {:dmisg001.docn,:dmisg001.revn}
+	group by dmisg002.item
+	selectdo
+		if count.item > 1 then
+			message("Duplicate Item Found %s",dmisg002.item)
+			choice.again()
+		endif
+	endselect
+}
+function Check_Item_Length()
+{
+	long	ret.val
+	select	dmisg002.item
+	from	dmisg002
+	where	dmisg002._index1 = {:dmisg001.docn,:dmisg001.revn}
+	group by dmisg002.item
+	selectdo
+						|#Kuldeep.2014-08.09.so
+| 		ret.val = pos(trim$(dmisg002.item), "-")
+| 		if	ret.val <> 0	then
+| 			message("Item %s contains -.", dmisg002.item)
+| 			choice.again()
+| 		else	
+| 			if	(len(trim$(dmisg002.item)) < 6) or
+| 				(len(trim$(dmisg002.item)) > 12)  then
+| 				message("Length of Item %s must be greater than 6 and less than 12",dmisg002.item)
+| 				choice.again()
+| 			endif
+| 		endif	
+						|#Kuldeep.2014-08.09.eo
+						|#Kuldeep.2014-08.09.sn
+		if	(len(trim$(dmisg002.item)) < 6) then
+			message("Length of Item %s must be greater than 6",dmisg002.item)
+			choice.again()
+		endif
+						|#Kuldeep.2014-08.09.en
+	endselect
+}
+function boolean Check_Previous_Rev_Expire(domain dmdoc.docid	i.docn,
+					domain	dmdoc.revv	i.revi)
+{
+	domain	dmstat		tmp.stat
+	domain	dmdoc.revv	tmp.revi
+	
+	select	a_dmisg001.stat:tmp.stat, a_dmisg001.revn:tmp.revi
+	from	dmisg001 a_dmisg001
+	where	a_dmisg001._index1 = {:i.docn}
+	and	a_dmisg001.revn < :i.revi
+	order by a_dmisg001.revn desc
+	as set with 1 rows
+	selectdo
+		if	tmp.stat = dmstat.expire	then
+			return(true)
+		endif
+	selectempty
+		return(true)
+	endselect
+	
+	return(false)	
+}
+
+function extern domain tcpono Get_Standard_Item_Updated()
+{
+	long	ret
+	domain	tcpono	found
+	
+	found = 0
+	select	dmisg002.*
+	from	dmisg002 for update
+	where	dmisg002._index1 = {:dmisg001.docn, :dmisg001.revn}
+	and	dmisg002.itmt = "S"
+	selectdo	
+		select	tcibd001.dsca, tcibd001.citg, tcibd001.cuni, tcibd001.wght, tcibd001.csig
+		from	tcibd001
+| 		where	tcibd001._index1 = {:dmisg002.item}
+		where	tcibd001._index1 = {:dmisg002.oitm}
+		selectdo
+							|#ISGEC004003.sn
+			select	tcmcs018.blcp
+			from	tcmcs018
+			where	tcmcs018._index1 = {:tcibd001.csig}
+			and	tcmcs018.blcp = tcblst.blocked
+			selectdo
+				found = 1
+			endselect
+							|#ISGEC004003.en
+			dal.change.object("dmisg002")
+			dal.set.field("dmisg002.dsca", tcibd001.dsca)
+			dal.set.field("dmisg002.citg", tcibd001.citg)
+			dal.set.field("dmisg002.cuni", tcibd001.cuni)
+			dal.set.field("dmisg002.wght", dmisg002.qnty * tcibd001.wght)
+			ret = dal.save.object("dmisg002")
+									|#ISGECDV001129.so
+| 			if	ret = 0	then
+| 				commit.transaction()
+| 			else
+| 				abort.transaction()
+| 			endif
+									|#ISGECDV001129.eo
+		selectempty
+			found = 2
+		endselect
+								|#ISGECDV001129.sn
+		select	dmisg007.item, dmisg007.docn, dmisg007.revn, dmisg007.dsca,
+			dmisg007.pdfn
+		from	dmisg007
+		where	dmisg007._index1 = {:dmisg002.oitm}
+		selectdo
+			select	dmisg003.*
+			from	dmisg003
+			where	dmisg003._index1 = {:dmisg001.docn, :dmisg001.revn, :dmisg007.item}
+			selectdo
+			selectempty
+				dmisg003.docn = dmisg001.docn
+				dmisg003.revn = dmisg001.revn
+				dmisg003.drgt = dmisg007.docn
+				dmisg003.drev = dmisg007.revn
+				dmisg003.drgn = dmisg007.docn
+				dmisg003.dcfn = dmisg007.dsca
+				dmisg003.pdff = dmisg007.pdfn
+				dmisg003.type = dmcatg.reference
+				db.insert(tdmisg003, db.skip.dupl, e)
+			endselect
+		endselect
+		if	ret = 0	then
+			commit.transaction()
+		else
+			abort.transaction()
+		endif
+									|#ISGECDV001129.en
+	endselect
+
+	return(found)
+}
+function InsertRecord_dmisg005()
+{
+	domain	tcitem		o.loti
+	domain	dmdoc.revv	o.revn
+	
+	select 	dmisg002.*
+	from	dmisg002
+	where	dmisg002._index1 = {:dmisg001.docn,:dmisg001.revn}
+	selectdo
+		|* If Record Exists for Same Drawing
+		|* Lot Item is Defaulted
+		select 	dmisg005.loti:o.loti,
+			dmisg005.revn:o.revn
+		from	dmisg005
+		where	dmisg005._index1 = {:dmisg001.cprj,:dmisg001.cspa,:dmisg002.docn}
+		and	dmisg005.item = :dmisg002.item
+		and	dmisg005.loti <> ""
+		order by dmisg005.revn desc
+		as set with 1 rows
+		selectdo
+		selectempty
+			o.loti = ""
+		endselect
+		
+		dmisg005.cprj = dmisg001.cprj
+		dmisg005.cspa = dmisg002.elem
+		dmisg005.docn = dmisg002.docn
+		dmisg005.revn = dmisg002.revn
+		dmisg005.srno = dmisg002.srno
+		dmisg005.item = dmisg002.item
+		dmisg005.dsca = dmisg002.dsca
+		dmisg005.qnty = dmisg002.qnty
+		dmisg005.wght = dmisg002.wght
+		dmisg005.loti = o.loti
+		dmisg005.stat = dmstat.process
+		dmisg005.cuni = dmisg002.cuni
+		db.insert(tdmisg005,db.skip.dupl,e)
+	selecteos
+		select 	dmisg001.stat
+		from	dmisg001 for update
+		where	dmisg001._index1 = {:dmisg001.docn,:dmisg001.revn}
+		as set with 1 rows
+		selectdo
+			dmisg001.stat = dmstat.process
+			db.update(tdmisg001,db.retry,e)
+		endselect	
+	selectempty
+		select 	dmisg001.stat
+		from	dmisg001 for update
+		where	dmisg001._index1 = {:dmisg001.docn,:dmisg001.revn}
+		as set with 1 rows
+		selectdo
+			dmisg001.stat = dmstat.process
+			db.update(tdmisg001,db.retry,e)
+		endselect
+	endselect
+	
+	commit.transaction()
+}
+function boolean Check_Element_Status(domain	tccprj	i.cprj,
+				domain	tppdm.cspa	i.cspa)
+{
+	domain	tppdm.cspa	o.elem
+		
+	select 	tpptc100.cspa:o.elem
+	from	tpptc100
+	where	tpptc100._index1 = {:i.cprj, :i.cspa}
+| 	and	tpptc100.wast in (tppdm.wast.released, tppdm.wast.finished)
+	and	tpptc100.wast = tppdm.wast.released
+	selectdo
+		return(true)
+	endselect
+	
+	return(false)
+}
+
+							|#ISGECDV001209.sn
+function ceate.new.document()
+{
+	dmisg001.docn = new.document
+	dmisg001.revn = new.revision
+	dmisg001.dcid = dmisg001.dcid
+	dmisg001.dsca = dmisg001.dsca
+	dmisg001.dttl = dmisg001.dttl
+	dmisg001.cspa = dmisg001.cspa
+	dmisg001.erec = dmisg001.erec
+	dmisg001.prod = dmisg001.prod
+	dmisg001.info = dmisg001.info
+	dmisg001.appr = dmisg001.appr
+	dmisg001.resp = dmisg001.resp
+	dmisg001.date = dmisg001.date
+	dmisg001.appb = dmisg001.appb
+	dmisg001.chkb = dmisg001.chkb
+	dmisg001.drwb = dmisg001.drwb
+	dmisg001.wght = dmisg001.wght
+	dmisg001.scal = dmisg001.scal
+	dmisg001.size = dmisg001.size
+	dmisg001.pdfn = dmisg001.pdfn
+	dmisg001.cprj = dmisg001.cprj
+	dmisg001.grup = dmisg001.grup
+	dmisg001.clnt = dmisg001.clnt
+	dmisg001.cnsl = dmisg001.cnsl
+	dmisg001.year = dmisg001.year
+	dmisg001.iwtn = dmisg001.iwtn
+	dmisg001.ser2 = dmisg001.ser2
+	dmisg001.ser1 = dmisg001.ser1
+	dmisg001.stat = dmstat.submitted
+	dmisg001.name = dmisg001.name
+	dmisg001.mach = dmisg001.mach
+	dmisg001.sdat = dmisg001.sdat
+	dmisg001.sorc = dmisg001.sorc
+	dmisg001.crtp = dmisg001.crtp
+	dmisg001.drdt = dmisg001.drdt
+	dmisg001.drur = dmisg001.drur
+	dmisg001.type = dmisg001.type
+	dmisg001.wfst = dmisg001.wfst
+	dmisg001.user = dmisg001.user
+	dmisg001.rusr = dmisg001.rusr
+	dmisg001.rdat = dmisg001.rdat
+	dmisg001.ausr = dmisg001.ausr
+	dmisg001.adat = dmisg001.adat
+	dmisg001.ract.1 = dmisg001.ract.1
+	dmisg001.ract.2 = dmisg001.ract.2
+	dmisg001.rtxt = dmisg001.rtxt
+	dmisg001.ract = dmisg001.ract
+	dmisg001.aact.1 = dmisg001.aact.1
+	dmisg001.aact.2 = dmisg001.aact.2
+	dmisg001.aact = dmisg001.aact
+	dmisg001.aact.3 = dmisg001.aact.3
+	dmisg001.atxt = dmisg001.atxt
+	dmisg001.docs = dmisg001.docs
+	db.insert(tdmisg001, db.retry)
+	commit.transaction()
+
+	create.new.document.dmisg002()
+	create.new.document.dmisg003()
+}
+
+function create.new.document.dmisg002()
+{
+	select	dmisg002.*
+	from	dmisg002
+	where	dmisg002._index1 = {:old.document, :old.revision}
+	selectdo
+		dmisg002.docn = new.document
+		dmisg002.revn = new.revision
+		dmisg002.srno = dmisg002.srno
+		dmisg002.item = dmisg002.item
+		dmisg002.dsca = dmisg002.dsca
+		dmisg002.citg = dmisg002.citg
+		dmisg002.qnty = dmisg002.qnty
+		dmisg002.wght = dmisg002.wght
+		dmisg002.itmt = dmisg002.itmt
+		dmisg002.txta = dmisg002.txta
+		dmisg002.txtb = dmisg002.txtb
+		dmisg002.cuni = dmisg002.cuni
+		dmisg002.oitm = dmisg002.oitm
+		dmisg002.elem = dmisg002.elem
+		db.insert(tdmisg002, db.retry)
+	endselect
+
+}
+
+function create.new.document.dmisg003()
+{
+	select	dmisg003.*
+	from	dmisg003
+	where	dmisg003._index1 = {:old.document, :old.revision}
+	selectdo
+		dmisg003.docn = new.document
+		dmisg003.revn = new.revision
+		dmisg003.drgt = dmisg003.drgt
+		dmisg003.dcfn = dmisg003.dcfn
+		dmisg003.drev = dmisg003.drev
+		dmisg003.drgn = dmisg003.drgn
+		dmisg003.pdff = dmisg003.pdff
+		dmisg003.stat = dmisg003.stat
+		dmisg003.type = dmisg003.type
+		db.insert(tdmisg003, db.retry)
+	endselect
+	commit.transaction()
+}
+
+
+							|#ISGECDV001209.en

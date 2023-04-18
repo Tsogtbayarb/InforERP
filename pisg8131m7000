@@ -1,0 +1,696 @@
+|******************************************************************************
+|* tdisg8131m700  0  VRC B61U a7 live
+|* Export Dispatch Request Data
+|* Tools                         
+|* 2014-05-05
+|******************************************************************************
+|* Main table tdisg831 Export Dispatch Request Data, Form Type 1
+|******************************************************************************
+|*IDENT	ISG001016	Somak Mondal	06-05-2014	VRC B61U a7 live  
+|*ESSP INCIDENT - 3766, Sujeet Kumar, 	2014-06-01
+| IDENT  ISG001041  Abhishek Singh 06/06/2014 VRC B61U a7 live
+| ******************************************************************************
+| IDENT  ISG001053, GAURAV GUPTA, IT0304, 12-06-2014, VRC B61U a7 live
+| ADDED A REPORT
+| ******************************************************************************
+|*IDENT	ISG001036	Somak Mondal	23-07-2014	 VRC B61U a7 live  
+|****************************** declaration section ***************************
+declaration:
+
+#ident "@(#)ISG001041	Abhishek Singh, IT0352, 06/06/2014 VRC B61U a7 live"
+
+	table   ttdisg831 | Export Dispatch Request Data
+	table   ttccom100 | Business Partners
+	table   ttccom130 | Addresses
+	table   ttccom000 | Implemented Software Components (Companies)
+	table	ttdisg800
+	table	twhinh312
+	table	ttdisg832
+	table	ttcibd001
+	table	ttdpur400
+	table	ttdpur401
+	table   ttppdm600
+	table   ttcemm170
+	
+	table   twhisg312										|#ISG001041.sn
+	table   twhinh200
+	table   ttccom001
+	table   twhinh220
+	table   ttppdm740
+	table   ttpisg031
+	table   twhwmd260										|#ISG001041.en
+	table	ttcmcs008
+	
+	extern	domain	tcdesc		v.comp
+	extern	domain	tcncmp		comp.code
+	extern	domain	tfgld.date	def.date
+	extern	domain	tcmcs.str60	v.subj
+
+	extern 	domain	 whinh.shpm	import.rcno
+	extern 	domain	tcorno		x.edrn
+	extern	domain	tfgld.sess	i.session
+	extern domain	tcamnt	totl
+	extern domain  tcmcs.str10	session.type
+	
+	extern 	domain  tcorno		orno								|#ISG001041.sn
+	extern 	domain  tcwset		oset 
+	extern 	domain  tcpono		pono,seqn
+	extern  domain  tcdsca		insm.dsca
+	extern 	domain	 tcnama		created.by 
+	extern	domain	tcmcs.str3	var
+	long 		ret_val,rt1,i,insert.line
+	string		error(100),error1(100)					
+|************* Global Variable ***********
+	extern	domain	tcyesno		i.comm								|#ISG001041.en
+	
+	extern	domain	tcamnt	amnt.inr
+	extern	domain	tcyesno	edbk.v, efps.v, efms.v
+	
+#include <bic_dam>	
+#pragma used dll ottstpapihand
+|****************************** program section ******************************** 	
+before.program:
+	query.extend.where("tdisg831.type = 1 and tdisg831.stat = tdisg.stat.freeze")							|#ISG001036.n				
+|****************************** choice section **********************************
+choice.process.cont:
+before.choice:
+	
+on.choice:
+	tdisgdll0831.process.billing.advice.with.installment(tdisg831.edrn)
+	tdisgdll0831.update.billing.advice.process.status(tdisg831.edrn,tdisg.stat.process)
+	commit.transaction()
+choice.freeze:
+before.choice:
+	if check_installment() then
+		show.dal.messages(MSG.ALL)
+		choice.again()
+	endif
+	
+
+on.choice:
+	i.comm = tcyesno.yes
+| 	dal.start.business.method("tdisg831","freeze.record",ret_val,1)		|#30062014.o
+	dal.start.business.method("tdisg831","freeze.record",ret_val)	|#30062014.n
+	
+	if ret_val then
+| 	i.comm = tcyesno.no							|#30062014.o
+		show.dal.messages(MSG.ALL)
+		abort.transaction()
+	else
+		commit.transaction()
+	endif
+	
+	execute(find.data)
+
+choice.unfreeze:
+on.choice:
+	dal.start.business.method("tdisg831","unfreeze.record",ret_val)
+				|GT.30062014.so
+choice.generate.custinv:
+on.choice:
+	db.retry.point()
+	select	tdisg831.edst
+	from	tdisg831 for update
+	where 	tdisg831._index1 = {:tdisg831.edrn}
+	and	tdisg831.edst = tdisg.edst.open
+	and	tdisg831.stat = tdisg.stat.freeze
+	selectdo
+		tdisg831.edst = tdisg.edst.release
+		
+		db.update(ttdisg831,db.retry)
+		commit.transaction()
+	endselect
+				|GT.30062014.eo
+
+choice.print.data:							|ISG001053.SN
+on.choice:
+	if rprt_open() then
+		read.main.table()
+		rprt_close()
+	else
+		choice.again()
+	endif	
+
+	
+choice.cont.reimbursement:
+on.choice:
+
+	start.session(MULTI_OCC,"tpisg4551m200","","")	
+|****************************** field section **********************************
+	
+field.tdisg831.otbp:
+before.zoom:
+	query.extend.where.in.zoom("tccom100.bprl = 3 or tccom100.bprl = 4")
+when.field.changes:
+	select	tccom100.cadr
+	from	tccom100
+	where	tccom100._index1 = {:tdisg831.otbp}
+	selectdo
+		get.address(tccom100.cadr)
+	selectempty
+| 		tdisg831.add1 = ""
+| 		tdisg831.add2 = ""
+| 		tdisg831.add3 = ""
+	endselect
+					|#30062014.so
+| field.tdisg831.nins:
+| before.zoom:
+| 	tpisg031.cprj = tdisg831.cprj
+| 	tpisg031.ofbp = tdisg831.ofbp
+					
+| field.insm.dsca:
+| before.display:
+| 	select	tpisg031.dsca
+| 	from	tpisg031
+| 	where	tpisg031._index1 = {:tdisg831.cprj,:tdisg831.ofbp,:tdisg831.nins}
+| 	selectdo
+| 		insm.dsca = tpisg031.dsca
+| 	selectempty
+| 		insm.dsca = ""	
+| 	endselect
+						|#30062014.eo
+field.tdisg831.ofbp:
+before.zoom:
+	tppdm740.cprj = tdisg831.cprj
+			|GT.30062014.so
+| after.field:
+| 	select	tppdm600.ncmp,tppdm600.ccur
+| 	from	tppdm600
+| 	where	tppdm600._index1 = {:tdisg831.cprj}
+| 	selectdo
+| 		select	tppdm740.ofbp,tccom100.cadr
+| 		from	tppdm740,tccom100
+| 		where 	tppdm740._index1 = {:tdisg831.cprj,:tdisg831.ofbp}
+| 		and	tppdm740.ofbp refers to tccom100
+| 		selectdo
+| 			select	tccom130.ccty
+| 			from	tccom130
+| 			where	tccom130._index1 = {:tccom100.cadr}
+| 			selectdo
+| 			selectempty
+| 				tccom130.ccty = ""
+| 			endselect
+| 		selectempty
+| 			tccom130.ccty = ""	
+| 		endselect		
+| 		
+| 		select	tcemm170.lcur
+| 		from	tcemm170
+| 		where	tcemm170._index1 = {:tppdm600.ncmp}
+| 		and	tcemm170.lcur = :tppdm600.ccur
+| 		selectdo
+| 			select	tccom000.ccty
+| 			from	tccom000
+| 			where	tccom000._index1 = {0,:tppdm600.ncmp}
+| 			selectdo
+| 				if tccom000.ccty <> tccom130.ccty then
+| 					session.type = "EXPORT"
+| 				else	
+| 					session.type = "DOMESTIC"
+| 				endif	
+| 			endselect	
+| 		selectempty
+| 			session.type = "EXPORT"
+| 		endselect
+| 	selectempty
+| 		session.type = ""	
+| 	endselect
+
+| 	display("session.type")
+							|GT.30062014.eo
+							|#30062014.so
+| field.tdisg831.rcno:
+| before.zoom:
+| 	query.extend.where.in.zoom("whisg312.cprj =" & quoted.string(tdisg831.cprj) & " and whisg312.inrq = " & "' '")
+							|#30062014.eo
+field.created.by:
+before.display:
+	select	tccom001.nama
+	from	tccom001
+	where	tccom001._index1 = {:1}
+	wherebind(1,toupper$(tdisg831.crby))
+	selectdo
+		created.by = tccom001.nama
+	selectempty
+		created.by = ""
+	endselect
+
+	
+|****************************** functions **********************************
+functions:
+
+function long	check_installment()
+{
+	select	tdisg832.nins
+	from	tdisg832
+	where	tdisg832._index1 = {:tdisg831.edrn}
+	selectdo
+	
+| 		dal.start.business.method("tdisg832","set.global.variable.new",ret_val,1)
+| 		
+| 		dal.start.business.method("tdisg832","tdisg832.nins.is.mandatory",ret_val)
+| 						|GT.02072014.sn
+| 		dal.start.business.method("tdisg832","tdisg832.slrt.is.mandatoty",ret_val)	|Price
+| 		dal.start.business.method("tdisg832","tdisg832.bivl.is.mandatory",ret_val)	|Billing Value
+| 		dal.start.business.method("tdisg832","tdisg832.reas.is.mandatory",ret_val)	|GT.02072014.n
+						|GT.02072014.en
+	endselect
+	
+	if ret_val and tdisg832.nins = 0 then
+		dal.set.error.message("@ Installment is mandatory")
+		return(DALHOOKERROR)
+	endif
+			|GT.02072014.sn
+	if ret_val and tdisg832.slrt = 0 then
+		dal.set.error.message("@ Price is mandatory")
+		return(DALHOOKERROR)
+	endif
+	
+	if ret_val and tdisg832.bivl = 0 then
+		dal.set.error.message("@ Billing Value is mandatory")
+		return(DALHOOKERROR)
+	endif
+			|GT.02072014.en
+	return(0)
+}
+
+function get.address(domain tccom.cadr		i.cadr)
+{
+	select	tccom130.nama,tccom130.namc,tccom130.dsca
+	from	tccom130
+	where	tccom130._index1 = {:i.cadr}
+	selectdo		
+| 		tdisg831.add1 = tccom130.nama
+| 		tdisg831.add2 = tccom130.namc
+| 		tdisg831.add3 = tccom130.dsca		
+	selectempty
+| 		tdisg831.add1 = ""
+| 		tdisg831.add2 = ""
+| 		tdisg831.add3 = ""		
+	endselect
+}	
+
+function domain tcccty get.country
+		(
+			domain	tccom.bpid	i.bpid
+		)
+{
+	domain 	tcccty		o.ccty
+	select 	tccom130.ccty:o.ccty
+	from	tccom100,tccom130
+	where	tccom100._index1 = {:i.bpid}
+	and	tccom100.cadr refers to tccom130
+	as set with 1 rows
+	selectdo
+	selectempty
+		o.ccty = ""
+	endselect
+	
+	return(o.ccty)
+}
+
+function string create.warehouse.order(domain whinh.oorg	oorg,			|#ISG001041.sn
+					domain whinh.ittp	ittp,
+					domain	tccshp		sfco,
+					domain	tccshp		stco)
+{
+	ret_val = dal.new.object("whinh200")
+	dal.set.field("whinh200.oorg",oorg)
+	dal.set.field("whinh200.ittp",ittp)
+	dal.set.field("whinh200.sfco",sfco)
+	dal.set.field("whinh200.stco",stco)
+	ret_val = dal.save.object("whinh200")
+	
+	if ret_val  = 0 then
+		orno = whinh200.orno
+		oset = whinh200.oset
+	else
+		error = ""
+		rt1 = dal.count.error.messages()
+		for i = rt1 to 1 step -1
+			ret_val = dal.get.error.message(error1)
+			message("%s",error1)
+		endfor
+		abort.transaction()
+		orno = ""
+	endif
+	
+	if not isspace(orno) then
+		select	tdisg832.*
+		from	tdisg832
+		where	tdisg832._index1 = {:tdisg831.edrn}
+		selectdo
+			select	whisg312.cprj,whisg312.cspa,whisg312.cact,whisg312.ccco
+			from	whisg312
+			where	whisg312._index1 = {:tdisg832.rcno,:tdisg832.rcln}
+			selectdo
+			endselect
+				
+			ret_val = dal.new.object("whinh220")
+			
+			dal.set.field("whinh220.oorg",oorg)
+			dal.set.field("whinh220.orno",orno)
+			dal.set.field("whinh220.oset",oset)
+			dal.set.field("whinh220.item",tdisg832.item)
+			dal.set.field("whinh220.qoro",tdisg832.qnty)
+			dal.set.field("whinh220.fprj",whisg312.cprj)
+			dal.set.field("whinh220.fspa",whisg312.cspa)
+			dal.set.field("whinh220.fact",whisg312.cact)
+			dal.set.field("whinh220.fcco",whisg312.ccco)
+			
+			ret_val = dal.save.object("whinh220")
+			
+			if ret_val  = 0 then
+				pono = whinh220.pono
+				seqn = whinh220.seqn
+				commit.transaction()
+			else
+				error = ""
+				rt1 = dal.count.error.messages()
+				for i = rt1 to 1 step -1
+					ret_val = dal.get.error.message(error1)
+					message("%s",error1)
+				endfor
+				abort.transaction()
+				orno = ""
+				break
+			endif
+			
+			if pono <> 0 and seqn <> 0 then
+				update.tdisg832()
+			endif	
+		endselect
+	endif	
+	return(orno)
+}												
+
+function boolean process.outbound()
+{
+	string		error.msg(100)
+	
+	stpapi.put.field("whinh2100m000", "whinh200.oorg", str$(whinh.oorg.project.man))			
+	stpapi.put.field("whinh2100m000", "whinh200.orno", str$(orno))			
+	stpapi.put.field("whinh2100m000", "whinh200.oset", str$(oset))			
+	ret_val = stpapi.find("whinh2100m000", error.msg)
+	if ret_val = 1 then
+		ret_val = stpapi.mark("whinh2100m000", error.msg)
+		if ret_val = 1 then
+			stpapi.form.command("whinh2100m000",5,"whinh4200m000",error.msg)
+			
+			if not isspace(error.msg) then
+				message("Error while process outbound %s",error.msg)
+				stpapi.recover("whinh2100m000",error.msg)
+				stpapi.end.session("whinh2100m000")
+				return(false)
+			endif
+		else
+			stpapi.end.session("whinh2100m000")
+			return(false)	
+		endif	
+	else
+		stpapi.end.session("whinh2100m000")
+		return(false)	
+	endif
+	
+	stpapi.end.session("whinh2100m000")
+	return(true)
+}	
+
+function boolean global.approval()
+{
+	string		error.msg(100)
+	domain tclogn	loco,loco1
+	set.fmin(loco)
+	set.fmax(loco1)
+	
+	stpapi.put.field("tpppc4200m000", "cprj.f", str$(tdisg831.cprj))			
+	stpapi.put.field("tpppc4200m000", "cprj.t", str$(tdisg831.cprj))			
+	stpapi.put.field("tpppc4200m000", "loco.f", logname$)			|#Biswa.18/06/2014.n
+	stpapi.put.field("tpppc4200m000", "loco.t", logname$)			|#Biswa.18/06/2014.n
+| 	stpapi.put.field("tpppc4200m000", "loco.f", str$(loco))			|#Biswa.18/06/2014.o
+| 	stpapi.put.field("tpppc4200m000", "loco.t", str$(loco1))		|#Biswa.18/06/2014.o
+	stpapi.put.field("tpppc4200m000", "tpgen.cotp.item", str$(tcyesno.yes))			
+											|#Biswa.18/06/2014.sn
+	stpapi.put.field("tpppc4200m000", "item.manu", str$(tppdm.yeno.yes))
+	stpapi.put.field("tpppc4200m000", "item.invoice", str$(tppdm.yeno.yes))
+	stpapi.put.field("tpppc4200m000", "item.inventory", str$(tppdm.yeno.yes))
+	stpapi.put.field("tpppc4200m000", "item.price.var", str$(tppdm.yeno.yes))
+	stpapi.put.field("tpppc4200m000", "item.expect", str$(tppdm.yeno.yes))
+	stpapi.put.field("tpppc4200m000", "item.service", str$(tppdm.yeno.yes))
+	stpapi.put.field("tpppc4200m000", "item.ord.costs", str$(tppdm.yeno.yes))
+	stpapi.put.field("tpppc4200m000", "item.pri.var.rev", str$(tppdm.yeno.yes))
+	stpapi.put.field("tpppc4200m000", "item.expense.tax", str$(tppdm.yeno.yes))
+											|#Biswa.18/06/2014.en
+	stpapi.put.field("tpppc4200m000", "tpgen.cotp.task", str$(tcyesno.yes))			
+	stpapi.put.field("tpppc4200m000", "tpgen.cotp.cequ", str$(tcyesno.yes))			
+	stpapi.put.field("tpppc4200m000", "tpgen.cotp.csub", str$(tcyesno.yes))			
+	stpapi.put.field("tpppc4200m000", "tpgen.cotp.cico", str$(tcyesno.yes))			
+	stpapi.put.field("tpppc4200m000", "tpgen.cotp.cpru", str$(tcyesno.yes))			
+
+	stpapi.set.report("tpppc4200m000","rtpppc420001000","D",error.msg)
+	stpapi.form.command("tpppc4200m000",5,"exec.cont.process",error.msg)
+			
+	if not isspace(error.msg) then
+		message("Error while global approval %s",error.msg)
+		stpapi.recover("tpppc4200m000",error.msg)
+		stpapi.end.session("tpppc4200m000")
+		return(false)
+	else
+		stpapi.end.session("tpppc4200m000")
+	endif
+	
+	return(true)
+}	
+
+function boolean process.transaction()
+{
+	string		error.msg(100)
+	domain tclogn	loco,loco1
+	set.fmin(loco)
+	set.fmax(loco1)
+	
+	stpapi.put.field("tpppc4802m000", "cprj.f", str$(tdisg831.cprj))			
+	stpapi.put.field("tpppc4802m000", "cprj.t", str$(tdisg831.cprj))			
+| 	stpapi.put.field("tpppc4802m000", "loco.f", str$(loco))			
+| 	stpapi.put.field("tpppc4802m000", "loco.t", str$(loco1))			
+	stpapi.put.field("tpppc4802m000", "loco.f", logname$)			
+	stpapi.put.field("tpppc4802m000", "loco.t", logname$)			
+	
+	stpapi.set.report("tpppc4802m000","rtpppc440201000","D",error.msg)
+	stpapi.form.command("tpppc4802m000",5,"exec.cont.process",error.msg)
+			
+	if not isspace(error.msg) then
+		message("Error while process transaction %s",error.msg)
+		stpapi.recover("tpppc4802m000",error.msg)
+		stpapi.end.session("tpppc4802m000")
+		return(false)
+	else
+		stpapi.end.session("tpppc4802m000")
+	endif
+	
+	return(true)
+}	
+
+function update.process()
+{
+	db.retry.point()
+| 	select	tdisg831.proc,tdisg831.prdt	|GT.30062014.o
+	select	tdisg831.stat,tdisg831.prdt	|GT.30062014.n
+	from	tdisg831 for update
+	where	tdisg831._index1 = {:tdisg831.edrn}
+	selectdo
+| 		tdisg831.proc = tcyesno.yes		|GT.30062014.o
+		tdisg831.stat = tdisg.stat.process	|GT.30062014.n	
+		tdisg831.prdt = utc.num()
+		
+		db.update(ttdisg831,db.retry)
+		commit.transaction()
+	endselect									
+}											
+
+function update.sales.amount()
+{
+	i.comm = tcyesno.yes
+	dal.start.business.method("tdisg831","update.tpppc215",ret_val,1)					|#ISG001041.n
+	i.comm = tcyesno.no
+}
+
+function installment.breakup.actual()
+{
+	i.comm = tcyesno.yes
+	dal.start.business.method("tdisg831","insert.tpisg038",ret_val,1)		|#ISG001041.n
+	if ret_val then
+		show.dal.messages(MSG.ALL)
+	endif
+	
+	i.comm = tcyesno.no
+}
+
+function update.tdisg832()
+{
+	db.retry.point()
+	select	tdisg832.worg,tdisg832.wtyp,tdisg832.worn,tdisg832.wlin,tdisg832.wseq,tdisg832.wset
+	from	tdisg832 for update
+	where	tdisg832._index1 = {:tdisg831.edrn,:tdisg832.rcno,:tdisg832.rcln}
+	selectdo
+		tdisg832.worg = whinh.oorg.project.man
+		tdisg832.wtyp = whinh.ittp.issue
+		tdisg832.worn = orno
+		tdisg832.wlin = pono
+		tdisg832.wseq = seqn
+		tdisg832.wset = oset
+		
+		db.update(ttdisg832,db.retry)
+		commit.transaction()
+	endselect
+}														
+
+function boolean check.billing.request()
+{
+	long	get.data
+	get.data = 0
+	
+	select	tdisg832.*
+	from	tdisg832
+	where	tdisg832._index1 = {:tdisg831.edrn}
+	selectdo
+		select	whisg312.cprj,whisg312.cspa,whisg312.cact,whisg312.ccco,whisg312.cwar
+		from	whisg312
+		where	whisg312._index1 = {:tdisg832.rcno,:tdisg832.rcln}
+		selectdo
+			select	whwmd260.qhnd
+			from	whwmd260
+			where	whwmd260._index1 = {:whisg312.cwar,:tdisg831.cprj,:tdisg832.item,:whisg312.cspa,:whisg312.cact}
+			selectdo
+			selectempty
+				whwmd260.qhnd = 0
+			endselect
+		endselect
+		
+		if whwmd260.qhnd < tdisg832.qnty then
+			get.data = 1
+			break
+		endif
+	endselect	
+	
+	if get.data = 1 then
+		return(false)
+	endif
+	return(true)
+}													|#ISG001041.en
+
+function boolean export.domestic()
+{
+	select	tppdm600.ncmp,tppdm600.ccur
+	from	tppdm600
+	where	tppdm600._index1 = {:tdisg831.cprj}
+	selectdo
+		select	tppdm740.ofbp,tccom100.cadr
+		from	tppdm740,tccom100
+		where 	tppdm740._index1 = {:tdisg831.cprj,:tdisg831.ofbp}
+		and	tppdm740.ofbp refers to tccom100
+		selectdo
+			select	tccom130.ccty
+			from	tccom130
+			where	tccom130._index1 = {:tccom100.cadr}
+			selectdo
+			selectempty
+				tccom130.ccty = ""
+			endselect
+		selectempty
+			tccom130.ccty = ""	
+		endselect		
+		
+		select	tcemm170.lcur
+		from	tcemm170
+		where	tcemm170._index1 = {:tppdm600.ncmp}
+		and	tcemm170.lcur = :tppdm600.ccur
+		selectdo
+			select	tccom000.ccty
+			from	tccom000
+			where	tccom000._index1 = {0,:tppdm600.ncmp}
+			selectdo
+				if tccom000.ccty <> tccom130.ccty then
+					return(true)
+				endif
+			endselect		
+		selectempty
+			return(true)
+		endselect
+	endselect
+	
+	return(false)
+}	
+		
+| ********************************************** Report Logic *********************************************
+function	read.main.table()				|ISG001053.SN
+{
+	select	tdisg831.*
+	from	tdisg831
+	where	tdisg831._index1 = {:tdisg831.edrn}
+	selectdo
+		select	tcmcs052.*
+		from	tcmcs052
+		where	tcmcs052._index1 = {:tdisg831.cprj}
+		as set with 1 rows
+		selectdo
+		endselect
+		
+		select	tppdm600.*
+		from	tppdm600
+		where	tppdm600._index1 = {:tdisg831.cprj}
+		as set with 1 rows
+		selectdo
+		endselect
+		
+		select	tdisg829.*
+		from	tdisg829
+		where	tdisg829._index1 = {:tdisg831.tpct}
+		as set with 1 rows
+		selectdo
+		endselect
+		
+		amnt.inr = 0
+		select	tdisg832.*
+		from	tdisg832
+		where	tdisg832._index1 = {:tdisg831.edrn}
+		selectdo
+			select	tcmcs008.*
+			from	tcmcs008
+			where	tcmcs008._index1 = {"INR",:tppdm600.ccur,"EXP"}
+			as set with 1 rows
+			selectdo
+			endselect
+			
+			if	tdisg832.edbk = tcyesno.yes then
+				edbk.v = tcyesno.yes
+			endif
+			
+			if	tdisg832.efps = tcyesno.yes then
+				efps.v = tcyesno.yes
+			endif
+			
+			if	tdisg832.efms = tcyesno.yes then
+				efms.v = tcyesno.yes
+			endif
+			
+			if	tcmcs008.rate <> 0 then
+				amnt.inr = tdisg832.bivl * tcmcs008.rate 
+			else
+				amnt.inr = tdisg832.bivl
+			endif
+			
+			if	edbk.v <> tcyesno.yes then
+				edbk.v = tcyesno.no
+			endif
+			if	efms.v <> tcyesno.yes then
+				efms.v = tcyesno.no
+			endif
+			if	efps.v <> tcyesno.yes then
+				efps.v = tcyesno.no
+			endif
+			
+			rprt_send()
+		endselect
+	endselect
+}												|ISG001053.EN

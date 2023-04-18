@@ -1,0 +1,593 @@
+|******************************************************************************
+|* tfisg4295m001  0  VRC B61U a7 isg 
+|* Reconciliation Correction
+|* TEST USER                     
+|* 2015-10-26
+|******************************************************************************
+|* Main table tfgld495 Reconciliation Data, Form Type 4
+|******************************************************************************
+|* IDENT ISGEC002019 IT0352,	Abhishek Singh, Dt.28/10/2015, VRC B61U a7 ISG 
+|* New Development.     
+|
+|* ID ISGEC002021, IT0289, Shilpa Janardanan, 9/11/2015, VRC B61U a7 ISG
+|* Correction for duplicate records
+
+|* ID ISGEC002025, Shilpa Janardanan, 26/11/2015, VRC B61U a7 ISG
+|* Maintaining Log file 
+|****************************** declaration section ***************************
+declaration:
+
+	table   ttfgld495 | Reconciliation Data
+	table	ttfisg400	|* Log for  Reconcillation
+
+	extern	domain	tcmcs.str215	f.file.path
+	
+	|* Temporary Variables
+	long			server_file_ptr
+	string			tmp.record(2048)
+	domain	tcmcs.str215	server.tmp.file, local.filename
+	long			ret.num,dd,mm,yy
+	
+	|* AFS Variables
+	extern	domain	tfgld.ttyp	v.ttyp,v.ctyp
+	long			ret_val,get.data
+	extern string  	error(400),x.btch(6),vv.ninv(9)
+	extern string vv.ttyp(3),vv.ninv(9),v.trdt(10),v.mess(50),result(10),get.lino(5)
+	
+	extern  domain  tfgld.amnt	v.amth(3)
+	extern  domain  tcratc		urat(3),v.urat
+	extern  domain  tcratc		arat(3),v.arat
+	extern  domain  tcrelc		relc(50)
+	extern  domain  tcelva		elva(50)
+	
+	extern	domain	tfgld.date	trn.date
+	extern	domain	tcccur		v.ccur
+	extern	domain	tcreco		v.reco
+	extern	domain	tcrecs		v.recs
+	extern	domain	tcorno		v.orno,get.orno
+	extern	domain	tcsopo		v.rpon
+	extern	domain	tfgld.docn	v.docn
+	extern	domain	tfgld.lino	v.lino
+	extern	domain	tfgld.amnt	v.amnt
+	extern	domain	tfgld.refc	v.refr 
+	extern	domain	tfgld.dimx	v.dim1,v.dim2 ,v.dim3 ,v.dim4 ,v.dim5 
+	extern	domain	tfgld.leac	v.leac 
+	extern	domain	tcbona		v.bona	
+	extern	domain	tcboid		v.boid	
+	extern	domain	tcmcs.str100	remarks
+	extern	domain	tfgld.seri	v.seri
+	extern	domain	tcncmp		v.comp
+	extern  domain  tfgld.lino	v.seqn,vv.seqn
+	extern  domain  tfgld.dbcr      v.dbcr
+	extern  domain  tfgld.year      v.year
+	extern  domain  tfgld.prod      v.prod
+	extern  domain  tcborf		v.borf
+	extern  domain  tcmcs.str30m	docn,get.dcdt
+	extern  domain  tcguid		v.guid
+	extern  domain  tcdate		v.date
+	extern string  	error1(400)
+
+#pragma used dll ottdllbw
+#include <bic_dam> 
+#pragma used dll ottstpapihand
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|**************************** function section*********************************
+functions:
+|* Browse Button on the Form
+function extern work_in_progress()
+{
+	mess("tigenstring", 0, "Select The File . . .")
+	if seq.open.dialog.local( false, "", "","Text Files(*.txt)|*.txt|All File(*.*)|*.*", f.file.path ) > 0 then
+		mess("tigenstring", 0, "Success . . .")
+	else
+		mess("tigenstring", 0, "Cancelled . . .")
+	endif
+	display.all()
+}
+
+|* Upload Button on the Form
+function extern upload.file()
+{
+	long retval
+| 	init.all.variables()
+	display.all()
+	
+	if isspace(f.file.path) then
+		mess("tigenstring", 1, "Please Specify a File")
+		return
+	else
+		start.upload.file()
+	endif
+}
+
+function start.upload.file()
+{
+	local.filename = _get.local.filename()
+| 	server.tmp.file = dte$()&"_"&local.filename
+	server.tmp.file = f.file.path
+	server.tmp.file = creat.tmp.file$(bse.tmp.dir$())
+	
+	if client2server(f.file.path, server.tmp.file, false, false, true) = 0 then
+		mess("tigenstring", 0, "File Copy to server:tmp successful !")
+		server_file_ptr = seq.open(server.tmp.file, "r")
+		
+		if server_file_ptr then
+			mess("tigenstring", 0, "Update in Progress . . .")
+			error1 = reconciliation.data()
+			seq.close(server_file_ptr)
+			if isspace(error1) then
+				mess("tigenstring", 0, "Update Complete !!")
+			else
+				mess("tigenstring", 0, "File Update not Successful. See error log")
+			endif	
+		else
+			mess("tigenstring", 1, "ERROR : File Cannot be Opened")
+		endif
+	else
+		mess("tigenstring", 1, "ERROR : Copy Failed")		
+	endif
+}
+	
+function domain	tcmcs.str30 _get.local.filename()
+{
+	domain	tcmcs.str30	tmp.local.filename
+	long 	tot.len, i
+	
+	tot.len = len(f.file.path)
+	
+	for	i=tot.len to 1 step -1
+		if f.file.path(i;1) = "\" then
+			break
+		endif
+	endfor
+	tmp.local.filename = f.file.path(i+1;tot.len)
+	return (tmp.local.filename)
+}
+       
+function init.all.variables()
+{
+	v.comp = 0
+| 	v.reco = ""
+	v.recs = 0
+	v.orno = ""
+	v.rpon = 0
+	v.ttyp = ""
+	v.docn = 0
+	v.lino = 0
+| 	v.dbcr = ""
+	v.amnt = 0	
+	v.ccur = ""
+	v.year = 0
+	v.prod = 0
+	v.trdt = ""
+	v.bona = ""
+	v.boid = ""
+	v.ctyp = ""
+	v.seri = 0
+	v.leac = ""	
+	v.dim1 = ""
+	v.dim2 = ""
+	v.dim3 = ""
+	v.dim4 = ""
+	v.dim5 = ""
+	v.refr = ""
+	v.borf = ""
+	remarks = ""
+}
+
+function string reconciliation.data()
+{
+	while(not seq.eof(server_file_ptr))
+		mess("tigenstring", 0, "Update in Progress . . .")		
+		init.all.variables()
+		ret.num = seq.gets(tmp.record, 2048, server_file_ptr)
+		if ret.num = 0 then
+		| field sequence                              1, 2, 3, 4, 5, 6, 7, 8, 9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26   
+| 			ret.num = string.scan(tmp.record, "%d|%u|%s|%s|%d|%s|%s|%d|%d|%u|%f|%s|%d|%d|%s|%s|%s|%s|%d|%s|%s|%s|%s|%s|%s|%s",
+			ret.num = string.scan(tmp.record, "%d|%u|%s|%s|%s|%d|%d|%u|%f|%s|%d|%d|%s|%s|%s|%s|%d|%s|%s|%s|%s|%s|%s|%s",
+						v.comp,		|1
+						v.reco,		|2
+						v.recs,		|3
+						v.orno,		|4
+| 						v.rpon,		|5
+| 						v.borf,		|6
+						v.ttyp,		|7
+						v.docn,		|8
+						v.lino,		|9
+						v.dbcr,		|10
+						v.amnt,		|11	
+						v.ccur,		|12
+						v.year,		|13
+						v.prod,		|14
+						v.trdt,		|15
+						v.bona,		|16
+						v.boid,		|17
+						v.ctyp,		|18
+						v.seri,		|19
+						v.leac,		|20
+						v.dim1,		|21
+						v.dim2,		|22
+						v.dim3,		|23
+						v.dim4,		|24
+						v.dim5,		|25
+						v.refr)		|26
+			data_into_tfisg400()				|#ISGEC002025.n			
+			error1 = check.dimensions()
+			if not isspace(error1) then
+				data_into_tfisg400()
+			endif
+			
+			error1 = retrive.date()
+| 			if not isspace(error1) then
+			if  not isspace(error1) then
+				error = error1
+				data_into_tfisg400()
+			endif
+			data_into_tfisg400()
+			if ret.num <> 0 and isspace(remarks) then
+				error1 = afs.reconciliation()
+				if  not isspace(error1) then
+					error = error1
+				else
+					error = "Update Completed"
+				endif
+					data_into_tfisg400()
+				
+				mess("tigenstring", 0, "Update in Progress . . .")
+			endif
+		endif
+	endwhile
+	
+	return(error1)
+}
+
+
+function string check.dimensions()
+{
+	if not isspace(v.dim1) then
+		select 	tfgld010.dimx
+		from 	tfgld010
+		where 	tfgld010._index1 = {1,:v.dim1}
+		selectdo
+		selectempty
+			mess("tigenstring", 0, "ERROR : Dimension 1 Wrong")
+			remarks = "Dimension 1 Wrong"
+			break
+		endselect
+		
+	endif
+		
+	if not isspace(v.dim2) then
+		select tfgld010.dimx
+		from tfgld010
+		where tfgld010._index1 = {2,:v.dim2}
+		selectdo
+		selectempty
+			mess("tigenstring", 0, "ERROR : Dimension 2 Wrong")
+			remarks = "Dimension 2 Wrong"
+			break
+		endselect
+	endif
+		
+		
+	if not isspace(v.dim3) then	
+		select tfgld010.dimx
+		from tfgld010
+		where tfgld010._index1 = {3,:v.dim3}
+		selectdo
+		selectempty
+			mess("tigenstring", 0, "ERROR : Dimension 3 Wrong")
+			remarks = "Dimension 3 Wrong"
+			break
+		endselect
+	endif
+
+
+	if not isspace(v.dim4) then	
+		select tfgld010.dimx
+		from tfgld010
+		where tfgld010._index1 = {4,:v.dim4}
+		selectdo
+		selectempty
+			mess("tigenstring", 0, "ERROR : Dimension 4 Wrong")
+			remarks = "Dimension 4 Wrong"
+			break
+		endselect	
+	endif
+		
+		
+	if not isspace(v.dim5) then	
+		select tfgld010.dimx
+		from tfgld010
+		where tfgld010._index1 = {5,:v.dim5}
+		selectdo
+		selectempty
+			mess("tigenstring", 0, "ERROR : Dimension 5 Wrong")
+			remarks = "Dimension 5 Wrong"
+		endselect
+	endif
+	return(remarks)			|#ISGEC002
+}
+
+function string retrive.date()
+{
+	dd = val(v.trdt(1;2))
+	mm = val(v.trdt(3;2))
+	yy = val(v.trdt(5;4))
+	
+	trn.date = date.to.num(yy, mm, dd )
+	if trn.date < 0 then
+		mess("tigenstring", 0, "ERROR : Transaction Date Wrong")
+		remarks = "Invoice Date Wrong"
+	else
+		v.date = date.to.utc(yy,mm,dd,12,00,00)	
+	endif
+	return(remarks)
+	
+}
+
+function string afs.reconciliation()
+{
+| 	v.comp = 200
+| 	v.reco = tcreco.inv.accr
+| 	v.recs = 3
+| 	v.orno = "905682"
+| 	v.rpon = 70001
+| 	v.borf = "7/1/R83000236/1/0/1/0/0"
+| 	v.ttyp = "JET"
+| 	v.docn = 35000015
+| 	v.lino = 16
+| 	v.dbcr = tfgld.dbcr.credit
+| 	v.amnt = 1899.57	
+| 	v.ccur = "INR"
+| 	v.year = 2015
+| 	v.prod = 7
+| 	v.trdt = "30102015"
+| 	v.bona = "tdpur040"
+| 	v.boid = "905682"
+| 	v.ctyp = "JVN"
+| 	v.seri = 35
+| 	v.leac = "9999300"
+| 	v.dim1 = ""
+| 	v.dim2 = ""
+| 	v.dim3 = ""
+| 	v.dim4 = ""
+| 	v.dim5 = ""
+| 	v.refr = "7/1/R83000236/1/0/1/0/0"
+	get.data = 0
+	if unposted_exist() then
+		get.data = 1
+	endif
+	
+	if get.data = 0 then
+	v.guid = uuid.generate$()
+	v.urat = 0
+	v.arat = 0
+	
+	select	tfgld495.guid,tfgld495.urat(1):v.urat,tfgld495.arat(1):v.arat,tfgld495.nuni,tfgld495.cuni,tfgld495.dbcr,
+		tfgld495.rev1,tfgld495.rev2,tfgld495.rev3,tfgld495.rev4,tfgld495.rev5,
+		tfgld495.rce1,tfgld495.rce2,tfgld495.rce3,tfgld495.rce4,tfgld495.rce5
+	from	tfgld495
+	where	tfgld495._index2 = {:v.comp,:v.reco,:v.recs,:v.comp,:v.bona,:v.boid,:v.rpon,:v.borf}
+	and	tfgld495.ttyp = :v.ttyp	
+	and	tfgld495.docn = :v.docn	
+	and	tfgld495.lino = :v.lino
+	selectdo
+	endselect
+	
+	tfgld.dll6495.log.reconciliation.data.including.financial.data(
+									v.guid,
+									v.dbcr,
+									"",
+									v.reco,
+									v.recs,
+									v.bona,
+									v.orno,
+									v.borf,
+									"",
+									v.rpon,
+									"",
+									"",
+									v.comp,
+									v.date,
+									v.date,
+									v.amnt,
+									v.ccur,
+									v.amth,
+									tfgld495.nuni,
+									tfgld495.cuni,
+									"9500300",
+									"","","","","","","","","","","","",
+									v.year,
+									v.prod,
+									v.comp,
+									v.year,
+									0,			|batch
+									"",
+									0,
+									0,
+									0,0,
+									trn.date,
+									v.date,
+									tfgld495.rce1,
+									tfgld495.rev1,
+									tfgld495.rce2,
+									tfgld495.rev2,
+									tfgld495.rce3,
+									tfgld495.rev3,
+									tfgld495.rce4,
+									tfgld495.rev4,
+									tfgld495.rce5,
+									tfgld495.rev5,
+									tcyesno.no,
+									0,relc,elva,
+									urat,arat,
+									tcyesno.no,
+									tcyesno.no,
+									tcktrn.corr.non.final,
+									tfgld495.guid,
+									tfgld495.dbcr,
+									v.comp,
+									error
+									)
+	endif
+								
+	if isspace(error) then
+		if get.data = 0 then
+			commit.transaction()
+			
+			select	tfgld495.amth,tfgld495.urat,tfgld495.arat
+			from	tfgld495 for update
+			where	tfgld495._index1 = {:v.guid,:v.dbcr}
+			selectdo
+				tfgld495.amth(1) = v.amnt
+				tfgld495.urat(1) = v.urat
+				tfgld495.arat(1) = v.arat
+				db.update(ttfgld495,db.retry)
+				commit.transaction()
+			endselect		
+		endif
+		
+		stpapi.put.field("tfgld4295m300", "reco.f", str$(v.reco))	
+		stpapi.put.field("tfgld4295m300", "recs.f", str$(v.recs))	
+		stpapi.put.field("tfgld4295m300", "selection.fyer", str$(v.year))	
+		stpapi.put.field("tfgld4295m300", "selection.fprd", str$(v.prod))	
+		stpapi.put.field("tfgld4295m300", "bo.selection", "1")	
+		stpapi.put.field("tfgld4295m300", "rbon.f", v.bona)	
+		stpapi.put.field("tfgld4295m300", "rbid.f", v.boid)	
+		stpapi.put.field("tfgld4295m300", "rbid.t", v.boid)	
+		stpapi.put.field("tfgld4295m300", "simulate", "2")	
+		stpapi.put.field("tfgld4295m300", "process.rep", "2")	
+		stpapi.put.field("tfgld4295m300", "ttyp.f", v.ctyp)	
+		stpapi.put.field("tfgld4295m300", "seri.f", str$(v.seri))	
+		stpapi.put.field("tfgld4295m300", "leac.f", v.leac)	
+		stpapi.put.field("tfgld4295m300", "dim1", v.dim1)	
+		stpapi.put.field("tfgld4295m300", "dim2", v.dim2)	
+		stpapi.put.field("tfgld4295m300", "dim3", v.dim3)	
+		stpapi.put.field("tfgld4295m300", "dim4", v.dim4)	
+		stpapi.put.field("tfgld4295m300", "dim5", v.dim5)	
+		stpapi.put.field("tfgld4295m300", "trans.entry.date", str$(trn.date))	
+		stpapi.put.field("tfgld4295m300", "posting.fyer", str$(v.year))	
+		stpapi.put.field("tfgld4295m300", "posting.fprd", str$(v.prod))	
+		stpapi.put.field("tfgld4295m300", "posting.rprd", str$(v.prod))	
+		stpapi.put.field("tfgld4295m300", "posting.vyer", str$(v.year))	
+		stpapi.put.field("tfgld4295m300", "posting.vprd", str$(v.prod))	
+		stpapi.put.field("tfgld4295m300", "batch.reference", v.refr)	
+		stpapi.put.field("tfgld4295m300", "trans.ref", v.refr)	
+		stpapi.set.report("tfgld4295m300", "rtfgld429502300", "D", error)
+		if isspace(error) then
+			stpapi.form.command("tfgld4295m300",5, "exec.cont.process",error)
+		endif	
+		stpapi.end.session("tfgld4295m300",error)
+	endif	
+	return(error)
+}
+
+function 	long	unposted_exist()
+{
+	domain	tcguid	guid		|#ISGEC002021.n
+	
+	guid = ""		|#ISGEC002021.n
+	select	tfgld495.rpon:v.rpon,tfgld495.obre:v.borf,
+		tfgld495.guid:guid	|temp.n
+	from	tfgld495
+	where	tfgld495._index2 = {:v.comp,:v.reco,:v.recs,:v.comp,:v.bona,:v.boid}
+	and	tfgld495.ttyp = :v.ttyp	
+	and	tfgld495.docn = :v.docn	
+	and	tfgld495.lino = :v.lino
+	selectdo
+	endselect
+	
+	
+	select	tfgld495.ogui	,tfgld495.guid	|#ISGEC002021.sn
+	from	tfgld495
+	where	tfgld495.ogui = :guid
+	selectdo
+		return(1)
+	endselect				|#ISGEC002021.en
+	select	tfgld495.guid	
+	from	tfgld495
+	where	tfgld495._index2 = {:v.comp,:v.reco,:v.recs,:v.comp,:v.bona,:v.boid,:v.rpon,:v.borf}
+	and	tfgld495.ktrn = tcktrn.corr.non.final
+	and	tfgld495.docn = 0
+	selectdo
+| 			return(1)		|#ISGEC002021.o
+	endselect
+	return(0)
+}
+
+
+function data_into_tfisg400()
+{
+	dd = val(v.trdt(1;2))
+	mm = val(v.trdt(3;2))
+	yy = val(v.trdt(5;4))
+	
+	trn.date = date.to.num(yy, mm, dd )
+	
+	db.retry.point()
+	select	tfisg400.*
+	from	tfisg400 for update
+	where	tfisg400._index1 = {:v.comp, :v.reco, :v.recs, :v.orno, :v.ttyp, :v.docn,:v.lino}
+	selectdo
+		tfisg400.dbcr = v.dbcr
+		tfisg400.amnt = v.amnt
+		tfisg400.ccur = v.ccur
+		tfisg400.year = v.year
+		tfisg400.perd = v.prod
+		tfisg400.date = trn.date
+		tfisg400.rbon =  v.bona
+		tfisg400.rbid = v.boid
+		tfisg400.ctyp = v.ctyp
+		tfisg400.seri = v.seri 
+		tfisg400.leac = v.leac
+		tfisg400.dim1 = v.dim1
+		tfisg400.dim2 = v.dim2
+		tfisg400.dim3 = v.dim3
+		tfisg400.dim4 = v.dim4
+		tfisg400.dim5 = v.dim5
+		tfisg400.refr = v.refr
+		tfisg400.stat =  error
+		db.update(ttfisg400, db.retry,e)
+		commit.transaction()
+	selectempty
+		tfisg400.ncmp = v.comp
+		tfisg400.reco = v.reco
+		tfisg400.recs = v.recs
+		tfisg400.orno = v.orno
+		tfisg400.ttyp = v.ttyp
+		tfisg400.ninv = v.docn
+		tfisg400.lino = v.lino
+		tfisg400.dbcr = v.dbcr
+		tfisg400.amnt = v.amnt
+		tfisg400.ccur = v.ccur
+		tfisg400.year = v.year
+		tfisg400.perd = v.prod
+		tfisg400.date = trn.date
+		tfisg400.rbon =  v.bona
+		tfisg400.rbid = v.boid
+		tfisg400.ctyp = v.ctyp
+		tfisg400.seri = v.seri 
+		tfisg400.leac = v.leac
+		tfisg400.dim1 = v.dim1
+		tfisg400.dim2 = v.dim2
+		tfisg400.dim3 = v.dim3
+		tfisg400.dim4 = v.dim4
+		tfisg400.dim5 = v.dim5
+		tfisg400.refr = v.refr
+		db.insert(ttfisg400, db.retry,e)
+		commit.transaction()
+	endselect
+	
+
+}
+
+

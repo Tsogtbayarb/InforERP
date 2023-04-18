@@ -1,0 +1,359 @@
+|******************************************************************************
+|* tdisg4400m300  0  VRC B61U a7 live
+|* PO Ammendment Report
+|* Installation user             
+|* 2014-11-19
+|******************************************************************************
+|* Main table tdmsl400 Purchase Order Ion Tracking, Form Type 4
+|******************************************************************************
+                                                                                
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttdmsl400 | Purchase Order Ion Tracking
+	table	ttdpur400
+	table	ttccom100
+	table	ttdmsl500
+
+	|******************** Form Variables **********************
+	extern	domain	tccom.bpid	suno.f
+	extern	domain	tccom.bpid	suno.t
+	extern	domain	tcemno		buyr.f
+	extern	domain	tcemno		buyr.t
+	extern	domain	tcorno		orno.f    fixed
+	extern	domain	tcorno		orno.t    fixed
+	extern	domain	tcdate		apdt.f
+	extern	domain	tcdate		apdt.t
+	
+	|*************** File Handling Variables *******************
+	string		err.file(100), file.name(100), line3(3000), line4(3000)
+	long		ret2, stat.fp
+	
+	|****************** Script Variables ***************
+	extern	domain	tcdate		v.apdt.f
+	extern	domain	tcdate		v.apdt.t
+	extern	domain	tcccty		var.reas
+	
+	|************** File Utilization Variables ******************
+	extern	domain	tccprj		rep.cprj			|1
+	extern	domain	tcdsca		rep.pjdc			|2				
+	extern	domain	tcorno		rep.orno			|3				
+	extern	domain	tcpono		rep.revi			|4				
+	extern	domain	tcmcs.str10	rep.apdt			|5				
+	extern	domain	tfgld.user	rep.apby			|6
+	extern	domain	tcnama		rep.apnm			|7	
+	extern	domain	tcemno		rep.buyr			|8				
+	extern	domain	tcnama		rep.bynm			|9				
+	extern	domain	tccom.bpid	rep.suno			|10				
+	extern	domain	tcnama		rep.spnm			|11				
+	extern	domain	tcrefa		rep.refa			|12
+	extern	domain	tcrefb		rep.refb			|13
+	extern	domain	tcmcs.st150m	rep.reas			|14
+
+|*************** Include **************
+#include<bic_desktop>
+
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+group.1:
+init.group:
+	get.screen.defaults()
+
+|****************************** choice section ********************************
+choice.cont.process:
+on.choice:
+	generate.file()
+
+|****************************** field section *********************************
+field.suno.f:
+when.field.changes:
+	suno.t = suno.f
+
+field.buyr.f:
+when.field.changes:
+	buyr.t = buyr.f
+	
+field.orno.f:
+when.field.changes:
+	orno.t = orno.f
+
+field.apdt.f:
+when.field.changes:
+	apdt.t = apdt.f
+
+|****************************** function section ******************************
+
+functions:
+
+function generate.file()
+{
+	open.file()
+	generate.header()
+	read.main.table()
+	close.file()
+}
+
+function read.main.table()
+{
+	get.date.utc(apdt.f, 00, 00, 00, v.apdt.f)
+	get.date.utc(apdt.t, 23, 59, 59, v.apdt.t)
+	
+	select	tdmsl400.*, tdpur400.orno, tdpur400.refa, tdpur400.refb,
+		tdpur400.ccon, tdpur400.cdf_reas:var.reas, tdpur400.otbp,
+		tccom100.nama
+	from	tdmsl400, tdpur400, tccom100
+	where	tdmsl400._index1 inrange {:orno.f}	and {:orno.t}
+	and	tdmsl400.apdt inrange :v.apdt.f		and :v.apdt.t
+	and	tdmsl400.vrsn <> 0
+	and	tdmsl400.orno refers to tdpur400
+	and	tdpur400._index2 inrange {:suno.f}	and	{:suno.t}	
+	and	tdpur400._index4 inrange {:buyr.f}	and	{:buyr.t}	
+	and	tdpur400.otbp refers to tccom100 Unref Clear 
+	order by tdmsl400._index1
+	selectdo
+		Initialize_Variables()
+		if	tdmsl400.vrsn = Get_Max_Version(tdmsl400.orno)	then
+			Get_Project(tdpur400.orno, rep.cprj, rep.pjdc)
+			rep.orno = tdpur400.orno
+			rep.revi = tdmsl400.vrsn
+			rep.apdt = sprintf$("%u(%02m/%02d/%04Y)", tdmsl400.apdt)
+			rep.apby = tdmsl400.apby
+			rep.apnm = Get_Approval_Name(trim$(tdmsl400.apby))
+			rep.buyr = tdpur400.ccon
+			rep.bynm = Get_Employee_Name(tdpur400.ccon)
+			rep.suno = tdpur400.otbp
+			rep.spnm = tccom100.nama
+			rep.refa = tdpur400.refa
+			rep.refb = tdpur400.refb
+			rep.reas = Get_Reason_Desc(var.reas)
+		else	
+			select	tdmsl500.orno, tdmsl500.refa, tdmsl500.refb, tdmsl500.ccon,
+				tdmsl500.reas, tdmsl500.otbp, tccom100.nama
+			from	tdmsl500, tccom100
+			where	tdmsl500._index1 = {:tdmsl400.orno, :tdmsl400.vrsn}
+			selectdo
+			endselect		
+			Get_Project_History(tdmsl500.orno, tdmsl400.vrsn, rep.cprj, rep.pjdc)
+			rep.orno = tdmsl500.orno
+			rep.revi = tdmsl400.vrsn
+			rep.apdt = sprintf$("%u(%02m/%02d/%04Y)", tdmsl400.apdt)
+			rep.apby = tdmsl400.apby
+			rep.apnm = Get_Approval_Name(trim$(tdmsl400.apby))
+			rep.buyr = tdmsl500.ccon
+			rep.bynm = Get_Employee_Name(tdmsl500.ccon)
+			rep.suno = tdmsl500.otbp
+			rep.spnm = tccom100.nama
+			rep.refa = tdmsl500.refa
+			rep.refb = tdmsl500.refb
+			rep.reas = Get_Reason_Desc(tdmsl500.reas)
+		endif
+		print.detail()	
+	endselect
+}
+
+function domain tcpono Get_Max_Version
+				(
+				domain	tcorno	in.orno
+				)
+{
+	domain	tcpono	tmp.vrsn
+	
+	tmp.vrsn = 0
+	select	max(mx_tdmsl400.vrsn):tmp.vrsn
+	from	tdmsl400 mx_tdmsl400
+	where	mx_tdmsl400._index1 = {:in.orno}
+	selectdo
+	endselect
+	
+	return(tmp.vrsn)
+}
+
+function Get_Project(
+		domain	tcorno	in.orno,
+	ref	domain	tccprj	ot.cprj,
+	ref	domain	tcdsca	ot.pjdc
+			)
+{
+	ot.cprj = ""
+	ot.pjdc = ""
+	select	pj_tdpur401.cprj:ot.cprj,
+		pj_tcmcs052.dsca:ot.pjdc
+	from	tdpur401 pj_tdpur401, tcmcs052 pj_tcmcs052
+	where	pj_tdpur401._index1 = {:in.orno}
+	and	pj_tdpur401.cprj refers to pj_tcmcs052 Unref Clear
+	as set with 1 rows
+	selectdo
+	endselect
+}
+
+function Get_Project_History(
+		domain	tcorno	in.orno,
+		domain	tcpono	in.vrsn,
+	ref	domain	tccprj	ot.cprj,
+	ref	domain	tcdsca	ot.pjdc
+			)
+{
+	ot.cprj = ""
+	ot.pjdc = ""
+	select	pj_tdmsl501.cprj:ot.cprj,
+		pj_tcmcs052.dsca:ot.pjdc
+	from	tdmsl501 pj_tdmsl501, tcmcs052 pj_tcmcs052
+	where	pj_tdmsl501._index1 = {:in.orno, :in.vrsn}
+	and	pj_tdmsl501.cprj refers to pj_tcmcs052 Unref Clear
+	as set with 1 rows
+	selectdo
+	endselect
+}
+
+function domain tcmcs.st150m Get_Reason_Desc
+				(
+				domain	tcccty		in.reas
+				)
+{
+	domain	tcmcs.st150m	tmp.reas
+	
+	tmp.reas = ""
+	select	rn_tdisg400.desc:tmp.reas
+	from	tdisg400 rn_tdisg400
+	where	rn_tdisg400._index1 = {:in.reas}
+	selectdo
+	endselect
+	
+	return(tmp.reas)
+}
+
+function domain tcnama Get_Employee_Name
+				(
+				domain tcemno		in.emno
+				)
+{
+	domain	tcnama		emp.nama
+	
+	emp.nama = ""
+	select	em_tccom001.nama:emp.nama
+	from	tccom001 em_tccom001
+	where	em_tccom001._index1 = {:in.emno}
+	selectdo
+	endselect
+	
+	return(emp.nama)
+}
+
+function domain tcnama Get_Approval_Name
+				(
+				domain tcemno		in.emno
+				)
+{
+	domain	tcnama		emp.nama
+	
+	emp.nama = ""
+	select	em_tccom001.nama:emp.nama
+	from	tccom001 em_tccom001
+	where	em_tccom001._index4 = {:in.emno}
+	selectdo
+	endselect
+	
+	return(emp.nama)
+}
+
+function	generate.header()
+{
+	line4 =	concat$("	",
+		sprintf$("Project"),					|1		
+		sprintf$("Description"),				|2		
+		sprintf$("PO Number"),					|3		
+		sprintf$("Revision No."),				|4		
+		sprintf$("Approval Date"),				|5		
+		sprintf$("Approval By"),				|6		
+		sprintf$("Approval By(Name)"),				|7		
+		sprintf$("Buyer"),					|8		
+		sprintf$("Buyer(Name)"),				|9		
+		sprintf$("Supplier"),					|10		
+		sprintf$("Supplier Name"),				|11		
+		sprintf$("Reference A"),				|12		
+		sprintf$("Reference B"),				|13
+		sprintf$("Revision Reason"))				|14
+		
+	line4 = strip$(shiftl$(line4))		
+	seq.puts(line4, stat.fp)	
+}
+
+function	print.detail()
+{	
+	line3 =	concat$("	",
+		sprintf$("%s", rep.cprj),				|1
+		sprintf$("%s", rep.pjdc),				|2				
+		sprintf$("%s", rep.orno),				|3				
+		sprintf$("%d", rep.revi),				|4				
+		sprintf$("%s", rep.apdt),				|5				
+		sprintf$("%s", rep.apby),				|6				
+		sprintf$("%s", rep.apnm),				|7				
+		sprintf$("%s", rep.buyr),				|8				
+		sprintf$("%s", rep.bynm),				|9				
+		sprintf$("%s", rep.suno),				|10				
+		sprintf$("%s", rep.spnm),				|11				
+		sprintf$("%s", rep.refa),				|12
+		sprintf$("%s", rep.refb),				|13
+		sprintf$("%s", rep.reas))				|14
+	
+		line3 = strip$(shiftl$(line3))
+		seq.puts(line3, stat.fp)
+}	
+
+function	Initialize_Variables()
+{	
+	rep.cprj = ""				|1
+	rep.pjdc = ""				|2				
+	rep.orno = ""				|3				
+	rep.revi = 0				|4				
+	rep.apdt = ""				|5				
+	rep.apby = ""				|6				
+	rep.apnm = ""				|7				
+	rep.buyr = ""				|8				
+	rep.bynm = ""				|9				
+	rep.suno = ""				|10				
+	rep.spnm = ""				|11				
+	rep.refa = ""				|12
+	rep.refb = ""				|13
+	rep.reas = ""				|14
+	
+}
+
+function get.date.utc(
+		domain	tcdate	i.date,
+		long		i.hh,
+		long		i.mn,
+		long		i.ss,
+	ref	domain	tcdate	o.date
+			)
+{
+	long	dd, mm, yy, hh, mn, ss
+	
+	utc.to.date(i.date, yy , mm, dd, hh, mn, ss)
+	o.date = date.to.utc(yy, mm, dd, i.hh, i.mn, i.ss)
+	if	o.date < 0	then
+		o.date = 0
+	endif
+}	
+
+function open.file()
+{
+	err.file = bse.tmp.dir$() & str$(utc.num()) & ".xls"
+	
+	file.name = "c:\temp\" & str$(utc.num())  & ".xls"
+	
+	stat.fp = seq.open(err.file, "w+")
+	if stat.fp >0 then
+ 		seq.seek(0, 0, stat.fp)
+	endif
+}
+
+function close.file()
+{
+	seq.close(stat.fp)
+	ret2 = server2client(err.file,file.name,1)
+	ret2 = app_start(file.name,"c:","","","")
+}
+

@@ -1,0 +1,364 @@
+|******************************************************************************
+|* tdisg8131m200  0  VRC B61U a7 live
+|* Link Custom Invoice
+|* Tools                         
+|* 2014-06-11
+|******************************************************************************
+|* Main table tdisg831 Billing Advice, Form Type 1
+|******************************************************************************
+|* ID 18082014 Somak Mondal	19-08-2014	VRC B61U a7 live                                                                                
+|* Selection field reset selection logic placed.
+|*
+|*ID ISGECDV001039	Gaurav Tyagi		2014-09-12
+|* Add new field Export Type for handling Service Scenario
+|* Functional - Mrs. Mamta Upadhyay
+|*
+|* ISGECDV001085, IT0205, Arjit Gupta, VRC B61U a7 live, Dt. 07-10-2014
+|* Populate Payment Break Up when Commercial Invoice Generated.
+|*
+|* ID: ISGECDV001101, IT0327, Ritu Shrivastava, VRC B61U a7 live Dt. 10-10-2014
+|* Added BL No. in session
+|*
+|* ID: ISGECDV001114, IT0327, Ritu Shrivastava, VRC B61U a7 live Dt. 17-10-2014
+|* Update status when commercial invoice is generated
+|*
+|* ID: ISGECDV001119, IT0327, Ritu Shrivastava, VRC B61U a7 live DT. 20-10-2014
+|* Update commercial amount when commercial invoice is generated
+|*
+|* IDENT ISGEC002022, Shilpa Janardanan, 3/Dec/2015
+|* Check for back date
+|****************************** declaration section ***************************
+declaration:
+
+table  	ttdisg831 | Billing Advice
+table	ttdisg800
+table	ttdisg832
+table	ttdisg843
+table	ttdisg845
+table	ttdisg841
+table	ttdisg830
+table	ttdisg839
+table	ttpisg036
+table	ttdisg866
+table	ttcmcs050
+table	ttdisg824		|#ISGECDV001085.n
+table	ttdisg860		|#ISGECDV001085.n
+table	ttdisg865		|#ISGECDV001085.n
+table	twhinh312		|#ISGEC002022.n
+
+extern	domain 	tcorno		o.invn,o.cinv,i.bold,import.shno
+extern	domain	tfgld.date	inv.date
+extern	domain	tcseri		var.cinv
+extern	domain	tcamnt		o.camt		|#ISGECDV001085.n
+extern domain  tcdsca		bl.no		|#ISGECDV001101.n
+extern domain  tcmcs.str5		empty.field		|#ISGECDV001101.n
+long	ret_val
+#include <bic_dam>
+|****************************** program section ********************************
+before.program:
+	
+	o.invn = ""
+| 	query.extension = "tdisg831.link = tcyesno.no"
+	dal.start.business.method("tdisg831","set.variable",ret_val,4)
+	query.extend.where("tdisg831.invn <> :o.invn and tdisg831.link = tcyesno.no and tdisg831.nvst = tdisg.nvst.postship")
+
+|****************************** field section **********************************
+| field.tdisg831.sele:
+| when.field.changes:
+| 	if	tdisg831.sele = tcyesno.yes then
+| 		enable.commands("cont.commercial")
+| 	else
+| 		disable.commands("cont.commercial")
+| 	endif	
+	
+field.tdisg831.lcno:
+before.zoom:
+	query.extend.where.in.zoom("tdisg841.cprj = " & quoted.string(tdisg831.cprj))
+
+field.inv.date:
+before.field:
+	select	tdisg839.pddt
+	from	tdisg839
+	where	tdisg839._index1 = {:i.bold}
+	selectdo
+		inv.date = tdisg839.pddt
+	endselect	
+	
+field.var.cinv:
+before.zoom:
+	tcmcs050.nrgr = tdisg800.cnrg	
+	
+field.bl.no:								|#ISGECDV001101.sn
+before.display:
+	select tdisg839.biln
+	from   tdisg839
+	where  tdisg839._index1 = {:i.bold}
+	selectdo
+		bl.no = tdisg839.biln
+	endselect							|#ISGECDV001101.en
+|****************************** group section **********************************
+
+choice.container:
+on.choice:
+	start.synchronized.child("tdisg8130m001","i.bold","tdisg830.rqno")
+
+choice.cont.commercial:
+before.choice:
+	if inv.date = 0 then
+		message("Select Commercial Invoice Date")
+		choice.again()
+	endif
+| 	if tdisg831.edrn(1;3) = "SBA" then 
+| 	if tdisg831.invn(1;4) = "C15E" or tdisg831.octy <> "IN " then 			|ISGECDV001039.o
+	if tdisg831.etyp = tdisg.advice.service or tdisg831.octy <> "IN " then 	|ISGECDV001039.n
+	else	
+		if isspace(i.bold) then
+			message("Please Select Bill of Lading No.")
+			choice.again()
+		endif	
+	endif	
+	check_receipt_confirmation_date()	|#ISGEC002022
+	
+on.choice:
+| 	get.commercial.amount()			|#ISGECDV001085.n			|#ISGECDV001119.o
+	select 	tdisg831.edrn,tdisg831.camt
+	from	tdisg831
+	where	tdisg831._index4 = {:tdisg831.cprj,:tdisg831.ofbp}
+	and	tdisg831.sele = tcyesno.yes
+	and	tdisg831.link = tcyesno.no
+	as set with 1 rows
+	selectdo
+		tcmcs.dll0095.read.parm("tdisg800")
+| 		o.cinv = tdisg800.ciri
+		o.cinv = var.cinv
+		if  tcmcs.dll0050.check.and.generate.order.number(
+				3, o.cinv, tdisg800.cnrg, 
+				9, o.cinv) then
+| 			return(DALHOOKERROR)
+			show.dal.messages(MSG.ALL)
+			abort.transaction()
+			choice.again()
+		else
+			update.custom.invoice.number()
+			update_commercial_no()
+			update_status()				|#ISGECDV001114.n
+		endif
+	endselect
+	
+| 	get.commercial.amount()								|#ISGECDV001119.o
+| 	populate.payment.breakup(tdisg831.edrn)			|#ISGECDV001085.n	|#ISGECDV001119.o
+	
+	commit.transaction()
+	
+	get.commercial.amount()					|#ISGECDV001119.n
+	populate.payment.breakup(tdisg831.edrn)			|#ISGECDV001119.n
+	
+after.choice:
+	if	not isspace(tdisg831.cinv) then
+		query.extend.where.in.zoom("tdisg831._index3 = " & quoted.string(tdisg831.cinv))
+		zoom.to$("tdisg8131m800",Z.SESSION,prog.name$,"",0)
+		refresh.parent(-1)
+	endif
+	refresh()
+
+|****************************** Functiond Section *********************************
+functions:
+function update.custom.invoice.number()
+{
+	select 	tdisg831.cinv,
+		tdisg831.link,
+		tdisg831.edrn,
+		tdisg831.cind,
+		tdisg831.ded1,
+		tdisg831.ded2,
+		tdisg831.amti							|#ISGECDV001119.n
+	from	tdisg831 for update
+	where	tdisg831._index4 = {:tdisg831.cprj,:tdisg831.ofbp}
+	and	tdisg831.sele = tcyesno.yes
+	and	tdisg831.link = tcyesno.no
+	selectdo
+		select	tpisg036.insp,tpisg036.frep
+		from	tpisg036
+		where	tpisg036._index1 = {:tdisg831.cprj}
+		selectdo
+		selectempty
+			tpisg036.insp = 0
+			tpisg036.frep = 0
+		endselect
+		
+		select	tdisg839.pddt
+		from	tdisg839
+		where	tdisg839._index1 = {:i.bold}
+		selectdo
+		selectempty
+			tdisg839.pddt = 0
+		endselect	
+		
+		tdisg831.cinv = o.cinv
+		tdisg831.cind = inv.date
+		tdisg831.link = tcyesno.yes
+		tdisg831.bold = i.bold
+		tdisg831.bodt = tdisg839.pddt
+		tdisg831.camt = tdisg831.amti						|#ISGECDV001119.n
+		tdisg831.ded1 = tdisg831.camt * (tpisg036.frep/100) 
+		tdisg831.ded2 = tdisg831.camt * (tpisg036.insp/100)
+		db.update(ttdisg831,db.retry,e)
+		
+		select 	tdisg832.cinv
+		from	tdisg832 for update
+		where	tdisg832._index1  = {:tdisg831.edrn}
+		selectdo
+			tdisg832.cinv = o.cinv
+			db.update(ttdisg832,db.retry,e)
+		endselect
+	endselect
+}
+
+function update_commercial_no()
+{		
+	select	tdisg830.*
+	from	tdisg830
+	where	tdisg830._index1 = {:i.bold}
+	and	tdisg830.sele = tcyesno.yes
+	selectdo
+		select	tdisg866.*
+		from	tdisg866 for update
+		where	tdisg866._index1 = {:i.bold,:tdisg830.srno,:o.cinv}
+		selectdo
+		selectempty
+			tdisg866.rqno = i.bold	
+			tdisg866.srno = tdisg830.srno	
+			tdisg866.cinv = o.cinv	
+			db.insert(ttdisg866,db.skip.dupl,e)
+		endselect
+	endselect	
+}
+
+					|#ISGECDV001085.sn
+function get.commercial.amount()
+{
+	o.camt = 0
+	select 	sum(tdisg831.camt):o.camt
+	from	tdisg831
+	where	tdisg831._index4 = {:tdisg831.cprj, :tdisg831.ofbp}
+	and     tdisg831.cinv = :tdisg831.cinv
+	and	tdisg831.sele = tcyesno.yes
+| 	and	tdisg831.link = tcyesno.no				|#ISGECDV001119.o
+	selectdo
+	endselect	
+}
+					
+function populate.payment.breakup
+				(
+			domain	tcorno	cm.edrn
+				)
+{
+	select	tdisg831.cprj, tdisg831.lcno
+	from	tdisg831
+	where	tdisg831._index1 = {:cm.edrn}
+	selectdo
+		if not isspace(tdisg831.lcno) then
+			get.payment.terms.details.lcno(tdisg831.lcno)	
+		else
+			get.payment.terms.details.cprj(tdisg831.cprj)
+		endif
+	endselect
+}
+
+function get.payment.terms.details.lcno(domain		tcorno	v.lcno)
+{	
+	select	tdisg860.lcno, tdisg860.ptcd, tdisg860.desc, tdisg860.pval
+	from	tdisg860
+	where	tdisg860._index1 = {:v.lcno}
+	selectdo
+		select	tdisg865.*
+		from	tdisg865 
+		where	tdisg865._index1 = {:o.cinv, :tdisg860.lcno, :tdisg860.ptcd}
+		selectdo
+		selectempty
+			tdisg865.cinv = o.cinv
+			tdisg865.lcno = tdisg860.lcno
+			tdisg865.ptcd = tdisg860.ptcd
+			tdisg865.desc = tdisg860.desc
+			tdisg865.amnt = (tdisg860.pval * o.camt)/100 
+			db.insert(ttdisg865,db.skip.dupl,e)
+		endselect	
+	endselect
+	commit.transaction()						|#ISGECDV001119.n
+}
+function get.payment.terms.details.cprj(domain		tccprj	v.cprj)
+{
+	select	tdisg824.cprj, tdisg824.ptcd, tdisg824.desc, tdisg824.pval
+	from	tdisg824
+	where	tdisg824._index1 = {:v.cprj}
+	selectdo
+		select	tdisg865.*
+		from	tdisg865 
+		where	tdisg865._index1 = {:o.cinv, :tdisg824.cprj, :tdisg824.ptcd}
+		selectdo
+		selectempty
+			tdisg865.cinv = o.cinv
+			tdisg865.lcno = tdisg824.cprj
+			tdisg865.ptcd = tdisg824.ptcd
+			tdisg865.desc = tdisg824.desc
+			tdisg865.amnt = (tdisg824.pval * o.camt)/100 
+			db.insert(ttdisg865,db.skip.dupl,e)
+		endselect	
+	endselect
+	commit.transaction()						|#ISGECDV001119.n
+}
+					|#ISGECDV001085.en
+function update_status()						|#ISGECDV001114.sn
+{
+	select tdisg831.nvst
+	from   tdisg831	 for update
+	where  tdisg831._index3 = {:o.cinv}
+	selectdo
+		tdisg831.nvst = tdisg.nvst.cominv
+		db.update(ttdisg831,db.retry,e)
+	endselect
+}									|#ISGECDV001114.en
+
+
+							|#ISGEC001164.en
+function check_receipt_confirmation_date()			|ISGEC002022.n
+{
+	long ardt,yearno, monthno, month_dayno,hours,  minutes,  seconds
+	domain	tfgld.date	o.tdisg831.cind
+	
+	select 	tdisg831.edrn
+	from	tdisg831
+	where	tdisg831._index4 = {:tdisg831.cprj,:tdisg831.ofbp}
+	and	tdisg831.sele = tcyesno.yes
+	and	tdisg831.link = tcyesno.no
+	as set with 1 rows
+	selectdo
+		select	tdisg832.rcno,tdisg832.rcln
+		from	tdisg832
+		where	tdisg832._index1 = {:tdisg831.edrn}
+		selectdo
+			select	whinh312.ardt
+			from	whinh312
+			where	whinh312._index1 = {:tdisg832.rcno,:tdisg832.rcln}
+			and	whinh312.conf =  tcyesno.yes
+			selectdo
+	| 			select	tdisg831.cind:o.tdisg831.cind
+	| 			from	tdisg831
+	| 			where	tdisg831._index3 = {:o.cinv}
+	| 			selectdo
+	| 			endselect
+				
+				utc.to.date  (whinh312.ardt,  yearno,  monthno,  month_dayno,  hours,  minutes,  seconds)
+				ardt = date.to.num  (yearno,  monthno,  month_dayno)
+				
+				if ardt > inv.date then
+					mess("tcgenstring",1,"Invoice date cannot be less than receipt confirmation date")
+					choice.again()
+				endif
+			endselect
+		endselect
+	endselect
+	
+	
+	
+}			

@@ -1,0 +1,173 @@
+|******************************************************************************
+|* tdisg4451m000  0  VRC B61U a7 live
+|* Print SRN by GR Number
+|* Installation user             
+|* 2014-09-26
+|******************************************************************************
+|* Main table tdisg451 Site Receipt, Form Type 4
+|******************************************************************************
+|* ID ISGEC015022,IT0302,Ankit Sharma, VRC B61U a7 live
+|* Added GR No And GR Date Field on Form
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttdisg451 | Site Receipt
+	table	ttdisg452
+	table	ttfisg002
+	table	ttfisg003
+	table	ttccom100
+	table	ttcmcs052
+	table	ttfacp100
+
+	|************** Form Variables *******************
+	extern	domain	tccprj		var.cprj    fixed
+	extern	domain	tcorno		var.srct    fixed
+	extern	domain	tfgld.date	var.srdt
+	extern	domain	tfacp.isup	var.grno			|#ISGEC015022.sn			
+	extern	domain	tfgld.date	var.grdt			|#ISGEC015022.en	
+	
+	|************** Global Variables *****************
+	extern	domain	tccprj		exp.cprj
+	extern	domain	tcorno		exp.srct
+	extern	domain	tfgld.date	exp.srdt
+	
+	|************** Script Variables *****************
+		domain	tcmcs.long	rec.cnt
+	extern	domain	tcmcs.str16	prog.name	
+		
+	|************** Report Variables *****************
+	extern	domain	tcmcs.long	prnt.detail
+	extern	domain	tcdate		rep.irdt
+	extern	domain	tcnama		rep.irnm
+	
+
+|****************************** program section ********************************
+before.program:
+	import("prog.name$", prog.name)
+	on case trim$(prog.name)
+		case "tdisg4551m000":
+			import("tdisg451.cprj", var.cprj)
+			import("tdisg451.srct", var.srct)
+			import("tdisg451.srdt", var.srdt)
+			break
+		case "tdisg4552m000":
+			import("tdisg452.cprj", var.cprj)
+			import("tdisg452.srct", var.srct)
+			import("tdisg452.srdt", var.srdt)
+			import("tdisg452.grno", var.grno)				|#ISGEC015022.sn
+			import("tdisg452.grdt", var.grdt)				|#ISGEC015022.en
+			break
+	ENdCASE		
+
+before.display.object:
+	import("prog.name$", prog.name)
+	on case trim$(prog.name)
+		case "tdisg4551m000":
+		case "tdisg4552m000":
+| 			disable.fields("var.cprj", actual.occ, "var.srct", actual.occ)			|#ISGEC015022.o
+			disable.fields("var.cprj", actual.occ, "var.srct", actual.occ,"var.grno", actual.occ,"var.grdt", actual.occ)|#ISGEC015022.n
+			break
+		default:
+| 			enable.fields("var.cprj", actual.occ, "var.srct", actual.occ)			|#ISGEC015022.o
+			enable.fields("var.cprj", actual.occ, "var.srct", actual.occ,"var.grno", actual.occ,"var.grdt", actual.occ)|#ISGEC015022.n	
+	ENdCASE
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.cont.process:
+on.choice:
+	execute(print.data)
+
+choice.print.data:
+on.choice:
+	if rprt_open() then
+		read.main.table()
+		rprt_close()
+	else
+		choice.again()
+	endif
+
+
+|****************************** field section *********************************
+field.var.cprj:
+after.zoom:
+	var.srct = exp.srct
+	var.srdt = exp.srdt
+	
+when.field.changes:
+	var.srct = exp.srct
+	var.srdt = exp.srdt
+	
+field.var.srct:
+after.zoom:
+	var.cprj = exp.cprj
+	var.srdt = exp.srdt
+	
+when.field.changes:
+	var.cprj = exp.cprj
+	var.srdt = exp.srdt	
+	
+
+|****************************** function section ******************************
+
+functions:
+
+function read.main.table()
+{
+	prnt.detail = 0 
+	select	tdisg451.*, tcmcs052.dsca
+	from	tdisg451, tcmcs052
+	where	tdisg451._index1 = {:var.cprj, :var.srct, :var.srdt}
+	and	tdisg451.cprj refers to tcmcs052 Unref Clear
+	order by tdisg451._index1
+	selectdo
+		prnt.detail = 1
+		rprt_send()
+		prnt.detail = 0
+		select	tdisg452.*, tfisg003.*, tccom100.nama
+		from	tdisg452, tfisg003, tccom100
+| 		where	tdisg452._index1 = {:tdisg451.cprj, :tdisg451.srct, :tdisg451.srdt}			|#ISGEC015022.o
+		where	tdisg452._index1 = {:tdisg451.cprj, :tdisg451.srct, :tdisg451.srdt,:var.grno}		|#ISGEC015022.n
+		and	tdisg452.grdt	= {:var.grdt}
+		and	tdisg452.cmbb refers to tfisg003 
+		and	tfisg003.bpid refers to tccom100 Unref Clear
+		selectdo
+			prnt.detail = 2
+			rprt_send()
+			prnt.detail = 0
+			rec.cnt = 0
+			select	tfisg002.*, tfacp100.ifbp, tfacp100.isup, tfacp100.cdf_irdt:rep.irdt,
+				ir_tccom100.nama:rep.irnm
+			from	tfisg002, tfacp100, tccom100 ir_tccom100
+			where	tfisg002.grno = :tfisg003.grno
+			and	tfisg002.grbp = :tfisg003.bpid
+			and	tfisg002.grdt = :tfisg003.grdt
+			and	tfisg002.irno refers to tfacp100
+			and	tfacp100.ifbp refers to ir_tccom100
+			selectdo
+				if	rec.cnt = 0	then
+					prnt.detail = 3
+					rprt_send()
+					prnt.detail = 0
+				endif
+				prnt.detail = 4
+				rprt_send()
+				prnt.detail = 0
+				rec.cnt = rec.cnt + 1
+			endselect
+			prnt.detail = 5
+			rprt_send()
+			prnt.detail = 0	
+		selecteos
+			prnt.detail = 6
+			rprt_send()
+			prnt.detail = 0	
+		endselect
+	endselect
+}

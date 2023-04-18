@@ -1,0 +1,396 @@
+|******************************************************************************
+|* tfisg4195m000  0  VRC B61U a7 isg 
+|* Accept Recon. Data
+|* Installation User             
+|* 2015-09-15
+|******************************************************************************
+|* Main table tfgld495 , Form Type 4
+|******************************************************************************
+|* IDENT ISGEC015059 IT0308,	Somak Mondal, Dt.18-09-2015, VRC B61U a7 ISG 
+|* New Development.
+|
+|* IDENT ISGEC015033 IT0302,	Ankit Sharma, Dt.02-11-2015, VRC B61U a7 ISG 
+|* Accepted field set to yes for correction document.
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttfgld495 | Reconciliation Data
+	table	ttfgld454 | Business Objects
+	table	ttfacp251 | Invoice Related to Purchase Receipt Lines 
+	table	ttfacp250 | Invoice Related to Purchase Order Lines
+	table	ttfacp935 | Order Tax Details
+	table	ttfgld110 | Tax Analysis
+	
+	extern	domain	tcorno		orno.f,orno.t
+	extern	domain	tfgld.year	year.f,year.t			
+	extern	domain	tfgld.prod	prod.f,prod.t			
+	extern	domain	tcdsca		obj.dsca
+	extern	domain	tcreco		reco.f
+	extern	domain	tcrecs		recs.f
+	extern	domain	tfgld.leac	leac.f,leac.t
+
+	extern	domain	whinh.shpm	var.rcno
+	extern	domain	whinh.sern	var.sern
+	extern	domain	tcpono		var.pono,var.sqnb
+	extern	domain	tcncmp		var.compnr
+	
+	extern	domain	tfgld.ttyp	var.ttyp
+	extern	domain	tfgld.docn	var.docn
+	extern	domain	tfgld.lino	var.lino
+	extern	domain	tcborf		var.obre
+		domain	tfgld.lino	temp.lino
+		
+	extern	domain	tcamnt		var.amth(99999)	
+	extern	domain	tcmcs.long	var.lvl,var.lvl1
+			long		flag1,ret,ret1
+	extern	domain	tcguid		guid,ogui			|#ISGEC015033.n		
+
+|****************************** program section ********************************
+|****************************** group section **********************************
+group.1:
+init.group:
+   get.screen.defaults()
+|****************************** choice section **********************************
+choice.update:
+on.choice:
+	update.lines()
+	mess("tfisg4295.02",0)
+|****************************** field section **********************************
+field.orno.f:	
+when.field.changes:
+	orno.t = orno.f
+
+field.year.f:
+when.field.changes:
+	year.t = year.f
+
+field.prod.f:
+when.field.changes:
+	prod.t = prod.f
+	
+field.leac.f:
+when.field.changes:
+	leac.t = leac.f
+|****************************** Functions **************************************
+Functions:
+Function update.lines()
+{
+	var.compnr =  get.compnr()
+	long	index,flag
+	
+	select	tfgld495.*
+	from	tfgld495
+	where	tfgld495.reco = :reco.f
+	and	tfgld495.recs = :recs.f
+	and	tfgld495.rbid inrange {:orno.f} and {:orno.t}
+	and	tfgld495.fyer inrange {:year.f} and {:year.t}
+	and	tfgld495.fprd inrange {:prod.f} and {:prod.t}
+	and	tfgld495.leac inrange {:leac.f} and {:leac.t}
+	and	tfgld495.ktrn = tcktrn.integ.trans
+	selectdo 
+		var.ttyp = tfgld495.ttyp
+		var.docn = tfgld495.docn
+		var.lino = tfgld495.lino
+		var.obre = tfgld495.obre
+		 
+		index = pos(tfgld495.obre,"/")
+		var.pono = lval(tfgld495.obre(1;(index-1)))
+		flag = index + 1
+		index = pos(tfgld495.obre,"/",index+1)
+		var.sqnb = lval(tfgld495.obre(flag;(index-1)))
+		flag = index + 1
+		index = pos(tfgld495.obre,"/",index+1)		
+		var.rcno = tfgld495.obre(flag;(index-1))
+		
+		document.satus()
+		if ret = 1 or ret1 = 1 then
+			select.rcno.from.tfacp251()
+		else
+			message("Unposted Document Present")
+		endif		
+	endselect
+}
+
+function select.rcno.from.tfacp251()
+{
+	select	tfacp251.*
+	from	tfacp251
+	where	tfacp251.rcno = :var.rcno
+	and	tfacp251.pono = :var.pono
+	and	tfacp251.sqnb = :var.sqnb
+	selectdo
+		select	tfacp250.tapr,tfacp250.dapr
+		from	tfacp250
+		where	tfacp250._index1 = {:var.compnr,:tfacp251.ityp,:tfacp251.idoc}
+		selectdo
+			if ret = 1 then
+				update.tfgld495.acce1()			|PAP
+			else
+				mess("tfisg4295.03",0)
+			endif	
+		endselect
+		if ret1 = 1 then
+			update.ptr.jet.doc()
+		else
+			mess("tfisg4295.03",0)
+		endif
+	endselect
+}
+
+function update.tfgld495.acce1()				|PAP
+{
+	db.retry.point()
+	select	tfgld495.*
+	from	tfgld495 for update
+	where	tfgld495.ttyp = :tfacp250.tapr
+	and	tfgld495.docn = :tfacp250.dapr
+	selectdo
+		tfgld495.acce = tcyesno.yes
+		db.update(ttfgld495,db.retry,e)
+		if not e then
+			mess("tfisg4295.01",0,tfacp250.tapr,tfacp250.dapr)
+			commit.transaction()
+			update.tfgld495.acce3()			|PUR
+			update.tfgld495.unappr()
+			update.tfgld495.correction()		|#ISGEC015033.n
+		else
+			abort.transaction()
+		endif
+	selectempty
+	endselect
+	
+}
+function update.tfgld495.acce3()				|PUR
+{
+	select	tfgld495.*
+	from	tfgld495 for update
+	where	tfgld495.ttyp = :var.ttyp
+	and	tfgld495.docn = :var.docn
+	and	tfgld495.lino = :var.lino
+	selectdo
+		tfgld495.acce = tcyesno.yes
+		db.update(ttfgld495,db.retry,e)
+		if not e then
+			mess("tfisg4295.01",0,var.ttyp,var.docn)
+			commit.transaction()
+		else
+			abort.transaction()
+		endif
+	selectempty
+	endselect	
+}
+
+function update.tfgld495.acce2()				|PTR
+{
+	select	tfgld495.*
+	from	tfgld495 for update
+	where	tfgld495.ttyp = :tfacp251.ityp
+	and	tfgld495.docn = :tfacp251.idoc
+	selectdo
+		tfgld495.acce = tcyesno.yes
+		db.update(ttfgld495,db.retry,e)
+		if not e then
+			mess("tfisg4295.01",0,tfacp251.ityp,tfacp251.idoc)
+			commit.transaction()
+		else
+			abort.transaction()
+		endif
+	selectempty
+	endselect	
+}
+function update.tfgld495.acce4()				|JET
+{
+	select	tfgld495.*
+	from	tfgld495 for update
+	where	tfgld495.ttyp = :tfacp935.ttyp
+	and	tfgld495.docn = :tfacp935.docn
+	and	tfgld495.lino = :tfacp935.lino + 1
+	selectdo
+		tfgld495.acce = tcyesno.yes
+		db.update(ttfgld495,db.retry,e)
+		if not e then
+			mess("tfisg4295.01",0,tfacp251.ityp,tfacp251.idoc)
+			commit.transaction()
+			flag1 = flag1 + 1
+		else
+			abort.transaction()
+		endif
+	selectempty
+	endselect	
+}
+
+function update.ptr.jet.doc()
+{
+	flag1 = 0
+	
+	select	tfacp935.*
+	from	tfacp935 for update
+	where	tfacp935.orno = :tfacp251.orno
+	and	tfacp935.pono = :tfacp251.pono
+	and	tfacp935.sqnb = :tfacp251.sqnb
+	and	tfacp935.rcno = :tfacp251.rcno
+	and	tfacp935.rseq = :tfacp251.rseq
+	selectdo
+		update.tfgld495.acce4()				|JET
+	selectempty
+	endselect
+	
+	if flag1 > 0 then
+		update.tfgld495.acce2()				|PTR
+	endif	
+}
+
+function update.tfgld495.unappr()
+{
+	select	tfgld495.*
+	from	tfgld495 for update
+	where	tfgld495.obre = :var.obre
+	and	tfgld495.ktrn in (2,3)			|2- Approval, 3- Unapporval
+	selectdo
+		tfgld495.acce = tcyesno.yes
+		db.update(ttfgld495,db.retry,e)
+		if not e then
+			commit.transaction()
+		else
+			abort.transaction()
+		endif
+		
+	selectempty
+	endselect
+	
+}
+|-----------------------------  Checking - Unposted Document --------------------------
+function  document.satus()
+{
+	ret = 0
+	ret1 = 0
+	
+	select	tfacp251.*
+	from	tfacp251
+	where	tfacp251.rcno = :var.rcno
+	and	tfacp251.pono = :var.pono
+	and	tfacp251.sqnb = :var.sqnb
+	selectdo
+		select	tfacp250.tapr,tfacp250.dapr
+		from	tfacp250
+		where	tfacp250._index1 = {:var.compnr,:tfacp251.ityp,:tfacp251.idoc}
+		selectdo
+			ret = check.tfgld495.docs(var.ttyp,var.docn)		|PUR		
+			ret = check.tfgld495.docs(tfacp250.tapr,tfacp250.dapr)	|PAP		
+		endselect
+		check.ptr.jet.doc()	
+	endselect
+}
+
+function long check.tfgld495.docs(
+					domain	tfgld.ttyp	i.ityp,
+					domain	tfgld.docn	i.docn
+				   )
+{
+	select	tfgld495.*
+	from	tfgld495 
+	where	tfgld495.ttyp = :i.ityp
+	and	tfgld495.docn = :i.docn
+	and	tfgld495.docn <> 0
+	selectdo
+	selectempty
+		return(0)
+	endselect
+	return(1)
+}
+
+function check.ptr.jet.doc()
+{
+	check.tfgld110.docs1(tfacp251.ityp,tfacp251.idoc)					|PTR
+	var.lvl1 = 0
+
+	select	tfacp935.*
+	from	tfacp935 
+	where	tfacp935.orno = :tfacp251.orno
+	and	tfacp935.pono = :tfacp251.pono
+	and	tfacp935.sqnb = :tfacp251.sqnb
+	and	tfacp935.rcno = :tfacp251.rcno
+	and	tfacp935.rseq = :tfacp251.rseq
+	selectdo
+		check.tfgld495.docs2(tfacp935.ttyp,tfacp935.docn,tfacp935.lino)				|JET			
+	selectempty
+	endselect
+}
+function  check.tfgld110.docs1(				
+					domain	tfgld.ttyp	i.ityp,
+					domain	tfgld.docn	i.docn
+				   )
+{	
+	temp.lino = 0
+	var.lvl = 0
+	
+	select	tfgld110.*
+	from	tfgld110 
+	where	tfgld110.cono = :var.compnr
+	and	tfgld110.ttyp = :i.ityp
+	and	tfgld110.docn = :i.docn
+	selectdo
+		var.lvl = var.lvl + 1
+		temp.lino = tfgld110.lino + 1	
+		
+		select	tfgld495.*
+		from	tfgld495
+		where	tfgld495.ttyp = :tfgld110.ttyp
+		and	tfgld495.docn = :tfgld110.docn
+		and	tfgld495.lino = :temp.lino
+		and	tfgld495.docn <> 0
+		selectdo
+			var.amth(var.lvl) = tfgld495.amth(1)
+		endselect
+	selectempty
+	endselect
+}
+
+function   check.tfgld495.docs2(
+				domain	tfgld.ttyp	i.ttyp,
+				domain	tfgld.docn	i.docn,
+				domain	tfgld.lino	i.lino
+				)
+{	
+	select	tfgld495.*
+	from	tfgld495
+	where	tfgld495.ttyp = :i.ttyp
+	and	tfgld495.docn = :i.docn
+	and	tfgld495.lino = :i.lino + 1
+	and	tfgld495.docn <> 0
+	selectdo
+		var.lvl1 = var.lvl1 + 1		
+		if var.amth(var.lvl1) = tfgld495.amth(1) then
+			ret1 = 1
+		else
+			ret1 = 0
+		endif	
+	selectempty
+	endselect
+}
+
+
+function update.tfgld495.correction()					|#ISGEC015033.sn
+{
+	select	tfgld495.ogui:ogui,tfgld495.acce
+	from	tfgld495  for update
+	where	tfgld495.obre = :var.obre
+	and	tfgld495.ktrn = 6
+	selectdo
+		select	tfgld495.guid:guid
+		from	tfgld495
+		where	tfgld495._index1 = {:ogui}
+		and	tfgld495.reco = 5
+		and	tfgld495.acce = tcyesno.yes
+		selectdo
+			tfgld495.acce = tcyesno.yes
+			db.update(ttfgld495,db.retry,e)
+			if not e then
+				commit.transaction()
+			else
+				abort.transaction()
+			endif
+		endselect
+	selectempty
+	endselect	
+}									|#ISGEC015033.en

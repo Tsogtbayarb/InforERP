@@ -1,0 +1,202 @@
+|******************************************************************************
+|* tpisg6400m000  0  VRC B61U a7 isg 
+|* Print Project Invoice
+|* Installation user             
+|* 2014-09-03
+|******************************************************************************
+|* Main table tppdm600 Project, Form Type 4
+|******************************************************************************
+|* ISGECDV001004, IT0205, Arjit Gupta, VRC B61U a7 live
+|* S. Tax Value function added
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttppdm600 | Project
+	table	ttcmcs052
+	table	ttppin020
+	table	ttcmcs036
+	table	tcisli206
+	table	tcisli235
+	table	tciisg000
+
+	|***************** Form Variable ****************
+	extern	domain	tccprj		cprj.f    fixed
+	extern	domain	tccprj		cprj.t    fixed
+	extern	domain	tcdate		indt.f
+	extern	domain	tcdate		indt.t
+	
+	|**************** Script Variable ***************
+	extern	domain	tcdate		v.indt.f
+	extern	domain	tcdate		v.indt.t
+	extern	domain	tcncmp		curr.comp
+	|*************** Report Variable ****************
+	extern	domain	tcamnt		rep.bamt	|Basic Amount
+	extern	domain	tcamnt		rep.samt	|Sales Tax Amount
+	extern	domain	tcamnt		rep.rem.edmt	|ED Reimbursement
+	extern	domain	tcamnt		rep.rem.samt	|S. Tax Reimbursement
+	extern	domain	tcamnt		rep.misc.claim	|Misc. Claims Reimbursement
+	extern	domain	tcamnt		rep.gross.val	|Gross Invoice
+	extern	domain	tcamnt		rep.advn	|Advance
+	extern	domain	tcamnt		rep.retn	|Retention
+	extern	domain	tcamnt		rep.nt.inmt	|Net Invoice Amount
+
+|****************************** program section ********************************
+before.program:
+	curr.comp = get.compnr()
+
+|****************************** group section **********************************
+group.1:
+init.group:
+	get.screen.defaults()
+
+|****************************** choice section ********************************
+choice.cont.process:
+on.choice:
+	execute(print.data)
+
+choice.print.data:
+on.choice:
+	if	rprt_open()	then
+		read.main.table()
+		rprt_close()
+	else
+		choice.again()
+	endif
+
+|****************************** field section *********************************
+field.cprj.f:
+when.field.changes:
+	cprj.t = cprj.f
+
+field.indt.f:
+when.field.changes:
+	indt.t = indt.f
+
+|****************************** function section ******************************
+
+functions:
+
+function read.main.table()
+{
+	tcmcs.dll0095.read.parm("ciisg000")
+	
+	get.date.utc(indt.f, 00, 00, 00, v.indt.f)
+	get.date.utc(indt.t, 23, 59, 59, v.indt.t)
+	
+	
+	select	tppdm600.*, tcmcs052.dsca
+	from	tppdm600, tcmcs052
+	where	tppdm600._index1 inrange {:cprj.f}    and {:cprj.t}
+	and	tppdm600.cprj refers to tcmcs052 Unref Clear
+	order by tppdm600._index1
+	selectdo
+		initialize.variable()
+		select	sum(tppin020.tiia):rep.bamt
+		from	tppin020
+		where	tppin020._index1 = {:tppdm600.cprj}
+		and	tppin020.sidt inrange :v.indt.f	and	:v.indt.t
+		and	tppin020.cdf_remb = tcyesno.no
+		selectdo
+		selectempty
+			rep.bamt = 0
+		endselect
+		get.tax.value()		|#ISGECDV001004.n
+		if	not isspace(ciisg000.exii)	then
+			rep.rem.edmt = rep.rem.edmt + get.reimbursement(tppdm600.cprj, ciisg000.exii, v.indt.f, v.indt.t)
+		endif
+		if	not isspace(ciisg000.hcex)	then
+			rep.rem.edmt = rep.rem.edmt + get.reimbursement(tppdm600.cprj, ciisg000.exii, v.indt.f, v.indt.t)
+		endif
+		if	not isspace(ciisg000.scex)	then
+			rep.rem.edmt = rep.rem.edmt + get.reimbursement(tppdm600.cprj, ciisg000.exii, v.indt.f, v.indt.t)
+		endif
+		if	not isspace(ciisg000.vati)	then
+			rep.misc.claim = rep.misc.claim + get.reimbursement(tppdm600.cprj, ciisg000.vati, v.indt.f, v.indt.t)
+		endif
+		if	not isspace(ciisg000.csti)	then
+			rep.rem.samt = rep.rem.samt + get.reimbursement(tppdm600.cprj, ciisg000.csti, v.indt.f, v.indt.t)
+		endif
+		if	not isspace(ciisg000.srvi)	then
+			rep.misc.claim = rep.misc.claim + get.reimbursement(tppdm600.cprj, ciisg000.vati, v.indt.f, v.indt.t)
+		endif
+		if	not isspace(ciisg000.hcsv)	then
+			rep.misc.claim = rep.misc.claim + get.reimbursement(tppdm600.cprj, ciisg000.vati, v.indt.f, v.indt.t)
+		endif
+		if	not isspace(ciisg000.scsv)	then
+			rep.misc.claim = rep.misc.claim + get.reimbursement(tppdm600.cprj, ciisg000.vati, v.indt.f, v.indt.t)
+		endif
+		if	not isspace(ciisg000.frgt)	then
+			rep.misc.claim = rep.misc.claim + get.reimbursement(tppdm600.cprj, ciisg000.vati, v.indt.f, v.indt.t)
+		endif
+		rep.gross.val = rep.bamt + rep.samt + rep.rem.edmt + rep.rem.samt + rep.misc.claim
+		rprt_send()
+	endselect
+}
+
+function initialize.variable()
+{
+	rep.bamt = 0
+	rep.samt = 0
+	rep.rem.edmt = 0
+	rep.misc.claim = 0
+	rep.rem.samt = 0
+	rep.gross.val = 0
+}
+
+function get.date.utc(
+		domain	tcdate	i.date,
+		long		i.hh,
+		long		i.mn,
+		long		i.ss,
+	ref	domain	tcdate	o.date
+			)
+{
+	long	dd, mm, yy, hh, mn, ss
+	utc.to.date(i.date, yy , mm, dd, hh, mn, ss)
+	o.date = date.to.utc(yy, mm, dd, i.hh, i.mn, i.ss)
+	if	o.date < 0	then
+		o.date = 0
+	endif
+}
+
+function get.tax.value()
+{
+	rep.samt = 0
+	select	cisli235.ityp, cisli235.idoc, cisli235.sfcp
+	from	cisli235
+	where	cisli235._index1 = {:curr.comp, :tppdm600.cprj}
+	selectdo
+		select	cisli206.txct, cisli206.txid, cisli206.txah, tcmcs036.indt.l
+		from	cisli206, tcmcs036
+		where	cisli206._index1 = {:cisli235.sfcp, :cisli235.ityp, :cisli235.idoc}
+		and	cisli206.cmbb refers to tcmcs036
+		selectdo
+			rep.samt = rep.samt + cisli206.txah(1)
+		endselect
+	endselect
+}
+
+function domain tcamnt	get.reimbursement(
+			domain tccprj	in.cprj,
+			domain	tcccty	in.remb,
+			domain	tcdate	in.date.f,
+			domain	tcdate	in.date.t
+			)
+{
+	domain	tcamnt	tmp.remb
+	
+	tmp.remb = 0
+	
+	select	sum(p_tppin020.tiia):tmp.remb
+	from	tppin020 p_tppin020
+	where	p_tppin020._index1 = {:in.cprj}
+	and	p_tppin020.cdf_remb = tcyesno.yes
+	and	p_tppin020.cdf_rtyp = :in.remb
+	and	p_tppin020.sidt inrange :in.date.f	and	:in.date.t
+	selectdo
+	selectempty
+		tmp.remb = 0
+	endselect
+
+	return(tmp.remb)
+}

@@ -1,0 +1,115 @@
+|******************************************************************************
+|* tpisg0412  0  VRC B61U a7 isg 
+|* Element Code Sanction Detail
+|* user07                        
+|* 2015-02-17
+|******************************************************************************
+|* Main table tpisg012 Sanction Control Lines, Form Type 4
+|******************************************************************************
+|*
+|* PATCH001011, Dharmendra, 12-03-2015
+|****************************** declaration section ***************************
+declaration:
+
+	table   ttpisg012 | Sanction Control Lines
+	table		ttcmcs052
+	table		ttpptc100
+	table		ttpisg008
+
+	extern  domain  tccprj           cprj.f    fixed
+	extern  domain  tccprj           cprj.t    fixed
+	extern  domain  tppdm.cspa       cspa.f    fixed
+	extern  domain  tppdm.cspa       cspa.t    fixed
+	extern	domain	tcamnt		f.tpisg012.totl	
+	extern	domain	tcorno		old.version
+	extern	domain	tcamnt		avai.po
+	extern	domain	tcdate		report.date	|# PATCH001011.n
+
+|****************************** program section ********************************
+
+
+|****************************** group section **********************************
+
+group.1:
+init.group:
+   get.screen.defaults()
+
+|****************************** choice section ********************************
+
+choice.cont.process:
+on.choice:
+   execute(print.data)
+
+choice.print.data:
+on.choice:
+   if rprt_open() then
+       read.main.table()
+       rprt_close()
+   else
+       choice.again()
+   endif
+
+
+|****************************** field section *********************************
+
+field.cprj.f:
+when.field.changes:
+   cprj.t = cprj.f
+
+field.cspa.f:
+when.field.changes:
+   cspa.t = cspa.f
+
+before.zoom:
+	tpptc100.cprj = cprj.f
+	
+field.cspa.t:
+before.zoom:
+	tpptc100.cprj = cprj.t
+
+|****************************** function section ******************************
+
+functions:
+
+function read.main.table()
+{
+	report.date = utc.num()				|# PATCH001011.n
+	
+	select	tpisg012.*
+	from 	tpisg012
+	where  	tpisg012._index1 inrange {:cprj.f} and {:cprj.t}
+	and	tpisg012.elem inrange :cspa.f and :cspa.t
+	order by tpisg012._index1
+	selectdo
+		select	tcmcs052.dsca
+		from	tcmcs052
+		where	tcmcs052._index1 = {:tpisg012.cprj}
+		selectdo
+		selectempty
+			tcmcs052.dsca = ""
+		endselect
+		
+		select	tpptc100.desc
+		from	tpptc100
+		where	tpptc100._index1 = {:tpisg012.cprj, :tpisg012.elem}
+		selectdo
+		selectempty
+			tpptc100.desc = ""
+		endselect
+		
+		old.version = "1.0"
+		select 	tpisg008.totl
+		from	tpisg008
+		where	tpisg008._index1 = {:tpisg012.cprj,:old.version,:tpisg012.elem}
+		as set with 1 rows
+		selectdo
+		selectempty
+			tpisg008.totl = 0
+		endselect
+		
+		f.tpisg012.totl = tpisg008.totl
+		avai.po = tpisg012.totl - tpisg012.exha
+		
+		rprt_send()
+	endselect
+}
